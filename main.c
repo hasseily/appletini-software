@@ -17,6 +17,7 @@ typedef unsigned int u16;
 #define RAMRDON    0xC003
 #define RAMWRTOFF  0xC004
 #define RAMWRTON   0xC005
+#define COL80OFF   0xC00C
 #define COL80ON    0xC00D
 #define RDVBLBAR   0xC019
 #define NEWVIDEO   0xC029
@@ -48,6 +49,9 @@ typedef unsigned int u16;
 #define PAGE_A     0x2000
 #define PAGE_B     0x4000
 #define VIDEO_ROWS 192
+#define PLAYFIELD_TOP 20
+#define PLAYFIELD_BOTTOM 180
+#define VIDEO7_COLOR 0x80
 #define FIELD_BYTES 4
 #define ENEMY_COUNT 24
 #define PLAYER_BULLET_COUNT 8
@@ -59,6 +63,7 @@ typedef unsigned int u16;
 
 extern u8 __fastcall__ ramworks_probe(u8 bank);
 extern void aux_clear_video(void);
+extern void __fastcall__ aux_color_row(u16 address);
 extern void __fastcall__ aux_xor_byte(u16 address, u8 value);
 
 struct DebugMailbox {
@@ -221,13 +226,17 @@ static void video_select(void)
     REG8(PAGE1) = 0;
     REG8(HIRESON) = 0;
     REG8(IOUDISON) = 0;
+    /* Commit Video-7 state 10 (MIX): bit 7 clear selects monochrome spans,
+     * while bit 7 set preserves color graphics. Each C05F rising edge clocks
+     * !80COL, first into bit 1 and then bit 0. Restore 80COL before the final
+     * C05E so the selector commits with DHGR still enabled. */
+    REG8(COL80OFF) = 0;
+    REG8(DHGRON) = 0;
+    REG8(DHGROFF) = 0;
     REG8(COL80ON) = 0;
-    /* Commit Video-7 state 00 and leave DHGR enabled. A single C05E access
-     * would leave the Appletini selector half-open after a stale mode. */
     REG8(DHGRON) = 0;
     REG8(DHGROFF) = 0;
-    REG8(DHGRON) = 0;
-    REG8(DHGROFF) = 0;
+    REG8(COL80ON) = 0;
     REG8(DHGRON) = 0;
 }
 
@@ -238,6 +247,30 @@ static void video_clear(void)
     REG8(RAMWRTOFF) = 0;
     for (p = (volatile u8*)PAGE_A; p < (volatile u8*)0x6000; ++p) *p = 0;
     aux_clear_video();
+}
+
+static void video_color_playfield(void)
+{
+    u8 y;
+    u8 x;
+    u16 address;
+
+    /* Video-7 MIX uses the high bits of the interleaved DHGR bytes as
+     * 8+8+8+4-dot monochrome/color selectors. Color the complete gameplay
+     * rows in every field and plane so selector spans remain aligned even
+     * when a sprite moves across an odd byte boundary. Text rows retain the
+     * zeroes installed by video_clear and therefore render monochrome. */
+    REG8(RAMWORKS) = 0;
+    REG8(RAMWRTOFF) = 0;
+    for (y = PLAYFIELD_TOP; y < PLAYFIELD_BOTTOM; ++y) {
+        address = hgr_line[y];
+        for (x = 0; x < 40; ++x) {
+            REG8(address + x) = VIDEO7_COLOR;
+            REG8(address + 0x2000 + x) = VIDEO7_COLOR;
+        }
+        aux_color_row(address);
+    }
+    REG8(RAMWRTOFF) = 0;
 }
 
 static void video_begin_dhgri(void)
@@ -349,8 +382,8 @@ static void video_starfield(void)
         address = hgr_line[y] + x;
         /* A single physical star occupies one interlace field, giving the
          * woven 384-line image real vertical detail instead of duplication. */
-        if (lfsr & 0x20) video_plane_write(address, bit, aux);
-        else video_plane_write(address + 0x2000, bit, aux);
+        if (lfsr & 0x20) video_plane_write(address, (u8)(bit | VIDEO7_COLOR), aux);
+        else video_plane_write(address + 0x2000, (u8)(bit | VIDEO7_COLOR), aux);
     }
     REG8(RAMWRTOFF) = 0;
 }
@@ -361,10 +394,10 @@ static void video_border(void)
     u16 address;
     address = hgr_line[178];
     for (x = 0; x < 40; ++x) {
-        video_plane_write(address + x, 0x55, 1);
-        video_plane_write(address + x, 0x2A, 0);
-        video_plane_write(address + 0x2000 + x, 0x55, 1);
-        video_plane_write(address + 0x2000 + x, 0x2A, 0);
+        video_plane_write(address + x, 0xD5, 1);
+        video_plane_write(address + x, 0xAA, 0);
+        video_plane_write(address + 0x2000 + x, 0xD5, 1);
+        video_plane_write(address + 0x2000 + x, 0xAA, 0);
     }
     REG8(RAMWRTOFF) = 0;
 }
@@ -378,7 +411,7 @@ static void video_xor_byte(u16 address, u8 value, u8 aux)
     }
     REG8(RAMWRTOFF) = 0;
     p = (volatile u8*)address;
-    *p ^= value;
+    *p = (u8)((*p ^ (value & 0x7F)) | VIDEO7_COLOR);
 }
 
 static void video_sprite(u8 x, u8 y, const u8* sprite, u8 height)
@@ -869,6 +902,7 @@ int main(void)
     banks = ramworks_init();
     video_select();
     video_clear();
+    video_color_playfield();
     video_begin_dhgri();
     video_starfield();
     video_border();

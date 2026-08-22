@@ -203,7 +203,13 @@ def exercise(client: Client, timeout: float) -> dict[str, object]:
         "main page 2": client.read_mem(MEM_MAIN_RAW, 0x04000, 0x2000),
         "aux page 2": client.read_mem(MEM_MAIN_RAW, 0x14000, 0x2000),
     }
-    nonzero = {name: sum(value != 0 for value in data) for name, data in planes.items()}
+    # Video-7 MIX selector bits are metadata, not pixels. Count only the low
+    # seven DHGR data bits so a selector-only background cannot satisfy the
+    # plane-density check.
+    nonzero = {
+        name: sum((value & 0x7F) != 0 for value in data)
+        for name, data in planes.items()
+    }
     sparse = {name: count for name, count in nonzero.items() if count < 100}
     if sparse:
         fail(f"DHGRi plane data is unexpectedly sparse: {sparse}")
@@ -217,6 +223,39 @@ def exercise(client: Client, timeout: float) -> dict[str, object]:
     }
     if min(field_differences.values()) < 20:
         fail(f"DHGRi fields do not carry enough distinct detail: {field_differences}")
+
+    # Video-7 state 10 interprets bit 7 of the interleaved AUX/MAIN stream as
+    # an 8+8+8+4-dot monochrome/color selector. Every byte in the gameplay
+    # rows is color-selected, on both pages and in both planes, so moving art
+    # cannot expose a monochrome seam at an odd-byte boundary.
+    for name, data in planes.items():
+        for y in range(20, 180):
+            offset = hgr_address(y, 0x2000 if "page 1" in name else 0x4000)
+            offset -= 0x2000 if "page 1" in name else 0x4000
+            row = data[offset:offset + 40]
+            if len(row) != 40 or any((value & 0x80) == 0 for value in row):
+                fail(f"{name} row {y} does not fully select Video-7 color")
+
+    # The static border deliberately overwrites every byte, so its exact
+    # values also prove that non-text writes preserve the selector bit.
+    for page, suffix in ((0x2000, "page 1"), (0x4000, "page 2")):
+        offset = hgr_address(178, page) - page
+        if planes[f"aux {suffix}"][offset:offset + 40] != bytes((0xD5,)) * 40:
+            fail(f"aux {suffix} color border is damaged")
+        if planes[f"main {suffix}"][offset:offset + 40] != bytes((0xAA,)) * 40:
+            fail(f"main {suffix} color border is damaged")
+
+    # HUD, title, and footer occupy dedicated rows. Keeping all four planes'
+    # selector bits clear makes their glyphs monochrome white without turning
+    # the colored playfield monochrome.
+    text_rows = (*range(2, 9), *range(10, 17), *range(181, 188))
+    for name, data in planes.items():
+        page = 0x2000 if "page 1" in name else 0x4000
+        for y in text_rows:
+            offset = hgr_address(y, page) - page
+            row = data[offset:offset + 40]
+            if any(value & 0x80 for value in row):
+                fail(f"{name} text row {y} incorrectly selects Video-7 color")
 
     # The font table is stored conventionally with bit 4 at the left, but an
     # Apple II graphics byte displays bit 0 at the left. SCORE's asymmetric S

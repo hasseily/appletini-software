@@ -1,6 +1,6 @@
 .setcpu "65C02"
 
-.export _ramworks_probe, _aux_clear_video, _aux_xor_byte
+.export _ramworks_probe, _aux_clear_video, _aux_color_row, _aux_xor_byte
 .import popax
 
 RAMRDOFF = $C002
@@ -14,6 +14,7 @@ CLEAR_PTR = $0030
 AUX_XOR_CODE = $0040
 AUX_XOR_PTR = $0060
 AUX_XOR_VALUE = $0062
+AUX_COLOR_PTR = $0064
 
 .segment "RODATA"
 probe_code:
@@ -26,7 +27,8 @@ probe_code_end:
 
 ; RAMRD redirects instruction fetches above zero page. This tiny trampoline
 ; executes from zero page so an AUX read-modify-write can safely read and
-; write the same physical byte without touching the cc65 software stack.
+; write the same physical byte without touching the cc65 software stack. The
+; XOR changes only pixel data; ORA keeps Video-7's color selector asserted.
 aux_xor_code:
         stz RAMWORKS
         stz RAMRDON
@@ -34,6 +36,7 @@ aux_xor_code:
         ldy #$00
         lda (AUX_XOR_PTR),y
         eor AUX_XOR_VALUE
+        ora #$80
         sta (AUX_XOR_PTR),y
         stz RAMRDOFF
         stz RAMWRTOFF
@@ -62,11 +65,40 @@ _ramworks_probe:
 ; A contains value and the address is on the cc65 software stack. Extract all
 ; parameters before the zero-page trampoline redirects RAM reads and writes.
 _aux_xor_byte:
+        and #$7F
         sta AUX_XOR_VALUE
         jsr popax
         sta AUX_XOR_PTR
         stx AUX_XOR_PTR+1
         jsr AUX_XOR_CODE
+        rts
+
+; fastcall void aux_color_row(unsigned address)
+; Fill both AUX DHGR fields' 40 visible bytes for one scanline with Video-7's
+; color selector. A/X contain the page-1 address. Keeping the loop in assembly
+; avoids accessing cc65's software stack while AUX writes are enabled.
+_aux_color_row:
+        sta AUX_COLOR_PTR
+        stx AUX_COLOR_PTR+1
+        stz RAMWORKS
+        stz RAMWRTON
+        ldy #39
+        lda #$80
+@page_a:
+        sta (AUX_COLOR_PTR),y
+        dey
+        bpl @page_a
+        clc
+        lda AUX_COLOR_PTR+1
+        adc #$20
+        sta AUX_COLOR_PTR+1
+        ldy #39
+        lda #$80
+@page_b:
+        sta (AUX_COLOR_PTR),y
+        dey
+        bpl @page_b
+        stz RAMWRTOFF
         rts
 
 ; Clear AUX $2000-$5FFF while executing entirely without the cc65 software
