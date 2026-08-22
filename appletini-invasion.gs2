@@ -1,0 +1,14 @@
+gs2_version = 1
+id = "e4fd99f4-1325-46d8-a1cf-13ab31e6d002"
+name = "Appletini Invasion"
+description = "Enhanced Apple //e, Appletini, 8MB RamWorks, Mockingboard"
+platform = "apple2e_enhanced"
+scanner = "apple2e"
+
+[[cards]]
+slot = 4
+card = "mockingboard"
+
+[[cards]]
+slot = 7
+card = "appletini"
