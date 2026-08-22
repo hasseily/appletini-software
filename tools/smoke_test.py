@@ -21,7 +21,20 @@ CLIENT_SRC = ROOT / "clients/python/src"
 SDL_SCANCODE_F9 = 66
 SDL_SCANCODE_SPACE = 44
 MAILBOX_ADDRESS = 0x0300
-MAILBOX_SIZE = 20
+MAILBOX_SIZE = 34
+PARALLAX_HEIGHT = 316
+MB_FAR_PHASE = 20
+MB_MID_PHASE = 22
+MB_NEAR_PHASE = 24
+MB_MUSIC_STEP = 26
+MB_MUSIC_LOOPS = 27
+MB_MUSIC_TICK = 28
+MB_AY_MIXER = 29
+MB_EFFECT_KIND = 30
+MB_LEAD_NOTE = 31
+MB_BASS_NOTE = 32
+MB_MUSIC_EVENTS = 33
+PARALLAX_ANCHORS = ((4, 0), (5, 0), (30, 1), (43, 2))
 
 sys.path.insert(0, str(CLIENT_SRC))
 
@@ -39,6 +52,18 @@ def fail(message: str) -> None:
 
 def frame_number(mailbox: bytes) -> int:
     return mailbox[6] | (mailbox[7] << 8)
+
+
+def mailbox_word(mailbox: bytes, offset: int) -> int:
+    return mailbox[offset] | (mailbox[offset + 1] << 8)
+
+
+def parallax_phases(mailbox: bytes) -> tuple[int, int, int]:
+    return (
+        mailbox_word(mailbox, MB_FAR_PHASE),
+        mailbox_word(mailbox, MB_MID_PHASE),
+        mailbox_word(mailbox, MB_NEAR_PHASE),
+    )
 
 
 def hgr_address(y: int, page: int = 0x2000) -> int:
@@ -88,6 +113,79 @@ def matching_memory(client: Client, address: int, wanted: bytes) -> bytes | None
     return value if value == wanted else None
 
 
+def capture_committed_dhgri(client: Client) -> tuple[bytes, dict[str, bytes]]:
+    wanted_marker = bytes((0xC1, 0xB2, 0xCC, 0xE9, 0x01))
+    for _ in range(30):
+        captured: tuple[bytes, dict[str, bytes]] | None = None
+        client.pause()
+        try:
+            if client.read_mem(MEM_MAIN_RAW, 0x4078, 5) == wanted_marker:
+                mailbox = read_mailbox(client)
+                planes = {
+                    "main page 1": client.read_mem(MEM_MAIN_RAW, 0x02000, 0x2000),
+                    "aux page 1": client.read_mem(MEM_MAIN_RAW, 0x12000, 0x2000),
+                    "main page 2": client.read_mem(MEM_MAIN_RAW, 0x04000, 0x2000),
+                    "aux page 2": client.read_mem(MEM_MAIN_RAW, 0x14000, 0x2000),
+                }
+                if client.read_mem(MEM_MAIN_RAW, 0x4078, 5) == wanted_marker:
+                    captured = mailbox, planes
+        finally:
+            client.continue_()
+        if captured is not None:
+            return captured
+        time.sleep(0.02)
+    fail("could not pause on a committed A2Li DHGRi frame")
+
+
+def star_geometry(index: int) -> tuple[int, int, int]:
+    half_x = (index * 37 + 13) % 80
+    if index < 24:
+        mask = 1 << ((index * 5 + 1) % 7)
+        span = 1
+    elif index < 40:
+        mask = 3 << ((index * 5 + 2) % 6)
+        span = 1
+    else:
+        mask = 7 << ((index * 3 + 1) % 5)
+        span = 1
+    return half_x, mask, span
+
+
+def star_head(index: int, phase: int) -> int:
+    seed = 2 * ((index * 83 + 29) % (PARALLAX_HEIGHT // 2))
+    seed += (index ^ (index >> 1)) & 1
+    return (seed + phase) % PARALLAX_HEIGHT
+
+
+def assert_anchor(planes: dict[str, bytes], index: int, phase: int) -> None:
+    half_x, mask, span = star_geometry(index)
+    woven_y = star_head(index, phase)
+    for _ in range(span):
+        page_number = 1 if (woven_y & 1) == 0 else 2
+        page = 0x2000 if page_number == 1 else 0x4000
+        plane = "aux" if (half_x & 1) == 0 else "main"
+        offset = hgr_address(20 + (woven_y >> 1), page) - page + (half_x >> 1)
+        value = planes[f"{plane} page {page_number}"][offset]
+        if value & mask != mask:
+            fail(
+                f"parallax anchor {index} missing at woven row {woven_y}: "
+                f"{plane} page {page_number} byte=${value:02X} mask=${mask:02X}"
+            )
+        woven_y = (woven_y - 1) % PARALLAX_HEIGHT
+
+
+def assert_old_anchor_erased(planes: dict[str, bytes], index: int, old_phase: int) -> None:
+    half_x, mask, _ = star_geometry(index)
+    woven_y = star_head(index, old_phase)
+    page_number = 1 if (woven_y & 1) == 0 else 2
+    page = 0x2000 if page_number == 1 else 0x4000
+    plane = "aux" if (half_x & 1) == 0 else "main"
+    offset = hgr_address(20 + (woven_y >> 1), page) - page + (half_x >> 1)
+    value = planes[f"{plane} page {page_number}"][offset]
+    if value & mask:
+        fail(f"parallax anchor {index} left pixels behind at woven row {woven_y}")
+
+
 def exercise(client: Client, timeout: float) -> dict[str, object]:
     status = client.get_status()
     if status.platform_id != PLATFORM_APPLE_IIE_ENHANCED:
@@ -109,27 +207,98 @@ def exercise(client: Client, timeout: float) -> dict[str, object]:
         "video mode": (mailbox[4], 1),
         "RamWorks banks": (mailbox[5], 128),
         "reported speed": (mailbox[12], 14),
-        "audio feature flags": (mailbox[13], 3),
+        "audio feature flags": (mailbox[13], 7),
         "game state": (mailbox[15], 1),
     }
     for label, (actual, wanted) in expected.items():
         if actual != wanted:
             fail(f"{label} is {actual}, expected {wanted}; mailbox={mailbox.hex()}")
 
+    first_visual_box, first_planes = capture_committed_dhgri(client)
+    first_phases = parallax_phases(first_visual_box)
+    for index, layer in PARALLAX_ANCHORS:
+        assert_anchor(first_planes, index, first_phases[layer])
+
     speech_values: set[int] = set()
     speech_completions = 0
+    music_steps: set[int] = {mailbox[MB_MUSIC_STEP]}
+    lead_notes: set[int] = {mailbox[MB_LEAD_NOTE]}
+    bass_notes: set[int] = {mailbox[MB_BASS_NOTE]}
+    mixer_values: set[int] = {mailbox[MB_AY_MIXER]}
+    first_music_loop = mailbox[MB_MUSIC_LOOPS]
     speech_deadline = time.monotonic() + 0.8
     while time.monotonic() < speech_deadline:
         speech_box = read_mailbox(client)
         speech_values.add(speech_box[14])
         speech_completions = max(speech_completions, speech_box[18])
+        music_steps.add(speech_box[MB_MUSIC_STEP])
+        lead_notes.add(speech_box[MB_LEAD_NOTE])
+        bass_notes.add(speech_box[MB_BASS_NOTE])
+        mixer_values.add(speech_box[MB_AY_MIXER])
         time.sleep(0.02)
     if not any(value not in (0x00, 0xFF) for value in speech_values):
         fail(f"SSI-263 speech scheduler did not publish a phoneme: {speech_values}")
     if speech_completions == 0:
         fail("SSI-263 did not deliver a VIA CA1 phoneme-completion event")
+    if len(music_steps) < 2 or len(lead_notes) < 2:
+        fail(
+            "continuous AY score did not advance while speech played: "
+            f"steps={music_steps} lead={lead_notes} bass={bass_notes}"
+        )
+    if any(value == 0x3F or value & 0x03 for value in mixer_values):
+        fail(f"music channels A/B were disabled during speech: mixers={mixer_values}")
 
-    # Reset to a deterministic formation before exercising lowercase controls.
+    wait_for(
+        lambda: matching_mailbox(
+            client,
+            lambda m: ((mailbox_word(m, MB_FAR_PHASE) - first_phases[0])
+                       % PARALLAX_HEIGHT) >= 8,
+        ),
+        2.0,
+        "eight committed far-layer parallax steps",
+    )
+    second_visual_box, second_planes = capture_committed_dhgri(client)
+    second_phases = parallax_phases(second_visual_box)
+    phase_deltas = tuple(
+        (new - old) % PARALLAX_HEIGHT
+        for old, new in zip(first_phases, second_phases)
+    )
+    if not phase_deltas[0] or phase_deltas[1] != (phase_deltas[0] * 2) % PARALLAX_HEIGHT \
+            or phase_deltas[2] != (phase_deltas[0] * 4) % PARALLAX_HEIGHT:
+        fail(f"parallax layers did not retain 1:2:4 motion: {phase_deltas}")
+    for index, layer in PARALLAX_ANCHORS:
+        assert_old_anchor_erased(second_planes, index, first_phases[layer])
+        assert_anchor(second_planes, index, second_phases[layer])
+
+    music_loop_box: bytes | None = None
+    music_deadline = time.monotonic() + 8.0
+    while time.monotonic() < music_deadline:
+        music_box = read_mailbox(client)
+        music_steps.add(music_box[MB_MUSIC_STEP])
+        lead_notes.add(music_box[MB_LEAD_NOTE])
+        bass_notes.add(music_box[MB_BASS_NOTE])
+        mixer_values.add(music_box[MB_AY_MIXER])
+        if music_box[MB_MUSIC_LOOPS] != first_music_loop \
+                and len(music_steps) >= 8 and len(bass_notes) >= 4:
+            music_loop_box = music_box
+            break
+        time.sleep(0.02)
+    if music_loop_box is None:
+        fail(
+            "continuous score did not complete a varied loop: "
+            f"steps={music_steps} lead={lead_notes} bass={bass_notes}"
+        )
+    if any(value == 0x3F or value & 0x03 for value in mixer_values):
+        fail(f"music channels A/B were disabled during the loop: mixers={mixer_values}")
+
+    # Make reset observable: perturb player state first, then require R to put
+    # it back. The other public values already match a fresh game at boot.
+    client.type_text("d", delay_s=0, hold_s=0.04)
+    wait_for(
+        lambda: matching_mailbox(client, lambda m: m[11] > 20),
+        2.0,
+        "pre-reset player movement",
+    )
     client.type_text("r", delay_s=0, hold_s=0.04)
     reset_box = wait_for(
         lambda: matching_mailbox(
@@ -163,8 +332,20 @@ def exercise(client: Client, timeout: float) -> dict[str, object]:
 
     # One KEYEVENT down with no host repeat events must sustain autofire via
     # the Apple //e AKD level until the corresponding key-up.
+    music_events_before_hold = tap_box[MB_MUSIC_EVENTS]
     client.key_down(SDL_SCANCODE_SPACE)
     try:
+        held_music_box = wait_for(
+            lambda: matching_mailbox(
+                client,
+                lambda m: m[MB_EFFECT_KIND] == 1
+                          and ((m[MB_MUSIC_EVENTS] - music_events_before_hold) & 0xFF) >= 1
+                          and (m[MB_AY_MIXER] & 0x03) == 0,
+            ),
+            1.5,
+            "music advancement during held-fire effects",
+        )
+        assert isinstance(held_music_box, bytes)
         bullet_box = wait_for(
             lambda: matching_mailbox(client, lambda m: m[16] >= 3 and m[19] >= 3),
             2.0,
@@ -178,6 +359,8 @@ def exercise(client: Client, timeout: float) -> dict[str, object]:
     if released_box[19] != bullet_box[19]:
         fail(f"held-space autofire continued after key-up: "
              f"{bullet_box[19]} -> {released_box[19]} shots")
+    if released_box[MB_AY_MIXER] == 0x3F or released_box[MB_AY_MIXER] & 0x03:
+        fail(f"music did not survive effect release: mixer=${released_box[MB_AY_MIXER]:02X}")
 
     replay_at_start = bullet_box[17]
     replay_box = wait_for(
@@ -197,12 +380,7 @@ def exercise(client: Client, timeout: float) -> dict[str, object]:
     )
     assert isinstance(marker, bytes)
 
-    planes = {
-        "main page 1": client.read_mem(MEM_MAIN_RAW, 0x02000, 0x2000),
-        "aux page 1": client.read_mem(MEM_MAIN_RAW, 0x12000, 0x2000),
-        "main page 2": client.read_mem(MEM_MAIN_RAW, 0x04000, 0x2000),
-        "aux page 2": client.read_mem(MEM_MAIN_RAW, 0x14000, 0x2000),
-    }
+    final_visual_box, planes = capture_committed_dhgri(client)
     # Video-7 MIX selector bits are metadata, not pixels. Count only the low
     # seven DHGR data bits so a selector-only background cannot satisfy the
     # plane-density check.
@@ -279,6 +457,11 @@ def exercise(client: Client, timeout: float) -> dict[str, object]:
         "shots_fired": bullet_box[19],
         "speech": sorted(speech_values),
         "speech_completions": speech_completions,
+        "parallax_phases": parallax_phases(final_visual_box),
+        "parallax_deltas": phase_deltas,
+        "music_steps": sorted(music_steps),
+        "music_loop": music_loop_box[MB_MUSIC_LOOPS],
+        "mixer_values": sorted(mixer_values),
         "replay_banks": (replay_at_start, replay_box[17]),
         "nonzero": nonzero,
         "field_differences": field_differences,
@@ -340,6 +523,10 @@ def main() -> int:
               f"shots_fired={result['shots_fired']}")
         print(f"  speech={result['speech']} completions={result['speech_completions']} "
               f"replay_banks={result['replay_banks']}")
+        print(f"  parallax phases={result['parallax_phases']} "
+              f"sample deltas={result['parallax_deltas']}")
+        print(f"  music steps={result['music_steps']} loop={result['music_loop']} "
+              f"mixers={result['mixer_values']}")
         print(f"  DHGRi nonzero bytes={result['nonzero']}")
         print(f"  DHGRi field differences={result['field_differences']}")
         passed = True

@@ -8,12 +8,16 @@ Appletini accelerated mode. It is intentionally built as a hardware showcase:
 - woven DHGRi using both DHGR page pairs and the `A2Li` mode-1 marker;
 - Video-7 MIX/COL140M selection for crisp monochrome HUD/title text while
   preserving the playfield's DHGR color;
+- a 48-particle, three-depth vertical parallax starfield moving at 1x/2x/4x
+  speed in true 384-line woven coordinates;
 - tear-free 30 Hz A2Li game/screen transactions with a quiet settling frame
   for physical Appletini, while speech, sound, and replay capture stay 60 Hz;
 - an eight-projectile pool with Apple //e AKD-driven hold-to-fire autofire;
-- Mockingboard AY-3-8910 fire and explosion effects in slot 4, using the
-  high-half VIA and its no-handshake Port A alias so mirrored SSI writes
-  cannot disturb the AY bus or clear speech-completion CA1;
+- an original, continuously looping two-voice Mockingboard AY-3-8910 score,
+  with fire and explosion effects isolated on the third channel;
+- all AY music and effects use slot 4's high-half VIA and its no-handshake
+  Port A alias, so mirrored SSI writes cannot disturb the AY bus or clear
+  speech-completion CA1;
 - Mockingboard SSI-263 phoneme speech, behind a small scheduler that can later
   be replaced by a Phasor-native transport;
 - all 128 RamWorks banks discovered at startup, with banks 1-127 used as a

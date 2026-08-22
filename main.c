@@ -1,7 +1,8 @@
 /*
  * Appletini Invasion -- an original fixed-shooter showcase for an enhanced
  * Apple //e with Appletini acceleration, DHGR interlace, 8 MB RamWorks,
- * Mockingboard AY effects, and SSI-263 speech.
+ * vertical parallax, continuous Mockingboard AY music/effects, and SSI-263
+ * speech.
  */
 
 typedef unsigned char u8;
@@ -51,11 +52,21 @@ typedef unsigned int u16;
 #define VIDEO_ROWS 192
 #define PLAYFIELD_TOP 20
 #define PLAYFIELD_BOTTOM 180
+#define PARALLAX_BOTTOM 178
+#define PARALLAX_HEIGHT ((PARALLAX_BOTTOM - PLAYFIELD_TOP) * 2)
 #define VIDEO7_COLOR 0x80
 #define FIELD_BYTES 4
 #define ENEMY_COUNT 24
 #define PLAYER_BULLET_COUNT 8
 #define AUTOFIRE_DELAY 5
+#define FAR_STAR_COUNT 24
+#define MID_STAR_COUNT 16
+#define NEAR_STAR_COUNT 8
+#define STAR_COUNT (FAR_STAR_COUNT + MID_STAR_COUNT + NEAR_STAR_COUNT)
+#define MID_STAR_FIRST FAR_STAR_COUNT
+#define NEAR_STAR_FIRST (FAR_STAR_COUNT + MID_STAR_COUNT)
+#define MUSIC_STEP_COUNT 32
+#define MUSIC_STEP_FRAMES 6
 
 #define KEY_LEFT   0x08
 #define KEY_RIGHT  0x15
@@ -84,6 +95,20 @@ struct DebugMailbox {
     u8 replay_bank;
     u8 speech_completions;
     u8 shots_fired;
+    u8 far_phase_lo;
+    u8 far_phase_hi;
+    u8 mid_phase_lo;
+    u8 mid_phase_hi;
+    u8 near_phase_lo;
+    u8 near_phase_hi;
+    u8 music_step;
+    u8 music_loops;
+    u8 music_tick;
+    u8 ay_mixer;
+    u8 effect_kind;
+    u8 lead_note;
+    u8 bass_note;
+    u8 music_events;
 };
 
 #define MAILBOX ((volatile struct DebugMailbox*)0x0300)
@@ -117,6 +142,26 @@ static u8 sfx_timer;
 static u8 sfx_kind;
 static u8 replay_bank;
 static u8 replay_slot;
+
+struct ParallaxStar {
+    u16 woven_y;
+    u8 half_x;
+    u8 mask;
+};
+
+static struct ParallaxStar parallax_stars[STAR_COUNT];
+static u16 far_phase;
+static u16 mid_phase;
+static u16 near_phase;
+
+static u8 ay_shadow[11];
+static u8 ay_mixer_shadow;
+static u8 music_step;
+static u8 music_subtick;
+static u8 music_loops;
+static u8 music_events;
+static u8 music_lead_note;
+static u8 music_bass_note;
 
 static const u8* speech_phrase;
 static u8 speech_index;
@@ -198,6 +243,27 @@ static const u8 phrase_boot[] = {
 };
 static const u8 phrase_wave[] = {0x23,0x05,0x33,0x00,0x29,0x20,0x01,0x1C,0xFF};
 static const u8 phrase_over[] = {0x29,0x05,0x37,0x00,0x11,0x33,0x1C,0xFF};
+
+/* AY periods for E2 through B5 at the Mockingboard's nominal 1.0227 MHz
+ * clock. Entry zero is a rest. The score below is an original 32-step loop. */
+static const u8 note_period_lo[] = {
+    0x00, 0x08,0xDC,0x8C,0x45,0x06,0xE9,0xB3,0x84,
+    0x6E,0x46,0x23,0x03,0xF4,0xDA,0xC2,0xB7,0xA3,
+    0x91,0x81,0x7A,0x6D,0x61,0x5C,0x52,0x49,0x41
+};
+static const u8 note_period_hi[] = {
+    0x00, 0x03,0x02,0x02,0x02,0x02,0x01,0x01,0x01,
+    0x01,0x01,0x01,0x01,0x00,0x00,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+};
+static const u8 music_lead[MUSIC_STEP_COUNT] = {
+    18,20,22,20, 18,20,23,20, 17,20,22,20, 19,21,24,21,
+    18,20,22,25, 24,22,21,20, 19,21,24,26, 25,24,22,20
+};
+static const u8 music_bass[MUSIC_STEP_COUNT] = {
+     4, 4, 8, 8,  2, 2, 6, 6,  6, 6,10,10,  3, 3, 7, 7,
+     4, 4, 8, 8,  2, 4, 6, 8,  3, 5, 7,10,  1, 5, 8,12
+};
 
 static void wait_vbl(void)
 {
@@ -362,32 +428,6 @@ static void video_text(u8 half_x, u8 y, const char* text)
     REG8(RAMWRTOFF) = 0;
 }
 
-static void video_starfield(void)
-{
-    u16 lfsr;
-    u8 count;
-    u8 y;
-    u8 x;
-    u8 bit;
-    u16 address;
-    u8 aux;
-    lfsr = 0xA13D;
-    for (count = 0; count < 110; ++count) {
-        lfsr = (u16)((lfsr >> 1) ^ ((0 - (lfsr & 1)) & 0xB400));
-        y = (u8)(20 + (lfsr & 0x7F));
-        if (y > 155) y = (u8)(y - 80);
-        x = (u8)((lfsr >> 8) % 40);
-        bit = (u8)(1 << (lfsr % 7));
-        aux = (u8)(lfsr & 1);
-        address = hgr_line[y] + x;
-        /* A single physical star occupies one interlace field, giving the
-         * woven 384-line image real vertical detail instead of duplication. */
-        if (lfsr & 0x20) video_plane_write(address, (u8)(bit | VIDEO7_COLOR), aux);
-        else video_plane_write(address + 0x2000, (u8)(bit | VIDEO7_COLOR), aux);
-    }
-    REG8(RAMWRTOFF) = 0;
-}
-
 static void video_border(void)
 {
     u8 x;
@@ -412,6 +452,81 @@ static void video_xor_byte(u16 address, u8 value, u8 aux)
     REG8(RAMWRTOFF) = 0;
     p = (volatile u8*)address;
     *p = (u8)((*p ^ (value & 0x7F)) | VIDEO7_COLOR);
+}
+
+static void parallax_init(void)
+{
+    struct ParallaxStar* star;
+    u8 i;
+    u8 shift;
+    for (i = 0; i < STAR_COUNT; ++i) {
+        star = &parallax_stars[i];
+        /* Spread rows with a coprime permutation, then use a Gray-code bit
+         * for field parity. This avoids correlating page A/B with AUX/MAIN
+         * and keeps all four DHGRi planes equally populated. */
+        star->woven_y = (u16)(2 * (((u16)i * 83 + 29)
+                                 % (PARALLAX_HEIGHT / 2))
+                              + ((i ^ (i >> 1)) & 1));
+        /* The first 48 values of this permutation occupy distinct DHGR half
+         * bytes, keeping every particle independently reversible with XOR. */
+        star->half_x = (u8)(((u16)i * 37 + 13) % 80);
+        if (i < MID_STAR_FIRST) {
+            shift = (u8)(((u16)i * 5 + 1) % 7);
+            star->mask = (u8)(1 << shift);
+        } else if (i < NEAR_STAR_FIRST) {
+            shift = (u8)(((u16)i * 5 + 2) % 6);
+            star->mask = (u8)(3 << shift);
+        } else {
+            shift = (u8)(((u16)i * 3 + 1) % 5);
+            star->mask = (u8)(7 << shift);
+        }
+    }
+    far_phase = 0;
+    mid_phase = 0;
+    near_phase = 0;
+}
+
+static void parallax_xor_layer(u8 first, u8 count, u16 phase)
+{
+    const struct ParallaxStar* star;
+    volatile u8* p;
+    u16 address;
+    u16 woven_y;
+    u8 i;
+    u8 row;
+    for (i = first; i < (u8)(first + count); ++i) {
+        star = &parallax_stars[i];
+        woven_y = star->woven_y + phase;
+        while (woven_y >= PARALLAX_HEIGHT) woven_y -= PARALLAX_HEIGHT;
+        row = (u8)(PLAYFIELD_TOP + (woven_y >> 1));
+        address = hgr_line[row] + (star->half_x >> 1);
+        if (woven_y & 1) address += 0x2000;
+        if ((star->half_x & 1) == 0) {
+            aux_xor_byte(address, star->mask);
+        } else {
+            REG8(RAMWRTOFF) = 0;
+            p = (volatile u8*)address;
+            *p = (u8)((*p ^ star->mask) | VIDEO7_COLOR);
+        }
+    }
+}
+
+static void parallax_xor(void)
+{
+    parallax_xor_layer(0, FAR_STAR_COUNT, far_phase);
+    parallax_xor_layer(MID_STAR_FIRST, MID_STAR_COUNT, mid_phase);
+    parallax_xor_layer(NEAR_STAR_FIRST, NEAR_STAR_COUNT, near_phase);
+    REG8(RAMWRTOFF) = 0;
+}
+
+static void parallax_step(void)
+{
+    ++far_phase;
+    mid_phase += 2;
+    near_phase += 4;
+    if (far_phase >= PARALLAX_HEIGHT) far_phase -= PARALLAX_HEIGHT;
+    if (mid_phase >= PARALLAX_HEIGHT) mid_phase -= PARALLAX_HEIGHT;
+    if (near_phase >= PARALLAX_HEIGHT) near_phase -= PARALLAX_HEIGHT;
 }
 
 static void video_sprite(u8 x, u8 y, const u8* sprite, u8 height)
@@ -439,8 +554,75 @@ static void ay_write(u8 reg, u8 value)
     REG8(VIA_ORB) = 4;
 }
 
+static void ay_write_cached(u8 reg, u8 value)
+{
+    if (ay_shadow[reg] == value) return;
+    ay_shadow[reg] = value;
+    ay_write(reg, value);
+}
+
+static void ay_note(u8 channel, u8 note, u8 volume)
+{
+    u8 reg;
+    reg = (u8)(channel << 1);
+    if (!note) {
+        ay_write_cached((u8)(8 + channel), 0);
+        return;
+    }
+    ay_write_cached(reg, note_period_lo[note]);
+    ay_write_cached((u8)(reg + 1), note_period_hi[note]);
+    ay_write_cached((u8)(8 + channel), volume);
+}
+
+static void music_begin(void)
+{
+    music_step = 0;
+    music_subtick = 0;
+    music_loops = 0;
+    music_events = 1;
+    music_lead_note = music_lead[0];
+    music_bass_note = music_bass[0];
+}
+
+static void audio_render(void)
+{
+    u8 lead_volume;
+    u8 bass_volume;
+    u8 mixer;
+
+    /* The lead gates briefly at the end of each tracker row. Speech ducks
+     * both voices but never pauses the score. */
+    lead_volume = (u8)(speech_active ? 7 : 10);
+    bass_volume = (u8)(speech_active ? 5 : 7);
+    if (music_subtick == MUSIC_STEP_FRAMES - 1) lead_volume = 0;
+    ay_note(0, music_lead_note, lead_volume);
+    ay_note(1, music_bass_note, bass_volume);
+
+    /* A and B are permanently owned by music. Channel C belongs to effects,
+     * so autofire and explosions cannot interrupt either musical voice. */
+    mixer = 0x3C;
+    if (sfx_timer && sfx_kind == 1) {
+        ay_write_cached(4, (u8)(0x38 + ((7 - sfx_timer) << 3)));
+        ay_write_cached(5, 0);
+        ay_write_cached(10, (u8)(sfx_timer + 8));
+        mixer = 0x38;
+    } else if (sfx_timer && sfx_kind == 2) {
+        ay_write_cached(6, (u8)(3 + (12 - sfx_timer)));
+        ay_write_cached(10, (u8)(sfx_timer + 2));
+        mixer = 0x1C;
+    } else {
+        ay_write_cached(4, 0);
+        ay_write_cached(5, 0);
+        ay_write_cached(6, 0);
+        ay_write_cached(10, 0);
+    }
+    ay_write_cached(7, mixer);
+    ay_mixer_shadow = mixer;
+}
+
 static void audio_init(void)
 {
+    u8 reg;
     /* Poll CA1 completions without enabling 6502 IRQs; ProDOS is not allowed
      * to leave this private game VIA in an incompatible state. */
     REG8(VIA_IER) = 0x7F;
@@ -459,48 +641,48 @@ static void audio_init(void)
     REG8(VIA_DDRB) = 0x07;
     REG8(VIA_ORB) = 0;
     REG8(VIA_ORB) = 4;
-    ay_write(7, 0x3F);
-    ay_write(8, 0);
-    ay_write(9, 0);
-    ay_write(10, 0);
-
+    for (reg = 0; reg < 11; ++reg) ay_shadow[reg] = 0xFF;
+    ay_write_cached(7, 0x3F);
+    ay_write_cached(8, 0);
+    ay_write_cached(9, 0);
+    ay_write_cached(10, 0);
+    sfx_kind = 0;
+    sfx_timer = 0;
+    music_begin();
+    audio_render();
 }
 
 static void sfx_fire(void)
 {
-    ay_write(0, 0x38);
-    ay_write(1, 0);
-    ay_write(7, 0x3E);
-    ay_write(8, 15);
+    /* An explosion owns the effects channel until its noise tail finishes. */
+    if (sfx_kind == 2 && sfx_timer) return;
     sfx_kind = 1;
     sfx_timer = 7;
 }
 
 static void sfx_explosion(void)
 {
-    ay_write(6, 3);
-    ay_write(7, 0x2F);
-    ay_write(9, 15);
     sfx_kind = 2;
     sfx_timer = 12;
 }
 
 static void audio_tick(void)
 {
-    if (!sfx_timer) return;
-    --sfx_timer;
-    if (sfx_kind == 1) {
-        ay_write(0, (u8)(0x38 + ((7 - sfx_timer) << 3)));
-        ay_write(8, (u8)(sfx_timer + 5));
-    } else {
-        ay_write(6, (u8)(3 + (12 - sfx_timer)));
-        ay_write(9, (u8)(sfx_timer + 2));
+    if (!sfx_timer) sfx_kind = 0;
+    ++music_subtick;
+    if (music_subtick == MUSIC_STEP_FRAMES) {
+        music_subtick = 0;
+        ++music_step;
+        ++music_events;
+        if (music_step == MUSIC_STEP_COUNT) {
+            music_step = 0;
+            ++music_loops;
+        }
+        music_lead_note = music_lead[music_step];
+        music_bass_note = music_bass[music_step];
     }
-    if (!sfx_timer) {
-        ay_write(8, 0);
-        ay_write(9, 0);
-        ay_write(7, 0x3F);
-    }
+    audio_render();
+    if (sfx_timer) --sfx_timer;
 }
 
 static void speech_start(const u8* phrase)
@@ -866,18 +1048,54 @@ static void game_tick(void)
 
 static void mailbox_init(u8 banks)
 {
-    MAILBOX->magic[0] = 'A';
+    MAILBOX->magic[0] = 0;
+    MAILBOX->video_mode = 1;
+    MAILBOX->banks = banks;
+    MAILBOX->frame_lo = frame_lo;
+    MAILBOX->frame_hi = frame_hi;
+    MAILBOX->score = score;
+    MAILBOX->lives = lives;
+    MAILBOX->enemies = enemies_left;
+    MAILBOX->player_x = player_x;
+    MAILBOX->mhz = 14;
+    MAILBOX->audio_flags = 7;
+    MAILBOX->speech_phoneme = 0;
+    MAILBOX->game_state = 1;
+    MAILBOX->player_bullets = 0;
+    MAILBOX->replay_bank = replay_bank;
+    MAILBOX->speech_completions = 0;
+    MAILBOX->shots_fired = 0;
+    MAILBOX->far_phase_lo = 0;
+    MAILBOX->far_phase_hi = 0;
+    MAILBOX->mid_phase_lo = 0;
+    MAILBOX->mid_phase_hi = 0;
+    MAILBOX->near_phase_lo = 0;
+    MAILBOX->near_phase_hi = 0;
+    MAILBOX->music_step = music_step;
+    MAILBOX->music_loops = music_loops;
+    MAILBOX->music_tick = music_subtick;
+    MAILBOX->ay_mixer = ay_mixer_shadow;
+    MAILBOX->effect_kind = sfx_kind;
+    MAILBOX->lead_note = music_lead_note;
+    MAILBOX->bass_note = music_bass_note;
+    MAILBOX->music_events = music_events;
+    /* Publish the handshake only after every payload byte is initialized. */
     MAILBOX->magic[1] = '1';
     MAILBOX->magic[2] = '3';
     MAILBOX->magic[3] = 'I';
-    MAILBOX->video_mode = 1;
-    MAILBOX->banks = banks;
-    MAILBOX->mhz = 14;
-    MAILBOX->audio_flags = 3;
-    MAILBOX->game_state = 1;
-    MAILBOX->player_bullets = 0;
-    MAILBOX->speech_completions = 0;
-    MAILBOX->shots_fired = 0;
+    MAILBOX->magic[0] = 'A';
+}
+
+static void mailbox_parallax_tick(void)
+{
+    /* Publish while A2Li is still held at $FF. Once marker $01 is visible,
+     * a paused debugger is guaranteed to see phases matching that weave. */
+    MAILBOX->far_phase_lo = (u8)far_phase;
+    MAILBOX->far_phase_hi = (u8)(far_phase >> 8);
+    MAILBOX->mid_phase_lo = (u8)mid_phase;
+    MAILBOX->mid_phase_hi = (u8)(mid_phase >> 8);
+    MAILBOX->near_phase_lo = (u8)near_phase;
+    MAILBOX->near_phase_hi = (u8)(near_phase >> 8);
 }
 
 static void mailbox_tick(void)
@@ -890,6 +1108,15 @@ static void mailbox_tick(void)
     MAILBOX->player_x = player_x;
     MAILBOX->player_bullets = player_bullet_count();
     MAILBOX->shots_fired = shots_fired;
+    mailbox_parallax_tick();
+    MAILBOX->music_step = music_step;
+    MAILBOX->music_loops = music_loops;
+    MAILBOX->music_tick = music_subtick;
+    MAILBOX->ay_mixer = ay_mixer_shadow;
+    MAILBOX->effect_kind = sfx_kind;
+    MAILBOX->lead_note = music_lead_note;
+    MAILBOX->bass_note = music_bass_note;
+    MAILBOX->music_events = music_events;
 }
 
 int main(void)
@@ -903,12 +1130,12 @@ int main(void)
     video_select();
     video_clear();
     video_color_playfield();
+    parallax_init();
     video_begin_dhgri();
-    video_starfield();
+    parallax_xor();
     video_border();
     video_text(24, 10, "APPLETINI INVASION");
     video_text(3, 181, "65C02 14.3MHZ  DHGRI  8MB RAMWORKS");
-    video_commit_dhgri();
     audio_init();
     game_reset();
     replay_bank = 1;
@@ -918,6 +1145,8 @@ int main(void)
     mailbox_init(banks);
     draw_hud();
     draw_dynamic();
+    mailbox_parallax_tick();
+    video_commit_dhgri();
     speech_start(phrase_boot);
 
     for (;;) {
@@ -928,9 +1157,13 @@ int main(void)
         if ((frame_lo & 1) == 0) {
             video_begin_dhgri();
             draw_dynamic();
+            parallax_xor();
+            parallax_step();
+            parallax_xor();
             game_tick();
             if (hud_dirty) draw_hud();
             draw_dynamic();
+            mailbox_parallax_tick();
             video_commit_dhgri();
         }
         audio_tick();
