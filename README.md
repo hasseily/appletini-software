@@ -8,6 +8,7 @@ Appletini accelerated mode. It is intentionally built as a hardware showcase:
 - woven DHGRi using both DHGR page pairs and the `A2Li` mode-1 marker;
 - tear-free 30 Hz A2Li game/screen transactions with a quiet settling frame
   for physical Appletini, while speech, sound, and replay capture stay 60 Hz;
+- an eight-projectile pool with Apple //e AKD-driven hold-to-fire autofire;
 - Mockingboard AY-3-8910 fire and explosion effects in slot 4, using the
   high-half VIA and its no-handshake Port A alias so mirrored SSI writes
   cannot disturb the AY bus or clear speech-completion CA1;
@@ -50,7 +51,7 @@ Controls:
 
 - Left/Right, `A`/`D`, or `J`/`L`: set movement direction
 - `S`: stop
-- Space: fire
+- Space: fire; hold for continuous autofire
 - `R`: restart
 
 The fixed debug mailbox at `$0300` begins with `A13I`; the automated smoke test

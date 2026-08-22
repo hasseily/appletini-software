@@ -50,6 +50,8 @@ typedef unsigned int u16;
 #define VIDEO_ROWS 192
 #define FIELD_BYTES 4
 #define ENEMY_COUNT 24
+#define PLAYER_BULLET_COUNT 8
+#define AUTOFIRE_DELAY 5
 
 #define KEY_LEFT   0x08
 #define KEY_RIGHT  0x15
@@ -73,9 +75,10 @@ struct DebugMailbox {
     u8 audio_flags;
     u8 speech_phoneme;
     u8 game_state;
-    u8 player_bullet;
+    u8 player_bullets;
     u8 replay_bank;
     u8 speech_completions;
+    u8 shots_fired;
 };
 
 #define MAILBOX ((volatile struct DebugMailbox*)0x0300)
@@ -88,9 +91,13 @@ static u8 enemy_x;
 static u8 enemy_y;
 static u8 enemy_right;
 static u8 enemies_left;
-static u8 player_bullet_active;
-static u8 player_bullet_x;
-static u8 player_bullet_y;
+static u8 player_bullet_active[PLAYER_BULLET_COUNT];
+static u8 player_bullet_x[PLAYER_BULLET_COUNT];
+static u8 player_bullet_y[PLAYER_BULLET_COUNT];
+static u8 fire_held;
+static u8 fire_pending;
+static u8 fire_cooldown;
+static u8 shots_fired;
 static u8 enemy_bullet_active;
 static u8 enemy_bullet_x;
 static u8 enemy_bullet_y;
@@ -523,10 +530,23 @@ static u8 ramworks_init(void)
     return found;
 }
 
+static u8 player_bullet_count(void)
+{
+    u8 bullet;
+    u8 count;
+    count = 0;
+    for (bullet = 0; bullet < PLAYER_BULLET_COUNT; ++bullet) {
+        if (player_bullet_active[bullet]) ++count;
+    }
+    return count;
+}
+
 static void replay_record(void)
 {
+    u8 bullets;
     u8 offset;
     volatile u8* record;
+    bullets = player_bullet_count();
     offset = (u8)(replay_slot << 3);
     record = (volatile u8*)(0x1100 + offset);
     REG8(RAMWORKS) = replay_bank;
@@ -535,7 +555,7 @@ static void replay_record(void)
     record[1] = player_x;
     record[2] = enemy_x;
     record[3] = enemy_y;
-    record[4] = player_bullet_y;
+    record[4] = bullets;
     record[5] = enemy_bullet_y;
     record[6] = enemies_left;
     record[7] = score;
@@ -554,12 +574,12 @@ static void formation_reset(void)
 {
     u8 i;
     for (i = 0; i < ENEMY_COUNT; ++i) enemy_alive[i] = 1;
+    for (i = 0; i < PLAYER_BULLET_COUNT; ++i) player_bullet_active[i] = 0;
     enemies_left = ENEMY_COUNT;
     enemy_x = 7;
     enemy_y = 32;
     enemy_right = 1;
     enemy_bullet_active = 0;
-    player_bullet_active = 0;
     animation = 0;
     hud_dirty = 1;
 }
@@ -570,6 +590,10 @@ static void game_reset(void)
     lives = 3;
     player_x = 20;
     player_velocity = 0;
+    fire_held = 0;
+    fire_pending = 0;
+    fire_cooldown = 0;
+    shots_fired = 0;
     formation_reset();
 }
 
@@ -597,9 +621,14 @@ static void draw_invaders(void)
 
 static void draw_dynamic(void)
 {
+    u8 bullet;
     draw_invaders();
     video_sprite(player_x, 164, sprite_player, 8);
-    if (player_bullet_active) video_sprite(player_bullet_x, player_bullet_y, sprite_shot, 4);
+    for (bullet = 0; bullet < PLAYER_BULLET_COUNT; ++bullet) {
+        if (player_bullet_active[bullet]) {
+            video_sprite(player_bullet_x[bullet], player_bullet_y[bullet], sprite_shot, 4);
+        }
+    }
     if (enemy_bullet_active) video_sprite(enemy_bullet_x, enemy_bullet_y, sprite_bomb, 4);
 }
 
@@ -619,63 +648,106 @@ static void draw_hud(void)
     hud_dirty = 0;
 }
 
+static u8 player_fire(void)
+{
+    u8 bullet;
+    for (bullet = 0; bullet < PLAYER_BULLET_COUNT; ++bullet) {
+        if (!player_bullet_active[bullet]) {
+            player_bullet_active[bullet] = 1;
+            player_bullet_x[bullet] = player_x;
+            player_bullet_y[bullet] = 158;
+            ++shots_fired;
+            sfx_fire();
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void input_tick(void)
 {
     u8 key;
     key = REG8(KBD);
-    if (!(key & 0x80)) return;
-    REG8(KBDSTRB) = 0;
-    key &= 0x7F;
-    if (key == KEY_LEFT || key == 'A' || key == 'a'
-        || key == 'J' || key == 'j') {
-        player_velocity = -1;
-    } else if (key == KEY_RIGHT || key == 'D' || key == 'd'
-               || key == 'L' || key == 'l') {
-        player_velocity = 1;
-    } else if (key == 'S' || key == 's') {
-        player_velocity = 0;
-    } else if (key == KEY_SPACE && !player_bullet_active) {
-        player_bullet_active = 1;
-        player_bullet_x = player_x;
-        player_bullet_y = 158;
-        sfx_fire();
-    } else if (key == 'R' || key == 'r') {
-        game_reset();
+    if (key & 0x80) {
+        REG8(KBDSTRB) = 0;
+        key &= 0x7F;
+        if (key == KEY_SPACE) {
+            /* Queue one shot even if the key was released before this game
+             * tick. C010's //e AKD bit keeps subsequent shots flowing while
+             * Space remains physically held. */
+            if (!fire_held) fire_pending = 1;
+            fire_held = 1;
+        } else {
+            fire_held = 0;
+            if (key == KEY_LEFT || key == 'A' || key == 'a'
+                || key == 'J' || key == 'j') {
+                player_velocity = -1;
+            } else if (key == KEY_RIGHT || key == 'D' || key == 'd'
+                       || key == 'L' || key == 'l') {
+                player_velocity = 1;
+            } else if (key == 'S' || key == 's') {
+                player_velocity = 0;
+            } else if (key == 'R' || key == 'r') {
+                game_reset();
+            }
+        }
+    }
+
+    if (fire_held) {
+        /* On an Apple //e, reading C010 clears the strobe and returns AKD in
+         * bit 7. This gives genuine hold-to-fire without relying on host key
+         * repeat events. */
+        if (!(REG8(KBDSTRB) & 0x80)) {
+            fire_held = 0;
+        }
+    }
+    if (fire_cooldown) {
+        --fire_cooldown;
+    } else if ((fire_held || fire_pending) && player_fire()) {
+        fire_pending = 0;
+        fire_cooldown = AUTOFIRE_DELAY;
     }
 }
 
 static void player_bullet_tick(void)
 {
+    u8 bullet;
     u8 row;
     u8 col;
     u8 index;
     u8 x;
     u8 y;
-    if (!player_bullet_active) return;
-    if (player_bullet_y < 24) {
-        player_bullet_active = 0;
-        return;
-    }
-    player_bullet_y = (u8)(player_bullet_y - 3);
-    index = 0;
-    y = enemy_y;
-    for (row = 0; row < 4; ++row) {
-        x = enemy_x;
-        for (col = 0; col < 6; ++col) {
-            if (enemy_alive[index] && player_bullet_x == x
-                && player_bullet_y >= y && player_bullet_y < y + 9) {
-                enemy_alive[index] = 0;
-                player_bullet_active = 0;
-                --enemies_left;
-                score = (u8)(score + 3 + row);
-                hud_dirty = 1;
-                sfx_explosion();
-                return;
-            }
-            ++index;
-            x = (u8)(x + 5);
+    u8 hit;
+    for (bullet = 0; bullet < PLAYER_BULLET_COUNT; ++bullet) {
+        if (!player_bullet_active[bullet]) continue;
+        if (player_bullet_y[bullet] < 24) {
+            player_bullet_active[bullet] = 0;
+            continue;
         }
-        y = (u8)(y + 15);
+        player_bullet_y[bullet] = (u8)(player_bullet_y[bullet] - 3);
+        index = 0;
+        y = enemy_y;
+        hit = 0;
+        for (row = 0; row < 4 && !hit; ++row) {
+            x = enemy_x;
+            for (col = 0; col < 6; ++col) {
+                if (enemy_alive[index] && player_bullet_x[bullet] == x
+                    && player_bullet_y[bullet] >= y
+                    && player_bullet_y[bullet] < y + 9) {
+                    enemy_alive[index] = 0;
+                    player_bullet_active[bullet] = 0;
+                    --enemies_left;
+                    score = (u8)(score + 3 + row);
+                    hud_dirty = 1;
+                    sfx_explosion();
+                    hit = 1;
+                    break;
+                }
+                ++index;
+                x = (u8)(x + 5);
+            }
+            y = (u8)(y + 15);
+        }
     }
 }
 
@@ -770,7 +842,9 @@ static void mailbox_init(u8 banks)
     MAILBOX->mhz = 14;
     MAILBOX->audio_flags = 3;
     MAILBOX->game_state = 1;
+    MAILBOX->player_bullets = 0;
     MAILBOX->speech_completions = 0;
+    MAILBOX->shots_fired = 0;
 }
 
 static void mailbox_tick(void)
@@ -781,7 +855,8 @@ static void mailbox_tick(void)
     MAILBOX->lives = lives;
     MAILBOX->enemies = enemies_left;
     MAILBOX->player_x = player_x;
-    MAILBOX->player_bullet = player_bullet_active;
+    MAILBOX->player_bullets = player_bullet_count();
+    MAILBOX->shots_fired = shots_fired;
 }
 
 int main(void)

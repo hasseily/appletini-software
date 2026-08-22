@@ -19,8 +19,9 @@ DEFAULT_CONFIG = GAME_DIR / "appletini-invasion.gs2"
 DEFAULT_EMULATOR = ROOT / "build/GSSquared.app/Contents/MacOS/GSSquared"
 CLIENT_SRC = ROOT / "clients/python/src"
 SDL_SCANCODE_F9 = 66
+SDL_SCANCODE_SPACE = 44
 MAILBOX_ADDRESS = 0x0300
-MAILBOX_SIZE = 19
+MAILBOX_SIZE = 20
 
 sys.path.insert(0, str(CLIENT_SRC))
 
@@ -150,13 +151,33 @@ def exercise(client: Client, timeout: float) -> dict[str, object]:
     assert isinstance(moved_box, bytes)
     client.type_text("s", delay_s=0, hold_s=0.04)
 
-    client.type_text(" ", delay_s=0, hold_s=0.04)
-    bullet_box = wait_for(
-        lambda: matching_mailbox(client, lambda m: bool(m[16])),
-        2.0,
-        "player fire input",
+    # A zero-hold tap may be released before the guest's next 30 Hz game tick;
+    # it still must queue one shot from the keyboard strobe.
+    client.tap_key(SDL_SCANCODE_SPACE, hold_s=0)
+    tap_box = wait_for(
+        lambda: matching_mailbox(client, lambda m: m[16] >= 1 and m[19] >= 1),
+        1.0,
+        "one queued bullet from a quick Space tap",
     )
+    assert isinstance(tap_box, bytes)
+
+    # One KEYEVENT down with no host repeat events must sustain autofire via
+    # the Apple //e AKD level until the corresponding key-up.
+    client.key_down(SDL_SCANCODE_SPACE)
+    try:
+        bullet_box = wait_for(
+            lambda: matching_mailbox(client, lambda m: m[16] >= 3 and m[19] >= 3),
+            2.0,
+            "three simultaneous bullets from held-space autofire",
+        )
+    finally:
+        client.key_up(SDL_SCANCODE_SPACE)
     assert isinstance(bullet_box, bytes)
+    time.sleep(0.35)
+    released_box = read_mailbox(client)
+    if released_box[19] != bullet_box[19]:
+        fail(f"held-space autofire continued after key-up: "
+             f"{bullet_box[19]} -> {released_box[19]} shots")
 
     replay_at_start = bullet_box[17]
     replay_box = wait_for(
@@ -215,6 +236,8 @@ def exercise(client: Client, timeout: float) -> dict[str, object]:
         "mailbox": final_box.hex(),
         "frames": (start_frame, frame_number(final_box)),
         "player_x": moved_box[11],
+        "player_bullets": bullet_box[16],
+        "shots_fired": bullet_box[19],
         "speech": sorted(speech_values),
         "speech_completions": speech_completions,
         "replay_banks": (replay_at_start, replay_box[17]),
@@ -273,7 +296,9 @@ def main() -> int:
         result = exercise(client, args.timeout)
         print("PASS Appletini Invasion")
         print(f"  platform={result['platform']} mailbox={result['mailbox']}")
-        print(f"  frames={result['frames']} player_x={result['player_x']}")
+        print(f"  frames={result['frames']} player_x={result['player_x']} "
+              f"simultaneous_bullets={result['player_bullets']} "
+              f"shots_fired={result['shots_fired']}")
         print(f"  speech={result['speech']} completions={result['speech_completions']} "
               f"replay_banks={result['replay_banks']}")
         print(f"  DHGRi nonzero bytes={result['nonzero']}")
