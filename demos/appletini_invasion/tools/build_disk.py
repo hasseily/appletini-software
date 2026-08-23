@@ -10,8 +10,12 @@ import subprocess
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_MASTER = ROOT.parent / "appletini-one/software/ProDOS_2_4_3.po"
+SOFTWARE_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_APPLETINI_ROOT = SOFTWARE_ROOT.parent / "appletini-one"
+APPLETINI_ROOT = Path(
+    os.environ.get("APPLETINI_ROOT", str(DEFAULT_APPLETINI_ROOT))
+).expanduser().resolve()
+DEFAULT_MASTER = APPLETINI_ROOT / "software/ProDOS_2_4_3.po"
 DEFAULT_JAR = (Path.home() /
                "Documents/accurapple/accurapple/speaker/AppleCommander-1.3.5.13-ac.jar")
 A13C_HEADER = struct.Struct("<4sBBBBHHHH")

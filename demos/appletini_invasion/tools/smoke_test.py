@@ -15,11 +15,17 @@ from pathlib import Path
 from typing import Callable
 
 
-ROOT = Path(__file__).resolve().parents[3]
+SOFTWARE_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_GSSQUARED_ROOT = SOFTWARE_ROOT.parent / "gssquared"
+GSSQUARED_ROOT = Path(
+    os.environ.get("GSSQUARED_ROOT", str(DEFAULT_GSSQUARED_ROOT))
+).expanduser().resolve()
 GAME_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = GAME_DIR / "appletini-invasion.gs2"
-DEFAULT_EMULATOR = ROOT / "build/GSSquared.app/Contents/MacOS/GSSquared"
-CLIENT_SRC = ROOT / "clients/python/src"
+DEFAULT_EMULATOR = (
+    GSSQUARED_ROOT / "build/GSSquared.app/Contents/MacOS/GSSquared"
+)
+CLIENT_SRC = GSSQUARED_ROOT / "clients/python/src"
 TOOLS_DIR = GAME_DIR / "tools"
 SDL_SCANCODE_SPACE = 44
 SDL_SCANCODE_RIGHT = 79
@@ -973,11 +979,11 @@ def main() -> int:
 
     config_text = config.read_text()
     if 'card = "diskII"' in config_text or 'card = "diskii"' in config_text:
-        fail("showcase config must not contain a Disk II controller")
+        fail("demo config must not contain a Disk II controller")
     if 'slot = 7\ncard = "appletini"' not in config_text:
-        fail("showcase config must put Appletini in slot 7")
+        fail("demo config must put Appletini in slot 7")
     if 'slot = 4\ncard = "mockingboard"' not in config_text:
-        fail("showcase config must put Mockingboard in slot 4")
+        fail("demo config must put Mockingboard in slot 4")
 
     ship_variants, ship_bank, ship_sha256 = load_ship(ship)
     layers, parallax_sha256 = load_parallax(parallax, ship_bank)
@@ -997,7 +1003,7 @@ def main() -> int:
                 str(emulator), str(config), f"-ds7d1={disk}",
                 "--debug", str(socket_path), "--no-quit-confirm",
             ),
-            cwd=ROOT,
+            cwd=GSSQUARED_ROOT,
             stdout=log_file,
             stderr=subprocess.STDOUT,
         )
