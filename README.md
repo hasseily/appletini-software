@@ -13,32 +13,32 @@ gameplay area remains in color. Its background is derived from three supplied
 2. Nebula at 0.60 pixel per nominal 60 Hz frame
 3. Asteroids at 1.40 pixels per nominal 60 Hz frame
 
-Each layer uses a 1/20-pixel phase accumulator. A sparse DHGR representation
-keeps recognizable detail from the source art without overcrowding the action;
-its fixed-density, decorrelated sampling avoids repeating scanline lattices.
-One reversible layer update runs during each of three VBLs while A2Li holds the
-prior weave, followed by one quiet VBL for physical Appletini settling. This
-publishes the background at 15 Hz while retaining the requested 60 Hz scroll
-rates. Game logic runs at 30 Hz; Mockingboard music, sound effects, SSI-263
-speech, and replay capture run at 60 Hz.
+Each layer uses a 1/20-pixel phase accumulator. Every source dot and binary-
+alpha mask is retained: no rows, byte groups, or pixels are sampled away. The
+background is recomposed in three woven-row slices while A2Li holds the prior
+complete weave, followed by one quiet VBL for physical Appletini settling.
+This publishes the background at 15 Hz while retaining the requested 60 Hz
+scroll rates. Game logic runs at 30 Hz; Mockingboard music, sound effects,
+SSI-263 speech, and replay capture run at 60 Hz.
 
-The hot renderer handles a complete layer per assembly call. It walks source
-rows sequentially, batches MAIN and AUX operations into separate passes, and
-mirrors its engine, row-address table, and sparse asset in RamWorks bank 0 so
-each layer needs only one AUX transition. Sprite rows likewise batch their AUX
-writes per sprite. This keeps the main loop synchronized to every VBL at the
-33.3 MHz Appletini rate while retaining the selected source-derived detail.
+The asset converter compiles each source row into a compact 65C02 routine.
+Those routines execute directly from five RamWorks banks and perform exact
+alpha composition in a common-main 80-byte row buffer; the renderer then emits
+contiguous AUX and MAIN rows. This avoids an interpreted per-pixel data path
+and keeps the main loop synchronized to every VBL at the 33.3 MHz Appletini
+rate while preserving the supplied artwork.
 
 Other showcase features include:
 
 - Appletini `$C074` accelerated-speed release;
-- an eight-projectile pool with Apple //e AKD-driven hold-to-fire autofire;
+- an eight-projectile pool with Apple //e AKD-driven Space autofire and
+  independent Apple/game-button fire;
 - a continuously looping two-voice Mockingboard AY-3-8910 score, with fire and
   explosion effects on the third channel;
 - SSI-263 phoneme speech behind a scheduler that can later be replaced by a
   Phasor-native transport;
 - all 128 RamWorks banks discovered at startup: bank 0 remains DHGR auxiliary
-  memory and hosts the mirrored sparse renderer, while banks 1-127 rotate
+  memory, banks 1-5 hold the compiled parallax rows, and banks 6-127 rotate
   through gameplay/replay snapshots.
 
 The background images are the supplied layer set imported into the project;
@@ -52,16 +52,17 @@ From this directory:
 make disk
 ```
 
-The build converts the three checked-in PNG layers to `build/PARALLAX`, a
-deterministic sparse asset under 12 KiB, and embeds it directly into
-the game binary linked at `$6000`. The build wraps it as `INVASION.SYSTEM`:
-ProDOS loads the SYS file at `$2000`, its first instruction jumps to `$6000`,
-and zero padding places the game payload at that exact address without any
-runtime relocation. This keeps the executable out of the DHGRi pages at
-`$2000-$5FFF` without leaving BASIC.SYSTEM resident. The 65C02 software stack
-occupies `$B000-$B7FF`, below ProDOS's high-memory interface. The resulting 800 KiB
-SmartPort image, `dist/Appletini-Invasion.hdv`, contains only `PRODOS` and the
-direct-boot `INVASION.SYSTEM`; there is no BASIC.SYSTEM or STARTUP launcher.
+The build converts the three checked-in PNG layers to a deterministic 167,936-
+byte `build/PARALLAX` asset. It also wraps the `$6000` game as
+`INVASION.SYSTEM`: ProDOS loads the SYS file at `$2000`, its first instruction
+jumps to `$6000`, and zero padding places the game payload at that exact
+address without runtime relocation. This keeps the executable out of the
+DHGRi pages at `$2000-$5FFF` without leaving BASIC.SYSTEM resident. The 65C02
+software stack occupies `$B000-$B7FF`, below ProDOS's high-memory interface.
+The resulting 800 KiB SmartPort image, `dist/Appletini-Invasion.hdv`, contains
+`PRODOS`, the direct-boot `INVASION.SYSTEM`, and `PARALLAX`; the game loads the
+art into RamWorks through accelerated SmartPort before entering the main loop.
+There is no BASIC.SYSTEM or STARTUP launcher.
 
 The offline build requires cc65, Java, AppleCommander, and the canonical local
 Appletini checkout at `../../../appletini-one`. Set
@@ -78,19 +79,25 @@ the build script's local fallback path.
 
 GSSquared selects Appletini MAX / 33.3 MHz when the card is enabled; F9 can
 still cycle the clock manually. Appletini Invasion writes zero to `$C074` at
-entry so any prior TransWarp-compatible 1 MHz lock is released. ProDOS and the
-asset-bearing game binary are read through the Appletini SmartPort controller
-in slot 7; no Disk II controller is configured.
+entry so any prior TransWarp-compatible 1 MHz lock is released. ProDOS, the
+game, and its compiled parallax asset are read through the Appletini SmartPort
+controller in slot 7; no Disk II controller is configured.
 
 Controls:
 
-- Left/Right, `A`/`D`, or `J`/`L`: set movement direction
-- `S`: stop
-- Space: fire; hold for continuous autofire
+- Hold Left/Right, `A`/`D`, or `J`/`L`: move; releasing the key stops the ship
+- Space: fire; hold for continuous autofire when used as the keyboard action
+- Open Apple, Closed Apple, or game button: independent fire while moving
 - `R`: restart
+
+The Apple //e keyboard latch identifies only one ordinary key at a time. If
+different keyboard actions overlap, the game stops them until all ordinary
+keys are released; use an Apple/game button for simultaneous movement and
+fire.
 
 The fixed 35-byte debug mailbox at `$0300` begins with `A13I`. It exposes three
 16-bit parallax phases in 1/20-pixel units, music state, and a parallax-
 publication counter. The automated GSSquared smoke test uses it to validate
-exact sparse background rows, 33.3 MHz execution, 15 Hz publication cadence,
-video selectors, RamWorks bank use, audio/speech, game progress, and input.
+exact alpha-composited background rows against the canonical PNGs, 33.3 MHz
+execution, 15 Hz publication cadence, video selectors, RamWorks bank use,
+audio/speech, game progress, and held-key release behavior.

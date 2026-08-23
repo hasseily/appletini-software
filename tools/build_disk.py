@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import struct
 import subprocess
 from pathlib import Path
 
@@ -13,6 +14,10 @@ ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_MASTER = ROOT.parent / "appletini-one/software/ProDOS_2_4_3.po"
 DEFAULT_JAR = (Path.home() /
                "Documents/accurapple/accurapple/speaker/AppleCommander-1.3.5.13-ac.jar")
+A13C_HEADER = struct.Struct("<4sBBBBHHHH")
+A13C_BANK_IMAGE_SIZE = 32 * 1024
+A13C_BANK_COUNT = 5
+A13C_PREFIX_SIZE = 4096
 
 
 def applecommander(jar: Path, *arguments: str, data: bytes | None = None,
@@ -26,13 +31,16 @@ def applecommander(jar: Path, *arguments: str, data: bytes | None = None,
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--system", type=Path, required=True)
+    parser.add_argument("--parallax", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--master", type=Path, default=DEFAULT_MASTER)
     parser.add_argument("--applecommander", type=Path,
                         default=Path(os.environ.get("APPLECOMMANDER_JAR", DEFAULT_JAR)))
     args = parser.parse_args()
 
-    for path, description in ((args.system, "system program"), (args.master, "DOS master"),
+    for path, description in ((args.system, "system program"),
+                              (args.parallax, "A13C parallax asset"),
+                              (args.master, "DOS master"),
                               (args.applecommander, "AppleCommander")):
         if not path.is_file():
             raise SystemExit(f"missing {description}: {path}")
@@ -72,8 +80,26 @@ def main() -> None:
     if result.returncode:
         raise SystemExit(result.stdout.decode(errors="replace"))
 
+    parallax_payload = args.parallax.read_bytes()
+    expected_parallax_size = A13C_PREFIX_SIZE + (
+        A13C_BANK_COUNT * A13C_BANK_IMAGE_SIZE
+    )
+    if len(parallax_payload) != expected_parallax_size:
+        raise SystemExit(
+            f"A13C asset is {len(parallax_payload)} bytes; "
+            f"expected {expected_parallax_size}"
+        )
+    header = A13C_HEADER.unpack_from(parallax_payload)
+    if header != (b"A13C", 1, 3, 80, 5, 560, 384, 16, 4096):
+        raise SystemExit(f"invalid A13C header: {header!r}")
+    result = applecommander(jar, "-p", image, "PARALLAX", "BIN", "$2000",
+                            data=parallax_payload)
+    if result.returncode:
+        raise SystemExit(result.stdout.decode(errors="replace"))
+
     listing = applecommander(jar, "-ll", image).stdout.decode(errors="replace")
-    if "INVASION.SYSTEM" not in listing or "A=$2000" not in listing:
+    if ("INVASION.SYSTEM" not in listing or "PARALLAX" not in listing
+            or "A=$2000" not in listing):
         raise SystemExit(f"disk verification failed:\n{listing}")
     for obsolete in ("BASIC.SYSTEM", "STARTUP", "INVASION BIN"):
         if obsolete in listing:
@@ -81,6 +107,9 @@ def main() -> None:
     installed = applecommander(jar, "-g", image, "INVASION.SYSTEM").stdout
     if installed != system_payload:
         raise SystemExit("INVASION.SYSTEM verification failed")
+    installed_parallax = applecommander(jar, "-g", image, "PARALLAX").stdout
+    if installed_parallax != parallax_payload:
+        raise SystemExit("PARALLAX verification failed")
     if args.output.read_bytes()[:1024] != boot_blocks:
         raise SystemExit("ProDOS boot-block copy failed")
     if args.output.stat().st_size != 800 * 1024:

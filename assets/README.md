@@ -16,31 +16,45 @@ license.
 
 `tools/convert_parallax.py` treats these PNGs as canonical source images. It
 requires RGBA8, binary alpha, and exact membership in the documented 16-color
-Apple II palette, then converts them into the compact `build/PARALLAX` runtime
-asset.
+Apple II palette, then compiles every source pixel into the `build/PARALLAX`
+runtime asset. Nothing is sampled or discarded. The first layer must be fully
+opaque; the two foreground layers retain their exact binary-alpha masks.
 
 ## Runtime format
 
-`PARALLAX` begins with a 16-byte `A13S` version-1 header containing the layer
-count, 80-byte row width, 384-row height, and three little-endian chunk
-offsets. Each layer chunk stores its speed numerator and denominator (5, 12,
-or 28 over 20), followed by 384 little-endian, chunk-relative row offsets.
+`PARALLAX` uses the exact-alpha `A13C` version-1 format. Its 16-byte header is
+little-endian `<4sBBBBHHHH>` and currently contains magic, version, three
+layers, 80 seven-dot groups per row, five banks, width 560, height 384,
+directory offset 16, and bank-image offset 4096. The header is followed by
+1,152 three-byte `<BH>` directory entries in layer-major, row-major order.
+Each entry names a RamWorks bank from 1 through 5 and an absolute routine
+address from `$2000` through `$9FFF`. Zero padding extends the directory prefix
+to 4 KiB, followed by five complete 32 KiB bank images. A row routine never
+crosses a bank boundary.
 
-Each row contains a count followed by `(x,data)` pairs for sparse XOR drawing.
-Pixel data is stored as 80 seven-dot groups in display order
-`AUX[0], MAIN[0], AUX[1], MAIN[1], ...`; bit 0 is leftmost and bit 7 remains
-clear for the runtime's Video-7 selector. The converter applies a fixed,
-documented ranking to select source-derived groups at build time so the
-complete embedded asset remains below 12KB without forming periodic bands.
+Rows are compiled as small 65C02 routines instead of interpreted records.
+They compose an 80-byte common-main work row at `$A0-$EF`, stored as the
+contiguous buffers AUX `$A0-$C7` and MAIN `$C8-$EF`. Source groups map there
+in display order `AUX[0], MAIN[0], AUX[1], MAIN[1], ...`. Deep-space routines
+initialize every group. Nebula and asteroid routines perform exact binary-alpha
+replacement with grouped `STA`, `TRB`, and `TSB` operations or an
+`AND`/`ORA` merge for mixed seven-dot masks. Every stored byte has bit 7 set to
+select Video-7 color; the low seven bits preserve the global DHGR dot phase.
+The converter structurally validates the container and emulates every
+generated routine against direct alpha composition for all 128 possible input
+values before writing the file.
 
-For byte group `x`, source row `y`, and zero-based layer `l`, the converter
-avalanches `(y*80+x) XOR ((l+1)*0x9E3779B9)` through two fixed 32-bit multiply
-and XOR-shift stages. Each row ranks its nonzero groups by that value and keeps
-`ceil(n/8)`, `ceil(n/5)`, or `ceil(n/4)` for deep space, nebula, or asteroids.
-Deep space additionally keeps every group containing white. Fixed per-row
-quotas prevent source-bearing rows from becoming accidentally blank; the
-decorrelated ranking prevents the diagonal lattice produced by an affine
-modulus. Zero data bytes are omitted because the runtime operation is XOR.
+The current canonical asset is 167,936 bytes: a 4 KiB directory prefix plus
+five 32 KiB RamWorks images. Its SHA-256 is
+`0d8cff3f0d32f981ecfd1327ea369a9cc83939d675ebf24248c6a88aac7915f2`.
+
+At runtime `parallax_assets_load()` reads `/A13INVASION/PARALLAX` through
+ProDOS/SmartPort into RamWorks banks 1-5. `parallax_render_slice(count)` takes
+the deep, nebula, asteroid, and destination starting rows in fixed zero page
+`$68/$69`, `$6A/$6B`, `$6C/$6D`, and `$6E/$6F`; normal slices use 106, 106,
+and 104 woven rows. Zero page `$70-$7F` is renderer scratch and `$A0-$EF` is
+the exact 80-byte composition buffer. Bank 0 remains the display bank, so
+gameplay/replay storage begins at bank 6.
 
 Source SHA-256 checksums:
 

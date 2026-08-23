@@ -13,6 +13,8 @@ typedef unsigned int u16;
 
 #define KBD        0xC000
 #define KBDSTRB    0xC010
+#define GAME_BUTTON0 0xC061
+#define GAME_BUTTON1 0xC062
 #define STORE80OFF 0xC000
 #define RAMRDOFF   0xC002
 #define RAMRDON    0xC003
@@ -62,11 +64,12 @@ typedef unsigned int u16;
 #define PARALLAX_DEEP_SPEED 5
 #define PARALLAX_NEBULA_SPEED 12
 #define PARALLAX_ASTEROID_SPEED 28
-#define PARALLAX_LAYER_DEEP 0
-#define PARALLAX_LAYER_NEBULA 1
-#define PARALLAX_LAYER_ASTEROIDS 2
 #define PARALLAX_STATE_QUIET 3
-#define REPLAY_FIRST_BANK 1
+#define PARALLAX_SLICE_ROWS 106
+#define PARALLAX_SECOND_WOVEN (PARALLAX_WOVEN_TOP + PARALLAX_SLICE_ROWS)
+#define PARALLAX_THIRD_WOVEN (PARALLAX_SECOND_WOVEN + PARALLAX_SLICE_ROWS)
+#define PARALLAX_LAST_ROWS (PARALLAX_WOVEN_BOTTOM - PARALLAX_THIRD_WOVEN)
+#define REPLAY_FIRST_BANK 6
 #define VIDEO7_COLOR 0x80
 #define FIELD_BYTES 4
 #define ENEMY_COUNT 24
@@ -75,11 +78,14 @@ typedef unsigned int u16;
 #define MUSIC_STEP_COUNT 32
 #define MUSIC_STEP_FRAMES 6
 
-#define PARALLAX_OLD_ROW_LO 0x0068
-#define PARALLAX_OLD_ROW_HI 0x0069
-#define PARALLAX_LAYER      0x006A
-#define PARALLAX_NEW_ROW_LO 0x006B
-#define PARALLAX_NEW_ROW_HI 0x006C
+#define PARALLAX_DEEP_ROW_LO     0x0068
+#define PARALLAX_DEEP_ROW_HI     0x0069
+#define PARALLAX_NEBULA_ROW_LO   0x006A
+#define PARALLAX_NEBULA_ROW_HI   0x006B
+#define PARALLAX_ASTEROID_ROW_LO 0x006C
+#define PARALLAX_ASTEROID_ROW_HI 0x006D
+#define PARALLAX_DEST_ROW_LO     0x006E
+#define PARALLAX_DEST_ROW_HI     0x006F
 #define SPRITE_X_ZP          0x0020
 #define SPRITE_Y_ZP          0x0021
 #define SPRITE_HEIGHT_ZP     0x0022
@@ -89,13 +95,17 @@ typedef unsigned int u16;
 #define KEY_LEFT   0x08
 #define KEY_RIGHT  0x15
 #define KEY_SPACE  0x20
+#define HELD_NONE  0
+#define HELD_LEFT  1
+#define HELD_RIGHT 2
+#define HELD_FIRE  3
+#define HELD_BLOCKED 4
 
 extern u8 __fastcall__ ramworks_probe(u8 bank);
 extern void aux_clear_video(void);
 extern void __fastcall__ aux_color_row(u16 address);
 extern u8 __fastcall__ parallax_assets_load(void);
-extern void parallax_draw_layer(void);
-extern void parallax_move_layer(void);
+extern void __fastcall__ parallax_render_slice(u8 row_count);
 extern void video_sprite_fast(void);
 
 struct DebugMailbox {
@@ -146,6 +156,7 @@ static u8 enemies_left;
 static u8 player_bullet_active[PLAYER_BULLET_COUNT];
 static u8 player_bullet_x[PLAYER_BULLET_COUNT];
 static u8 player_bullet_y[PLAYER_BULLET_COUNT];
+static u8 held_action;
 static u8 fire_held;
 static u8 fire_pending;
 static u8 fire_cooldown;
@@ -546,38 +557,22 @@ static u16 parallax_source_row(u16 woven_row, u16 offset)
     return woven_row;
 }
 
-static void parallax_set_source_rows(u16 old_row, u16 new_row)
-{
-    REG8(PARALLAX_OLD_ROW_LO) = (u8)old_row;
-    REG8(PARALLAX_OLD_ROW_HI) = (u8)(old_row >> 8);
-    REG8(PARALLAX_NEW_ROW_LO) = (u8)new_row;
-    REG8(PARALLAX_NEW_ROW_HI) = (u8)(new_row >> 8);
-}
-
-static void parallax_xor_layer_once(u8 layer, u16 offset)
+static void parallax_render_rows(u16 woven_row, u8 row_count)
 {
     u16 source_row;
 
-    REG8(PARALLAX_LAYER) = layer;
-    source_row = parallax_source_row(PARALLAX_WOVEN_TOP, offset);
-    parallax_set_source_rows(source_row, source_row);
-    parallax_draw_layer();
-    REG8(RAMWORKS) = 0;
-    REG8(RAMRDOFF) = 0;
-    REG8(RAMWRTOFF) = 0;
-}
-
-static void parallax_xor_layer(u8 layer, u16 old_offset, u16 new_offset)
-{
-    u16 old_row;
-    u16 new_row;
-
-    if (old_offset == new_offset) return;
-    REG8(PARALLAX_LAYER) = layer;
-    old_row = parallax_source_row(PARALLAX_WOVEN_TOP, old_offset);
-    new_row = parallax_source_row(PARALLAX_WOVEN_TOP, new_offset);
-    parallax_set_source_rows(old_row, new_row);
-    parallax_move_layer();
+    source_row = parallax_source_row(woven_row, deep_phase.target_row);
+    REG8(PARALLAX_DEEP_ROW_LO) = (u8)source_row;
+    REG8(PARALLAX_DEEP_ROW_HI) = (u8)(source_row >> 8);
+    source_row = parallax_source_row(woven_row, nebula_phase.target_row);
+    REG8(PARALLAX_NEBULA_ROW_LO) = (u8)source_row;
+    REG8(PARALLAX_NEBULA_ROW_HI) = (u8)(source_row >> 8);
+    source_row = parallax_source_row(woven_row, asteroid_phase.target_row);
+    REG8(PARALLAX_ASTEROID_ROW_LO) = (u8)source_row;
+    REG8(PARALLAX_ASTEROID_ROW_HI) = (u8)(source_row >> 8);
+    REG8(PARALLAX_DEST_ROW_LO) = (u8)woven_row;
+    REG8(PARALLAX_DEST_ROW_HI) = (u8)(woven_row >> 8);
+    parallax_render_slice(row_count);
     REG8(RAMWORKS) = 0;
     REG8(RAMRDOFF) = 0;
     REG8(RAMWRTOFF) = 0;
@@ -855,6 +850,7 @@ static void game_reset(void)
     lives = 3;
     player_x = 20;
     player_velocity = 0;
+    held_action = HELD_NONE;
     fire_held = 0;
     fire_pending = 0;
     fire_cooldown = 0;
@@ -932,43 +928,75 @@ static u8 player_fire(void)
 static void input_tick(void)
 {
     u8 key;
+    u8 any_key_down;
+    u8 independent_fire;
     key = REG8(KBD);
     if (key & 0x80) {
-        REG8(KBDSTRB) = 0;
         key &= 0x7F;
         if (key == KEY_SPACE) {
             /* Queue one shot even if the key was released before this game
              * tick. C010's //e AKD bit keeps subsequent shots flowing while
              * Space remains physically held. */
-            if (!fire_held) fire_pending = 1;
-            fire_held = 1;
-        } else {
-            fire_held = 0;
-            if (key == KEY_LEFT || key == 'A' || key == 'a'
-                || key == 'J' || key == 'j') {
-                player_velocity = -1;
-            } else if (key == KEY_RIGHT || key == 'D' || key == 'd'
-                       || key == 'L' || key == 'l') {
-                player_velocity = 1;
-            } else if (key == 'S' || key == 's') {
-                player_velocity = 0;
-            } else if (key == 'R' || key == 'r') {
-                game_reset();
+            if (held_action == HELD_NONE) {
+                fire_pending = 1;
+                held_action = HELD_FIRE;
+                fire_held = 1;
+            } else if (held_action == HELD_FIRE) {
+                fire_held = 1;
+            } else {
+                if (held_action != HELD_BLOCKED) fire_pending = 1;
+                held_action = HELD_BLOCKED;
+                fire_held = 0;
             }
+            player_velocity = 0;
+        } else if (key == KEY_LEFT || key == 'A' || key == 'a'
+                   || key == 'J' || key == 'j') {
+            fire_held = 0;
+            if (held_action == HELD_NONE || held_action == HELD_LEFT) {
+                held_action = HELD_LEFT;
+                player_velocity = -1;
+            } else {
+                held_action = HELD_BLOCKED;
+                player_velocity = 0;
+            }
+        } else if (key == KEY_RIGHT || key == 'D' || key == 'd'
+                   || key == 'L' || key == 'l') {
+            fire_held = 0;
+            if (held_action == HELD_NONE || held_action == HELD_RIGHT) {
+                held_action = HELD_RIGHT;
+                player_velocity = 1;
+            } else {
+                held_action = HELD_BLOCKED;
+                player_velocity = 0;
+            }
+        } else if (key == 'R' || key == 'r') {
+            game_reset();
+        } else {
+            held_action = HELD_NONE;
+            fire_held = 0;
+            player_velocity = 0;
         }
     }
 
-    if (fire_held) {
-        /* On an Apple //e, reading C010 clears the strobe and returns AKD in
-         * bit 7. This gives genuine hold-to-fire without relying on host key
-         * repeat events. */
-        if (!(REG8(KBDSTRB) & 0x80)) {
-            fire_held = 0;
-        }
+    /* On an Apple //e, reading C010 clears the strobe and returns AKD in bit
+     * 7. Tie both movement and autofire to that physical key level so an
+     * arrow release stops the ship without waiting for another keypress. The
+     * keyboard exposes only one latched key, so different overlapping action
+     * keys are blocked until every key is released instead of risking stuck
+     * movement. The independent Apple/game buttons below support firing while
+     * an arrow remains held. */
+    any_key_down = REG8(KBDSTRB) & 0x80;
+    if (!any_key_down) {
+        held_action = HELD_NONE;
+        fire_held = 0;
+        player_velocity = 0;
+    } else if (held_action == HELD_FIRE) {
+        fire_held = 1;
     }
+    independent_fire = (REG8(GAME_BUTTON0) | REG8(GAME_BUTTON1)) & 0x80;
     if (fire_cooldown) {
         --fire_cooldown;
-    } else if ((fire_held || fire_pending) && player_fire()) {
+    } else if ((fire_held || fire_pending || independent_fire) && player_fire()) {
         fire_pending = 0;
         fire_cooldown = AUTOFIRE_DELAY;
     }
@@ -1198,10 +1226,9 @@ int main(void)
     video_begin_dhgri();
     parallax_capture_target();
     parallax_promote_target();
-    parallax_xor_layer_once(PARALLAX_LAYER_DEEP, deep_phase.displayed_row);
-    parallax_xor_layer_once(PARALLAX_LAYER_NEBULA, nebula_phase.displayed_row);
-    parallax_xor_layer_once(PARALLAX_LAYER_ASTEROIDS,
-                            asteroid_phase.displayed_row);
+    parallax_render_rows(PARALLAX_WOVEN_TOP, PARALLAX_SLICE_ROWS);
+    parallax_render_rows(PARALLAX_SECOND_WOVEN, PARALLAX_SLICE_ROWS);
+    parallax_render_rows(PARALLAX_THIRD_WOVEN, PARALLAX_LAST_ROWS);
     video_border();
     video_text(31, 10, "APPLETINI INVASION");
     video_text(3, 181, "65C02 33MHZ  DHGRI  8MB RAMWORKS");
@@ -1223,29 +1250,20 @@ int main(void)
         wait_vbl();
         parallax_tick();
 
-        /* Each imported layer is a sparse reversible overlay. A2Li holds the
-         * preceding weave while one old/new layer pair is XORed per VBL. The
-         * fourth VBL remains completely free of base-video writes. */
+        /* Recompose one third of the exact three-layer source during each of
+         * three VBLs. A2Li holds the preceding complete weave until the third
+         * slice commits; the fourth VBL remains free of base-video writes. */
         if (parallax_render_state == 0) {
             video_begin_dhgri();
-            /* Foreground is XOR drawn, so remove the exact displayed state
-             * before either of this cycle's two 30 Hz game updates. */
-            draw_dynamic();
             game_tick();
             parallax_capture_target();
-            parallax_xor_layer(PARALLAX_LAYER_DEEP,
-                               deep_phase.displayed_row,
-                               deep_phase.target_row);
+            parallax_render_rows(PARALLAX_WOVEN_TOP, PARALLAX_SLICE_ROWS);
             parallax_render_state = 1;
         } else if (parallax_render_state == 1) {
-            parallax_xor_layer(PARALLAX_LAYER_NEBULA,
-                               nebula_phase.displayed_row,
-                               nebula_phase.target_row);
+            parallax_render_rows(PARALLAX_SECOND_WOVEN, PARALLAX_SLICE_ROWS);
             parallax_render_state = 2;
         } else if (parallax_render_state == 2) {
-            parallax_xor_layer(PARALLAX_LAYER_ASTEROIDS,
-                               asteroid_phase.displayed_row,
-                               asteroid_phase.target_row);
+            parallax_render_rows(PARALLAX_THIRD_WOVEN, PARALLAX_LAST_ROWS);
             game_tick();
             if (hud_dirty) draw_hud();
             draw_dynamic();

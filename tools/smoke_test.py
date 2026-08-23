@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import struct
 import subprocess
 import sys
 import tempfile
@@ -19,17 +20,24 @@ GAME_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = GAME_DIR / "appletini-invasion.gs2"
 DEFAULT_EMULATOR = ROOT / "build/GSSquared.app/Contents/MacOS/GSSquared"
 CLIENT_SRC = ROOT / "clients/python/src"
+TOOLS_DIR = GAME_DIR / "tools"
 SDL_SCANCODE_SPACE = 44
+SDL_SCANCODE_RIGHT = 79
+SDL_SCANCODE_LEFT = 80
 MAILBOX_ADDRESS = 0x0300
 MAILBOX_SIZE = 35
 PARALLAX_PATH = GAME_DIR / "build/PARALLAX"
-PARALLAX_HEADER_SIZE = 16
-PARALLAX_CHUNK_HEADER_SIZE = 2
 PARALLAX_LAYER_COUNT = 3
 PARALLAX_SOURCE_ROWS = 384
 PARALLAX_ROW_BYTES = 80
+PARALLAX_BANK_COUNT = 5
+PARALLAX_BANK_SIZE = 32 * 1024
+PARALLAX_BANK_LOAD = 0x2000
+PARALLAX_DIRECTORY_OFFSET = 16
+PARALLAX_BANK_IMAGES_OFFSET = 4096
 PARALLAX_PHASE_MODULUS = 384 * 20
 PARALLAX_SPEEDS = (5, 12, 28)
+REPLAY_FIRST_BANK = 6
 MB_DEEP_PHASE = 20
 MB_NEBULA_PHASE = 22
 MB_ASTEROID_PHASE = 24
@@ -46,17 +54,24 @@ MB_PARALLAX_COMMITS = 34
 # remain a deterministic background-only oracle throughout gameplay.
 BACKGROUND_TEST_ROWS = range(20, 23)
 
-ParallaxRow = tuple[tuple[int, int], ...]
+ParallaxRow = tuple[bytes, bytes]
 ParallaxLayer = tuple[ParallaxRow, ...]
 ParallaxLayers = tuple[ParallaxLayer, ...]
 
 sys.path.insert(0, str(CLIENT_SRC))
+sys.path.insert(0, str(TOOLS_DIR))
 
 from gs2debug import (  # noqa: E402
     Client,
     MEM_MAIN_RAW,
     PLATFORM_APPLE_IIE_ENHANCED,
     ProtocolError,
+)
+from convert_parallax import (  # noqa: E402
+    AssetError as ParallaxAssetError,
+    LAYERS as PARALLAX_SOURCE_FILES,
+    pack_row as pack_parallax_row,
+    read_rgba_png,
 )
 
 
@@ -186,93 +201,104 @@ def capture_committed_dhgri(client: Client) -> tuple[bytes, dict[str, bytes]]:
 
 def load_parallax(path: Path) -> tuple[ParallaxLayers, str]:
     payload = path.read_bytes()
-    if not (PARALLAX_HEADER_SIZE < len(payload) < 12 * 1024):
-        fail(f"PARALLAX has invalid sparse-asset size {len(payload)}")
-    header = (
-        payload[:4], payload[4], payload[5], payload[6], payload[7],
-        int.from_bytes(payload[8:10], "little"),
+    expected_size = (
+        PARALLAX_BANK_IMAGES_OFFSET
+        + PARALLAX_BANK_COUNT * PARALLAX_BANK_SIZE
     )
+    if len(payload) != expected_size:
+        fail(
+            f"PARALLAX has invalid compiled-asset size {len(payload)}; "
+            f"expected {expected_size}"
+        )
+    header = struct.unpack_from("<4sBBBBHHHH", payload)
     expected_header = (
-        b"A13S", 1, PARALLAX_LAYER_COUNT, PARALLAX_ROW_BYTES, 0,
-        PARALLAX_SOURCE_ROWS,
+        b"A13C", 1, PARALLAX_LAYER_COUNT, PARALLAX_ROW_BYTES,
+        PARALLAX_BANK_COUNT, 560, PARALLAX_SOURCE_ROWS,
+        PARALLAX_DIRECTORY_OFFSET, PARALLAX_BANK_IMAGES_OFFSET,
     )
     if header != expected_header:
         fail(f"PARALLAX header is {header!r}, expected {expected_header!r}")
-    chunk_offsets = tuple(
-        int.from_bytes(payload[10 + layer * 2:12 + layer * 2], "little")
-        for layer in range(PARALLAX_LAYER_COUNT)
+
+    entry_count = PARALLAX_LAYER_COUNT * PARALLAX_SOURCE_ROWS
+    directory_end = PARALLAX_DIRECTORY_OFFSET + entry_count * 3
+    if any(payload[directory_end:PARALLAX_BANK_IMAGES_OFFSET]):
+        fail("PARALLAX directory padding is not zero")
+
+    locations = tuple(
+        struct.unpack_from("<BH", payload, PARALLAX_DIRECTORY_OFFSET + index * 3)
+        for index in range(entry_count)
     )
-    if chunk_offsets[0] != PARALLAX_HEADER_SIZE \
-            or tuple(sorted(chunk_offsets)) != chunk_offsets \
-            or chunk_offsets[-1] >= len(payload):
-        fail(f"PARALLAX has invalid chunk offsets {chunk_offsets}")
+    previous_bank = 0
+    previous_end = 0
+    allowed_two_byte = {0xA9, 0x85, 0x14, 0x04, 0xA5, 0x29, 0x09}
+    zp_operands = {0x85, 0x14, 0x04, 0xA5}
+    for index, (bank, address) in enumerate(locations):
+        if not 1 <= bank <= PARALLAX_BANK_COUNT \
+                or not PARALLAX_BANK_LOAD <= address < 0xA000:
+            fail(
+                f"PARALLAX routine {index} has invalid bank/address "
+                f"{bank}:${address:04X}"
+            )
+        if bank == previous_bank:
+            if address != previous_end:
+                fail(
+                    f"PARALLAX routine {index} starts at ${address:04X}; "
+                    f"previous routine ended at ${previous_end:04X}"
+                )
+        else:
+            if bank != previous_bank + 1 or address != PARALLAX_BANK_LOAD:
+                fail(
+                    f"PARALLAX routine {index} starts a noncontiguous bank "
+                    f"{bank}:${address:04X}"
+                )
+            previous_bank = bank
+
+        position = (
+            PARALLAX_BANK_IMAGES_OFFSET
+            + (bank - 1) * PARALLAX_BANK_SIZE
+            + address - PARALLAX_BANK_LOAD
+        )
+        bank_end = PARALLAX_BANK_IMAGES_OFFSET + bank * PARALLAX_BANK_SIZE
+        while position < bank_end:
+            opcode = payload[position]
+            position += 1
+            if opcode == 0x60:
+                break
+            if opcode not in allowed_two_byte or position >= bank_end:
+                fail(
+                    f"PARALLAX routine {index} contains invalid opcode "
+                    f"${opcode:02X}"
+                )
+            operand = payload[position]
+            position += 1
+            if opcode in zp_operands and not 0xA0 <= operand <= 0xEF:
+                fail(
+                    f"PARALLAX routine {index} accesses invalid zero page "
+                    f"${operand:02X}"
+                )
+        else:
+            fail(f"PARALLAX routine {index} crosses its bank boundary")
+        previous_end = PARALLAX_BANK_LOAD + (
+            position
+            - PARALLAX_BANK_IMAGES_OFFSET
+            - (bank - 1) * PARALLAX_BANK_SIZE
+        )
+    if previous_bank != PARALLAX_BANK_COUNT:
+        fail(f"PARALLAX uses {previous_bank} routine banks, expected 5")
 
     layers: list[ParallaxLayer] = []
-    for layer_index, (chunk_start, speed) in enumerate(
-            zip(chunk_offsets, PARALLAX_SPEEDS)):
-        chunk_end = (chunk_offsets[layer_index + 1]
-                     if layer_index + 1 < PARALLAX_LAYER_COUNT
-                     else len(payload))
-        chunk = payload[chunk_start:chunk_end]
-        if chunk[:2] != bytes((speed, 20)):
-            fail(
-                f"PARALLAX layer {layer_index + 1} speed is {chunk[:2]!r}, "
-                f"expected {(speed, 20)!r}"
-            )
-
-        offsets = tuple(
-            int.from_bytes(
-                chunk[PARALLAX_CHUNK_HEADER_SIZE + row * 2:
-                      PARALLAX_CHUNK_HEADER_SIZE + row * 2 + 2],
-                "little",
-            )
-            for row in range(PARALLAX_SOURCE_ROWS)
-        )
-        if offsets[0] != PARALLAX_CHUNK_HEADER_SIZE + PARALLAX_SOURCE_ROWS * 2:
-            fail(f"PARALLAX layer {layer_index + 1} row data overlaps its directory")
-        if any(next_offset <= offset for offset, next_offset in zip(offsets, offsets[1:])):
-            fail(f"PARALLAX layer {layer_index + 1} row offsets are not increasing")
-
-        rows: list[ParallaxRow] = []
-        last_record_end = 0
-        for row_number, record_offset in enumerate(offsets):
-            if record_offset >= len(chunk):
-                fail(
-                    f"PARALLAX layer {layer_index + 1} row {row_number} offset "
-                    f"{record_offset} is outside its chunk"
+    try:
+        for layer_index, filename in enumerate(PARALLAX_SOURCE_FILES):
+            source_path = GAME_DIR / "assets" / filename
+            rows = tuple(
+                pack_parallax_row(
+                    source_path, row_number, rgba, layer_index == 0
                 )
-            position = record_offset
-            entry_count = chunk[position]
-            position += 1
-            operations: list[tuple[int, int]] = []
-            previous_x = -1
-            for _ in range(entry_count):
-                if position + 2 > len(chunk):
-                    fail(f"PARALLAX layer {layer_index + 1} row {row_number} is truncated")
-                x = chunk[position]
-                data = chunk[position + 1]
-                position += 2
-                if x <= previous_x or x >= PARALLAX_ROW_BYTES or not 0 < data < 0x80:
-                    fail(
-                        f"PARALLAX layer {layer_index + 1} row {row_number} has "
-                        f"invalid entry x={x} data=${data:02X}"
-                    )
-                operations.append((x, data))
-                previous_x = x
-            if row_number + 1 < PARALLAX_SOURCE_ROWS \
-                    and position != offsets[row_number + 1]:
-                fail(
-                    f"PARALLAX layer {layer_index + 1} row {row_number} ends at "
-                    f"{position}, next row starts at {offsets[row_number + 1]}"
-                )
-            rows.append(tuple(operations))
-            last_record_end = position
-        if last_record_end != len(chunk):
-            fail(
-                f"PARALLAX layer {layer_index + 1} ends at {last_record_end}, "
-                f"chunk size is {len(chunk)}"
+                for row_number, rgba in enumerate(read_rgba_png(source_path))
             )
-        layers.append(tuple(rows))
+            layers.append(rows)
+    except ParallaxAssetError as error:
+        fail(f"invalid canonical parallax source: {error}")
 
     digest = hashlib.sha256(payload).hexdigest()
     return tuple(layers), digest
@@ -281,10 +307,17 @@ def load_parallax(path: Path) -> tuple[ParallaxLayers, str]:
 def compose_parallax_row(layers: ParallaxLayers, phases: tuple[int, ...],
                           woven_y: int) -> bytes:
     composed = bytearray(PARALLAX_ROW_BYTES)
-    for layer, phase in zip(layers, phases):
+    for layer_index, (layer, phase) in enumerate(zip(layers, phases)):
         source_row = (woven_y - phase // 20) % PARALLAX_SOURCE_ROWS
-        for byte_index, data in layer[source_row]:
-            composed[byte_index] ^= data
+        data, opacity = layer[source_row]
+        if layer_index == 0:
+            composed[:] = data
+        else:
+            for byte_index in range(PARALLAX_ROW_BYTES):
+                composed[byte_index] = (
+                    (composed[byte_index] & (opacity[byte_index] ^ 0x7F))
+                    | data[byte_index]
+                )
     return bytes(composed)
 
 
@@ -351,8 +384,11 @@ def exercise(client: Client, timeout: float,
     for label, (actual, wanted) in expected.items():
         if actual != wanted:
             fail(f"{label} is {actual}, expected {wanted}; mailbox={mailbox.hex()}")
-    if mailbox[17] != 1:
-        fail(f"RamWorks replay did not start in bank 1: mailbox={mailbox.hex()}")
+    if not REPLAY_FIRST_BANK <= mailbox[17] < 128:
+        fail(
+            "RamWorks replay entered a parallax/display bank: "
+            f"mailbox={mailbox.hex()}"
+        )
 
     # The boot weave is published before the four-VBL render cadence starts.
     # Begin motion sampling with the first scheduled commit so every interval
@@ -495,12 +531,15 @@ def exercise(client: Client, timeout: float,
 
     # Make reset observable: perturb player state first, then require R to put
     # it back. The other public values already match a fresh game at boot.
-    client.type_text("d", delay_s=0, hold_s=0.04)
-    wait_for(
-        lambda: matching_mailbox(client, lambda m: m[11] > 20),
-        2.0,
-        "pre-reset player movement",
-    )
+    client.key_down(SDL_SCANCODE_RIGHT)
+    try:
+        wait_for(
+            lambda: matching_mailbox(client, lambda m: m[11] > 20),
+            2.0,
+            "pre-reset held-arrow movement",
+        )
+    finally:
+        client.key_up(SDL_SCANCODE_RIGHT)
     client.type_text("r", delay_s=0, hold_s=0.04)
     reset_box = wait_for(
         lambda: matching_mailbox(
@@ -513,14 +552,77 @@ def exercise(client: Client, timeout: float,
     assert isinstance(reset_box, bytes)
 
     start_frame = frame_number(reset_box)
-    client.type_text("d", delay_s=0, hold_s=0.04)
-    moved_box = wait_for(
-        lambda: matching_mailbox(client, lambda m: m[11] > 20),
-        2.0,
-        "lowercase movement input",
-    )
+    client.key_down(SDL_SCANCODE_RIGHT)
+    try:
+        moved_box = wait_for(
+            lambda: matching_mailbox(client, lambda m: m[11] >= 24),
+            2.0,
+            "held Right-arrow movement",
+        )
+    finally:
+        client.key_up(SDL_SCANCODE_RIGHT)
     assert isinstance(moved_box, bytes)
-    client.type_text("s", delay_s=0, hold_s=0.04)
+    release_box = wait_for(
+        lambda: matching_mailbox(
+            client,
+            lambda m: ((frame_number(m) - frame_number(moved_box)) & 0xFFFF) >= 4,
+        ),
+        1.0,
+        "Right-arrow release",
+    )
+    assert isinstance(release_box, bytes)
+    stopped_x = release_box[11]
+    if stopped_x >= 38:
+        fail("Right-arrow release test reached the movement boundary")
+    stable_box = wait_for(
+        lambda: matching_mailbox(
+            client,
+            lambda m: ((frame_number(m) - frame_number(release_box)) & 0xFFFF) >= 8,
+        ),
+        1.0,
+        "post-release movement interval",
+    )
+    assert isinstance(stable_box, bytes)
+    if stable_box[11] != stopped_x:
+        fail(
+            "ship continued moving after Right-arrow key-up: "
+            f"{stopped_x} -> {stable_box[11]}"
+        )
+
+    client.key_down(SDL_SCANCODE_LEFT)
+    try:
+        left_box = wait_for(
+            lambda: matching_mailbox(client, lambda m: m[11] <= stopped_x - 3),
+            2.0,
+            "held Left-arrow movement",
+        )
+    finally:
+        client.key_up(SDL_SCANCODE_LEFT)
+    assert isinstance(left_box, bytes)
+    left_release_box = wait_for(
+        lambda: matching_mailbox(
+            client,
+            lambda m: ((frame_number(m) - frame_number(left_box)) & 0xFFFF) >= 4,
+        ),
+        1.0,
+        "Left-arrow release",
+    )
+    assert isinstance(left_release_box, bytes)
+    stopped_left_x = left_release_box[11]
+    left_stable_box = wait_for(
+        lambda: matching_mailbox(
+            client,
+            lambda m: ((frame_number(m) - frame_number(left_release_box)) & 0xFFFF) >= 8,
+        ),
+        1.0,
+        "post-left-release movement interval",
+    )
+    assert isinstance(left_stable_box, bytes)
+    if left_stable_box[11] != stopped_left_x:
+        fail(
+            "ship continued moving after Left-arrow key-up: "
+            f"{stopped_left_x} -> {left_stable_box[11]}"
+        )
 
     # A zero-hold tap may be released before the guest's next 30 Hz game tick;
     # it still must queue one shot from the keyboard strobe.
@@ -565,16 +667,16 @@ def exercise(client: Client, timeout: float,
         fail(f"music did not survive effect release: mixer=${released_box[MB_AY_MIXER]:02X}")
 
     replay_at_start = bullet_box[17]
-    if replay_at_start < 1:
-        fail(f"replay used DHGR auxiliary bank {replay_at_start}")
+    if replay_at_start < REPLAY_FIRST_BANK:
+        fail(f"replay used reserved RamWorks bank {replay_at_start}")
     replay_box = wait_for(
         lambda: matching_mailbox(client, lambda m: m[17] != replay_at_start),
         2.0,
         "RamWorks replay-bank rotation",
     )
     assert isinstance(replay_box, bytes)
-    if replay_box[17] < 1:
-        fail(f"replay rotated into DHGR auxiliary bank {replay_box[17]}")
+    if replay_box[17] < REPLAY_FIRST_BANK:
+        fail(f"replay rotated into reserved RamWorks bank {replay_box[17]}")
     if frame_number(replay_box) == start_frame:
         fail("game frame counter did not advance")
 
@@ -725,6 +827,8 @@ def main() -> int:
         fail(f"SmartPort image has no ProDOS SYS kernel: {root_files}")
     if root_files.get("INVASION.SYSTEM") != (0xFF, 0x2000):
         fail(f"INVASION.SYSTEM is not a direct-boot $2000 SYS file: {root_files}")
+    if root_files.get("PARALLAX") != (0x06, 0x2000):
+        fail(f"PARALLAX is not a SmartPort-loaded $2000 BIN file: {root_files}")
     obsolete = {"BASIC.SYSTEM", "STARTUP", "INVASION"} & root_files.keys()
     if obsolete:
         fail(f"SmartPort image still contains a BASIC launcher: {sorted(obsolete)}")

@@ -17,7 +17,7 @@ PARALLAX_SOURCES := \
 
 .PHONY: all clean disk smoke
 
-all: $(SYSTEM)
+all: $(SYSTEM) $(PARALLAX)
 
 $(BUILD) $(DIST):
 	mkdir -p $@
@@ -28,7 +28,7 @@ $(BUILD)/main.o: main.c | $(BUILD)
 $(BUILD)/ramworks_probe.o: ramworks_probe.s | $(BUILD)
 	$(CL65) -t none --cpu 65c02 -c -o $@ $<
 
-$(BUILD)/parallax_runtime.o: parallax_runtime.s $(PARALLAX) | $(BUILD)
+$(BUILD)/parallax_runtime.o: parallax_runtime.s | $(BUILD)
 	$(CL65) -t none --cpu 65c02 -c -o $@ $<
 
 $(PARALLAX): tools/convert_parallax.py $(PARALLAX_SOURCES) | $(BUILD)
@@ -44,8 +44,8 @@ $(SYSTEM): $(PROGRAM) tools/build_system.py | $(BUILD)
 
 disk: $(DISK)
 
-$(DISK): $(SYSTEM) tools/build_disk.py | $(DIST)
-	$(PYTHON) tools/build_disk.py --system $(SYSTEM) --output $@
+$(DISK): $(SYSTEM) $(PARALLAX) tools/build_disk.py | $(DIST)
+	$(PYTHON) tools/build_disk.py --system $(SYSTEM) --parallax $(PARALLAX) --output $@
 
 smoke: $(DISK)
 	$(PYTHON) tools/smoke_test.py --disk $(DISK)
