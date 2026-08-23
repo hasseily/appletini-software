@@ -69,7 +69,7 @@ typedef unsigned int u16;
 #define PARALLAX_SECOND_WOVEN (PARALLAX_WOVEN_TOP + PARALLAX_SLICE_ROWS)
 #define PARALLAX_THIRD_WOVEN (PARALLAX_SECOND_WOVEN + PARALLAX_SLICE_ROWS)
 #define PARALLAX_LAST_ROWS (PARALLAX_WOVEN_BOTTOM - PARALLAX_THIRD_WOVEN)
-#define REPLAY_FIRST_BANK 6
+#define REPLAY_FIRST_BANK 7
 #define VIDEO7_COLOR 0x80
 #define FIELD_BYTES 4
 #define ENEMY_COUNT 24
@@ -77,6 +77,13 @@ typedef unsigned int u16;
 #define AUTOFIRE_DELAY 5
 #define MUSIC_STEP_COUNT 32
 #define MUSIC_STEP_FRAMES 6
+#define PLAYER_GROUP_MAX 72
+#define PLAYER_GROUP_CENTER 36
+#define PLAYER_SHIP_WOVEN_TOP 288
+#define PLAYER_HIT_LEFT 4
+#define PLAYER_HIT_RIGHT 52
+#define PLAYER_HIT_TOP 8
+#define PLAYER_HIT_BOTTOM 64
 
 #define PARALLAX_DEEP_ROW_LO     0x0068
 #define PARALLAX_DEEP_ROW_HI     0x0069
@@ -91,6 +98,7 @@ typedef unsigned int u16;
 #define SPRITE_HEIGHT_ZP     0x0022
 #define SPRITE_PTR_LO_ZP     0x0023
 #define SPRITE_PTR_HI_ZP     0x0024
+#define SHIP_FRAME_ZP        0x0025
 
 #define KEY_LEFT   0x08
 #define KEY_RIGHT  0x15
@@ -107,6 +115,7 @@ extern void __fastcall__ aux_color_row(u16 address);
 extern u8 __fastcall__ parallax_assets_load(void);
 extern void __fastcall__ parallax_render_slice(u8 row_count);
 extern void video_sprite_fast(void);
+extern void video_ship_fast(void);
 
 struct DebugMailbox {
     u8 magic[4];
@@ -141,13 +150,19 @@ struct DebugMailbox {
     u8 bass_note;
     u8 music_events;
     u8 parallax_commits;
+    u8 ship_frame;
+    u8 enemy_bullet_active;
+    u8 enemy_bullet_source;
+    u8 enemy_alive_0;
+    u8 enemy_alive_1;
+    u8 enemy_alive_2;
 };
 
 #define MAILBOX ((volatile struct DebugMailbox*)0x0300)
 
 static u16 hgr_line[VIDEO_ROWS];
 static u8 enemy_alive[ENEMY_COUNT];
-static u8 player_x;
+static u8 player_group_x;
 static s8 player_velocity;
 static u8 enemy_x;
 static u8 enemy_y;
@@ -164,6 +179,7 @@ static u8 shots_fired;
 static u8 enemy_bullet_active;
 static u8 enemy_bullet_x;
 static u8 enemy_bullet_y;
+static u8 enemy_bullet_source;
 static u8 fire_column;
 static u8 frame_lo;
 static u8 frame_hi;
@@ -176,6 +192,10 @@ static u8 sfx_timer;
 static u8 sfx_kind;
 static u8 replay_bank;
 static u8 replay_slot;
+static u8 ship_frame;
+static u8 ship_shimmer;
+static u8 ship_shimmer_phase;
+static u8 ship_fire_stage;
 
 struct ParallaxPhase {
     u16 row;
@@ -206,13 +226,7 @@ static u8 speech_index;
 static u8 speech_timer;
 static u8 speech_active;
 
-/* Each row is page-A aux/main followed by page-B aux/main. */
-static const u8 sprite_player[] = {
-    0x08,0x00,0x1C,0x00, 0x1C,0x00,0x3E,0x08,
-    0x3E,0x08,0x7F,0x1C, 0x7F,0x1C,0x7F,0x3E,
-    0x7F,0x3E,0x7F,0x7F, 0x3E,0x7F,0x3E,0x7F,
-    0x22,0x7F,0x63,0x7F, 0x41,0x22,0x41,0x22
-};
+/* Each legacy sprite row is page-A aux/main followed by page-B aux/main. */
 static const u8 sprite_enemy_a[] = {
     0x14,0x14,0x1C,0x1C, 0x08,0x08,0x3E,0x3E,
     0x3E,0x3E,0x7F,0x7F, 0x6B,0x6B,0x7F,0x7F,
@@ -589,6 +603,14 @@ static void video_sprite(u8 x, u8 y, const u8* sprite, u8 height)
     REG8(RAMWRTOFF) = 0;
 }
 
+static void video_ship(u8 group_x, u8 frame)
+{
+    REG8(SPRITE_X_ZP) = group_x;
+    REG8(SHIP_FRAME_ZP) = frame;
+    video_ship_fast();
+    REG8(RAMWRTOFF) = 0;
+}
+
 static void ay_write(u8 reg, u8 value)
 {
     REG8(VIA_ORA) = reg;
@@ -801,6 +823,17 @@ static u8 player_bullet_count(void)
     return count;
 }
 
+static u8 enemy_alive_byte(u8 first)
+{
+    u8 bit;
+    u8 value;
+    value = 0;
+    for (bit = 0; bit < 8; ++bit) {
+        if (enemy_alive[first + bit]) value |= (u8)(1 << bit);
+    }
+    return value;
+}
+
 static void replay_record(void)
 {
     u8 bullets;
@@ -812,7 +845,7 @@ static void replay_record(void)
     REG8(RAMWORKS) = replay_bank;
     REG8(RAMWRTON) = 0;
     record[0] = frame_lo;
-    record[1] = player_x;
+    record[1] = player_group_x;
     record[2] = enemy_x;
     record[3] = enemy_y;
     record[4] = bullets;
@@ -840,6 +873,7 @@ static void formation_reset(void)
     enemy_y = 32;
     enemy_right = 1;
     enemy_bullet_active = 0;
+    enemy_bullet_source = 0xFF;
     animation = 0;
     hud_dirty = 1;
 }
@@ -848,13 +882,17 @@ static void game_reset(void)
 {
     score = 0;
     lives = 3;
-    player_x = 20;
+    player_group_x = PLAYER_GROUP_CENTER;
     player_velocity = 0;
     held_action = HELD_NONE;
     fire_held = 0;
     fire_pending = 0;
     fire_cooldown = 0;
     shots_fired = 0;
+    ship_frame = 0;
+    ship_shimmer = 0;
+    ship_shimmer_phase = 0;
+    ship_fire_stage = 0;
     formation_reset();
 }
 
@@ -884,13 +922,40 @@ static void draw_dynamic(void)
 {
     u8 bullet;
     draw_invaders();
-    video_sprite(player_x, 164, sprite_player, 8);
+    if (ship_fire_stage == 2) {
+        ship_frame = 6;
+    } else if (ship_fire_stage == 1) {
+        ship_frame = 7;
+    } else if (player_velocity < 0) {
+        ship_frame = (u8)(2 + ship_shimmer);
+    } else if (player_velocity > 0) {
+        ship_frame = (u8)(4 + ship_shimmer);
+    } else {
+        ship_frame = ship_shimmer;
+    }
+    video_ship(player_group_x, ship_frame);
     for (bullet = 0; bullet < PLAYER_BULLET_COUNT; ++bullet) {
         if (player_bullet_active[bullet]) {
             video_sprite(player_bullet_x[bullet], player_bullet_y[bullet], sprite_shot, 4);
         }
     }
     if (enemy_bullet_active) video_sprite(enemy_bullet_x, enemy_bullet_y, sprite_bomb, 4);
+}
+
+static void ship_animation_advance(void)
+{
+    if (ship_fire_stage) {
+        --ship_fire_stage;
+        return;
+    }
+    /* Three fifths of a shimmer interval per 15 Hz publication produces a
+     * 2,2,1-commit pattern: 111.1 ms per frame on average, matching the
+     * supplied 110 ms timing as closely as the DHGRi publication rate allows. */
+    ship_shimmer_phase = (u8)(ship_shimmer_phase + 3);
+    if (ship_shimmer_phase >= 5) {
+        ship_shimmer_phase = (u8)(ship_shimmer_phase - 5);
+        ship_shimmer ^= 1;
+    }
 }
 
 static void draw_hud(void)
@@ -915,9 +980,10 @@ static u8 player_fire(void)
     for (bullet = 0; bullet < PLAYER_BULLET_COUNT; ++bullet) {
         if (!player_bullet_active[bullet]) {
             player_bullet_active[bullet] = 1;
-            player_bullet_x[bullet] = player_x;
-            player_bullet_y[bullet] = 158;
+            player_bullet_x[bullet] = (u8)((player_group_x >> 1) + 2);
+            player_bullet_y[bullet] = 144;
             ++shots_fired;
+            ship_fire_stage = 2;
             sfx_fire();
             return 1;
         }
@@ -1046,22 +1112,62 @@ static void player_bullet_tick(void)
 
 static void enemy_bullet_tick(void)
 {
-    u8 delta;
+    u8 attempts;
+    u8 column;
+    u8 index;
+    u8 row;
     if (!enemy_bullet_active) {
         if ((game_frame & 0x3F) == 0) {
-            enemy_bullet_active = 1;
-            enemy_bullet_x = (u8)(enemy_x + fire_column * 5);
-            enemy_bullet_y = (u8)(enemy_y + 57);
-            ++fire_column;
-            if (fire_column == 6) fire_column = 0;
+            /* Try each column in round-robin order. The lowest surviving
+             * enemy in that column fires, so a cleared bottom cell or an
+             * entirely empty column can never fabricate a shot origin. */
+            attempts = 6;
+            while (attempts) {
+                column = fire_column;
+                ++fire_column;
+                if (fire_column == 6) fire_column = 0;
+                row = 4;
+                while (row) {
+                    --row;
+                    index = (u8)(row * 6 + column);
+                    if (enemy_alive[index]) {
+                        enemy_bullet_x = (u8)(enemy_x + column * 5);
+                        enemy_bullet_y = (u8)(enemy_y + row * 15 + 12);
+                        enemy_bullet_source = index;
+                        enemy_bullet_active = 1;
+                        return;
+                    }
+                }
+                --attempts;
+            }
         }
         return;
     }
     enemy_bullet_y = (u8)(enemy_bullet_y + 2);
-    if (enemy_bullet_y >= 160) {
-        delta = enemy_bullet_x > player_x
-              ? (u8)(enemy_bullet_x - player_x) : (u8)(player_x - enemy_bullet_x);
-        if (delta <= 1) {
+    {
+        u16 bomb_left;
+        u16 bomb_right;
+        u16 bomb_top;
+        u16 bomb_bottom;
+        u16 ship_left;
+        u16 ship_right;
+        u16 ship_top;
+        u16 ship_bottom;
+
+        /* The new hull is 56x64 woven dots. Keep muzzle flashes and the
+         * outermost banking outline outside a broad 48x56 body/wing hitbox,
+         * replacing the old one-byte ship approximation. */
+        bomb_left = (u16)enemy_bullet_x * 14 + 1;
+        bomb_right = bomb_left + 5;
+        bomb_top = (u16)enemy_bullet_y * 2;
+        bomb_bottom = bomb_top + 8;
+        ship_left = (u16)player_group_x * 7 + PLAYER_HIT_LEFT;
+        ship_right = (u16)player_group_x * 7 + PLAYER_HIT_RIGHT;
+        ship_top = PLAYER_SHIP_WOVEN_TOP + PLAYER_HIT_TOP;
+        ship_bottom = PLAYER_SHIP_WOVEN_TOP + PLAYER_HIT_BOTTOM;
+
+        if (bomb_left < ship_right && bomb_right > ship_left
+            && bomb_top < ship_bottom && bomb_bottom > ship_top) {
             enemy_bullet_active = 0;
             if (lives) --lives;
             hud_dirty = 1;
@@ -1111,8 +1217,10 @@ static void formation_tick(void)
 static void game_tick(void)
 {
     input_tick();
-    if (player_velocity < 0 && player_x > 1) --player_x;
-    if (player_velocity > 0 && player_x < 38) ++player_x;
+    if (player_velocity < 0 && player_group_x) --player_group_x;
+    if (player_velocity > 0 && player_group_x < PLAYER_GROUP_MAX) {
+        ++player_group_x;
+    }
     formation_tick();
     player_bullet_tick();
     enemy_bullet_tick();
@@ -1133,7 +1241,7 @@ static void mailbox_init(u8 banks)
     MAILBOX->score = score;
     MAILBOX->lives = lives;
     MAILBOX->enemies = enemies_left;
-    MAILBOX->player_x = player_x;
+    MAILBOX->player_x = player_group_x;
     MAILBOX->mhz = 33;
     MAILBOX->audio_flags = 7;
     MAILBOX->speech_phoneme = 0;
@@ -1157,6 +1265,12 @@ static void mailbox_init(u8 banks)
     MAILBOX->bass_note = music_bass_note;
     MAILBOX->music_events = music_events;
     MAILBOX->parallax_commits = parallax_commits;
+    MAILBOX->ship_frame = ship_frame;
+    MAILBOX->enemy_bullet_active = enemy_bullet_active;
+    MAILBOX->enemy_bullet_source = enemy_bullet_source;
+    MAILBOX->enemy_alive_0 = enemy_alive_byte(0);
+    MAILBOX->enemy_alive_1 = enemy_alive_byte(8);
+    MAILBOX->enemy_alive_2 = enemy_alive_byte(16);
     /* Publish the handshake only after every payload byte is initialized. */
     MAILBOX->magic[1] = '1';
     MAILBOX->magic[2] = '3';
@@ -1177,13 +1291,16 @@ static void mailbox_parallax_tick(void)
 static void mailbox_parallax_target_tick(void)
 {
     /* Publish while A2Li still holds the preceding weave. Once marker $01 is
-     * visible, a paused debugger sees the exact target phases just committed. */
+     * visible, a paused debugger sees the exact target phases and ship state
+     * just committed. */
     MAILBOX->deep_phase_lo = (u8)deep_phase.target_units;
     MAILBOX->deep_phase_hi = (u8)(deep_phase.target_units >> 8);
     MAILBOX->nebula_phase_lo = (u8)nebula_phase.target_units;
     MAILBOX->nebula_phase_hi = (u8)(nebula_phase.target_units >> 8);
     MAILBOX->asteroid_phase_lo = (u8)asteroid_phase.target_units;
     MAILBOX->asteroid_phase_hi = (u8)(asteroid_phase.target_units >> 8);
+    MAILBOX->player_x = player_group_x;
+    MAILBOX->ship_frame = ship_frame;
     ++parallax_commits;
     MAILBOX->parallax_commits = parallax_commits;
 }
@@ -1195,7 +1312,7 @@ static void mailbox_tick(void)
     MAILBOX->score = score;
     MAILBOX->lives = lives;
     MAILBOX->enemies = enemies_left;
-    MAILBOX->player_x = player_x;
+    MAILBOX->player_x = player_group_x;
     MAILBOX->player_bullets = player_bullet_count();
     MAILBOX->shots_fired = shots_fired;
     mailbox_parallax_tick();
@@ -1208,6 +1325,12 @@ static void mailbox_tick(void)
     MAILBOX->bass_note = music_bass_note;
     MAILBOX->music_events = music_events;
     MAILBOX->parallax_commits = parallax_commits;
+    MAILBOX->ship_frame = ship_frame;
+    MAILBOX->enemy_bullet_active = enemy_bullet_active;
+    MAILBOX->enemy_bullet_source = enemy_bullet_source;
+    MAILBOX->enemy_alive_0 = enemy_alive_byte(0);
+    MAILBOX->enemy_alive_1 = enemy_alive_byte(8);
+    MAILBOX->enemy_alive_2 = enemy_alive_byte(16);
 }
 
 int main(void)
@@ -1244,6 +1367,7 @@ int main(void)
     draw_dynamic();
     mailbox_parallax_tick();
     video_commit_dhgri();
+    ship_animation_advance();
     speech_start(phrase_boot);
 
     for (;;) {
@@ -1270,6 +1394,7 @@ int main(void)
             mailbox_parallax_target_tick();
             video_commit_dhgri();
             parallax_promote_target();
+            ship_animation_advance();
             parallax_render_state = PARALLAX_STATE_QUIET;
         } else {
             /* One full VBL without base-video writes is mandatory after each

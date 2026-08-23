@@ -16,7 +16,7 @@ DEFAULT_JAR = (Path.home() /
                "Documents/accurapple/accurapple/speaker/AppleCommander-1.3.5.13-ac.jar")
 A13C_HEADER = struct.Struct("<4sBBBBHHHH")
 A13C_BANK_IMAGE_SIZE = 32 * 1024
-A13C_BANK_COUNT = 5
+A13C_BANK_COUNT = 6
 A13C_PREFIX_SIZE = 4096
 
 
@@ -90,7 +90,7 @@ def main() -> None:
             f"expected {expected_parallax_size}"
         )
     header = A13C_HEADER.unpack_from(parallax_payload)
-    if header != (b"A13C", 1, 3, 80, 5, 560, 384, 16, 4096):
+    if header != (b"A13C", 1, 3, 80, 6, 560, 384, 16, 4096):
         raise SystemExit(f"invalid A13C header: {header!r}")
     result = applecommander(jar, "-p", image, "PARALLAX", "BIN", "$2000",
                             data=parallax_payload)

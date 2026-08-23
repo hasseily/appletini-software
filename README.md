@@ -28,18 +28,29 @@ contiguous AUX and MAIN rows. This avoids an interpreted per-pixel data path
 and keeps the main loop synchronized to every VBL at the 33.3 MHz Appletini
 rate while preserving the supplied artwork.
 
+The player uses eight supplied 56x64 RGBA frames: two neutral shimmer frames,
+two bank-left frames, two bank-right frames, and a two-stage firing burst. A
+dedicated exact-alpha compositor preserves opaque-black outlines and all Apple
+II palette colors while the ship moves in native seven-dot DHGR increments.
+Its four possible global color phases occupy one additional RamWorks bank. The
+fixed body hitbox is 48x56 woven dots; muzzle flashes are visual effects and do
+not enlarge it.
+
 Other showcase features include:
 
 - Appletini `$C074` accelerated-speed release;
 - an eight-projectile pool with Apple //e AKD-driven Space autofire and
   independent Apple/game-button fire;
+- enemy fire selected round-robin from the lowest living alien in a nonempty
+  column, never from an already-destroyed formation cell;
 - a continuously looping two-voice Mockingboard AY-3-8910 score, with fire and
   explosion effects on the third channel;
 - SSI-263 phoneme speech behind a scheduler that can later be replaced by a
   Phasor-native transport;
 - all 128 RamWorks banks discovered at startup: bank 0 remains DHGR auxiliary
-  memory, banks 1-5 hold the compiled parallax rows, and banks 6-127 rotate
-  through gameplay/replay snapshots.
+  memory, banks 1-5 hold the compiled parallax rows, bank 6 holds all exact
+  ship frames/color phases, and banks 7-127 rotate through gameplay/replay
+  snapshots.
 
 The background images are the supplied layer set imported into the project;
 this README makes no claim about their origin or licensing.
@@ -52,8 +63,10 @@ From this directory:
 make disk
 ```
 
-The build converts the three checked-in PNG layers to a deterministic 167,936-
-byte `build/PARALLAX` asset. It also wraps the `$6000` game as
+The build converts the three checked-in background layers and eight ship frames
+to a deterministic 200,704-byte `build/PARALLAX` asset. Its final 32 KiB bank
+is the independently validated `build/SHIP` image. The build also wraps the
+`$6000` game as
 `INVASION.SYSTEM`: ProDOS loads the SYS file at `$2000`, its first instruction
 jumps to `$6000`, and zero padding places the game payload at that exact
 address without runtime relocation. This keeps the executable out of the
@@ -95,9 +108,11 @@ different keyboard actions overlap, the game stops them until all ordinary
 keys are released; use an Apple/game button for simultaneous movement and
 fire.
 
-The fixed 35-byte debug mailbox at `$0300` begins with `A13I`. It exposes three
-16-bit parallax phases in 1/20-pixel units, music state, and a parallax-
-publication counter. The automated GSSquared smoke test uses it to validate
-exact alpha-composited background rows against the canonical PNGs, 33.3 MHz
-execution, 15 Hz publication cadence, video selectors, RamWorks bank use,
-audio/speech, game progress, and held-key release behavior.
+The fixed 41-byte debug mailbox at `$0300` begins with `A13I`. It exposes three
+16-bit parallax phases in 1/20-pixel units, music state, the displayed ship
+frame, enemy-shot source state, and a parallax-publication counter. The
+automated GSSquared smoke test validates exact alpha-composited background and
+ship rows against the canonical PNGs, every directional/fire pose, living
+enemy shot origins, 33.3 MHz execution, 15 Hz publication cadence, video
+selectors, RamWorks bank use, audio/speech, game progress, and held-key release
+behavior.

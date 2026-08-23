@@ -6,6 +6,7 @@ BUILD := build
 DIST := dist
 PROGRAM := $(BUILD)/INVASION
 SYSTEM := $(BUILD)/INVASION.SYSTEM
+SHIP := $(BUILD)/SHIP
 PARALLAX := $(BUILD)/PARALLAX
 DISK := $(DIST)/Appletini-Invasion.hdv
 OBJECTS := $(BUILD)/main.o $(BUILD)/ramworks_probe.o \
@@ -14,6 +15,16 @@ PARALLAX_SOURCES := \
 	assets/layer1_deep_space.png \
 	assets/layer2_nebula.png \
 	assets/layer3_asteroids.png
+SHIP_SOURCES := \
+	assets/ship.json \
+	assets/ship_f0.png \
+	assets/ship_f1.png \
+	assets/ship_f2.png \
+	assets/ship_f3.png \
+	assets/ship_f4.png \
+	assets/ship_f5.png \
+	assets/ship_f6.png \
+	assets/ship_f7.png
 
 .PHONY: all clean disk smoke
 
@@ -31,8 +42,11 @@ $(BUILD)/ramworks_probe.o: ramworks_probe.s | $(BUILD)
 $(BUILD)/parallax_runtime.o: parallax_runtime.s | $(BUILD)
 	$(CL65) -t none --cpu 65c02 -c -o $@ $<
 
-$(PARALLAX): tools/convert_parallax.py $(PARALLAX_SOURCES) | $(BUILD)
-	$(PYTHON) tools/convert_parallax.py --assets assets --output $@
+$(SHIP): tools/convert_ship.py tools/convert_parallax.py $(SHIP_SOURCES) | $(BUILD)
+	$(PYTHON) tools/convert_ship.py --assets assets --output $@
+
+$(PARALLAX): tools/convert_parallax.py $(PARALLAX_SOURCES) $(SHIP) | $(BUILD)
+	$(PYTHON) tools/convert_parallax.py --assets assets --ship $(SHIP) --output $@
 
 $(PROGRAM): $(OBJECTS) appletini_invasion.cfg | $(BUILD)
 	$(CL65) -t none --cpu 65c02 \

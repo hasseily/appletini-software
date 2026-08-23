@@ -1,10 +1,11 @@
 .setcpu "65C02"
 
-; Exact-alpha DHGRi parallax loader and slice renderer for Appletini Invasion.
+; Exact-alpha DHGRi parallax/ship loader and renderer for Appletini Invasion.
 ;
 ; Public C API:
 ;   unsigned char __fastcall__ parallax_assets_load(void);
 ;   void __fastcall__ parallax_render_slice(unsigned char row_count);
+;   void video_ship_fast(void);
 ;
 ; Before parallax_render_slice, the caller supplies four 16-bit values through
 ; fixed zero-page locations:
@@ -21,7 +22,7 @@
 ; bank-zero AUX and MAIN DHGR memory with Video-7 color selected in bit 7.
 
 .export _parallax_assets_load, _parallax_render_slice
-.export _video_sprite_fast
+.export _video_sprite_fast, _video_ship_fast
 .exportzp _parallax_deep_row, _parallax_nebula_row
 .exportzp _parallax_asteroids_row, _parallax_woven_row
 
@@ -66,6 +67,23 @@ SPRITE_TABLE_HI = $39
 SPRITE_ROWS     = $3A
 SPRITE_INDEX    = $3B
 
+; Exact 56x64 ship inputs and workspace. SHIP_X is a seven-dot DHGR group
+; origin (0-72), while SHIP_FRAME selects frames 0-7. The row cache reuses
+; the parallax dispatcher's $70-$7F scratch after a slice has completed.
+SHIP_X          = SPRITE_X
+SHIP_FRAME      = $25
+SHIP_SOURCE     = $26
+SHIP_SOURCE_HI  = $27
+SHIP_DEST       = $28
+SHIP_DEST_HI    = $29
+SHIP_TABLE      = $2A
+SHIP_TABLE_HI   = $2B
+SHIP_ROWS       = $2C
+SHIP_CACHE_INDEX= $2D
+SHIP_GROUPS     = $2E
+SHIP_BYTE_X     = $2F
+SHIP_CACHE      = $70
+
 ; Installer aliases; installation and rendering never overlap.
 COPY_SOURCE     = DIRECTORY_PTR
 COPY_SOURCE_HI  = DIRECTORY_PTR_HI
@@ -92,7 +110,9 @@ A13C_ASTEROID_DIR = A13C_NEBULA_DIR + A13C_LAYER_SIZE
 A13C_VERSION      = 1
 A13C_LAYER_COUNT  = 3
 A13C_ROW_BYTES    = 80
-A13C_BANK_COUNT   = 5
+A13C_PROGRAM_BANK_COUNT = 5
+A13C_BANK_COUNT   = 6
+A13C_SHIP_BANK    = 6
 A13C_WIDTH_LO     = $30
 A13C_WIDTH_HI     = $02
 A13C_HEIGHT_LO    = $80
@@ -112,7 +132,7 @@ MLI_CLOSE       = $CC
 .segment "RODATA"
 
 ; This relocatable blob is installed at exactly $0D00 in MAIN and RamWorks
-; banks 0-5. Branches are relative; internal JSRs and self-modifying operands
+; banks 0-6. Branches are relative; internal JSRs and self-modifying operands
 ; use ENGINE_ADDRESS plus assembly-time offsets into the blob.
 engine_blob:
 slice_entry:
@@ -452,6 +472,54 @@ sprite_advance_table:
 :
         rts
 
+; Cache one exact ship row from bank 6 into common MAIN zero page. Each of the
+; eight seven-dot groups is stored as (keep mask, color data), so opaque black
+; pixels clear the background while transparent dots remain untouched.
+ship_cache_entry:
+        stz     RAMRDON
+        ldy     #$00
+@copy:
+        lda     (SHIP_SOURCE),y
+        sta     SHIP_CACHE,y
+        iny
+        cpy     #$10
+        bne     @copy
+        stz     RAMRDOFF
+        rts
+
+; Apply four alternating groups from the cached row to the currently selected
+; plane. SHIP_CACHE_INDEX is 0 for local even groups or 2 for local odd groups.
+ship_apply_row:
+        ldx     SHIP_CACHE_INDEX
+        ldy     #$00
+        lda     #$04
+        sta     SHIP_GROUPS
+@group:
+        lda     (SHIP_DEST),y
+        and     SHIP_CACHE,x
+        inx
+        ora     SHIP_CACHE,x
+        ora     #$80
+        sta     (SHIP_DEST),y
+        inx
+        inx
+        inx
+        iny
+        dec     SHIP_GROUPS
+        bne     @group
+        rts
+
+; Run the same four-group compositor against bank-zero AUX video. The engine
+; is mirrored in bank zero, so execution remains valid after RAMRD is enabled.
+ship_aux_entry:
+        stz     RAMWORKS
+        stz     RAMWRTON
+        stz     RAMRDON
+        jsr     ENGINE_SHIP_APPLY_ROW
+        stz     RAMRDOFF
+        stz     RAMWRTOFF
+        rts
+
 engine_blob_end:
 
 ENGINE_SLICE_ENTRY         = ENGINE_ADDRESS + (slice_entry-engine_blob)
@@ -473,6 +541,9 @@ ENGINE_SPRITE_AUX_A_EOR    = ENGINE_ADDRESS + (sprite_aux_a_eor-engine_blob)
 ENGINE_SPRITE_AUX_A_STA    = ENGINE_ADDRESS + (sprite_aux_a_sta-engine_blob)
 ENGINE_SPRITE_AUX_B_EOR    = ENGINE_ADDRESS + (sprite_aux_b_eor-engine_blob)
 ENGINE_SPRITE_AUX_B_STA    = ENGINE_ADDRESS + (sprite_aux_b_sta-engine_blob)
+ENGINE_SHIP_CACHE_ENTRY    = ENGINE_ADDRESS + (ship_cache_entry-engine_blob)
+ENGINE_SHIP_APPLY_ROW      = ENGINE_ADDRESS + (ship_apply_row-engine_blob)
+ENGINE_SHIP_AUX_ENTRY      = ENGINE_ADDRESS + (ship_aux_entry-engine_blob)
 
 .assert (engine_blob_end-engine_blob) <= $0300, error, "A13C engine exceeds its $0D00-$0FFF window"
 
@@ -561,8 +632,8 @@ install_engines:
         jsr     prepare_engine_copy
         jsr     copy_bytes
 
-        ; Bank zero supports the existing AUX sprite pass. Banks 1-5 execute
-        ; generated A13C row programs and return through the mirrored stub.
+        ; Bank zero supports AUX drawing, banks 1-5 execute generated A13C row
+        ; programs, and bank 6 supplies exact ship rows to the mirrored stub.
         stz     LOADER_BANK
 @next_engine_bank:
         jsr     prepare_engine_copy
@@ -661,7 +732,7 @@ validate_a13c:
         ldy     #$00
         lda     (COPY_SOURCE),y
         beq     @bad
-        cmp     #(A13C_BANK_COUNT+1)
+        cmp     #(A13C_PROGRAM_BANK_COUNT+1)
         bcs     @bad
         iny
         iny
@@ -711,7 +782,7 @@ copy_read_buffer:
         rts
 
 ; fastcall unsigned char parallax_assets_load(void)
-; Read A13C through ProDOS/SmartPort, validate it, install five 32 KiB bank
+; Read A13C through ProDOS/SmartPort, validate it, install six 32 KiB bank
 ; images, then mirror the bank-safe engine. Returns A=1,X=0 on success.
 _parallax_assets_load:
         stz     RAMRDOFF
@@ -750,7 +821,7 @@ _parallax_assets_load:
         jsr     validate_a13c
         beq     loader_invalid_close
 
-        ; Remaining file data is five consecutive 32 KiB bank images.
+        ; Remaining file data is six consecutive 32 KiB bank images.
         lda     #<READ_BUFFER
         sta     read_buffer
         lda     #>READ_BUFFER
@@ -830,4 +901,111 @@ _parallax_render_slice:
 
 _video_sprite_fast:
         jsr     ENGINE_SPRITE_ENTRY
+        rts
+
+; Draw one exact-alpha 56x64 player frame. SHIP_X is a seven-dot group origin;
+; its low two bits select the precompiled global DHGR color phase. The 32 KiB
+; ship bank stores 32 fixed 1 KiB variants in frame-major, phase-minor order.
+_video_ship_fast:
+        php
+        sei
+        stz     RAMRDOFF
+        stz     RAMWRTOFF
+        stz     RAMWORKS
+        stz     ALTZPOFF
+
+        lda     SHIP_X
+        lsr
+        sta     SHIP_BYTE_X
+
+        lda     SHIP_FRAME
+        and     #$07
+        asl
+        asl
+        sta     SHIP_SOURCE_HI
+        lda     SHIP_X
+        and     #$03
+        clc
+        adc     SHIP_SOURCE_HI
+        asl
+        asl
+        clc
+        adc     #$20
+        sta     SHIP_SOURCE_HI
+        stz     SHIP_SOURCE
+
+        lda     #<(woven_destination_table + ((144-20)*4))
+        sta     SHIP_TABLE
+        lda     #>(woven_destination_table + ((144-20)*4))
+        sta     SHIP_TABLE_HI
+        lda     #64
+        sta     SHIP_ROWS
+
+@row:
+        lda     #A13C_SHIP_BANK
+        sta     RAMWORKS
+        jsr     ENGINE_SHIP_CACHE_ENTRY
+
+        ldy     #$00
+        clc
+        lda     (SHIP_TABLE),y
+        adc     SHIP_BYTE_X
+        sta     SHIP_DEST
+        iny
+        lda     (SHIP_TABLE),y
+        adc     #$00
+        sta     SHIP_DEST_HI
+
+        ; MAIN receives local odd groups from an even origin and local even
+        ; groups from an odd origin. Both begin at the unadjusted byte column.
+        lda     SHIP_X
+        and     #$01
+        bne     @main_even
+        lda     #$02
+        bra     @main_ready
+@main_even:
+        lda     #$00
+@main_ready:
+        sta     SHIP_CACHE_INDEX
+        jsr     ENGINE_SHIP_APPLY_ROW
+
+        ; AUX uses the complementary groups. An odd group origin begins its
+        ; first AUX byte in the following 14-dot memory column.
+        lda     SHIP_X
+        and     #$01
+        beq     @aux_even
+        inc     SHIP_DEST
+        bne     :+
+        inc     SHIP_DEST_HI
+:
+        lda     #$02
+        bra     @aux_ready
+@aux_even:
+        lda     #$00
+@aux_ready:
+        sta     SHIP_CACHE_INDEX
+        jsr     ENGINE_SHIP_AUX_ENTRY
+
+        clc
+        lda     SHIP_SOURCE
+        adc     #$10
+        sta     SHIP_SOURCE
+        bcc     :+
+        inc     SHIP_SOURCE_HI
+:
+        clc
+        lda     SHIP_TABLE
+        adc     #$02
+        sta     SHIP_TABLE
+        bcc     :+
+        inc     SHIP_TABLE_HI
+:
+        dec     SHIP_ROWS
+        bne     @row
+
+        stz     RAMRDOFF
+        stz     RAMWRTOFF
+        stz     RAMWORKS
+        stz     ALTZPOFF
+        plp
         rts

@@ -25,19 +25,21 @@ SDL_SCANCODE_SPACE = 44
 SDL_SCANCODE_RIGHT = 79
 SDL_SCANCODE_LEFT = 80
 MAILBOX_ADDRESS = 0x0300
-MAILBOX_SIZE = 35
+MAILBOX_SIZE = 41
 PARALLAX_PATH = GAME_DIR / "build/PARALLAX"
+SHIP_PATH = GAME_DIR / "build/SHIP"
 PARALLAX_LAYER_COUNT = 3
 PARALLAX_SOURCE_ROWS = 384
 PARALLAX_ROW_BYTES = 80
-PARALLAX_BANK_COUNT = 5
+PARALLAX_PROGRAM_BANK_COUNT = 5
+PARALLAX_BANK_COUNT = 6
 PARALLAX_BANK_SIZE = 32 * 1024
 PARALLAX_BANK_LOAD = 0x2000
 PARALLAX_DIRECTORY_OFFSET = 16
 PARALLAX_BANK_IMAGES_OFFSET = 4096
 PARALLAX_PHASE_MODULUS = 384 * 20
 PARALLAX_SPEEDS = (5, 12, 28)
-REPLAY_FIRST_BANK = 6
+REPLAY_FIRST_BANK = 7
 MB_DEEP_PHASE = 20
 MB_NEBULA_PHASE = 22
 MB_ASTEROID_PHASE = 24
@@ -50,6 +52,14 @@ MB_LEAD_NOTE = 31
 MB_BASS_NOTE = 32
 MB_MUSIC_EVENTS = 33
 MB_PARALLAX_COMMITS = 34
+MB_SHIP_FRAME = 35
+MB_ENEMY_BULLET_ACTIVE = 36
+MB_ENEMY_BULLET_SOURCE = 37
+MB_ENEMY_ALIVE = 38
+SHIP_WOVEN_TOP = 288
+SHIP_FRAME_COUNT = 8
+SHIP_PHASE_COUNT = 4
+SHIP_VARIANT_SIZE = 1024
 # Player shots stop above row 24 and invaders start below it, so these rows
 # remain a deterministic background-only oracle throughout gameplay.
 BACKGROUND_TEST_ROWS = range(20, 23)
@@ -57,6 +67,7 @@ BACKGROUND_TEST_ROWS = range(20, 23)
 ParallaxRow = tuple[bytes, bytes]
 ParallaxLayer = tuple[ParallaxRow, ...]
 ParallaxLayers = tuple[ParallaxLayer, ...]
+ShipVariants = tuple[tuple[bytes, ...], ...]
 
 sys.path.insert(0, str(CLIENT_SRC))
 sys.path.insert(0, str(TOOLS_DIR))
@@ -72,6 +83,12 @@ from convert_parallax import (  # noqa: E402
     LAYERS as PARALLAX_SOURCE_FILES,
     pack_row as pack_parallax_row,
     read_rgba_png,
+)
+from convert_ship import (  # noqa: E402
+    FRAMES as SHIP_SOURCE_FILES,
+    HEIGHT as SHIP_HEIGHT,
+    WIDTH as SHIP_WIDTH,
+    pack_variant as pack_ship_variant,
 )
 
 
@@ -199,7 +216,34 @@ def capture_committed_dhgri(client: Client) -> tuple[bytes, dict[str, bytes]]:
     fail("could not pause on a committed A2Li DHGRi frame")
 
 
-def load_parallax(path: Path) -> tuple[ParallaxLayers, str]:
+def load_ship(path: Path) -> tuple[ShipVariants, bytes, str]:
+    payload = path.read_bytes()
+    expected_size = (
+        SHIP_FRAME_COUNT * SHIP_PHASE_COUNT * SHIP_VARIANT_SIZE
+    )
+    if len(payload) != expected_size:
+        fail(f"SHIP is {len(payload)} bytes; expected {expected_size}")
+
+    variants: list[tuple[bytes, ...]] = []
+    expected = bytearray()
+    try:
+        for filename in SHIP_SOURCE_FILES:
+            source_path = GAME_DIR / "assets" / filename
+            rows = read_rgba_png(source_path, SHIP_WIDTH, SHIP_HEIGHT)
+            frame_variants = tuple(
+                pack_ship_variant(source_path, rows, phase)
+                for phase in range(SHIP_PHASE_COUNT)
+            )
+            variants.append(frame_variants)
+            expected.extend(b"".join(frame_variants))
+    except ParallaxAssetError as error:
+        fail(f"invalid canonical ship source: {error}")
+    if payload != expected:
+        fail("SHIP does not exactly encode the eight canonical RGBA frames")
+    return tuple(variants), payload, hashlib.sha256(payload).hexdigest()
+
+
+def load_parallax(path: Path, ship_bank: bytes) -> tuple[ParallaxLayers, str]:
     payload = path.read_bytes()
     expected_size = (
         PARALLAX_BANK_IMAGES_OFFSET
@@ -233,7 +277,7 @@ def load_parallax(path: Path) -> tuple[ParallaxLayers, str]:
     allowed_two_byte = {0xA9, 0x85, 0x14, 0x04, 0xA5, 0x29, 0x09}
     zp_operands = {0x85, 0x14, 0x04, 0xA5}
     for index, (bank, address) in enumerate(locations):
-        if not 1 <= bank <= PARALLAX_BANK_COUNT \
+        if not 1 <= bank <= PARALLAX_PROGRAM_BANK_COUNT \
                 or not PARALLAX_BANK_LOAD <= address < 0xA000:
             fail(
                 f"PARALLAX routine {index} has invalid bank/address "
@@ -283,8 +327,18 @@ def load_parallax(path: Path) -> tuple[ParallaxLayers, str]:
             - PARALLAX_BANK_IMAGES_OFFSET
             - (bank - 1) * PARALLAX_BANK_SIZE
         )
-    if previous_bank != PARALLAX_BANK_COUNT:
-        fail(f"PARALLAX uses {previous_bank} routine banks, expected 5")
+    if previous_bank != PARALLAX_PROGRAM_BANK_COUNT:
+        fail(
+            f"PARALLAX uses {previous_bank} routine banks, "
+            f"expected {PARALLAX_PROGRAM_BANK_COUNT}"
+        )
+
+    ship_offset = (
+        PARALLAX_BANK_IMAGES_OFFSET
+        + PARALLAX_PROGRAM_BANK_COUNT * PARALLAX_BANK_SIZE
+    )
+    if payload[ship_offset:ship_offset + PARALLAX_BANK_SIZE] != ship_bank:
+        fail("PARALLAX bank 6 does not match the exact compiled SHIP bank")
 
     layers: list[ParallaxLayer] = []
     try:
@@ -361,8 +415,47 @@ def assert_parallax_background(planes: dict[str, bytes], phases: tuple[int, ...]
                 )
 
 
+def assert_player_ship(planes: dict[str, bytes], mailbox: bytes,
+                       layers: ParallaxLayers,
+                       variants: ShipVariants) -> None:
+    group_x = mailbox[11]
+    frame = mailbox[MB_SHIP_FRAME]
+    phases = parallax_phases(mailbox)
+    if group_x > 72 or frame >= SHIP_FRAME_COUNT:
+        fail(f"invalid published ship position/frame: x={group_x} frame={frame}")
+    variant = variants[frame][group_x & 3]
+
+    for source_y in range(SHIP_HEIGHT):
+        woven_y = SHIP_WOVEN_TOP + source_y
+        native_y = woven_y >> 1
+        field = woven_y & 1
+        background = bytearray(compose_parallax_row(layers, phases, woven_y))
+        row_offset = source_y * 16
+        for local_group in range(8):
+            keep = variant[row_offset + local_group * 2]
+            data = variant[row_offset + local_group * 2 + 1]
+            destination_group = group_x + local_group
+            background[destination_group] = (
+                (background[destination_group] & keep) | data
+            )
+        actual = captured_parallax_row(planes, native_y, field)
+        expected_span = bytes(background[group_x:group_x + 8])
+        actual_span = actual[group_x:group_x + 8]
+        if actual_span != expected_span:
+            difference = next(
+                index for index, pair in enumerate(zip(actual_span, expected_span))
+                if pair[0] != pair[1]
+            )
+            fail(
+                f"ship frame {frame} mismatch at source row {source_y}, "
+                f"group {difference}: actual=${actual_span[difference]:02X} "
+                f"expected=${expected_span[difference]:02X}"
+            )
+
+
 def exercise(client: Client, timeout: float,
-             layers: ParallaxLayers) -> dict[str, object]:
+             layers: ParallaxLayers,
+             ship_variants: ShipVariants) -> dict[str, object]:
     status = client.get_status()
     if status.platform_id != PLATFORM_APPLE_IIE_ENHANCED:
         fail(f"wrong platform {status.platform_id}; expected enhanced Apple //e")
@@ -389,6 +482,20 @@ def exercise(client: Client, timeout: float,
             "RamWorks replay entered a parallax/display bank: "
             f"mailbox={mailbox.hex()}"
         )
+    shooter_box = wait_for(
+        lambda: matching_mailbox(
+            client,
+            lambda m: m[MB_ENEMY_BULLET_ACTIVE]
+                      and m[MB_ENEMY_BULLET_SOURCE] < 24,
+        ),
+        2.0,
+        "an enemy shot from a published live source",
+    )
+    assert isinstance(shooter_box, bytes)
+    shooter = shooter_box[MB_ENEMY_BULLET_SOURCE]
+    alive_byte = shooter_box[MB_ENEMY_ALIVE + (shooter >> 3)]
+    if not alive_byte & (1 << (shooter & 7)):
+        fail(f"enemy shot source {shooter} was not alive at launch")
 
     # The boot weave is published before the four-VBL render cadence starts.
     # Begin motion sampling with the first scheduled commit so every interval
@@ -402,6 +509,7 @@ def exercise(client: Client, timeout: float,
     first_phases = parallax_phases(first_visual_box)
     first_publication = first_visual_box[MB_PARALLAX_COMMITS]
     assert_parallax_background(first_planes, first_phases, layers)
+    assert_player_ship(first_planes, first_visual_box, layers, ship_variants)
 
     wait_for(
         lambda: matching_mailbox(
@@ -534,7 +642,7 @@ def exercise(client: Client, timeout: float,
     client.key_down(SDL_SCANCODE_RIGHT)
     try:
         wait_for(
-            lambda: matching_mailbox(client, lambda m: m[11] > 20),
+            lambda: matching_mailbox(client, lambda m: m[11] > 36),
             2.0,
             "pre-reset held-arrow movement",
         )
@@ -544,7 +652,7 @@ def exercise(client: Client, timeout: float,
     reset_box = wait_for(
         lambda: matching_mailbox(
             client,
-            lambda m: m[8] == 0 and m[9] == 3 and m[10] == 24 and m[11] == 20,
+            lambda m: m[8] == 0 and m[9] == 3 and m[10] == 24 and m[11] == 36,
         ),
         2.0,
         "game reset",
@@ -555,7 +663,10 @@ def exercise(client: Client, timeout: float,
     client.key_down(SDL_SCANCODE_RIGHT)
     try:
         moved_box = wait_for(
-            lambda: matching_mailbox(client, lambda m: m[11] >= 24),
+            lambda: matching_mailbox(
+                client,
+                lambda m: m[11] >= 40 and m[MB_SHIP_FRAME] in (4, 5),
+            ),
             2.0,
             "held Right-arrow movement",
         )
@@ -572,7 +683,7 @@ def exercise(client: Client, timeout: float,
     )
     assert isinstance(release_box, bytes)
     stopped_x = release_box[11]
-    if stopped_x >= 38:
+    if stopped_x >= 72:
         fail("Right-arrow release test reached the movement boundary")
     stable_box = wait_for(
         lambda: matching_mailbox(
@@ -583,16 +694,21 @@ def exercise(client: Client, timeout: float,
         "post-release movement interval",
     )
     assert isinstance(stable_box, bytes)
-    if stable_box[11] != stopped_x:
+    if stable_box[11] != stopped_x or stable_box[MB_SHIP_FRAME] not in (0, 1):
         fail(
-            "ship continued moving after Right-arrow key-up: "
-            f"{stopped_x} -> {stable_box[11]}"
+            "ship did not return to a stationary neutral pose after "
+            f"Right-arrow key-up: x {stopped_x}->{stable_box[11]} "
+            f"frame={stable_box[MB_SHIP_FRAME]}"
         )
 
     client.key_down(SDL_SCANCODE_LEFT)
     try:
         left_box = wait_for(
-            lambda: matching_mailbox(client, lambda m: m[11] <= stopped_x - 3),
+            lambda: matching_mailbox(
+                client,
+                lambda m: m[11] <= stopped_x - 3
+                          and m[MB_SHIP_FRAME] in (2, 3),
+            ),
             2.0,
             "held Left-arrow movement",
         )
@@ -618,10 +734,12 @@ def exercise(client: Client, timeout: float,
         "post-left-release movement interval",
     )
     assert isinstance(left_stable_box, bytes)
-    if left_stable_box[11] != stopped_left_x:
+    if left_stable_box[11] != stopped_left_x \
+            or left_stable_box[MB_SHIP_FRAME] not in (0, 1):
         fail(
-            "ship continued moving after Left-arrow key-up: "
-            f"{stopped_left_x} -> {left_stable_box[11]}"
+            "ship did not return to a stationary neutral pose after "
+            f"Left-arrow key-up: x {stopped_left_x}->{left_stable_box[11]} "
+            f"frame={left_stable_box[MB_SHIP_FRAME]}"
         )
 
     # A zero-hold tap may be released before the guest's next 30 Hz game tick;
@@ -633,6 +751,18 @@ def exercise(client: Client, timeout: float,
         "one queued bullet from a quick Space tap",
     )
     assert isinstance(tap_box, bytes)
+    fire_burst_box = wait_for(
+        lambda: matching_mailbox(client, lambda m: m[MB_SHIP_FRAME] == 6),
+        1.0,
+        "the ship's muzzle-burst frame",
+    )
+    assert isinstance(fire_burst_box, bytes)
+    fire_dissipate_box = wait_for(
+        lambda: matching_mailbox(client, lambda m: m[MB_SHIP_FRAME] == 7),
+        1.0,
+        "the ship's dissipating-fire frame",
+    )
+    assert isinstance(fire_dissipate_box, bytes)
 
     # One KEYEVENT down with no host repeat events must sustain autofire via
     # the Apple //e AKD level until the corresponding key-up.
@@ -782,6 +912,11 @@ def exercise(client: Client, timeout: float,
         "mailbox": final_box.hex(),
         "frames": (start_frame, frame_number(final_box)),
         "player_x": moved_box[11],
+        "ship_frames": (
+            moved_box[MB_SHIP_FRAME], left_box[MB_SHIP_FRAME],
+            fire_burst_box[MB_SHIP_FRAME], fire_dissipate_box[MB_SHIP_FRAME],
+        ),
+        "enemy_shooter": shooter,
         "player_bullets": bullet_box[16],
         "shots_fired": bullet_box[19],
         "speech": sorted(speech_values),
@@ -807,6 +942,7 @@ def main() -> int:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--emulator", type=Path, default=DEFAULT_EMULATOR)
     parser.add_argument("--parallax", type=Path, default=PARALLAX_PATH)
+    parser.add_argument("--ship", type=Path, default=SHIP_PATH)
     parser.add_argument("--timeout", type=float, default=15.0)
     parser.add_argument("--keep-log", action="store_true")
     args = parser.parse_args()
@@ -815,9 +951,11 @@ def main() -> int:
     config = args.config.resolve()
     emulator = args.emulator.resolve()
     parallax = args.parallax.resolve()
+    ship = args.ship.resolve()
     for path, description in ((disk, "SmartPort disk"), (config, "system config"),
                               (emulator, "GSSquared executable"),
-                              (parallax, "PARALLAX asset")):
+                              (parallax, "PARALLAX asset"),
+                              (ship, "SHIP asset")):
         if not path.is_file():
             fail(f"missing {description}: {path}")
     if disk.stat().st_size < 800 * 1024 or disk.stat().st_size % 512:
@@ -841,7 +979,8 @@ def main() -> int:
     if 'slot = 4\ncard = "mockingboard"' not in config_text:
         fail("showcase config must put Mockingboard in slot 4")
 
-    layers, parallax_sha256 = load_parallax(parallax)
+    ship_variants, ship_bank, ship_sha256 = load_ship(ship)
+    layers, parallax_sha256 = load_parallax(parallax, ship_bank)
 
     socket_path = Path(tempfile.gettempdir()) / f"gs2-appletini-invasion-{os.getpid()}.sock"
     log_file = tempfile.NamedTemporaryFile(
@@ -863,13 +1002,16 @@ def main() -> int:
             stderr=subprocess.STDOUT,
         )
         connect_debug(client, socket_path, process, args.timeout)
-        result = exercise(client, args.timeout, layers)
+        result = exercise(client, args.timeout, layers, ship_variants)
         print("PASS Appletini Invasion")
         print(f"  PARALLAX sha256={parallax_sha256}")
+        print(f"  SHIP sha256={ship_sha256}")
         print(f"  platform={result['platform']} mailbox={result['mailbox']}")
         print(f"  frames={result['frames']} player_x={result['player_x']} "
               f"simultaneous_bullets={result['player_bullets']} "
               f"shots_fired={result['shots_fired']}")
+        print(f"  ship frames={result['ship_frames']} "
+              f"enemy shooter={result['enemy_shooter']}")
         print(f"  speech={result['speech']} completions={result['speech_completions']} "
               f"replay_banks={result['replay_banks']}")
         print(f"  parallax phases={result['parallax_phases']} "

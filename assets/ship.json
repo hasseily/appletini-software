@@ -1,0 +1,55 @@
+{
+  "frame_size": [
+    56,
+    64
+  ],
+  "sheet": "ship_sheet.png",
+  "neutral": {
+    "frames": [
+      0,
+      1
+    ],
+    "ms_per_frame": 110,
+    "loop": true
+  },
+  "bank_left": {
+    "frames": [
+      2,
+      3
+    ],
+    "ms_per_frame": 110,
+    "loop": true
+  },
+  "bank_right": {
+    "frames": [
+      4,
+      5
+    ],
+    "ms_per_frame": 110,
+    "loop": true
+  },
+  "fire": {
+    "frames": [
+      6,
+      7
+    ],
+    "ms_per_frame": 50,
+    "loop": false
+  },
+  "roll_deg": 24.0,
+  "muzzles": [
+    {
+      "x": 27.5,
+      "y": 7.0
+    },
+    {
+      "x": 8.0,
+      "y": 35.0
+    },
+    {
+      "x": 47.0,
+      "y": 35.0
+    }
+  ],
+  "note": "frame 6 is drawn 1px lower than the others (recoil); keep the sprite origin fixed and it reads as kick-back"
+}

@@ -22,7 +22,9 @@ BANK_IMAGES_OFFSET = 4096
 BANK_IMAGE_SIZE = 32 * 1024
 BANK_LOAD_ADDRESS = 0x2000
 BANK_LIMIT_ADDRESS = BANK_LOAD_ADDRESS + BANK_IMAGE_SIZE
-BANK_COUNT = 5
+PARALLAX_BANK_COUNT = 5
+SHIP_BANK_COUNT = 1
+BANK_COUNT = PARALLAX_BANK_COUNT + SHIP_BANK_COUNT
 MAGIC = b"A13C"
 VERSION = 1
 
@@ -88,7 +90,8 @@ def paeth(left: int, above: int, upper_left: int) -> int:
     return upper_left
 
 
-def read_rgba_png(path: Path) -> list[bytes]:
+def read_rgba_png(path: Path, expected_width: int = WIDTH,
+                  expected_height: int = HEIGHT) -> list[bytes]:
     payload = path.read_bytes()
     if payload[:8] != b"\x89PNG\r\n\x1a\n":
         raise AssetError(f"{path}: not a PNG file")
@@ -131,9 +134,10 @@ def read_rgba_png(path: Path) -> list[bytes]:
     width, height, depth, color_type, compression, filtering, interlace = (
         struct.unpack(">IIBBBBB", ihdr)
     )
-    if (width, height) != (WIDTH, HEIGHT):
+    if (width, height) != (expected_width, expected_height):
         raise AssetError(
-            f"{path}: expected {WIDTH}x{HEIGHT}, got {width}x{height}"
+            f"{path}: expected {expected_width}x{expected_height}, "
+            f"got {width}x{height}"
         )
     if (depth, color_type, compression, filtering, interlace) != (8, 6, 0, 0, 0):
         raise AssetError(
@@ -146,8 +150,8 @@ def read_rgba_png(path: Path) -> list[bytes]:
         filtered = zlib.decompress(compressed)
     except zlib.error as error:
         raise AssetError(f"{path}: invalid IDAT stream: {error}") from error
-    stride = WIDTH * 4
-    expected_size = HEIGHT * (stride + 1)
+    stride = expected_width * 4
+    expected_size = expected_height * (stride + 1)
     if len(filtered) != expected_size:
         raise AssetError(
             f"{path}: expected {expected_size} decompressed bytes, "
@@ -157,7 +161,7 @@ def read_rgba_png(path: Path) -> list[bytes]:
     rows: list[bytes] = []
     previous = bytes(stride)
     source_offset = 0
-    for row_number in range(HEIGHT):
+    for row_number in range(expected_height):
         filter_type = filtered[source_offset]
         source_offset += 1
         scanline = bytearray(filtered[source_offset:source_offset + stride])
@@ -317,7 +321,9 @@ def compile_rows(assets: Path) \
 def pack_banks(routines: list[bytes]) \
         -> tuple[list[tuple[int, int]], list[bytes]]:
     locations: list[tuple[int, int]] = []
-    bank_images = [bytearray(BANK_IMAGE_SIZE) for _ in range(BANK_COUNT)]
+    bank_images = [
+        bytearray(BANK_IMAGE_SIZE) for _ in range(PARALLAX_BANK_COUNT)
+    ]
     bank_index = 0
     bank_offset = 0
 
@@ -330,7 +336,7 @@ def pack_banks(routines: list[bytes]) \
         if bank_offset + len(routine) > BANK_IMAGE_SIZE:
             bank_index += 1
             bank_offset = 0
-        if bank_index >= BANK_COUNT:
+        if bank_index >= PARALLAX_BANK_COUNT:
             raise AssetError("compiled rows exceed five 32 KiB bank images")
 
         address = BANK_LOAD_ADDRESS + bank_offset
@@ -339,15 +345,21 @@ def pack_banks(routines: list[bytes]) \
         bank_offset += len(routine)
 
     used_banks = bank_index + 1
-    if used_banks != BANK_COUNT:
+    if used_banks != PARALLAX_BANK_COUNT:
         raise AssetError(
-            f"compiled rows occupy {used_banks} banks; expected {BANK_COUNT}"
+            f"compiled rows occupy {used_banks} banks; "
+            f"expected {PARALLAX_BANK_COUNT}"
         )
     return locations, [bytes(image) for image in bank_images]
 
 
-def build_output(routines: list[bytes]) \
+def build_output(routines: list[bytes], ship_bank: bytes) \
         -> tuple[bytes, list[tuple[int, int]]]:
+    if len(ship_bank) != BANK_IMAGE_SIZE:
+        raise AssetError(
+            f"compiled ship bank is {len(ship_bank)} bytes; "
+            f"expected {BANK_IMAGE_SIZE}"
+        )
     locations, bank_images = pack_banks(routines)
     header = HEADER.pack(
         MAGIC,
@@ -368,7 +380,7 @@ def build_output(routines: list[bytes]) \
     if len(prefix) > BANK_IMAGES_OFFSET:
         raise AssetError("compiled row directory overlaps the bank images")
     output = prefix + bytes(BANK_IMAGES_OFFSET - len(prefix)) \
-        + b"".join(bank_images)
+        + b"".join(bank_images) + ship_bank
     return output, locations
 
 
@@ -463,7 +475,7 @@ def validate_routine(code: bytes, data: bytes, opacity: bytes,
 
 def validate_output(output: bytes, routines: list[bytes],
                     packed_rows: list[tuple[bytes, bytes]],
-                    locations: list[tuple[int, int]]) -> None:
+                    locations: list[tuple[int, int]], ship_bank: bytes) -> None:
     expected_size = BANK_IMAGES_OFFSET + BANK_COUNT * BANK_IMAGE_SIZE
     if len(output) != expected_size:
         raise AssetError(
@@ -498,7 +510,7 @@ def validate_output(output: bytes, routines: list[bytes],
 
     for index, ((bank, address), routine, packed) in enumerate(
             zip(locations, routines, packed_rows)):
-        if not 1 <= bank <= BANK_COUNT:
+        if not 1 <= bank <= PARALLAX_BANK_COUNT:
             raise AssetError(f"routine {index} has invalid bank {bank}")
         if not BANK_LOAD_ADDRESS <= address < BANK_LIMIT_ADDRESS:
             raise AssetError(
@@ -514,17 +526,23 @@ def validate_output(output: bytes, routines: list[bytes],
             routine, packed[0], packed[1], index // HEIGHT
         )
 
+    ship_offset = BANK_IMAGES_OFFSET + PARALLAX_BANK_COUNT * BANK_IMAGE_SIZE
+    if output[ship_offset:ship_offset + BANK_IMAGE_SIZE] != ship_bank:
+        raise AssetError("compiled ship bank does not match the A13C image")
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--assets", type=Path, required=True)
+    parser.add_argument("--ship", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
     try:
+        ship_bank = args.ship.read_bytes()
         routines, packed_rows, _ = compile_rows(args.assets)
-        output, locations = build_output(routines)
-        validate_output(output, routines, packed_rows, locations)
+        output, locations = build_output(routines, ship_bank)
+        validate_output(output, routines, packed_rows, locations, ship_bank)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_bytes(output)
     except (AssetError, OSError) as error:
