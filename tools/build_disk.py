@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import struct
 import subprocess
 from pathlib import Path
 
@@ -14,14 +13,6 @@ ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_MASTER = ROOT.parent / "appletini-one/software/ProDOS_2_4_3.po"
 DEFAULT_JAR = (Path.home() /
                "Documents/accurapple/accurapple/speaker/AppleCommander-1.3.5.13-ac.jar")
-
-
-def applesoft_hello() -> bytes:
-    # 10 PRINT CHR$(4);"BRUN INVASION"
-    body = bytes((0xBA, 0xE7)) + b"(4);\"BRUN INVASION\"" + b"\x00"
-    start = 0x0801
-    next_address = start + 4 + len(body)
-    return struct.pack("<HH", next_address, 10) + body + b"\x00\x00"
 
 
 def applecommander(jar: Path, *arguments: str, data: bytes | None = None,
@@ -34,14 +25,14 @@ def applecommander(jar: Path, *arguments: str, data: bytes | None = None,
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--program", type=Path, required=True)
+    parser.add_argument("--system", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--master", type=Path, default=DEFAULT_MASTER)
     parser.add_argument("--applecommander", type=Path,
                         default=Path(os.environ.get("APPLECOMMANDER_JAR", DEFAULT_JAR)))
     args = parser.parse_args()
 
-    for path, description in ((args.program, "program"), (args.master, "DOS master"),
+    for path, description in ((args.system, "system program"), (args.master, "DOS master"),
                               (args.applecommander, "AppleCommander")):
         if not path.is_file():
             raise SystemExit(f"missing {description}: {path}")
@@ -54,33 +45,42 @@ def main() -> None:
 
     # A 140K ProDOS image is intentionally classified as a 5.25-inch disk by
     # GSSquared. Create an 800K block volume so slot 7 takes the SmartPort path,
-    # then seed only the two system files from the canonical local image.
+    # then seed ProDOS itself and the direct-boot game system file.
     result = applecommander(jar, "-pro800", image, "A13INVASION")
     if result.returncode:
         raise SystemExit(result.stdout.decode(errors="replace"))
     boot_blocks = args.master.read_bytes()[:1024]
     with args.output.open("r+b") as block_image:
         block_image.write(boot_blocks)
-    for name in ("PRODOS", "BASIC.SYSTEM"):
-        payload = applecommander(jar, "-g", str(args.master), name).stdout
-        if not payload:
-            raise SystemExit(f"could not export {name} from {args.master}")
-        result = applecommander(jar, "-p", image, name, "SYS", "$0000", data=payload)
-        if result.returncode:
-            raise SystemExit(result.stdout.decode(errors="replace"))
-
-    result = applecommander(jar, "-p", image, "STARTUP", "BAS", "$0801",
-                            data=applesoft_hello())
+    prodos = applecommander(jar, "-g", str(args.master), "PRODOS").stdout
+    if not prodos:
+        raise SystemExit(f"could not export PRODOS from {args.master}")
+    result = applecommander(jar, "-p", image, "PRODOS", "SYS", "$0000", data=prodos)
     if result.returncode:
         raise SystemExit(result.stdout.decode(errors="replace"))
-    result = applecommander(jar, "-p", image, "INVASION", "BIN", "$6000",
-                            data=args.program.read_bytes())
+    system_payload = args.system.read_bytes()
+    if len(system_payload) <= 0x4000 \
+            or system_payload[:3] != bytes((0x4C, 0x00, 0x60)) \
+            or any(system_payload[3:0x4000]):
+        raise SystemExit(
+            "system program is not a JMP $6000 plus padded $6000 payload"
+        )
+    if 0x2000 + len(system_payload) > 0xB000:
+        raise SystemExit("system program overlaps the $B000 software stack")
+    result = applecommander(jar, "-p", image, "INVASION.SYSTEM", "SYS", "$2000",
+                            data=system_payload)
     if result.returncode:
         raise SystemExit(result.stdout.decode(errors="replace"))
 
-    listing = applecommander(jar, "-ls", image).stdout.decode(errors="replace")
-    if "INVASION" not in listing or "STARTUP" not in listing:
+    listing = applecommander(jar, "-ll", image).stdout.decode(errors="replace")
+    if "INVASION.SYSTEM" not in listing or "A=$2000" not in listing:
         raise SystemExit(f"disk verification failed:\n{listing}")
+    for obsolete in ("BASIC.SYSTEM", "STARTUP", "INVASION BIN"):
+        if obsolete in listing:
+            raise SystemExit(f"unexpected BASIC launcher file {obsolete}:\n{listing}")
+    installed = applecommander(jar, "-g", image, "INVASION.SYSTEM").stdout
+    if installed != system_payload:
+        raise SystemExit("INVASION.SYSTEM verification failed")
     if args.output.read_bytes()[:1024] != boot_blocks:
         raise SystemExit("ProDOS boot-block copy failed")
     if args.output.stat().st_size != 800 * 1024:

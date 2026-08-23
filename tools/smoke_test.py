@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import subprocess
 import sys
@@ -18,14 +19,20 @@ GAME_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = GAME_DIR / "appletini-invasion.gs2"
 DEFAULT_EMULATOR = ROOT / "build/GSSquared.app/Contents/MacOS/GSSquared"
 CLIENT_SRC = ROOT / "clients/python/src"
-SDL_SCANCODE_F9 = 66
 SDL_SCANCODE_SPACE = 44
 MAILBOX_ADDRESS = 0x0300
-MAILBOX_SIZE = 34
-PARALLAX_HEIGHT = 316
-MB_FAR_PHASE = 20
-MB_MID_PHASE = 22
-MB_NEAR_PHASE = 24
+MAILBOX_SIZE = 35
+PARALLAX_PATH = GAME_DIR / "build/PARALLAX"
+PARALLAX_HEADER_SIZE = 16
+PARALLAX_CHUNK_HEADER_SIZE = 2
+PARALLAX_LAYER_COUNT = 3
+PARALLAX_SOURCE_ROWS = 384
+PARALLAX_ROW_BYTES = 80
+PARALLAX_PHASE_MODULUS = 384 * 20
+PARALLAX_SPEEDS = (5, 12, 28)
+MB_DEEP_PHASE = 20
+MB_NEBULA_PHASE = 22
+MB_ASTEROID_PHASE = 24
 MB_MUSIC_STEP = 26
 MB_MUSIC_LOOPS = 27
 MB_MUSIC_TICK = 28
@@ -34,7 +41,14 @@ MB_EFFECT_KIND = 30
 MB_LEAD_NOTE = 31
 MB_BASS_NOTE = 32
 MB_MUSIC_EVENTS = 33
-PARALLAX_ANCHORS = ((4, 0), (5, 0), (30, 1), (43, 2))
+MB_PARALLAX_COMMITS = 34
+# Player shots stop above row 24 and invaders start below it, so these rows
+# remain a deterministic background-only oracle throughout gameplay.
+BACKGROUND_TEST_ROWS = range(20, 23)
+
+ParallaxRow = tuple[tuple[int, int], ...]
+ParallaxLayer = tuple[ParallaxRow, ...]
+ParallaxLayers = tuple[ParallaxLayer, ...]
 
 sys.path.insert(0, str(CLIENT_SRC))
 
@@ -54,15 +68,48 @@ def frame_number(mailbox: bytes) -> int:
     return mailbox[6] | (mailbox[7] << 8)
 
 
+def cpu_cycle(client: Client) -> int:
+    return int.from_bytes(client.get_regs()[:8], "little")
+
+
 def mailbox_word(mailbox: bytes, offset: int) -> int:
     return mailbox[offset] | (mailbox[offset + 1] << 8)
 
 
+def prodos_root_files(image: bytes) -> dict[str, tuple[int, int]]:
+    """Return root file name -> (type, aux type) from a ProDOS block image."""
+    files: dict[str, tuple[int, int]] = {}
+    block = 2
+    first = True
+    visited: set[int] = set()
+    while block:
+        if block in visited or (block + 1) * 512 > len(image):
+            fail(f"invalid ProDOS root-directory block chain at block {block}")
+        visited.add(block)
+        directory = image[block * 512:(block + 1) * 512]
+        next_block = int.from_bytes(directory[2:4], "little")
+        first_entry = 1 if first else 0
+        for entry_index in range(first_entry, 13):
+            offset = 4 + entry_index * 39
+            storage_and_length = directory[offset]
+            name_length = storage_and_length & 0x0F
+            if not name_length:
+                continue
+            name = directory[offset + 1:offset + 1 + name_length].decode("ascii")
+            files[name] = (
+                directory[offset + 16],
+                int.from_bytes(directory[offset + 31:offset + 33], "little"),
+            )
+        block = next_block
+        first = False
+    return files
+
+
 def parallax_phases(mailbox: bytes) -> tuple[int, int, int]:
     return (
-        mailbox_word(mailbox, MB_FAR_PHASE),
-        mailbox_word(mailbox, MB_MID_PHASE),
-        mailbox_word(mailbox, MB_NEAR_PHASE),
+        mailbox_word(mailbox, MB_DEEP_PHASE),
+        mailbox_word(mailbox, MB_NEBULA_PHASE),
+        mailbox_word(mailbox, MB_ASTEROID_PHASE),
     )
 
 
@@ -137,64 +184,155 @@ def capture_committed_dhgri(client: Client) -> tuple[bytes, dict[str, bytes]]:
     fail("could not pause on a committed A2Li DHGRi frame")
 
 
-def star_geometry(index: int) -> tuple[int, int, int]:
-    half_x = (index * 37 + 13) % 80
-    if index < 24:
-        mask = 1 << ((index * 5 + 1) % 7)
-        span = 1
-    elif index < 40:
-        mask = 3 << ((index * 5 + 2) % 6)
-        span = 1
-    else:
-        mask = 7 << ((index * 3 + 1) % 5)
-        span = 1
-    return half_x, mask, span
+def load_parallax(path: Path) -> tuple[ParallaxLayers, str]:
+    payload = path.read_bytes()
+    if not (PARALLAX_HEADER_SIZE < len(payload) < 12 * 1024):
+        fail(f"PARALLAX has invalid sparse-asset size {len(payload)}")
+    header = (
+        payload[:4], payload[4], payload[5], payload[6], payload[7],
+        int.from_bytes(payload[8:10], "little"),
+    )
+    expected_header = (
+        b"A13S", 1, PARALLAX_LAYER_COUNT, PARALLAX_ROW_BYTES, 0,
+        PARALLAX_SOURCE_ROWS,
+    )
+    if header != expected_header:
+        fail(f"PARALLAX header is {header!r}, expected {expected_header!r}")
+    chunk_offsets = tuple(
+        int.from_bytes(payload[10 + layer * 2:12 + layer * 2], "little")
+        for layer in range(PARALLAX_LAYER_COUNT)
+    )
+    if chunk_offsets[0] != PARALLAX_HEADER_SIZE \
+            or tuple(sorted(chunk_offsets)) != chunk_offsets \
+            or chunk_offsets[-1] >= len(payload):
+        fail(f"PARALLAX has invalid chunk offsets {chunk_offsets}")
 
-
-def star_head(index: int, phase: int) -> int:
-    seed = 2 * ((index * 83 + 29) % (PARALLAX_HEIGHT // 2))
-    seed += (index ^ (index >> 1)) & 1
-    return (seed + phase) % PARALLAX_HEIGHT
-
-
-def assert_anchor(planes: dict[str, bytes], index: int, phase: int) -> None:
-    half_x, mask, span = star_geometry(index)
-    woven_y = star_head(index, phase)
-    for _ in range(span):
-        page_number = 1 if (woven_y & 1) == 0 else 2
-        page = 0x2000 if page_number == 1 else 0x4000
-        plane = "aux" if (half_x & 1) == 0 else "main"
-        offset = hgr_address(20 + (woven_y >> 1), page) - page + (half_x >> 1)
-        value = planes[f"{plane} page {page_number}"][offset]
-        if value & mask != mask:
+    layers: list[ParallaxLayer] = []
+    for layer_index, (chunk_start, speed) in enumerate(
+            zip(chunk_offsets, PARALLAX_SPEEDS)):
+        chunk_end = (chunk_offsets[layer_index + 1]
+                     if layer_index + 1 < PARALLAX_LAYER_COUNT
+                     else len(payload))
+        chunk = payload[chunk_start:chunk_end]
+        if chunk[:2] != bytes((speed, 20)):
             fail(
-                f"parallax anchor {index} missing at woven row {woven_y}: "
-                f"{plane} page {page_number} byte=${value:02X} mask=${mask:02X}"
+                f"PARALLAX layer {layer_index + 1} speed is {chunk[:2]!r}, "
+                f"expected {(speed, 20)!r}"
             )
-        woven_y = (woven_y - 1) % PARALLAX_HEIGHT
+
+        offsets = tuple(
+            int.from_bytes(
+                chunk[PARALLAX_CHUNK_HEADER_SIZE + row * 2:
+                      PARALLAX_CHUNK_HEADER_SIZE + row * 2 + 2],
+                "little",
+            )
+            for row in range(PARALLAX_SOURCE_ROWS)
+        )
+        if offsets[0] != PARALLAX_CHUNK_HEADER_SIZE + PARALLAX_SOURCE_ROWS * 2:
+            fail(f"PARALLAX layer {layer_index + 1} row data overlaps its directory")
+        if any(next_offset <= offset for offset, next_offset in zip(offsets, offsets[1:])):
+            fail(f"PARALLAX layer {layer_index + 1} row offsets are not increasing")
+
+        rows: list[ParallaxRow] = []
+        last_record_end = 0
+        for row_number, record_offset in enumerate(offsets):
+            if record_offset >= len(chunk):
+                fail(
+                    f"PARALLAX layer {layer_index + 1} row {row_number} offset "
+                    f"{record_offset} is outside its chunk"
+                )
+            position = record_offset
+            entry_count = chunk[position]
+            position += 1
+            operations: list[tuple[int, int]] = []
+            previous_x = -1
+            for _ in range(entry_count):
+                if position + 2 > len(chunk):
+                    fail(f"PARALLAX layer {layer_index + 1} row {row_number} is truncated")
+                x = chunk[position]
+                data = chunk[position + 1]
+                position += 2
+                if x <= previous_x or x >= PARALLAX_ROW_BYTES or not 0 < data < 0x80:
+                    fail(
+                        f"PARALLAX layer {layer_index + 1} row {row_number} has "
+                        f"invalid entry x={x} data=${data:02X}"
+                    )
+                operations.append((x, data))
+                previous_x = x
+            if row_number + 1 < PARALLAX_SOURCE_ROWS \
+                    and position != offsets[row_number + 1]:
+                fail(
+                    f"PARALLAX layer {layer_index + 1} row {row_number} ends at "
+                    f"{position}, next row starts at {offsets[row_number + 1]}"
+                )
+            rows.append(tuple(operations))
+            last_record_end = position
+        if last_record_end != len(chunk):
+            fail(
+                f"PARALLAX layer {layer_index + 1} ends at {last_record_end}, "
+                f"chunk size is {len(chunk)}"
+            )
+        layers.append(tuple(rows))
+
+    digest = hashlib.sha256(payload).hexdigest()
+    return tuple(layers), digest
 
 
-def assert_old_anchor_erased(planes: dict[str, bytes], index: int, old_phase: int) -> None:
-    half_x, mask, _ = star_geometry(index)
-    woven_y = star_head(index, old_phase)
-    page_number = 1 if (woven_y & 1) == 0 else 2
-    page = 0x2000 if page_number == 1 else 0x4000
-    plane = "aux" if (half_x & 1) == 0 else "main"
-    offset = hgr_address(20 + (woven_y >> 1), page) - page + (half_x >> 1)
-    value = planes[f"{plane} page {page_number}"][offset]
-    if value & mask:
-        fail(f"parallax anchor {index} left pixels behind at woven row {woven_y}")
+def compose_parallax_row(layers: ParallaxLayers, phases: tuple[int, ...],
+                          woven_y: int) -> bytes:
+    composed = bytearray(PARALLAX_ROW_BYTES)
+    for layer, phase in zip(layers, phases):
+        source_row = (woven_y - phase // 20) % PARALLAX_SOURCE_ROWS
+        for byte_index, data in layer[source_row]:
+            composed[byte_index] ^= data
+    return bytes(composed)
 
 
-def exercise(client: Client, timeout: float) -> dict[str, object]:
+def captured_parallax_row(planes: dict[str, bytes], native_y: int,
+                           field: int) -> bytes:
+    page_number = field + 1
+    page = 0x2000 if field == 0 else 0x4000
+    offset = hgr_address(native_y, page) - page
+    aux = planes[f"aux page {page_number}"]
+    main = planes[f"main page {page_number}"]
+    return bytes(
+        value & 0x7F
+        for x in range(40)
+        for value in (aux[offset + x], main[offset + x])
+    )
+
+
+def assert_parallax_background(planes: dict[str, bytes], phases: tuple[int, ...],
+                               layers: ParallaxLayers) -> None:
+    if any(phase >= PARALLAX_PHASE_MODULUS for phase in phases):
+        fail(f"parallax phase outside 1/20-pixel range: {phases}")
+    for native_y in BACKGROUND_TEST_ROWS:
+        for field in (0, 1):
+            woven_y = native_y * 2 + field
+            expected = compose_parallax_row(layers, phases, woven_y)
+            actual = captured_parallax_row(planes, native_y, field)
+            if actual != expected:
+                difference = next(
+                    index for index, pair in enumerate(zip(actual, expected))
+                    if pair[0] != pair[1]
+                )
+                source_rows = tuple(
+                    (woven_y - phase // 20) % PARALLAX_SOURCE_ROWS
+                    for phase in phases
+                )
+                fail(
+                    f"parallax mismatch at woven row {woven_y}, byte {difference}: "
+                    f"actual=${actual[difference]:02X} "
+                    f"expected=${expected[difference]:02X} "
+                    f"source_rows={source_rows} phases={phases}"
+                )
+
+
+def exercise(client: Client, timeout: float,
+             layers: ParallaxLayers) -> dict[str, object]:
     status = client.get_status()
     if status.platform_id != PLATFORM_APPLE_IIE_ENHANCED:
         fail(f"wrong platform {status.platform_id}; expected enhanced Apple //e")
-
-    # Every fresh enhanced //e starts at 1.024 MHz. Three F9 releases select
-    # 2.8, 7.159, then 14.3 MHz while boot and game I/O remain synchronized.
-    for _ in range(3):
-        client.tap_key(SDL_SCANCODE_F9, hold_s=0.02)
 
     mailbox = wait_for(
         lambda: matching_mailbox(client, lambda m: m[:4] == b"A13I"),
@@ -206,18 +344,66 @@ def exercise(client: Client, timeout: float) -> dict[str, object]:
     expected = {
         "video mode": (mailbox[4], 1),
         "RamWorks banks": (mailbox[5], 128),
-        "reported speed": (mailbox[12], 14),
+        "reported speed": (mailbox[12], 33),
         "audio feature flags": (mailbox[13], 7),
         "game state": (mailbox[15], 1),
     }
     for label, (actual, wanted) in expected.items():
         if actual != wanted:
             fail(f"{label} is {actual}, expected {wanted}; mailbox={mailbox.hex()}")
+    if mailbox[17] != 1:
+        fail(f"RamWorks replay did not start in bank 1: mailbox={mailbox.hex()}")
 
+    # The boot weave is published before the four-VBL render cadence starts.
+    # Begin motion sampling with the first scheduled commit so every interval
+    # below is an integral number of 15 Hz (four-VBL) publications.
+    wait_for(
+        lambda: matching_mailbox(client, lambda m: parallax_phases(m)[0] != 0),
+        2.0,
+        "the first scheduled parallax commit",
+    )
     first_visual_box, first_planes = capture_committed_dhgri(client)
     first_phases = parallax_phases(first_visual_box)
-    for index, layer in PARALLAX_ANCHORS:
-        assert_anchor(first_planes, index, first_phases[layer])
+    first_publication = first_visual_box[MB_PARALLAX_COMMITS]
+    assert_parallax_background(first_planes, first_phases, layers)
+
+    wait_for(
+        lambda: matching_mailbox(
+            client,
+            lambda m: 8 <= (
+                (m[MB_PARALLAX_COMMITS] - first_publication) & 0xFF
+            ) < 128,
+        ),
+        2.0,
+        "eight subsequent parallax publications",
+    )
+    second_visual_box, second_planes = capture_committed_dhgri(client)
+    second_phases = parallax_phases(second_visual_box)
+    phase_deltas = tuple(
+        (new - old) % PARALLAX_PHASE_MODULUS
+        for old, new in zip(first_phases, second_phases)
+    )
+    publication_frames = (
+        frame_number(second_visual_box) - frame_number(first_visual_box)
+    ) & 0xFFFF
+    publication_count = (
+        second_visual_box[MB_PARALLAX_COMMITS]
+        - first_visual_box[MB_PARALLAX_COMMITS]
+    ) & 0xFF
+    expected_deltas = tuple(
+        (publication_count * 4 * speed) % PARALLAX_PHASE_MODULUS
+        for speed in PARALLAX_SPEEDS
+    )
+    expected_frames = publication_count * 4
+    if not publication_count or phase_deltas != expected_deltas \
+            or abs(publication_frames - expected_frames) > 2:
+        fail(
+            "parallax publications did not remain on the four-VBL grid with "
+            f"three fractional speeds: commits={publication_count} "
+            f"frames={publication_frames} "
+            f"deltas={phase_deltas} expected={expected_deltas}"
+        )
+    assert_parallax_background(second_planes, second_phases, layers)
 
     speech_values: set[int] = set()
     speech_completions = 0
@@ -248,27 +434,43 @@ def exercise(client: Client, timeout: float) -> dict[str, object]:
     if any(value == 0x3F or value & 0x03 for value in mixer_values):
         fail(f"music channels A/B were disabled during speech: mixers={mixer_values}")
 
-    wait_for(
+    # Compare paired live CPU-cycle and guest-frame snapshots over a long
+    # guest interval. Approximately 556,272 cycles per NTSC frame proves the
+    # fixed 33.3 MHz rational clock independently of host load; wall cadence
+    # separately catches a renderer that starves the 60 Hz main loop.
+    cadence_box_start = read_mailbox(client)
+    cadence_cycle_start = cpu_cycle(client)
+    cadence_time_start = time.monotonic()
+    cadence_box_end = wait_for(
         lambda: matching_mailbox(
             client,
-            lambda m: ((mailbox_word(m, MB_FAR_PHASE) - first_phases[0])
-                       % PARALLAX_HEIGHT) >= 8,
+            lambda m: ((frame_number(m) - frame_number(cadence_box_start))
+                       & 0xFFFF) >= 120,
         ),
-        2.0,
-        "eight committed far-layer parallax steps",
+        3.5,
+        "120 VBL-driven game frames",
     )
-    second_visual_box, second_planes = capture_committed_dhgri(client)
-    second_phases = parallax_phases(second_visual_box)
-    phase_deltas = tuple(
-        (new - old) % PARALLAX_HEIGHT
-        for old, new in zip(first_phases, second_phases)
+    assert isinstance(cadence_box_end, bytes)
+    cadence_cycle_end = cpu_cycle(client)
+    cadence_elapsed = time.monotonic() - cadence_time_start
+    cadence_frames = (
+        frame_number(cadence_box_end) - frame_number(cadence_box_start)
+    ) & 0xFFFF
+    cadence_cycles_per_frame = (
+        (cadence_cycle_end - cadence_cycle_start) / cadence_frames
     )
-    if not phase_deltas[0] or phase_deltas[1] != (phase_deltas[0] * 2) % PARALLAX_HEIGHT \
-            or phase_deltas[2] != (phase_deltas[0] * 4) % PARALLAX_HEIGHT:
-        fail(f"parallax layers did not retain 1:2:4 motion: {phase_deltas}")
-    for index, layer in PARALLAX_ANCHORS:
-        assert_old_anchor_erased(second_planes, index, first_phases[layer])
-        assert_anchor(second_planes, index, second_phases[layer])
+    cadence_hz = cadence_frames / cadence_elapsed
+    if not 550_000 <= cadence_cycles_per_frame <= 562_000:
+        fail(
+            "Appletini did not run at its fixed 33.3 MHz ratio: "
+            f"{cadence_cycles_per_frame:.1f} CPU cycles/VBL"
+        )
+    if not 52.0 <= cadence_hz <= 68.0:
+        fail(
+            "VBL main loop did not sustain its 60 Hz cadence: "
+            f"{cadence_frames} frames in {cadence_elapsed:.3f}s "
+            f"({cadence_hz:.2f} Hz)"
+        )
 
     music_loop_box: bytes | None = None
     music_deadline = time.monotonic() + 8.0
@@ -363,12 +565,16 @@ def exercise(client: Client, timeout: float) -> dict[str, object]:
         fail(f"music did not survive effect release: mixer=${released_box[MB_AY_MIXER]:02X}")
 
     replay_at_start = bullet_box[17]
+    if replay_at_start < 1:
+        fail(f"replay used DHGR auxiliary bank {replay_at_start}")
     replay_box = wait_for(
         lambda: matching_mailbox(client, lambda m: m[17] != replay_at_start),
         2.0,
         "RamWorks replay-bank rotation",
     )
     assert isinstance(replay_box, bytes)
+    if replay_box[17] < 1:
+        fail(f"replay rotated into DHGR auxiliary bank {replay_box[17]}")
     if frame_number(replay_box) == start_frame:
         fail("game frame counter did not advance")
 
@@ -435,6 +641,27 @@ def exercise(client: Client, timeout: float) -> dict[str, object]:
             if any(value & 0x80 for value in row):
                 fail(f"{name} text row {y} incorrectly selects Video-7 color")
 
+    # The 18 half-column title occupies slots 31..48, leaving exactly 31
+    # half-columns on either side. Verify both edge glyphs plus the blank
+    # guards and internal space so a hard-coded alignment regression is
+    # visible in memory as well as in the screenshot.
+    expected_title_a = bytes((0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11))
+    expected_title_n = bytes((0x11, 0x13, 0x15, 0x19, 0x11, 0x11, 0x11))
+    for page, suffix in ((0x2000, "page 1"), (0x4000, "page 2")):
+        def title_column(half_x: int) -> bytes:
+            plane = "aux" if (half_x & 1) == 0 else "main"
+            return bytes(
+                planes[f"{plane} {suffix}"][
+                    hgr_address(10 + row, page) - page + (half_x >> 1)
+                ]
+                for row in range(7)
+            )
+
+        if title_column(31) != expected_title_a \
+                or title_column(48) != expected_title_n \
+                or any(title_column(guard) != bytes(7) for guard in (30, 40, 49)):
+            fail(f"{suffix} APPLETINI INVASION title is not centered")
+
     # The font table is stored conventionally with bit 4 at the left, but an
     # Apple II graphics byte displays bit 0 at the left. SCORE's asymmetric S
     # is a compact regression check that the game reverses those five bits.
@@ -465,6 +692,10 @@ def exercise(client: Client, timeout: float) -> dict[str, object]:
         "replay_banks": (replay_at_start, replay_box[17]),
         "nonzero": nonzero,
         "field_differences": field_differences,
+        "cadence": (
+            cadence_cycles_per_frame, cadence_frames, cadence_elapsed,
+            cadence_hz,
+        ),
     }
 
 
@@ -473,6 +704,7 @@ def main() -> int:
     parser.add_argument("--disk", type=Path, required=True)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--emulator", type=Path, default=DEFAULT_EMULATOR)
+    parser.add_argument("--parallax", type=Path, default=PARALLAX_PATH)
     parser.add_argument("--timeout", type=float, default=15.0)
     parser.add_argument("--keep-log", action="store_true")
     args = parser.parse_args()
@@ -480,12 +712,22 @@ def main() -> int:
     disk = args.disk.resolve()
     config = args.config.resolve()
     emulator = args.emulator.resolve()
+    parallax = args.parallax.resolve()
     for path, description in ((disk, "SmartPort disk"), (config, "system config"),
-                              (emulator, "GSSquared executable")):
+                              (emulator, "GSSquared executable"),
+                              (parallax, "PARALLAX asset")):
         if not path.is_file():
             fail(f"missing {description}: {path}")
     if disk.stat().st_size < 800 * 1024 or disk.stat().st_size % 512:
         fail(f"SmartPort image has invalid size: {disk.stat().st_size}")
+    root_files = prodos_root_files(disk.read_bytes())
+    if root_files.get("PRODOS", (None,))[0] != 0xFF:
+        fail(f"SmartPort image has no ProDOS SYS kernel: {root_files}")
+    if root_files.get("INVASION.SYSTEM") != (0xFF, 0x2000):
+        fail(f"INVASION.SYSTEM is not a direct-boot $2000 SYS file: {root_files}")
+    obsolete = {"BASIC.SYSTEM", "STARTUP", "INVASION"} & root_files.keys()
+    if obsolete:
+        fail(f"SmartPort image still contains a BASIC launcher: {sorted(obsolete)}")
 
     config_text = config.read_text()
     if 'card = "diskII"' in config_text or 'card = "diskii"' in config_text:
@@ -494,6 +736,8 @@ def main() -> int:
         fail("showcase config must put Appletini in slot 7")
     if 'slot = 4\ncard = "mockingboard"' not in config_text:
         fail("showcase config must put Mockingboard in slot 4")
+
+    layers, parallax_sha256 = load_parallax(parallax)
 
     socket_path = Path(tempfile.gettempdir()) / f"gs2-appletini-invasion-{os.getpid()}.sock"
     log_file = tempfile.NamedTemporaryFile(
@@ -515,8 +759,9 @@ def main() -> int:
             stderr=subprocess.STDOUT,
         )
         connect_debug(client, socket_path, process, args.timeout)
-        result = exercise(client, args.timeout)
+        result = exercise(client, args.timeout, layers)
         print("PASS Appletini Invasion")
+        print(f"  PARALLAX sha256={parallax_sha256}")
         print(f"  platform={result['platform']} mailbox={result['mailbox']}")
         print(f"  frames={result['frames']} player_x={result['player_x']} "
               f"simultaneous_bullets={result['player_bullets']} "
@@ -529,6 +774,10 @@ def main() -> int:
               f"mixers={result['mixer_values']}")
         print(f"  DHGRi nonzero bytes={result['nonzero']}")
         print(f"  DHGRi field differences={result['field_differences']}")
+        cycles_per_frame, cadence_frames, cadence_elapsed, cadence_hz = result["cadence"]
+        print(f"  cadence={cycles_per_frame:.1f} CPU cycles/VBL, "
+              f"{cadence_frames} VBLs/{cadence_elapsed:.3f}s "
+              f"({cadence_hz:.2f} Hz)")
         passed = True
     finally:
         try:

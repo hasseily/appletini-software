@@ -1,7 +1,6 @@
 .setcpu "65C02"
 
-.export _ramworks_probe, _aux_clear_video, _aux_color_row, _aux_xor_byte
-.import popax
+.export _ramworks_probe, _aux_clear_video, _aux_color_row
 
 RAMRDOFF = $C002
 RAMRDON  = $C003
@@ -11,9 +10,6 @@ RAMWORKS = $C073
 PROBE_ADDRESS = $1000
 PROBE_ZP = $0020
 CLEAR_PTR = $0030
-AUX_XOR_CODE = $0040
-AUX_XOR_PTR = $0060
-AUX_XOR_VALUE = $0062
 AUX_COLOR_PTR = $0064
 
 .segment "RODATA"
@@ -24,24 +20,6 @@ probe_code:
         sta RAMRDOFF
         rts
 probe_code_end:
-
-; RAMRD redirects instruction fetches above zero page. This tiny trampoline
-; executes from zero page so an AUX read-modify-write can safely read and
-; write the same physical byte without touching the cc65 software stack. The
-; XOR changes only pixel data; ORA keeps Video-7's color selector asserted.
-aux_xor_code:
-        stz RAMWORKS
-        stz RAMRDON
-        stz RAMWRTON
-        ldy #$00
-        lda (AUX_XOR_PTR),y
-        eor AUX_XOR_VALUE
-        ora #$80
-        sta (AUX_XOR_PTR),y
-        stz RAMRDOFF
-        stz RAMWRTOFF
-        rts
-aux_xor_code_end:
 
 .segment "CODE"
 
@@ -59,18 +37,6 @@ _ramworks_probe:
         jsr PROBE_ZP
         sta RAMWRTOFF
         ldx #$00
-        rts
-
-; fastcall void aux_xor_byte(unsigned address, unsigned char value)
-; A contains value and the address is on the cc65 software stack. Extract all
-; parameters before the zero-page trampoline redirects RAM reads and writes.
-_aux_xor_byte:
-        and #$7F
-        sta AUX_XOR_VALUE
-        jsr popax
-        sta AUX_XOR_PTR
-        stx AUX_XOR_PTR+1
-        jsr AUX_XOR_CODE
         rts
 
 ; fastcall void aux_color_row(unsigned address)
@@ -105,11 +71,6 @@ _aux_color_row:
 ; stack. RAMWRT redirects $0200-$BFFF, so an ordinary C pointer loop cannot
 ; safely update stack locals while this switch is active.
 _aux_clear_video:
-        ldx #(aux_xor_code_end-aux_xor_code)-1
-@copy: lda aux_xor_code,x
-        sta AUX_XOR_CODE,x
-        dex
-        bpl @copy
         stz RAMWORKS
         stz CLEAR_PTR
         lda #$20

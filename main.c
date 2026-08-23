@@ -53,20 +53,38 @@ typedef unsigned int u16;
 #define PLAYFIELD_TOP 20
 #define PLAYFIELD_BOTTOM 180
 #define PARALLAX_BOTTOM 178
-#define PARALLAX_HEIGHT ((PARALLAX_BOTTOM - PLAYFIELD_TOP) * 2)
+#define PARALLAX_SOURCE_ROWS 384
+#define PARALLAX_WOVEN_TOP (PLAYFIELD_TOP * 2)
+#define PARALLAX_WOVEN_BOTTOM (PARALLAX_BOTTOM * 2)
+#define PARALLAX_HEIGHT (PARALLAX_WOVEN_BOTTOM - PARALLAX_WOVEN_TOP)
+#define PARALLAX_DENOMINATOR 20
+#define PARALLAX_MODULUS (PARALLAX_SOURCE_ROWS * PARALLAX_DENOMINATOR)
+#define PARALLAX_DEEP_SPEED 5
+#define PARALLAX_NEBULA_SPEED 12
+#define PARALLAX_ASTEROID_SPEED 28
+#define PARALLAX_LAYER_DEEP 0
+#define PARALLAX_LAYER_NEBULA 1
+#define PARALLAX_LAYER_ASTEROIDS 2
+#define PARALLAX_STATE_QUIET 3
+#define REPLAY_FIRST_BANK 1
 #define VIDEO7_COLOR 0x80
 #define FIELD_BYTES 4
 #define ENEMY_COUNT 24
 #define PLAYER_BULLET_COUNT 8
 #define AUTOFIRE_DELAY 5
-#define FAR_STAR_COUNT 24
-#define MID_STAR_COUNT 16
-#define NEAR_STAR_COUNT 8
-#define STAR_COUNT (FAR_STAR_COUNT + MID_STAR_COUNT + NEAR_STAR_COUNT)
-#define MID_STAR_FIRST FAR_STAR_COUNT
-#define NEAR_STAR_FIRST (FAR_STAR_COUNT + MID_STAR_COUNT)
 #define MUSIC_STEP_COUNT 32
 #define MUSIC_STEP_FRAMES 6
+
+#define PARALLAX_OLD_ROW_LO 0x0068
+#define PARALLAX_OLD_ROW_HI 0x0069
+#define PARALLAX_LAYER      0x006A
+#define PARALLAX_NEW_ROW_LO 0x006B
+#define PARALLAX_NEW_ROW_HI 0x006C
+#define SPRITE_X_ZP          0x0020
+#define SPRITE_Y_ZP          0x0021
+#define SPRITE_HEIGHT_ZP     0x0022
+#define SPRITE_PTR_LO_ZP     0x0023
+#define SPRITE_PTR_HI_ZP     0x0024
 
 #define KEY_LEFT   0x08
 #define KEY_RIGHT  0x15
@@ -75,7 +93,10 @@ typedef unsigned int u16;
 extern u8 __fastcall__ ramworks_probe(u8 bank);
 extern void aux_clear_video(void);
 extern void __fastcall__ aux_color_row(u16 address);
-extern void __fastcall__ aux_xor_byte(u16 address, u8 value);
+extern u8 __fastcall__ parallax_assets_load(void);
+extern void parallax_draw_layer(void);
+extern void parallax_move_layer(void);
+extern void video_sprite_fast(void);
 
 struct DebugMailbox {
     u8 magic[4];
@@ -95,12 +116,12 @@ struct DebugMailbox {
     u8 replay_bank;
     u8 speech_completions;
     u8 shots_fired;
-    u8 far_phase_lo;
-    u8 far_phase_hi;
-    u8 mid_phase_lo;
-    u8 mid_phase_hi;
-    u8 near_phase_lo;
-    u8 near_phase_hi;
+    u8 deep_phase_lo;
+    u8 deep_phase_hi;
+    u8 nebula_phase_lo;
+    u8 nebula_phase_hi;
+    u8 asteroid_phase_lo;
+    u8 asteroid_phase_hi;
     u8 music_step;
     u8 music_loops;
     u8 music_tick;
@@ -109,6 +130,7 @@ struct DebugMailbox {
     u8 lead_note;
     u8 bass_note;
     u8 music_events;
+    u8 parallax_commits;
 };
 
 #define MAILBOX ((volatile struct DebugMailbox*)0x0300)
@@ -134,6 +156,7 @@ static u8 enemy_bullet_y;
 static u8 fire_column;
 static u8 frame_lo;
 static u8 frame_hi;
+static u8 game_frame;
 static u8 score;
 static u8 lives;
 static u8 animation;
@@ -143,16 +166,20 @@ static u8 sfx_kind;
 static u8 replay_bank;
 static u8 replay_slot;
 
-struct ParallaxStar {
-    u16 woven_y;
-    u8 half_x;
-    u8 mask;
+struct ParallaxPhase {
+    u16 row;
+    u8 fraction;
+    u16 displayed_row;
+    u16 displayed_units;
+    u16 target_row;
+    u16 target_units;
 };
 
-static struct ParallaxStar parallax_stars[STAR_COUNT];
-static u16 far_phase;
-static u16 mid_phase;
-static u16 near_phase;
+static struct ParallaxPhase deep_phase;
+static struct ParallaxPhase nebula_phase;
+static struct ParallaxPhase asteroid_phase;
+static u8 parallax_render_state;
+static u8 parallax_commits;
 
 static u8 ay_shadow[11];
 static u8 ay_mixer_shadow;
@@ -442,105 +469,128 @@ static void video_border(void)
     REG8(RAMWRTOFF) = 0;
 }
 
-static void video_xor_byte(u16 address, u8 value, u8 aux)
+static void parallax_phase_reset(struct ParallaxPhase* phase)
 {
-    volatile u8* p;
-    if (aux) {
-        aux_xor_byte(address, value);
-        return;
+    phase->row = 0;
+    phase->fraction = 0;
+    phase->displayed_row = 0;
+    phase->displayed_units = 0;
+    phase->target_row = 0;
+    phase->target_units = 0;
+}
+
+static void parallax_phase_advance(struct ParallaxPhase* phase, u8 amount)
+{
+    u8 whole;
+    u8 fraction;
+    fraction = (u8)(phase->fraction + amount);
+    whole = 0;
+    while (fraction >= PARALLAX_DENOMINATOR) {
+        fraction = (u8)(fraction - PARALLAX_DENOMINATOR);
+        ++whole;
     }
-    REG8(RAMWRTOFF) = 0;
-    p = (volatile u8*)address;
-    *p = (u8)((*p ^ (value & 0x7F)) | VIDEO7_COLOR);
+    phase->fraction = fraction;
+    phase->row = (u16)(phase->row + whole);
+    if (phase->row >= PARALLAX_SOURCE_ROWS) {
+        phase->row = (u16)(phase->row - PARALLAX_SOURCE_ROWS);
+    }
 }
 
 static void parallax_init(void)
 {
-    struct ParallaxStar* star;
-    u8 i;
-    u8 shift;
-    for (i = 0; i < STAR_COUNT; ++i) {
-        star = &parallax_stars[i];
-        /* Spread rows with a coprime permutation, then use a Gray-code bit
-         * for field parity. This avoids correlating page A/B with AUX/MAIN
-         * and keeps all four DHGRi planes equally populated. */
-        star->woven_y = (u16)(2 * (((u16)i * 83 + 29)
-                                 % (PARALLAX_HEIGHT / 2))
-                              + ((i ^ (i >> 1)) & 1));
-        /* The first 48 values of this permutation occupy distinct DHGR half
-         * bytes, keeping every particle independently reversible with XOR. */
-        star->half_x = (u8)(((u16)i * 37 + 13) % 80);
-        if (i < MID_STAR_FIRST) {
-            shift = (u8)(((u16)i * 5 + 1) % 7);
-            star->mask = (u8)(1 << shift);
-        } else if (i < NEAR_STAR_FIRST) {
-            shift = (u8)(((u16)i * 5 + 2) % 6);
-            star->mask = (u8)(3 << shift);
-        } else {
-            shift = (u8)(((u16)i * 3 + 1) % 5);
-            star->mask = (u8)(7 << shift);
-        }
-    }
-    far_phase = 0;
-    mid_phase = 0;
-    near_phase = 0;
+    parallax_phase_reset(&deep_phase);
+    parallax_phase_reset(&nebula_phase);
+    parallax_phase_reset(&asteroid_phase);
+    parallax_render_state = PARALLAX_STATE_QUIET;
+    parallax_commits = 0;
 }
 
-static void parallax_xor_layer(u8 first, u8 count, u16 phase)
+static void parallax_tick(void)
 {
-    const struct ParallaxStar* star;
-    volatile u8* p;
-    u16 address;
-    u16 woven_y;
-    u8 i;
-    u8 row;
-    for (i = first; i < (u8)(first + count); ++i) {
-        star = &parallax_stars[i];
-        woven_y = star->woven_y + phase;
-        while (woven_y >= PARALLAX_HEIGHT) woven_y -= PARALLAX_HEIGHT;
-        row = (u8)(PLAYFIELD_TOP + (woven_y >> 1));
-        address = hgr_line[row] + (star->half_x >> 1);
-        if (woven_y & 1) address += 0x2000;
-        if ((star->half_x & 1) == 0) {
-            aux_xor_byte(address, star->mask);
-        } else {
-            REG8(RAMWRTOFF) = 0;
-            p = (volatile u8*)address;
-            *p = (u8)((*p ^ star->mask) | VIDEO7_COLOR);
-        }
-    }
+    parallax_phase_advance(&deep_phase, PARALLAX_DEEP_SPEED);
+    parallax_phase_advance(&nebula_phase, PARALLAX_NEBULA_SPEED);
+    parallax_phase_advance(&asteroid_phase, PARALLAX_ASTEROID_SPEED);
 }
 
-static void parallax_xor(void)
+static u16 parallax_phase_units(const struct ParallaxPhase* phase)
 {
-    parallax_xor_layer(0, FAR_STAR_COUNT, far_phase);
-    parallax_xor_layer(MID_STAR_FIRST, MID_STAR_COUNT, mid_phase);
-    parallax_xor_layer(NEAR_STAR_FIRST, NEAR_STAR_COUNT, near_phase);
+    return (u16)(phase->row * PARALLAX_DENOMINATOR + phase->fraction);
+}
+
+static void parallax_capture_target(void)
+{
+    deep_phase.target_row = deep_phase.row;
+    nebula_phase.target_row = nebula_phase.row;
+    asteroid_phase.target_row = asteroid_phase.row;
+    deep_phase.target_units = parallax_phase_units(&deep_phase);
+    nebula_phase.target_units = parallax_phase_units(&nebula_phase);
+    asteroid_phase.target_units = parallax_phase_units(&asteroid_phase);
+}
+
+static void parallax_promote_target(void)
+{
+    deep_phase.displayed_row = deep_phase.target_row;
+    nebula_phase.displayed_row = nebula_phase.target_row;
+    asteroid_phase.displayed_row = asteroid_phase.target_row;
+    deep_phase.displayed_units = deep_phase.target_units;
+    nebula_phase.displayed_units = nebula_phase.target_units;
+    asteroid_phase.displayed_units = asteroid_phase.target_units;
+}
+
+static u16 parallax_source_row(u16 woven_row, u16 offset)
+{
+    woven_row = (u16)(woven_row + PARALLAX_SOURCE_ROWS - offset);
+    if (woven_row >= PARALLAX_SOURCE_ROWS) {
+        woven_row = (u16)(woven_row - PARALLAX_SOURCE_ROWS);
+    }
+    return woven_row;
+}
+
+static void parallax_set_source_rows(u16 old_row, u16 new_row)
+{
+    REG8(PARALLAX_OLD_ROW_LO) = (u8)old_row;
+    REG8(PARALLAX_OLD_ROW_HI) = (u8)(old_row >> 8);
+    REG8(PARALLAX_NEW_ROW_LO) = (u8)new_row;
+    REG8(PARALLAX_NEW_ROW_HI) = (u8)(new_row >> 8);
+}
+
+static void parallax_xor_layer_once(u8 layer, u16 offset)
+{
+    u16 source_row;
+
+    REG8(PARALLAX_LAYER) = layer;
+    source_row = parallax_source_row(PARALLAX_WOVEN_TOP, offset);
+    parallax_set_source_rows(source_row, source_row);
+    parallax_draw_layer();
+    REG8(RAMWORKS) = 0;
+    REG8(RAMRDOFF) = 0;
     REG8(RAMWRTOFF) = 0;
 }
 
-static void parallax_step(void)
+static void parallax_xor_layer(u8 layer, u16 old_offset, u16 new_offset)
 {
-    ++far_phase;
-    mid_phase += 2;
-    near_phase += 4;
-    if (far_phase >= PARALLAX_HEIGHT) far_phase -= PARALLAX_HEIGHT;
-    if (mid_phase >= PARALLAX_HEIGHT) mid_phase -= PARALLAX_HEIGHT;
-    if (near_phase >= PARALLAX_HEIGHT) near_phase -= PARALLAX_HEIGHT;
+    u16 old_row;
+    u16 new_row;
+
+    if (old_offset == new_offset) return;
+    REG8(PARALLAX_LAYER) = layer;
+    old_row = parallax_source_row(PARALLAX_WOVEN_TOP, old_offset);
+    new_row = parallax_source_row(PARALLAX_WOVEN_TOP, new_offset);
+    parallax_set_source_rows(old_row, new_row);
+    parallax_move_layer();
+    REG8(RAMWORKS) = 0;
+    REG8(RAMRDOFF) = 0;
+    REG8(RAMWRTOFF) = 0;
 }
 
 static void video_sprite(u8 x, u8 y, const u8* sprite, u8 height)
 {
-    u8 row;
-    u16 address;
-    for (row = 0; row < height; ++row) {
-        address = hgr_line[y + row] + x;
-        video_xor_byte(address, sprite[0], 1);
-        video_xor_byte(address, sprite[1], 0);
-        video_xor_byte(address + 0x2000, sprite[2], 1);
-        video_xor_byte(address + 0x2000, sprite[3], 0);
-        sprite += FIELD_BYTES;
-    }
+    REG8(SPRITE_X_ZP) = x;
+    REG8(SPRITE_Y_ZP) = y;
+    REG8(SPRITE_HEIGHT_ZP) = height;
+    REG8(SPRITE_PTR_LO_ZP) = (u8)(u16)sprite;
+    REG8(SPRITE_PTR_HI_ZP) = (u8)((u16)sprite >> 8);
+    video_sprite_fast();
     REG8(RAMWRTOFF) = 0;
 }
 
@@ -780,7 +830,7 @@ static void replay_record(void)
     if (replay_slot == 32) {
         replay_slot = 0;
         ++replay_bank;
-        if (replay_bank == 128) replay_bank = 1;
+        if (replay_bank == 128) replay_bank = REPLAY_FIRST_BANK;
     }
     MAILBOX->replay_bank = replay_bank;
 }
@@ -970,7 +1020,7 @@ static void enemy_bullet_tick(void)
 {
     u8 delta;
     if (!enemy_bullet_active) {
-        if ((frame_lo & 0x3F) == 0) {
+        if ((game_frame & 0x3F) == 0) {
             enemy_bullet_active = 1;
             enemy_bullet_x = (u8)(enemy_x + fire_column * 5);
             enemy_bullet_y = (u8)(enemy_y + 57);
@@ -1000,7 +1050,7 @@ static void enemy_bullet_tick(void)
 
 static void formation_tick(void)
 {
-    if ((frame_lo & 7) != 0) return;
+    if ((game_frame & 7) != 0) return;
     animation ^= 1;
     if (enemy_right) {
         if (enemy_x >= 13) {
@@ -1033,10 +1083,8 @@ static void formation_tick(void)
 static void game_tick(void)
 {
     input_tick();
-    if ((frame_lo & 1) == 0) {
-        if (player_velocity < 0 && player_x > 1) --player_x;
-        if (player_velocity > 0 && player_x < 38) ++player_x;
-    }
+    if (player_velocity < 0 && player_x > 1) --player_x;
+    if (player_velocity > 0 && player_x < 38) ++player_x;
     formation_tick();
     player_bullet_tick();
     enemy_bullet_tick();
@@ -1044,6 +1092,7 @@ static void game_tick(void)
         speech_start(phrase_wave);
         formation_reset();
     }
+    ++game_frame;
 }
 
 static void mailbox_init(u8 banks)
@@ -1057,7 +1106,7 @@ static void mailbox_init(u8 banks)
     MAILBOX->lives = lives;
     MAILBOX->enemies = enemies_left;
     MAILBOX->player_x = player_x;
-    MAILBOX->mhz = 14;
+    MAILBOX->mhz = 33;
     MAILBOX->audio_flags = 7;
     MAILBOX->speech_phoneme = 0;
     MAILBOX->game_state = 1;
@@ -1065,12 +1114,12 @@ static void mailbox_init(u8 banks)
     MAILBOX->replay_bank = replay_bank;
     MAILBOX->speech_completions = 0;
     MAILBOX->shots_fired = 0;
-    MAILBOX->far_phase_lo = 0;
-    MAILBOX->far_phase_hi = 0;
-    MAILBOX->mid_phase_lo = 0;
-    MAILBOX->mid_phase_hi = 0;
-    MAILBOX->near_phase_lo = 0;
-    MAILBOX->near_phase_hi = 0;
+    MAILBOX->deep_phase_lo = 0;
+    MAILBOX->deep_phase_hi = 0;
+    MAILBOX->nebula_phase_lo = 0;
+    MAILBOX->nebula_phase_hi = 0;
+    MAILBOX->asteroid_phase_lo = 0;
+    MAILBOX->asteroid_phase_hi = 0;
     MAILBOX->music_step = music_step;
     MAILBOX->music_loops = music_loops;
     MAILBOX->music_tick = music_subtick;
@@ -1079,6 +1128,7 @@ static void mailbox_init(u8 banks)
     MAILBOX->lead_note = music_lead_note;
     MAILBOX->bass_note = music_bass_note;
     MAILBOX->music_events = music_events;
+    MAILBOX->parallax_commits = parallax_commits;
     /* Publish the handshake only after every payload byte is initialized. */
     MAILBOX->magic[1] = '1';
     MAILBOX->magic[2] = '3';
@@ -1088,14 +1138,26 @@ static void mailbox_init(u8 banks)
 
 static void mailbox_parallax_tick(void)
 {
-    /* Publish while A2Li is still held at $FF. Once marker $01 is visible,
-     * a paused debugger is guaranteed to see phases matching that weave. */
-    MAILBOX->far_phase_lo = (u8)far_phase;
-    MAILBOX->far_phase_hi = (u8)(far_phase >> 8);
-    MAILBOX->mid_phase_lo = (u8)mid_phase;
-    MAILBOX->mid_phase_hi = (u8)(mid_phase >> 8);
-    MAILBOX->near_phase_lo = (u8)near_phase;
-    MAILBOX->near_phase_hi = (u8)(near_phase >> 8);
+    MAILBOX->deep_phase_lo = (u8)deep_phase.displayed_units;
+    MAILBOX->deep_phase_hi = (u8)(deep_phase.displayed_units >> 8);
+    MAILBOX->nebula_phase_lo = (u8)nebula_phase.displayed_units;
+    MAILBOX->nebula_phase_hi = (u8)(nebula_phase.displayed_units >> 8);
+    MAILBOX->asteroid_phase_lo = (u8)asteroid_phase.displayed_units;
+    MAILBOX->asteroid_phase_hi = (u8)(asteroid_phase.displayed_units >> 8);
+}
+
+static void mailbox_parallax_target_tick(void)
+{
+    /* Publish while A2Li still holds the preceding weave. Once marker $01 is
+     * visible, a paused debugger sees the exact target phases just committed. */
+    MAILBOX->deep_phase_lo = (u8)deep_phase.target_units;
+    MAILBOX->deep_phase_hi = (u8)(deep_phase.target_units >> 8);
+    MAILBOX->nebula_phase_lo = (u8)nebula_phase.target_units;
+    MAILBOX->nebula_phase_hi = (u8)(nebula_phase.target_units >> 8);
+    MAILBOX->asteroid_phase_lo = (u8)asteroid_phase.target_units;
+    MAILBOX->asteroid_phase_hi = (u8)(asteroid_phase.target_units >> 8);
+    ++parallax_commits;
+    MAILBOX->parallax_commits = parallax_commits;
 }
 
 static void mailbox_tick(void)
@@ -1117,6 +1179,7 @@ static void mailbox_tick(void)
     MAILBOX->lead_note = music_lead_note;
     MAILBOX->bass_note = music_bass_note;
     MAILBOX->music_events = music_events;
+    MAILBOX->parallax_commits = parallax_commits;
 }
 
 int main(void)
@@ -1127,21 +1190,28 @@ int main(void)
     REG8(RAMWRTOFF) = 0;
     build_line_table();
     banks = ramworks_init();
+    if (banks != 128 || !parallax_assets_load()) return 1;
     video_select();
     video_clear();
     video_color_playfield();
     parallax_init();
     video_begin_dhgri();
-    parallax_xor();
+    parallax_capture_target();
+    parallax_promote_target();
+    parallax_xor_layer_once(PARALLAX_LAYER_DEEP, deep_phase.displayed_row);
+    parallax_xor_layer_once(PARALLAX_LAYER_NEBULA, nebula_phase.displayed_row);
+    parallax_xor_layer_once(PARALLAX_LAYER_ASTEROIDS,
+                            asteroid_phase.displayed_row);
     video_border();
-    video_text(24, 10, "APPLETINI INVASION");
-    video_text(3, 181, "65C02 14.3MHZ  DHGRI  8MB RAMWORKS");
+    video_text(31, 10, "APPLETINI INVASION");
+    video_text(3, 181, "65C02 33MHZ  DHGRI  8MB RAMWORKS");
     audio_init();
     game_reset();
-    replay_bank = 1;
+    replay_bank = REPLAY_FIRST_BANK;
     replay_slot = 0;
     frame_lo = 0;
     frame_hi = 0;
+    game_frame = 0;
     mailbox_init(banks);
     draw_hud();
     draw_dynamic();
@@ -1151,20 +1221,43 @@ int main(void)
 
     for (;;) {
         wait_vbl();
-        /* Appletini publishes a changed legacy weave only after one full
-         * quiet frame. Update both fields as one A2Li transaction at 30 Hz,
-         * then leave all four video banks untouched for the next VBL. */
-        if ((frame_lo & 1) == 0) {
+        parallax_tick();
+
+        /* Each imported layer is a sparse reversible overlay. A2Li holds the
+         * preceding weave while one old/new layer pair is XORed per VBL. The
+         * fourth VBL remains completely free of base-video writes. */
+        if (parallax_render_state == 0) {
             video_begin_dhgri();
+            /* Foreground is XOR drawn, so remove the exact displayed state
+             * before either of this cycle's two 30 Hz game updates. */
             draw_dynamic();
-            parallax_xor();
-            parallax_step();
-            parallax_xor();
+            game_tick();
+            parallax_capture_target();
+            parallax_xor_layer(PARALLAX_LAYER_DEEP,
+                               deep_phase.displayed_row,
+                               deep_phase.target_row);
+            parallax_render_state = 1;
+        } else if (parallax_render_state == 1) {
+            parallax_xor_layer(PARALLAX_LAYER_NEBULA,
+                               nebula_phase.displayed_row,
+                               nebula_phase.target_row);
+            parallax_render_state = 2;
+        } else if (parallax_render_state == 2) {
+            parallax_xor_layer(PARALLAX_LAYER_ASTEROIDS,
+                               asteroid_phase.displayed_row,
+                               asteroid_phase.target_row);
             game_tick();
             if (hud_dirty) draw_hud();
             draw_dynamic();
-            mailbox_parallax_tick();
+            mailbox_parallax_target_tick();
             video_commit_dhgri();
+            parallax_promote_target();
+            parallax_render_state = PARALLAX_STATE_QUIET;
+        } else {
+            /* One full VBL without base-video writes is mandatory after each
+             * commit. Non-video audio, speech, and RamWorks replay work below
+             * remains safe during this settling frame. */
+            parallax_render_state = 0;
         }
         audio_tick();
         speech_tick();
