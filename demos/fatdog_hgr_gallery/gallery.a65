@@ -1,0 +1,418 @@
+; FATDOG HGR gallery. ProDOS SYS entry at $2000, runtime at $6000.
+; HGR pages $2000/$4000 alternate so disk reads never paint over the display.
+; Code/data occupy $6000-$7FFF; the MLI file buffer is $8000-$83FF.
+!cpu 6502
+* = $2000
+    cld
+    ldx #0
+relocate:
+    !for page, 0, 31 {
+        lda $2000 + page * 256,x
+        sta $6000 + page * 256,x
+    }
+    inx
+    beq +
+    jmp relocate
++
+    jmp start
+
+!pseudopc $6000 + (* - $2000) {
+MLI = $BF00
+KBD = $C000
+STROBE = $C010
+ptr = $06
+SLIDE_FRAMES = 480
+INTRO_FRAMES = 1800
+
+start:
+    cld
+    jsr main_bank
+    jsr MLI
+    !byte $CC
+    !word close_all
+    bcc +
+    jmp fatal
++   lda #0
+    ldx #23
+-   sta $BF58,x
+    dex
+    bpl -
+    lda #$CF                 ; zero page, stack, text page
+    sta $BF58
+    lda #1
+    sta $BF6F                ; ProDOS global page
+    sta $BFFD                ; viewer version 1.0
+    lda #$FF
+    ldx #3
+-   sta $BF64,x              ; protect code $6000-$7FFF, not image destinations
+    dex
+    bpl -
+    lda #<quit
+    sta $03F2
+    lda #>quit
+    sta $03F3
+    eor #$A5
+    sta $03F4
+    jsr set_prefix
+    bcc +
+    jmp fatal
++   lda #0
+    sta image_index
+    sta paused
+    sta page_shown
+    sta use_vbl
+    lda $FBB3                ; IIe/IIgs have a readable VBL signal
+    cmp #$06
+    bne +
+    lda $FBC0                ; IIc needs a different VBL protocol: use delay
+    beq +
+    inc use_vbl
++   jsr help_screen
+    lda #<INTRO_FRAMES
+    sta ticks
+    lda #>INTRO_FRAMES
+    sta ticks+1
+intro_wait:
+    bit KBD
+    bmi intro_done
+    jsr wait_frame
+    jsr countdown
+    bne intro_wait
+intro_done:
+    bit STROBE
+    jmp load_image
+
+load_image:
+    jsr main_bank
+    ldx image_index
+    lda names_lo,x
+    sta open_path
+    lda names_hi,x
+    sta open_path+1
+    jsr MLI
+    !byte $C8
+    !word open_params
+    bcc +
+    jmp fatal
++   lda open_ref
+    sta read_ref
+    sta close_ref
+    lda page_shown
+    eor #1
+    sta page_loading
+    asl
+    asl
+    asl
+    asl
+    asl
+    clc
+    adc #$20
+    sta read_buffer+1
+    jsr MLI
+    !byte $CA
+    !word read_params
+    php
+    jsr MLI
+    !byte $CC
+    !word close_params
+    plp
+    bcc +
+    jmp fatal
++   lda read_count
+    bne bad_length
+    lda read_count+1
+    cmp #$20
+    beq +
+bad_length:
+    jmp fatal
++   lda page_loading
+    sta page_shown
+    jsr show_picture
+image_ready:
+    jsr reset_timer
+wait_picture:
+    bit KBD
+    bmi handle_key
+    jsr wait_frame
+    lda paused
+    bne wait_picture
+    jsr countdown
+    bne wait_picture
+next_image:
+    inc image_index
+    lda image_index
+    cmp #image_count
+    bcc +
+    lda #0
+    sta image_index
++   jmp load_image
+
+handle_key:
+    lda KBD
+    and #$7F
+    bit STROBE
+    cmp #$1B
+    bne +
+    jmp quit
++   cmp #$08
+    beq previous_image
+    cmp #$15
+    beq next_image
+    cmp #$0D
+    beq next_image
+    cmp #$20
+    beq toggle_pause
+    and #$DF
+    cmp #'N'
+    beq next_image
+    cmp #'P'
+    beq previous_image
+    cmp #'R'
+    beq first_image
+    cmp #'H'
+    beq help_key
+    jmp wait_picture
+previous_image:
+    lda image_index
+    bne +
+    lda #image_count
++   sec
+    sbc #1
+    sta image_index
+    jmp load_image
+first_image:
+    lda #0
+    sta image_index
+    jmp load_image
+toggle_pause:
+    lda paused
+    eor #1
+    sta paused
+    jmp image_ready
+help_key:
+    jsr help_screen
+    ; The startup-only automatic countdown hint does not apply here.
+    ldx #39
+    lda #$A0
+-   sta $07D0,x             ; row 23
+    dex
+    bpl -
+-   bit KBD
+    bpl -
+    lda KBD
+    and #$7F
+    bit STROBE
+    cmp #$1B
+    bne +
+    jmp quit
++   jsr show_picture
+    jmp image_ready
+
+main_bank:
+    lda #0
+    sta $C000               ; 80STORE off
+    sta $C002               ; main reads
+    sta $C004               ; main writes
+    sta $C00C               ; 40 columns
+    rts
+show_picture:
+    jsr main_bank
+    bit $C05F               ; double hires off
+    bit $C052               ; all 192 lines, no cropped text footer
+    bit $C057
+    ldx page_shown
+    lda $C054,x
+    bit $C050
+    rts
+
+help_screen:
+    jsr main_bank
+    bit $C051
+    bit $C054
+    ldx #0
+-   lda help_page,x
+    sta $0400,x
+    lda help_page+$100,x
+    sta $0500,x
+    lda help_page+$200,x
+    sta $0600,x
+    lda help_page+$300,x
+    sta $0700,x
+    inx
+    bne -
+    ldx image_index
+    lda names_lo,x
+    sta ptr
+    lda names_hi,x
+    sta ptr+1
+    ldy #0
+    lda (ptr),y
+    tax
+-   iny
+    lda (ptr),y
+    ora #$80
+    sta $04D4,y             ; row 17, after "NOW: "
+    dex
+    bne -
+    lda paused
+    beq +
+    ldx #5
+-   lda paused_text,x
+    sta $05D7,x             ; row 19, after "MODE:  "
+    dex
+    bpl -
++   rts
+
+reset_timer:
+    lda #<SLIDE_FRAMES
+    sta ticks
+    lda #>SLIDE_FRAMES
+    sta ticks+1
+    rts
+countdown:
+    lda ticks
+    bne +
+    dec ticks+1
++   dec ticks
+    lda ticks
+    ora ticks+1
+    rts
+
+; Count a full low/high cycle, so IIe/IIgs VBL polarity is irrelevant.
+; Bounded polling falls back to a 1 MHz delay if VBL never changes.
+wait_frame:
+    lda use_vbl
+    beq delay_frame
+    ldx #0
+    ldy #0
+-   bit $C019
+    bpl vbl_low
+    dex
+    bne -
+    dey
+    bne -
+    beq vbl_unavailable
+vbl_low:
+    ldx #0
+    ldy #0
+-   bit $C019
+    bmi frame_done
+    dex
+    bne -
+    dey
+    bne -
+vbl_unavailable:
+    lda #0
+    sta use_vbl
+delay_frame:
+    ldy #13
+-   ldx #255
+--  dex
+    bne --
+    dey
+    bne -
+frame_done:
+    rts
+
+; Always derive the volume prefix from the device that loaded this SYS.
+set_prefix:
+    lda $BF30
+    sta online_unit
+    jsr MLI
+    !byte $C5
+    !word online_params
+    bcs prefix_done
+    lda online_buffer
+    and #$0F
+    beq prefix_error
+    tax
+    clc
+    adc #1
+    sta prefix_buffer
+    lda #'/'
+    sta prefix_buffer+1
+-   lda online_buffer,x
+    sta prefix_buffer+1,x
+    dex
+    bne -
+    jsr MLI
+    !byte $C6
+    !word prefix_params
+prefix_done:
+    rts
+prefix_error:
+    sec
+    rts
+
+fatal:
+    jsr main_bank
+    bit $C051
+    bit $C054
+    ldx #0
+    lda #$A0
+-   sta $0400,x
+    sta $0500,x
+    sta $0600,x
+    sta $0700,x
+    inx
+    bne -
+    ldx #error_end-error_text-1
+-   lda error_text,x
+    ora #$80
+    sta $0400,x
+    dex
+    bpl -
+    bit STROBE
+-   bit KBD
+    bpl -
+quit:
+    cld
+    jsr main_bank
+    bit $C051
+    bit $C054
+    bit $C052
+    bit STROBE
+    jsr MLI
+    !byte $CC
+    !word close_all
+    inc $03F4
+    jsr MLI
+    !byte $65
+    !word quit_params
+    jmp quit
+
+image_index: !byte 0
+paused: !byte 0
+page_shown: !byte 0
+page_loading: !byte 0
+use_vbl: !byte 0
+ticks: !word 0
+paused_text: !byte $D0,$C1,$D5,$D3,$C5,$C4
+error_text: !text "DISK READ ERROR. PRESS A KEY TO QUIT."
+error_end:
+open_params: !byte 3
+open_path: !word 0
+    !word $8000
+open_ref: !byte 0
+read_params: !byte 4
+read_ref: !byte 0
+read_buffer: !word $4000
+    !word $2000
+read_count: !word 0
+close_params: !byte 1
+close_ref: !byte 0
+close_all: !byte 1,0
+quit_params: !byte 4,0,0,0,0,0,0
+online_params: !byte 2
+online_unit: !byte 0
+    !word online_buffer
+online_buffer = $8400       ; MLI output must be outside protected code pages
+prefix_params: !byte 1
+    !word prefix_buffer
+prefix_buffer = $8440
+
+!source "images.inc"
+help_page:
+    !binary "help.bin"
+}
+!if * > $4000 { !error "Viewer exceeds its 8K relocation area" }

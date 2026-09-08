@@ -1,0 +1,6 @@
+# Generated assembly files, binaries, disk images and build reports.
+/build/
+/dist/
+
+# Local emulator captures, test disks, logs and one-off test scripts.
+/validation/
