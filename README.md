@@ -4,8 +4,9 @@ Apple II software and hardware demonstrations built to exercise Appletini.
 
 ## Demos
 
-- [FATDOG HGR Gallery](demos/fatdog_hgr_gallery/README.md): a bootable 800K
-  ProDOS slideshow of 32 HGR images converted by FATDOG. Use phosphor blur
+- [FATDOG MAGIC](demos/fatdog_magic/README.md): a bootable 32 MB
+  ProDOS gallery with an HGR folder menu and 32 images converted by FATDOG
+  in Standard HGR and 20 in Brooks SHR-3200, plus the Appletini demo image formats. Use phosphor blur
   and glow, combined with composite or TV output, for best results.
 - [Appletini Invasion](demos/appletini_invasion/README.md) — an enhanced
   Apple //e fixed shooter using 33.3 MHz acceleration, DHGRi, Video-7 MIX,

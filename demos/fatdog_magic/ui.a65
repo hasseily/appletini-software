@@ -1,0 +1,514 @@
+; Full-screen HGR UI, using the Appletini demo menu's 7x8 font and
+; inverted selection band. Menu and help draw directly into HGR page 1.
+scrptr = $08
+fontptr = $10
+temp = $12
+MENU_ROWS = 12
+FIRST_BAND = 6
+
+!macro print .text, .row, .column {
+    lda #<.text
+    sta ptr
+    lda #>.text
+    sta ptr+1
+    ldx #.row
+    ldy #.column
+    jsr print_at
+}
+
+folder_menu:
+    jsr main_bank
+    jsr restore_catalog
+    jsr scan_folders
+    lda selected
+    cmp folder_count
+    bcc +
+    lda #0
+    sta selected
+    sta folder_top
++   lda scan_overflow
+    beq menu_redraw
+    lda #<too_many_folders
+    ldx #>too_many_folders
+    jsr notice
+menu_redraw:
+    jsr ui_begin
+    +print choose_text, 4, 2
+    lda folder_count
+    bne menu_items
+    +print no_folders, 8, 2
+    jmp menu_footer
+menu_items:
+    jsr menu_ensure_visible
+    jsr menu_draw_items
+menu_footer:
+    +print menu_keys, 22, 1
+    +print menu_quit, 23, 1
+    lda folder_count
+    beq +
+    jsr menu_number
+    +print of_text, 18, 32
+    lda folder_count
+    ldx #18
+    ldy #35
+    jsr print_number
++   jsr ui_show
+    lda #1
+    sta screen_state
+menu_wait:
+    lda KBD
+    bpl menu_wait
+    and #$7F
+    bit STROBE
+    cmp #$1B
+    bne +
+    jmp quit
++   ldx folder_count
+    beq menu_wait
+    cmp #$0D
+    beq open_folder
+    cmp #$20
+    beq open_folder
+    cmp #$0B
+    beq menu_up
+    cmp #$08
+    beq menu_up
+    cmp #$0A
+    beq menu_down
+    cmp #$15
+    beq menu_down
+    and #$DF
+    cmp #'P'
+    beq menu_up
+    cmp #'N'
+    beq menu_down
+    jmp menu_wait
+menu_up:
+    lda selected
+    sta previous_selected
+    bne +
+    lda folder_count
++   sec
+    sbc #1
+    sta selected
+    jmp menu_update
+menu_down:
+    lda selected
+    sta previous_selected
+    inc selected
+    lda selected
+    cmp folder_count
+    bcc +
+    lda #0
+    sta selected
++   jmp menu_update
+
+open_folder:
+    jsr make_folder_path
+    jsr scan_images
+    lda scan_overflow
+    beq +
+    lda #<too_many_images
+    ldx #>too_many_images
+    jsr notice
+    jmp menu_redraw
++   lda image_count
+    bne +
+    lda #<no_images
+    ldx #>no_images
+    jsr notice
+    jmp menu_redraw
++   lda #0
+    sta image_index
+    sta paused
+    jmp load_image
+
+; Navigation keeps the existing HGR screen visible. With a stationary list,
+; XOR the old highlight off and the new one on; the folder names stay intact.
+; A scroll changes every visible row, so clear/repaint only the list rectangle.
+menu_update:
+    lda selected
+    cmp previous_selected
+    beq menu_update_done       ; A one-folder menu needs no writes at all.
+    lda folder_top
+    pha
+    jsr menu_ensure_visible
+    pla
+    cmp folder_top
+    bne menu_scroll
+    lda previous_selected
+    jsr menu_invert_item
+    lda selected
+    jsr menu_invert_item
+    jmp menu_update_number
+menu_scroll:
+    jsr menu_clear_items       ; Erase old names, including any longer tails.
+    jsr menu_draw_items
+menu_update_number:
+    jsr menu_number           ; Only the three-character "x" field of "x of y".
+menu_update_done:
+    jmp menu_wait
+
+menu_invert_item:             ; A=folder index in the current visible window.
+    sec
+    sbc folder_top
+    clc
+    adc #FIRST_BAND
+    tax
+    jmp invert_band
+
+menu_number:
+    lda selected
+    clc
+    adc #1
+    ldx #18
+    ldy #28
+    jmp print_number          ; Leading spaces also erase old extra digits.
+
+menu_ensure_visible:
+    lda selected
+    cmp folder_top
+    bcs +
+    sta folder_top
++   sec
+    sbc folder_top
+    cmp #MENU_ROWS
+    bcc +
+    lda selected
+    sec
+    sbc #MENU_ROWS-1
+    sta folder_top
++   rts
+
+menu_clear_items:
+    lda #FIRST_BAND*8
+    sta paint_band
+-   lda paint_band
+    jsr set_line
+    ldy #38                  ; Same columns as the selection highlight.
+    lda #0
+--  sta (scrptr),y
+    dey
+    bne --
+    inc paint_band
+    lda paint_band
+    cmp #(FIRST_BAND+MENU_ROWS)*8
+    bcc -
+    rts
+
+menu_draw_items:
+    lda folder_top
+    sta paint_index
+    lda #FIRST_BAND
+    sta paint_band
+-   lda paint_index
+    ldx #>folder_labels
+    jsr name_pointer
+    ldx paint_band
+    ldy #3
+    jsr print_name
+    lda paint_index
+    cmp selected
+    bne +
+    ldx paint_band
+    jsr invert_band
++   inc paint_index
+    inc paint_band
+    lda paint_index
+    cmp folder_count
+    bcs +
+    lda paint_band
+    cmp #FIRST_BAND+MENU_ROWS
+    bcc -
++   rts
+
+help_screen:
+    jsr restore_catalog
+    jsr ui_begin
+    +print help_title, 4, 2
+    +print folder_text, 6, 2
+    lda #<current_folder
+    sta ptr
+    lda #>current_folder
+    sta ptr+1
+    ldx #6
+    ldy #10
+    jsr print_name
+    +print image_text, 8, 2
+    lda image_index
+    ldx #>image_names
+    jsr name_pointer
+    ldx #8
+    ldy #10
+    jsr print_name
+    lda paused
+    bne +
+    +print auto_text, 10, 2
+    jmp ++
++   +print paused_text, 10, 2
+++  +print previous_text, 12, 2
+    +print next_text, 13, 2
+    +print pause_text, 14, 2
+    +print first_text, 15, 2
+    +print return_text, 17, 2
+    +print help_keys, 22, 2
+    jsr ui_show
+    lda #3
+    sta screen_state
+    rts
+
+; A/X = zero-terminated notice string. Return after a key, without quitting.
+notice:
+    sta notice_ptr
+    stx notice_ptr+1
+    jsr ui_begin
+    lda notice_ptr
+    sta ptr
+    lda notice_ptr+1
+    sta ptr+1
+    ldx #9
+    ldy #2
+    jsr print_at
+    +print notice_keys, 22, 2
+    jsr ui_show
+    lda #4
+    sta screen_state
+    bit STROBE
+notice_wait:
+    bit KBD
+    bpl notice_wait
+    bit STROBE
+    rts
+
+ui_begin:
+    jsr select_hgr
+    lda #$20
+    sta draw_base
+    sta scrptr+1
+    clc
+    adc #$20
+    sta clear_end
+    lda #0
+    sta scrptr
+    tay
+-   sta (scrptr),y
+    iny
+    bne -
+    inc scrptr+1
+    ldx scrptr+1
+    cpx clear_end
+    bne -
+    lda #<logo_data
+    sta fontptr
+    lda #>logo_data
+    sta fontptr+1
+    lda #3
+    sta logo_row
+-   lda logo_row
+    jsr set_line
+    ldy #39
+--  lda (fontptr),y
+    sta (scrptr),y
+    dey
+    bpl --
+    clc
+    lda fontptr
+    adc #40
+    sta fontptr
+    bcc +
+    inc fontptr+1
++   inc logo_row
+    lda logo_row
+    cmp #27
+    bcc -
+    lda #29
+    jsr set_line
+    ldy #39
+    lda #$7F
+-   sta (scrptr),y
+    dey
+    bpl -
+    +print credit_text, 20, 1
+    +print artwork_text, 21, 1
+    rts
+ui_show:
+    jmp select_hgr
+
+set_line:
+    tax
+    lda hgr_lo,x
+    sta scrptr
+    lda hgr_hi,x
+    ora draw_base
+    sta scrptr+1
+    rts
+
+print_at:                   ; zero-terminated ptr, X=band, Y=column
+    stx band
+    sty col
+    lda #0
+    sta sidx
+-   ldy sidx
+    lda (ptr),y
+    beq +
+    jsr draw_char
+    inc col
+    inc sidx
+    bne -
++   rts
+print_name:                 ; length-prefixed ptr, X=band, Y=column
+    stx band
+    sty col
+    ldy #0
+    lda (ptr),y
+    and #15
+    sta print_length
+    beq +
+    lda #1
+    sta sidx
+-   ldy sidx
+    lda (ptr),y
+    jsr draw_char
+    inc col
+    inc sidx
+    dec print_length
+    bne -
++   rts
+print_number:               ; A=0..255, X=band, Y=column
+    stx band
+    sty col
+    ldx #'0'
+-   cmp #100
+    bcc +
+    sbc #100
+    inx
+    bne -
++   stx number_text
+    ldx #'0'
+-   cmp #10
+    bcc +
+    sbc #10
+    inx
+    bne -
++   stx number_text+1
+    ora #'0'
+    sta number_text+2
+    lda number_text
+    cmp #'0'
+    bne +
+    lda #' '
+    sta number_text
+    ldx number_text+1
+    cpx #'0'
+    bne +
+    sta number_text+1
++   lda #<number_text
+    sta ptr
+    lda #>number_text
+    sta ptr+1
+    ldx band
+    ldy col
+    jmp print_at
+
+draw_char:
+    sec
+    sbc #32
+    sta temp
+    lda #0
+    sta fontptr+1
+    lda temp
+    !for shift, 1, 3 { asl : rol fontptr+1 }
+    clc
+    adc #<font7x8
+    sta fontptr
+    lda fontptr+1
+    adc #>font7x8
+    sta fontptr+1
+    lda band
+    asl
+    asl
+    asl
+    sta temp
+    ldx #0
+-   txa
+    clc
+    adc temp
+    tay
+    lda hgr_lo,y
+    sta scrptr
+    lda hgr_hi,y
+    ora draw_base
+    sta scrptr+1
+    txa
+    tay
+    lda (fontptr),y
+    ldy col
+    sta (scrptr),y
+    inx
+    cpx #8
+    bne -
+    rts
+invert_band:
+    txa
+    asl
+    asl
+    asl
+    sta invert_row
+    lda #8
+    sta invert_left
+-   lda invert_row
+    jsr set_line
+    ldy #38
+--  lda (scrptr),y
+    eor #$7F
+    sta (scrptr),y
+    dey
+    bne --
+    inc invert_row
+    dec invert_left
+    bne -
+    rts
+
+selected: !byte 0
+previous_selected: !byte 0
+folder_top: !byte 0
+paint_index: !byte 0
+paint_band: !byte 0
+screen_state: !byte 0       ; 1=menu, 2=picture, 3=help, 4=notice, 5=fatal
+notice_ptr: !word 0
+draw_base: !byte 0
+clear_end: !byte 0
+logo_row: !byte 0
+band: !byte 0
+col: !byte 0
+sidx: !byte 0
+print_length: !byte 0
+invert_row: !byte 0
+invert_left: !byte 0
+number_text: !text "000",0
+choose_text: !text "Choose an image folder",0
+menu_keys: !text "Arrows select   Return opens folder",0
+menu_quit: !text "Esc quits to ProDOS",0
+of_text: !text "of",0
+no_folders: !text "No image folders on this disk.",0
+no_images: !text "No supported images in this folder.",0
+too_many_folders: !text "Too many folders (limit 64).",0
+too_many_images: !text "Too many images (limit 255).",0
+notice_keys: !text "Press any key for the folder menu.",0
+credit_text: !text "Conversions by FATDOG - Code by RIKKLES",0
+artwork_text: !text "Original artwork by its creators.",0
+help_title: !text "Slideshow controls",0
+folder_text: !text "Folder:",0
+image_text: !text "Image:",0
+auto_text: !text "Mode: Auto (480 frames per image)",0
+paused_text: !text "Mode: Paused",0
+previous_text: !text "Left / P       Previous image",0
+next_text: !text "Right / N      Next image",0
+pause_text: !text "Space          Pause / resume",0
+first_text: !text "R              First image",0
+return_text: !text "Esc            Folder menu",0
+help_keys: !text "Any key returns   Esc for folders",0
+
+font7x8: !binary "font7x8.bin"
+logo_data: !binary "logo.bin"
+!source "hgr.inc"

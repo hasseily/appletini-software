@@ -1,14 +1,16 @@
-; FATDOG HGR gallery. ProDOS SYS entry at $2000, runtime at $6000.
-; HGR pages $2000/$4000 alternate so disk reads never paint over the display.
-; Code/data occupy $6000-$7FFF; the MLI file buffer is $8000-$83FF.
+; FATDOG MAGIC: SYS entry $2000, runtime $A000-$BAFF.
+; Images own MAIN/AUX $2000-$9FFF. Shared directory names $0900-$18FF,
+; paths $1900-$19FF, directory/probe buffer $1D00-$1EFF, MLI buffer $BB00.
+; Brooks palettes temporarily own MAIN/AUX $0400-$1CFF. Save names/paths
+; in AUX $A500-$B5FF while a Brooks image is displayed; restore before UI/MLI OPEN.
 !cpu 6502
 * = $2000
     cld
     ldx #0
 relocate:
-    !for page, 0, 31 {
+    !for page, 0, 30 {
         lda $2000 + page * 256,x
-        sta $6000 + page * 256,x
+        sta $A000 + page * 256,x
     }
     inx
     beq +
@@ -16,13 +18,12 @@ relocate:
 +
     jmp start
 
-!pseudopc $6000 + (* - $2000) {
+!pseudopc $A000 + (* - $2000) {
 MLI = $BF00
 KBD = $C000
 STROBE = $C010
 ptr = $06
 SLIDE_FRAMES = 480
-INTRO_FRAMES = 1800
 
 start:
     cld
@@ -41,12 +42,18 @@ start:
     sta $BF58
     lda #1
     sta $BF6F                ; ProDOS global page
-    sta $BFFD                ; viewer version 1.0
+    sta $BFFD                ; SYS version byte
     lda #$FF
     ldx #3
--   sta $BF64,x              ; protect code $6000-$7FFF, not image destinations
+-   sta $BF6C,x              ; code $A000-$BEFF + ProDOS global $BF00
     dex
     bpl -
+    sta $BF59                ; shared names $0900-$0FFF (+ unused $0800)
+    sta $BF5A                ; shared names $1000-$17FF
+    lda #$F8
+    sta $BF5B                ; reserve $1800-$1CFF; MLI buffers $1D00-$1EFF free
+    lda #$E1
+    sta $BF6F                ; code $B800-$BAFF + $BF00; OPEN claims $BB00-$BEFF
     lda #<quit
     sta $03F2
     lda #>quit
@@ -59,7 +66,6 @@ start:
 +   lda #0
     sta image_index
     sta paused
-    sta page_shown
     sta use_vbl
     lda $FBB3                ; IIe/IIgs have a readable VBL signal
     cmp #$06
@@ -67,68 +73,22 @@ start:
     lda $FBC0                ; IIc needs a different VBL protocol: use delay
     beq +
     inc use_vbl
-+   jsr help_screen
-    lda #<INTRO_FRAMES
-    sta ticks
-    lda #>INTRO_FRAMES
-    sta ticks+1
-intro_wait:
-    bit KBD
-    bmi intro_done
-    jsr wait_frame
-    jsr countdown
-    bne intro_wait
-intro_done:
-    bit STROBE
-    jmp load_image
++   jmp folder_menu
 
 load_image:
     jsr main_bank
-    ldx image_index
-    lda names_lo,x
-    sta open_path
-    lda names_hi,x
-    sta open_path+1
-    jsr MLI
-    !byte $C8
-    !word open_params
-    bcc +
-    jmp fatal
-+   lda open_ref
+    jsr restore_catalog
+    jsr make_image_path
+    jsr open_file
+    lda open_ref
     sta read_ref
     sta close_ref
-    lda page_shown
-    eor #1
-    sta page_loading
-    asl
-    asl
-    asl
-    asl
-    asl
-    clc
-    adc #$20
-    sta read_buffer+1
-    jsr MLI
-    !byte $CA
-    !word read_params
-    php
-    jsr MLI
-    !byte $CC
-    !word close_params
-    plp
-    bcc +
-    jmp fatal
-+   lda read_count
-    bne bad_length
-    lda read_count+1
-    cmp #$20
-    beq +
-bad_length:
-    jmp fatal
-+   lda page_loading
-    sta page_shown
-    jsr show_picture
+    sta mark_ref
+    jsr load_picture
+image_loaded:
 image_ready:
+    lda #2
+    sta screen_state
     jsr reset_timer
 wait_picture:
     bit KBD
@@ -141,7 +101,7 @@ wait_picture:
 next_image:
     inc image_index
     lda image_index
-    cmp #image_count
+    cmp image_count
     bcc +
     lda #0
     sta image_index
@@ -153,7 +113,7 @@ handle_key:
     bit STROBE
     cmp #$1B
     bne +
-    jmp quit
+    jmp folder_menu
 +   cmp #$08
     beq previous_image
     cmp #$15
@@ -175,7 +135,7 @@ handle_key:
 previous_image:
     lda image_index
     bne +
-    lda #image_count
+    lda image_count
 +   sec
     sbc #1
     sta image_index
@@ -191,77 +151,23 @@ toggle_pause:
     jmp image_ready
 help_key:
     jsr help_screen
-    ; The startup-only automatic countdown hint does not apply here.
-    ldx #39
-    lda #$A0
--   sta $07D0,x             ; row 23
-    dex
-    bpl -
--   bit KBD
-    bpl -
+help_wait:
+    bit KBD
+    bpl help_wait
     lda KBD
     and #$7F
     bit STROBE
     cmp #$1B
     bne +
-    jmp quit
-+   jsr show_picture
-    jmp image_ready
+    jmp folder_menu
++   jmp load_image
 
 main_bank:
     lda #0
     sta $C000               ; 80STORE off
     sta $C002               ; main reads
     sta $C004               ; main writes
-    sta $C00C               ; 40 columns
     rts
-show_picture:
-    jsr main_bank
-    bit $C05F               ; double hires off
-    bit $C052               ; all 192 lines, no cropped text footer
-    bit $C057
-    ldx page_shown
-    lda $C054,x
-    bit $C050
-    rts
-
-help_screen:
-    jsr main_bank
-    bit $C051
-    bit $C054
-    ldx #0
--   lda help_page,x
-    sta $0400,x
-    lda help_page+$100,x
-    sta $0500,x
-    lda help_page+$200,x
-    sta $0600,x
-    lda help_page+$300,x
-    sta $0700,x
-    inx
-    bne -
-    ldx image_index
-    lda names_lo,x
-    sta ptr
-    lda names_hi,x
-    sta ptr+1
-    ldy #0
-    lda (ptr),y
-    tax
--   iny
-    lda (ptr),y
-    ora #$80
-    sta $04D4,y             ; row 17, after "NOW: "
-    dex
-    bne -
-    lda paused
-    beq +
-    ldx #5
--   lda paused_text,x
-    sta $05D7,x             ; row 19, after "MODE:  "
-    dex
-    bpl -
-+   rts
 
 reset_timer:
     lda #<SLIDE_FRAMES
@@ -346,6 +252,10 @@ prefix_error:
 
 fatal:
     jsr main_bank
+    jsr capture_release      ; bounded cleanup: stop any temporary capture
+    lda #5
+    sta screen_state
+    jsr select_hgr
     bit $C051
     bit $C054
     ldx #0
@@ -367,7 +277,7 @@ fatal:
     bpl -
 quit:
     cld
-    jsr main_bank
+    jsr select_hgr
     bit $C051
     bit $C054
     bit $C052
@@ -383,21 +293,18 @@ quit:
 
 image_index: !byte 0
 paused: !byte 0
-page_shown: !byte 0
-page_loading: !byte 0
 use_vbl: !byte 0
 ticks: !word 0
-paused_text: !byte $D0,$C1,$D5,$D3,$C5,$C4
-error_text: !text "DISK READ ERROR. PRESS A KEY TO QUIT."
+error_text: !text "IMAGE LOAD ERROR. PRESS A KEY TO QUIT."
 error_end:
 open_params: !byte 3
 open_path: !word 0
-    !word $8000
+    !word $BB00              ; outside image pages and the low-RAM palettes
 open_ref: !byte 0
 read_params: !byte 4
 read_ref: !byte 0
-read_buffer: !word $4000
-    !word $2000
+read_buffer: !word $2000
+read_length: !word $2000
 read_count: !word 0
 close_params: !byte 1
 close_ref: !byte 0
@@ -406,13 +313,14 @@ quit_params: !byte 4,0,0,0,0,0,0
 online_params: !byte 2
 online_unit: !byte 0
     !word online_buffer
-online_buffer = $8400       ; MLI output must be outside protected code pages
+online_buffer = $1E00       ; share the free directory buffer before scanning
 prefix_params: !byte 1
     !word prefix_buffer
-prefix_buffer = $8440
+prefix_buffer = $1940
 
-!source "images.inc"
-help_page:
-    !binary "help.bin"
+!source "formats.a65"
+!source "palettes.a65"
+!source "directories.a65"
+!source "ui.a65"
 }
-!if * > $4000 { !error "Viewer exceeds its 8K relocation area" }
+!if * > $3B00 { !error "Viewer overlaps its MLI buffer at $BB00" }

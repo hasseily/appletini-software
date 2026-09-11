@@ -1,0 +1,250 @@
+; Brooks palette upload through Appletini's EXISTING LINTXT capture window.
+; This is a loader only: it writes Apple RAM and issues ARM/OFF commands.
+; It never issues SHOW, draws text through LINTXT, or renders image pixels.
+; Normal FPGA capture ranges and Appletini firmware are unchanged.
+
+LTO_INDEX  = $C0F0           ; slot 7 indirect register selector
+LTO_INC    = $C0F2           ; write selected register, then advance INDEX
+LTO_CMD    = $C0F3           ; 0=OFF, 1=ARM, 2=SHOW (unused here), 3=HIDE
+LTO_STATUS = $C0F4           ; BUSY=$80, STALE=$40, ERROR=$20, PENDING=$10,
+                            ; ARMED=$02, VISIBLE=$01
+PALETTE_BASE = $0400
+PALETTE_PAGES = $19          ; 25 pages = 6400 bytes; end is $1D00 exclusive
+AUX_COPY_ZP = $40
+
+capture_detect:
+    lda capture_probed
+    bne capture_detect_done
+    inc capture_probed
+    ; The Appletini demo identifies LINTXT in the slot ROM before touching
+    ; DEVSEL. This avoids probing registers belonging to an unrelated card.
+    ; This firmware's temporary capture interface is bound to slot 7.
+    lda $C015                ; remember INTCXROM in bit 7
+    pha
+    sta $C006                ; expose external Cx ROM for the read-only probe
+    ldx #7
+-   lda $C7B0,x              ; ROM descriptor: "LINTXT", $4C, version $10
+    cmp capture_signature,x
+    bne +
+    dex
+    bpl -
+    ; Confirm the live interface too. An emulator can carry the real slot
+    ; ROM without implementing LINTXT's DEVSEL registers. ROM identity alone
+    ; must not make us send ARM/OFF to an unimplemented interface.
+    ldx #7
+-   lda $C0F8,x              ; live "LINTXT", $4C, $10 identity bytes
+    cmp capture_signature,x
+    bne +
+    dex
+    bpl -
+    inc capture_available
++   pla
+    bpl +
+    sta $C007                ; restore internal Cx ROM if it was selected
++   lda capture_available
+    beq capture_detect_done  ; full-memory emulators need no capture interface
+    jsr capture_release      ; start hidden/disarmed; a new ARM clears old STALE
+    bcs capture_error
+capture_detect_done:
+    rts
+
+; A=0 MAIN or A=1 AUX. Arm a 6400-byte window at $0400 in that bank.
+; All callers enter with normal MAIN reads and MAIN writes selected.
+capture_enable:
+    sta capture_config+2     ; patch only CONFIG's bank bit in the setup block
+    lda capture_available
+    beq capture_enable_done
+    jsr capture_wait_idle    ; commands are ignored while BUSY is set
+    bcs capture_error
+    lda #0
+    sta LTO_INDEX            ; first indirect register is BASE_LO
+    ldx #0
+-   lda capture_config,x
+    sta LTO_INC              ; write BASE, CONFIG, dimensions, origin and scale
+    inx
+    cpx #10
+    bne -
+    lda #1
+    sta LTO_CMD              ; ARM: validate range and clear private text shadow
+    jsr capture_wait_idle    ; wait for CPU1's ARM acknowledgement, not just I/O
+    bcs capture_error
+    and #$63                 ; reject STALE/ERROR, require ARMED=1 and VISIBLE=0
+    cmp #$02
+    bne capture_error
+capture_enable_done:
+    rts                      ; palette stores may begin ONLY after this return
+
+capture_disable:
+    jsr capture_release
+    bcs capture_error
+    lda capture_available
+    beq +
+    lda LTO_STATUS
+    and #$60                 ; OFF must not conceal an upload that lost writes
+    bne capture_error
++   rts
+capture_error:
+    jmp fatal                ; fatal attempts bounded OFF cleanup before exit
+
+; OFF is also used by the error handler: return carry set on timeout/error,
+; rather than jumping back into fatal and recursing. Never use HIDE here:
+; HIDE leaves capture armed and would keep forwarding unrelated RAM writes.
+capture_release:
+    lda capture_available
+    beq capture_release_done
+    jsr capture_wait_idle
+    bcs capture_release_return
+    lda #0
+    sta LTO_CMD              ; vTW drains prior posted writes before this I/O
+    jsr capture_wait_idle    ; OFF takes effect at an output frame boundary
+    bcs capture_release_return
+    and #$03                 ; both ARMED and VISIBLE must now be clear
+    beq capture_release_done
+    sec
+    rts
+capture_release_done:
+    clc
+capture_release_return:
+    rts
+
+; Return A=the last STATUS byte and C=0 when BUSY/FRAME_PENDING are clear.
+; The bounded loop avoids hanging forever if the card stops responding.
+; It permits 65536 polls; it is an upper bound, not a delay after success.
+capture_wait_idle:
+    ldx #0
+    ldy #0
+-   lda LTO_STATUS
+    and #$90                 ; BUSY or FRAME_PENDING => keep waiting
+    beq +
+    dex
+    bne -
+    dey
+    bne -
+    sec
+    rts
++   lda LTO_STATUS
+    clc
+    rts
+
+capture_probed: !byte 0
+capture_available: !byte 0
+capture_signature: !text "LINTXT"
+    !byte $4C,$10
+capture_config:
+    !byte <PALETTE_BASE, >PALETTE_BASE ; BASE_LO=$00, BASE_HI=$04
+    !byte 0                          ; CONFIG: patched to 0 MAIN or 1 AUX
+    !byte 80,40                      ; 2 bytes/cell * 80 * 40 = 6400 bytes
+    !byte 0,0,0,0                    ; origin X/Y; unused because SHOW is unused
+    !byte $11                        ; valid 1x1 scale; also never displayed
+
+; A=MAIN source page, X=MAIN destination page, Y=number of 256-byte pages.
+; Use CPU stores for palette uploads. A direct disk/DMA read into palette
+; RAM could bypass vTW's CPU-write classifier, so disk reads use staging RAM.
+copy_to_main:
+    sta src_ptr+1
+    stx dst_ptr+1
+    sty copy_pages
+    jsr main_bank
+    sta src_ptr              ; main_bank returns A=0
+    sta dst_ptr
+    ldx copy_pages
+-   ldy #0
+--  lda (src_ptr),y
+    sta (dst_ptr),y          ; the armed range captures this actual RAM write
+    iny
+    bne --
+    inc src_ptr+1
+    inc dst_ptr+1
+    dex
+    bne -
+    rts
+
+; Enter ONLY after ProDOS CLOSE. SmartPort uses MAIN $07F8 as slot workspace;
+; a disk call after installing this palette could corrupt that color word.
+; AUX $A000-$B8FF holds the complete staged MAIN palette. Swap it pagewise
+; with MAIN $0400-$1CFF, using MAIN $1D00 as a 256-byte temporary buffer.
+; This saves the old MAIN catalog at AUX $A500-$B5FF without needing another
+; 4352 bytes of RAM. The first palette at AUX $0400 remains untouched.
+install_main_palette:
+    lda #0                   ; watch only MAIN $0400-$1CFF during the swap
+    jsr capture_enable
+    lda #$04
+    sta palette_page
+    lda #$A0
+    sta palette_stage_page
+    lda #$19
+    sta palette_pages_left
+-   lda palette_stage_page
+    ldx #>directory_buffer   ; step 1: AUX palette page -> MAIN $1D00 temporary
+    ldy #1
+    jsr copy_from_aux
+    lda palette_page
+    ldx palette_stage_page   ; step 2: old MAIN page -> freed AUX staging page
+    ldy #1
+    jsr copy_to_aux           ; AUX $A000+ is outside the armed MAIN window
+    lda #>directory_buffer
+    ldx palette_page         ; step 3: temporary palette page -> MAIN destination
+    ldy #1
+    jsr copy_to_main          ; these CPU stores are the captured palette upload
+    inc palette_page
+    inc palette_stage_page
+    dec palette_pages_left
+    bne -
+    lda #1
+    sta catalog_saved
+    jmp capture_disable      ; drain posted stores, issue OFF and wait for disarm
+
+; Restore low MAIN RAM before menu/help/next-image OPEN, including names,
+; paths and SmartPort's slot workspace. Extra capture is already OFF.
+restore_catalog:
+    lda catalog_saved
+    beq +
+    lda #$A0                 ; complete saved MAIN $0400-$1CFF block
+    ldx #$04
+    ldy #$19
+    jsr copy_from_aux
+    lda #0
+    sta catalog_saved
++   rts
+catalog_saved: !byte 0
+palette_stage_page: !byte 0
+
+; A=AUX source page, X=MAIN destination page, Y=page count.
+; Used for both staged palette pages and restoration of saved low MAIN RAM.
+; RAMRD also banks the code at $A000, so execute the AUX-read loop in zero
+; page. ALTZP remains MAIN throughout. Restore RAMRD before RTS so the
+; caller and its stack are fetched normally. Preserve the interrupt state.
+copy_from_aux:
+    sta src_ptr+1
+    stx dst_ptr+1
+    sty copy_pages
+    jsr main_bank
+    sta src_ptr
+    sta dst_ptr
+    php
+    sei                      ; no interrupt handler may run with AUX code reads
+    ldx #aux_copy_end-aux_copy_code-1
+-   lda aux_copy_code,x
+    sta AUX_COPY_ZP,x
+    dex
+    bpl -
+    ldx copy_pages
+    jsr AUX_COPY_ZP
+    plp
+    rts
+aux_copy_code:
+!pseudopc AUX_COPY_ZP {
+    sta $C003                ; AUX reads; zero page/stack still MAIN
+-   ldy #0
+--  lda (src_ptr),y          ; read a staged palette page or saved RAM from AUX
+    sta (dst_ptr),y          ; RAMWRT is off: write it back to MAIN
+    iny
+    bne --
+    inc src_ptr+1
+    inc dst_ptr+1
+    dex
+    bne -
+    sta $C002                ; restore MAIN reads before returning to $A000
+    rts
+}
+aux_copy_end:

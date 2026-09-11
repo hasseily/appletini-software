@@ -1,0 +1,127 @@
+{
+  "source_directory": "C:\\Users\\hasse\\Downloads\\brooks_shr",
+  "eligible_images": 531,
+  "selection": "20 distinct images sampled using SystemRandom; fixed for rebuilds",
+  "images": [
+    {
+      "source": "LunarLeeper.shr",
+      "name": "LUNARLEEPER",
+      "source_sha256": "0b31d29deb8fad20a5dab998453501d0a58d3c08b8385a5a2c6efaf0221b82da",
+      "bytes": 71936
+    },
+    {
+      "source": "b1456.shr",
+      "name": "B1456",
+      "source_sha256": "d60ab841834582ddf7527a52ec6124f0119ce7655727593a97fbaacf852c577d",
+      "bytes": 71936
+    },
+    {
+      "source": "c0041.shr",
+      "name": "C0041",
+      "source_sha256": "559d127230f657e646b800f19cefff6038253da023ff7eae4ef49816e58fb8f4",
+      "bytes": 71936
+    },
+    {
+      "source": "LastNinja.shr",
+      "name": "LASTNINJA",
+      "source_sha256": "1407544b278d0da93f4ad6f59147d11697018b88ee4d93ce1c667ca5debdcf30",
+      "bytes": 71936
+    },
+    {
+      "source": "a33345467ae45a5.shr",
+      "name": "A33345467AE45A5",
+      "source_sha256": "ac32d0ffc3654cdd00f5995ef48e9b267d49d61f9a782662700f4f2dbb7e83ea",
+      "bytes": 71936
+    },
+    {
+      "source": "a4n88s8r6i7h91.shr",
+      "name": "A4N88S8R6I7H91",
+      "source_sha256": "3d76384f9463ef4ddfae8d08103d2875644b790fc3a1b9c52a29e9333f4e2f8e",
+      "bytes": 71936
+    },
+    {
+      "source": "dsqqfho037zb1.shr",
+      "name": "DSQQFHO037ZB1",
+      "source_sha256": "8cfb782d731a6aa3fa11da0e8ef592de489f17d1b3098806d3be712f9160091e",
+      "bytes": 71936
+    },
+    {
+      "source": "MavisBeacon.shr",
+      "name": "MAVISBEACON",
+      "source_sha256": "c0784cb7e1cecf3b4825180198eb073a555c929df0c275905f2abd2b8bb4728c",
+      "bytes": 71936
+    },
+    {
+      "source": "c0211.shr",
+      "name": "C0211",
+      "source_sha256": "9dab47bfe46e157c4ad5811cd1b330aff0bd6262430c5475acb6169b37d4c69c",
+      "bytes": 71936
+    },
+    {
+      "source": "DragonsLairPt2.shr",
+      "name": "DRAGONSLAIRPT2",
+      "source_sha256": "0fb855de87ff825c514888d9f2b4a4181540c2a1f1e8314e330b38dc840067e6",
+      "bytes": 71936
+    },
+    {
+      "source": "album0127.shr",
+      "name": "ALBUM0127",
+      "source_sha256": "a8073ef6d14779e53fb6e581dfff08de30106375376e8b321485d2a692dccd8e",
+      "bytes": 71936
+    },
+    {
+      "source": "b0011.shr",
+      "name": "B0011",
+      "source_sha256": "b7f910b69a6f11027be9e21b84ed799eef518b8bba80b3a24d922dfa9db7fe41",
+      "bytes": 71936
+    },
+    {
+      "source": "mothernaturea36.shr",
+      "name": "MOTHERNATUREA36",
+      "source_sha256": "c58ea80c705f559c53845586f4c58eba2f8fd1cb5a36e911c23c294c7522fb01",
+      "bytes": 78336
+    },
+    {
+      "source": "IkariWarriors.shr",
+      "name": "IKARIWARRIORS",
+      "source_sha256": "664ce3cb731d1d72802fcc7bc2cabcdde882229dd3aa4000164134a2f8fce5de",
+      "bytes": 71936
+    },
+    {
+      "source": "a1yrejiyvvcf91.shr",
+      "name": "A1YREJIYVVCF91",
+      "source_sha256": "19b7c830cfacb3c7e93465cd5ef20eadd59a095639639b7ad4fb145935b692b7",
+      "bytes": 71936
+    },
+    {
+      "source": "a485766.shr",
+      "name": "A485766",
+      "source_sha256": "ec2d2af3d23a93676ef39428d4c7a7f6c29fb2ac281e4d5f0147337c8bd5c539",
+      "bytes": 71936
+    },
+    {
+      "source": "c0067.shr",
+      "name": "C0067",
+      "source_sha256": "aa9a675f414aa6da2fa2a07984c17e88d1f7244198e53cebf791d8f9ce3a4b59",
+      "bytes": 71936
+    },
+    {
+      "source": "album0088.shr",
+      "name": "ALBUM0088",
+      "source_sha256": "64484104812686f7b2af83fc8a94ef468aecf2acfd32c3f51dadce2bd30ca5ef",
+      "bytes": 71936
+    },
+    {
+      "source": "a9048118.shr",
+      "name": "A9048118",
+      "source_sha256": "4278914188db6ff6496eb243841c495499524fe98e97fc86ba624b011b935c0e",
+      "bytes": 71936
+    },
+    {
+      "source": "album0167.shr",
+      "name": "ALBUM0167",
+      "source_sha256": "afcd7f7a04563d96b41637e15719af978bb04e77774e1add15974b48dade7622",
+      "bytes": 71936
+    }
+  ]
+}

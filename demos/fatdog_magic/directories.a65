@@ -1,0 +1,363 @@
+; Read directories through MLI OPEN/READ/CLOSE, including every linked block.
+; Tables use length-prefixed, 16-byte names; no compiled folder/image list.
+folder_names = $0900         ; 64 names ($400 bytes)
+folder_labels = $0D00        ; same names with GS/OS case, periods as spaces
+image_names = $0900          ; reuse folder tables for 255 image names
+directory_buffer = $1D00     ; just above the palette's exclusive $1D00 limit
+folder_path = $1980
+image_path = $19C0
+dest = $0A
+label_ptr = $0C
+case_bits = $0E
+
+; A = index, X = table base high byte (256-byte aligned).
+; Returns ptr = base + 16*A. For folder_labels use X=$0D.
+name_pointer:
+    sta ptr
+    lda #0
+    sta ptr+1
+    !for shift, 1, 4 { asl ptr : rol ptr+1 }
+    txa
+    clc
+    adc ptr+1
+    sta ptr+1
+    rts
+
+scan_folders:
+    lda #0
+    sta scan_mode
+    sta entry_kind
+    sta dest
+    lda #>folder_names
+    sta dest+1
+    lda #<prefix_buffer
+    sta open_path
+    lda #>prefix_buffer
+    sta open_path+1
+    jsr scan_directory
+    lda scan_count
+    sta folder_count
+    rts
+
+scan_images:
+    lda #1
+    sta scan_mode
+    lda #0
+    sta dest
+    lda #>image_names
+    sta dest+1
+    lda #<folder_path
+    sta open_path
+    lda #>folder_path
+    sta open_path+1
+    jsr scan_directory
+    lda scan_count
+    sta image_count
+    rts
+
+scan_directory:
+    lda #0
+    sta scan_count
+    sta scan_overflow
+    jsr open_file
+    lda open_ref
+    sta directory_ref
+    jsr read_directory_block
+    ; ProDOS directories use 39-byte entries, 13 per 512-byte block.
+    lda directory_buffer+$23
+    cmp #39
+    bne directory_error
+    lda directory_buffer+$24
+    cmp #13
+    bne directory_error
+scan_block:
+    lda #<directory_buffer+4
+    sta ptr
+    lda #>directory_buffer
+    sta ptr+1
+    lda #13
+    sta slots_left
+scan_entry:
+    jsr consider_entry
+    clc
+    lda ptr
+    adc #39
+    sta ptr
+    bcc +
+    inc ptr+1
++   dec slots_left
+    bne scan_entry
+    lda directory_buffer+2
+    ora directory_buffer+3
+    beq scan_done
+    jsr read_directory_block
+    jmp scan_block
+scan_done:
+    lda directory_ref
+    sta close_ref
+    jsr close_file
+    rts
+directory_error:
+    jmp fatal
+
+read_directory_block:
+    lda directory_ref
+    sta directory_read_ref
+    jsr MLI
+    !byte $CA
+    !word directory_read_params
+    bcs directory_error
+    lda directory_read_count
+    bne directory_error
+    lda directory_read_count+1
+    cmp #2
+    bne directory_error
+    rts
+
+consider_entry:
+    ldy #0
+    lda (ptr),y
+    and #$F0
+    bne +
+    rts
++   ldx scan_mode
+    bne consider_image
+    cmp #$D0
+    beq +
+    rts
++
+    lda scan_count
+    cmp #64
+    bcc +
+    jmp entry_overflow
++
+    bcc store_entry
+consider_image:
+    cmp #$40                 ; ordinary seedling, sapling or tree only
+    bcs entry_done
+    ldy #16
+    lda (ptr),y
+    cmp #$06                 ; BIN (raw screen dumps)
+    beq +
+    cmp #$C1                 ; uncompressed ProDOS picture
+    bne entry_done
++   ldy #21
+    lda (ptr),y
+    bne entry_done           ; supported sizes are multiples of 256
+    ldy #23
+    lda (ptr),y
+    beq image_under_64k
+    cmp #1
+    bne entry_done
+    dey
+    lda (ptr),y
+    beq image_64k
+    cmp #$19                 ; 71936: two Brooks fields, shared line palettes
+    beq image_brooks_shared
+    cmp #$32                 ; 78336: two Brooks fields and two palette sets
+    bne entry_done
+    lda #$70
+    bne size_found
+image_brooks_shared:
+    lda #$60
+    bne size_found
+image_64k:
+    lda #$50                 ; 64K SHR pair
+    bne size_found
+image_under_64k:
+    dey
+    lda (ptr),y
+    ldx #3
+-   cmp size_pages,x
+    beq +
+    dex
+    bpl -
+    rts
++   lda size_kinds,x         ; 8K, 16K, 32K, or 39168-byte Brooks 3200
+size_found:
+    sta entry_kind
+    lda scan_count
+    cmp #255
+    bcs entry_overflow
+store_entry:
+    ldy #0
+    lda (ptr),y
+    and #15
+    beq entry_done
+    tax
+    ora entry_kind
+    sta (dest),y
+-   txa
+    tay
+    lda (ptr),y
+    sta (dest),y
+    dex
+    bne -
+    lda scan_mode
+    bne +
+    jsr store_folder_label
++   clc
+    lda dest
+    adc #16
+    sta dest
+    bcc +
+    inc dest+1
++   inc scan_count
+entry_done:
+    rts
+entry_overflow:
+    lda #1
+    sta scan_overflow
+    rts
+
+store_folder_label:
+    lda dest
+    sta label_ptr
+    lda dest+1
+    clc
+    adc #4
+    sta label_ptr+1
+    ldy #28
+    lda (ptr),y
+    sta case_bits
+    iny
+    lda (ptr),y
+    sta case_bits+1
+    bmi +
+    lda #0                   ; no GS/OS case flag: keep the original uppercase
+    sta case_bits
+    sta case_bits+1
++   asl case_bits
+    rol case_bits+1          ; discard the bit-15 validity flag
+    ldy #0
+    lda (dest),y
+    sta (label_ptr),y
+    tax
+-   iny
+    asl case_bits
+    rol case_bits+1
+    lda (dest),y
+    bcc +
+    ora #$20
++   cmp #'.'
+    bne +
+    lda #' '
++   sta (label_ptr),y
+    dex
+    bne -
+    ; ProDOS cannot store a hyphen. Restore it in this folder's display label.
+    ldy #15
+-   lda (dest),y
+    cmp brooks_name,y
+    bne +
+    dey
+    bpl -
+    ldy #11
+    lda #'-'
+    sta (label_ptr),y
++
+    rts
+
+; Paths stay absolute; no dependency on BASIC's current working directory.
+make_folder_path:
+    ldx prefix_buffer
+-   lda prefix_buffer,x
+    sta folder_path,x
+    dex
+    bpl -
+    lda selected
+    ldx #>folder_names
+    jsr name_pointer
+    ldx folder_path
+    inx
+    lda #'/'
+    sta folder_path,x
+    ldy #0
+    lda (ptr),y
+    sta name_length
+-   iny
+    inx
+    lda (ptr),y
+    sta folder_path,x
+    cpy name_length
+    bne -
+    stx folder_path
+    lda selected
+    ldx #>folder_labels
+    jsr name_pointer
+    ldy #15
+-   lda (ptr),y
+    sta current_folder,y
+    dey
+    bpl -
+    jmp folder_video7
+
+
+make_image_path:
+    ldx folder_path
+-   lda folder_path,x
+    sta image_path,x
+    dex
+    bpl -
+    lda image_index
+    ldx #>image_names
+    jsr name_pointer
+    ldx image_path
+    inx
+    lda #'/'
+    sta image_path,x
+    ldy #0
+    lda (ptr),y
+    pha
+    and #$F0
+    sta image_kind
+    pla
+    and #15
+    sta name_length
+-   iny
+    inx
+    lda (ptr),y
+    sta image_path,x
+    cpy name_length
+    bne -
+    stx image_path
+    lda #<image_path
+    sta open_path
+    lda #>image_path
+    sta open_path+1
+    rts
+
+open_file:
+    jsr MLI
+    !byte $C8
+    !word open_params
+    bcc +
+    jmp fatal
++   rts
+close_file:
+    jsr MLI
+    !byte $CC
+    !word close_params
+    bcc +
+    jmp fatal
++   rts
+
+folder_count: !byte 0
+image_count: !byte 0
+scan_mode: !byte 0
+scan_count: !byte 0
+scan_overflow: !byte 0
+slots_left: !byte 0
+name_length: !byte 0
+directory_ref: !byte 0
+directory_read_params: !byte 4
+directory_read_ref: !byte 0
+    !word directory_buffer,512
+directory_read_count: !word 0
+
+entry_kind: !byte 0
+size_pages: !byte $20,$40,$80,$99
+size_kinds: !byte $10,$20,$30,$40
+current_folder: !fill 16,0
+brooks_name: !byte 15
+    !text "BROOKS.SHR.3200"
