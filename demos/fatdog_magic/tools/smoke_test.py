@@ -426,7 +426,9 @@ def main():
     parser.add_argument("--platform", type=int, choices=(3, 5), action="append")
     parser.add_argument("--skip-fixture", action="store_true")
     parser.add_argument("--formats-from", type=Path,
-                        help="appletini-one checkout; test its real demo images on a separate disk")
+                        help="appletini-software checkout or Appletini demo project/assets "
+                             "(legacy appletini-one also supported); test real demo images "
+                             "on a separate disk")
     parser.add_argument("--formats-only", action="store_true")
     parser.add_argument("--appletini", action="store_true",
                         help="use a GSSquared build with Appletini video/card support")

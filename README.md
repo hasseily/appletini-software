@@ -4,6 +4,9 @@ Apple II software and hardware demonstrations built to exercise Appletini.
 
 ## Demos
 
+- [Appletini Demos](demos/appletini_demos/README.md): the bootable 32 MB
+  ProDOS showcase disk, with its HGR launcher, video and speed demos,
+  network apps, SuperSprite demo, and AD8088 MS-DOS HGR cube.
 - [FATDOG MAGIC](demos/fatdog_magic/README.md): a bootable 32 MB
   ProDOS gallery with an HGR folder menu and 32 images converted by FATDOG
   in Standard HGR and 20 in Brooks SHR-3200, plus the Appletini demo image formats. Use phosphor blur
@@ -14,7 +17,8 @@ Apple II software and hardware demonstrations built to exercise Appletini.
 
 ## Development layout
 
-The tools use sibling checkouts by default:
+Appletini Demos builds from its bundled inputs. Some other build and
+hardware-validation tools use sibling checkouts by default:
 
 ```text
 Repos/

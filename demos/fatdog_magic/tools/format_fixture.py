@@ -6,9 +6,21 @@ import build_fatdog_magic_disk as build
 from prodos import create_folder, raw_files, verify_allocation
 
 
+def image_directories(source: Path):
+    """Accept a software checkout, demo project/assets, or legacy firmware checkout."""
+    for assets in (source / "demos/appletini_demos/assets", source / "assets",
+                   source, source / "software"):
+        legacy, shr = assets / "legacy_demo_images", assets / "shr4_demo_images"
+        if legacy.is_dir() and shr.is_dir():
+            return legacy, shr
+    raise FileNotFoundError(
+        f"No Appletini demo image corpus under {source}; provide the "
+        "appletini-software checkout, demos/appletini_demos project or assets "
+        "directory, or a legacy appletini-one checkout")
+
+
 def make_format_fixture(appletini: Path, gallery: Path, output: Path):
-    legacy = appletini / "software/legacy_demo_images"
-    shr = appletini / "software/shr4_demo_images"
+    legacy, shr = image_directories(appletini)
     hgr = next(iter(raw_files(build.DEMO / "assets/fgr1.po").values()))
     eye = (legacy / "eye.hgri").read_bytes()
     face = (legacy / "face.dhri").read_bytes()

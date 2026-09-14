@@ -1,0 +1,20 @@
+# Apple II media and packed images must keep their exact bytes on Windows.
+*.po binary
+*.dsk binary
+*.do binary
+*.DO binary
+*.hdv binary
+*.COM binary
+*.lib binary
+*.bin binary
+*.shr binary
+*.shr4 binary
+*.shr4i binary
+*.shr4p binary
+*.shrp binary
+*.hgri binary
+*.dhr binary
+*.dhri binary
+*.pal256 binary
+*.pal256i binary
+*.3200 binary

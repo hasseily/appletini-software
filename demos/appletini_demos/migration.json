@@ -1,0 +1,357 @@
+{
+  "source_repository": "hasseily/appletini-one",
+  "source_commit": "391f73f271cb17746775239e68bbd15610b67101",
+  "files": [
+    {
+      "source": "software/launcher.a65",
+      "destination": "launcher.a65",
+      "action": "move",
+      "bytes": 11922,
+      "sha256": "ca773a8a99495427e9afbf727ebda56f2faa88f8581572bc68cbf14ebd3c7427"
+    },
+    {
+      "source": "software/speedrace.a65",
+      "destination": "speedrace.a65",
+      "action": "move",
+      "bytes": 11524,
+      "sha256": "66bc6085a0031536aa68b2e91d0e37957c54065f61428b8e08a91ed8c7370004"
+    },
+    {
+      "source": "software/rasterdemo.a65",
+      "destination": "rasterdemo.a65",
+      "action": "move",
+      "bytes": 5412,
+      "sha256": "54da8ad6abdfd691266c5f7d818d1a55933587964225a5af75e6c3ab122a75a0"
+    },
+    {
+      "source": "software/textoverlay.a65",
+      "destination": "textoverlay.a65",
+      "action": "move",
+      "bytes": 17632,
+      "sha256": "55a89d14a51ce0a1a86aba6af7652510ab5bbe54b33380bfa4dceaa99e96a0d7"
+    },
+    {
+      "source": "software/border_demo.a65",
+      "destination": "border_demo.a65",
+      "action": "move",
+      "bytes": 4473,
+      "sha256": "de968b456a7e2176827445145027d1e3e51a9875ab43ead159e6ad053f99c9c6"
+    },
+    {
+      "source": "software/wave_animation_code.a65",
+      "destination": "wave_animation_code.a65",
+      "action": "move",
+      "bytes": 1170,
+      "sha256": "5c0c370f60a405896b9304752aa580e4ad7a3614841fcca7ff72534327103a4a"
+    },
+    {
+      "source": "software/a2imgview.a65",
+      "destination": "a2imgview.a65",
+      "action": "move",
+      "bytes": 19842,
+      "sha256": "eacf3641f92f95a38630b2d27e7d10820961bf8d243d357a6f31f86f3b598dac"
+    },
+    {
+      "source": "software/ad8088_demo_return.a65",
+      "destination": "ad8088_demo_return.a65",
+      "action": "move",
+      "bytes": 1372,
+      "sha256": "bee16983a15b9ae51c8337b6d07b51174d2783bdcc926b23ad441f5cbcd138fe"
+    },
+    {
+      "source": "software/mandelbrot.bas",
+      "destination": "mandelbrot.bas",
+      "action": "move",
+      "bytes": 492,
+      "sha256": "8c58d08c741458f48758c04ae0e243c7383d66a8f8cad1c200bea840d7a02885"
+    },
+    {
+      "source": "software/wave_animation.bas",
+      "destination": "wave_animation.bas",
+      "action": "move",
+      "bytes": 420,
+      "sha256": "cfbb2454840a317af5d970f43e31d683c8efcef0c3bf97c0147a317eadf6ddd9"
+    },
+    {
+      "source": "software/supersprite_demo.a65",
+      "destination": "supersprite_demo.a65",
+      "action": "move",
+      "bytes": 9228,
+      "sha256": "2b93b0f29578e48a14e4effe966e7bea02586ebd52139e8c10b60973df8a21c7"
+    },
+    {
+      "source": "scripts/build_appletini_demo_disk.py",
+      "destination": "tools/build_appletini_demo_disk.py",
+      "action": "move",
+      "bytes": 24032,
+      "sha256": "0907581535aaee5327bb5056a605afe31eb6258ec5573134e150c4b3db522d97"
+    },
+    {
+      "source": "scripts/gen_hgr_assets.py",
+      "destination": "tools/gen_hgr_assets.py",
+      "action": "move",
+      "bytes": 11722,
+      "sha256": "4ab117ad868cd61550f99706de43eff22a6361ac0a0956ec4deada619ef43f95"
+    },
+    {
+      "source": "scripts/build_supersprite_demo.py",
+      "destination": "tools/build_supersprite_demo.py",
+      "action": "move",
+      "bytes": 2967,
+      "sha256": "b01aac645eea16a2d9f59581f916e22cfb08881ec2c0ede1a99f835a594bc2e7"
+    },
+    {
+      "source": "software/appletini_webserver/README.md",
+      "destination": "appletini_webserver/README.md",
+      "action": "move",
+      "bytes": 2448,
+      "sha256": "755b0adadf441e9e4bd030d58234892fdc14dac612f32e4f7fae6c3bef5e532c"
+    },
+    {
+      "source": "software/appletini_webserver/a2img.c",
+      "destination": "appletini_webserver/a2img.c",
+      "action": "move",
+      "bytes": 16659,
+      "sha256": "d3faeca12d614d0dc60b5a7fd3d369d5b3115e47eb244eda09714adab399d1cc"
+    },
+    {
+      "source": "software/appletini_webserver/a2img_net.s",
+      "destination": "appletini_webserver/a2img_net.s",
+      "action": "move",
+      "bytes": 5135,
+      "sha256": "92d7af1491d9baf6519d5330a77016e6c65281a88c1da7c59181927793b3c5bc"
+    },
+    {
+      "source": "software/appletini_webserver/appletini_net.c",
+      "destination": "appletini_webserver/appletini_net.c",
+      "action": "move",
+      "bytes": 4699,
+      "sha256": "8de92aeff0a18444141a0ff6d05124c0fa6ef864612b476fa974d5b1a05d3a92"
+    },
+    {
+      "source": "software/appletini_webserver/appletini_net.h",
+      "destination": "appletini_webserver/appletini_net.h",
+      "action": "move",
+      "bytes": 542,
+      "sha256": "f5490b13228b1d8914df3da49eea44788160538f4c4d4baa3f0d51feadd16bf8"
+    },
+    {
+      "source": "software/appletini_webserver/appletini_timer.s",
+      "destination": "appletini_webserver/appletini_timer.s",
+      "action": "move",
+      "bytes": 2917,
+      "sha256": "9cfa919fd71c81bd12e3b506b54f0af373b5246bbbc02783f3c2a3db59ed51b7"
+    },
+    {
+      "source": "software/appletini_webserver/browser.c",
+      "destination": "appletini_webserver/browser.c",
+      "action": "move",
+      "bytes": 27793,
+      "sha256": "5348605c9307036eb7e8f4896ef88a8d190a11f1be0be6f43b3108739eb71030"
+    },
+    {
+      "source": "software/appletini_webserver/build.bat",
+      "destination": "appletini_webserver/build.bat",
+      "action": "move",
+      "bytes": 769,
+      "sha256": "7d6100acea2f21cdcbeb96831fb30059788545f151b63281ee9314d4df4a3f83"
+    },
+    {
+      "source": "software/appletini_webserver/ip65/LICENSE-W5100.txt",
+      "destination": "appletini_webserver/ip65/LICENSE-W5100.txt",
+      "action": "move",
+      "bytes": 1476,
+      "sha256": "4bf3ca0f5cd7a0fe8f67e48e82dfdea5f2ce3c07fa9f12772e638aef6eaa392b"
+    },
+    {
+      "source": "software/appletini_webserver/ip65/LICENSE.txt",
+      "destination": "appletini_webserver/ip65/LICENSE.txt",
+      "action": "move",
+      "bytes": 25754,
+      "sha256": "ad192a67649aa23ac9681939840f4f241643a98da9cd8aec8de28c3b8c6ee854"
+    },
+    {
+      "source": "software/appletini_webserver/ip65/SOURCE.txt",
+      "destination": "appletini_webserver/ip65/SOURCE.txt",
+      "action": "move",
+      "bytes": 757,
+      "sha256": "b1a67946adaf1cc03522b125e10a7371be49f23c766ade1698f54b771d238900"
+    },
+    {
+      "source": "software/appletini_webserver/ip65/ip65_web.lib",
+      "destination": "appletini_webserver/ip65/ip65_web.lib",
+      "action": "move",
+      "bytes": 112261,
+      "sha256": "c68075c1a4890eca34d0399500618ac929a15345aac8e81ef669abaae7e78d1a"
+    },
+    {
+      "source": "software/appletini_webserver/ip65_min.h",
+      "destination": "appletini_webserver/ip65_min.h",
+      "action": "move",
+      "bytes": 985,
+      "sha256": "6e861cf04de7a39ef3e7f60e0c67de5e0b5e34edb598fe569f59821fd47f3a77"
+    },
+    {
+      "source": "software/appletini_webserver/webserver.c",
+      "destination": "appletini_webserver/webserver.c",
+      "action": "move",
+      "bytes": 3870,
+      "sha256": "41287246f4f6351b325f663d04771f7de087ca0f097a7469f2920b53779f2d0c"
+    },
+    {
+      "source": "software/AD8088 MSDOS.hdv",
+      "destination": "assets/AD8088 MSDOS.hdv",
+      "action": "copy",
+      "bytes": 33554432,
+      "sha256": "5f09b522fd2f53697774fda6fe55107a2ec668622e5aebd05cfefa1688296dd0"
+    },
+    {
+      "source": "software/SSDEMO.dsk",
+      "destination": "assets/SSDEMO.dsk",
+      "action": "copy",
+      "bytes": 143360,
+      "sha256": "db82a260735aa3aed139009fe1fab54206c60141de721b61f36d60f3e11e436d"
+    },
+    {
+      "source": "software/DOS 3.3 System Master.dsk",
+      "destination": "assets/DOS 3.3 System Master.dsk",
+      "action": "copy",
+      "bytes": 143360,
+      "sha256": "caca91990b148e20062c887f0301a957b477353fbacf4e4a011f8fb3beab46a9"
+    },
+    {
+      "source": "software/legacy_demo_images/eye.hgri",
+      "destination": "assets/legacy_demo_images/eye.hgri",
+      "action": "copy",
+      "bytes": 16384,
+      "sha256": "ebe72c01236d9f75264ca822d9b9dc781d93d151db641789ab54d75d62465728"
+    },
+    {
+      "source": "software/legacy_demo_images/face.dhri",
+      "destination": "assets/legacy_demo_images/face.dhri",
+      "action": "copy",
+      "bytes": 32768,
+      "sha256": "fc137b0173514df29496b1afa4c5286c86ff0420bcb5581d9871a1faad0583d5"
+    },
+    {
+      "source": "software/legacy_demo_images/finder.hgri",
+      "destination": "assets/legacy_demo_images/finder.hgri",
+      "action": "copy",
+      "bytes": 16384,
+      "sha256": "b1fe7145e413c767eec3baf63496faf365bb3b5e6a6db633537bae81600f121e"
+    },
+    {
+      "source": "software/legacy_demo_images/logo6.dhr",
+      "destination": "assets/legacy_demo_images/logo6.dhr",
+      "action": "copy",
+      "bytes": 16384,
+      "sha256": "c462d3254d351d5a6be6779935dbdfe833436d7ce734c18074676c9c6f2b9806"
+    },
+    {
+      "source": "software/legacy_demo_images/playfield.dhr",
+      "destination": "assets/legacy_demo_images/playfield.dhr",
+      "action": "copy",
+      "bytes": 16384,
+      "sha256": "eee28e354167cb506ab9928762bae3dc2fff3df9e309f8954dc37993eafd9405"
+    },
+    {
+      "source": "software/shr4_demo_images/beach.3200",
+      "destination": "assets/shr4_demo_images/beach.3200",
+      "action": "copy",
+      "bytes": 39168,
+      "sha256": "f6803405741c1dce387e75315f4d15c8b3403505abcdbb962cbae20d843b4fd2"
+    },
+    {
+      "source": "software/shr4_demo_images/cartest.shr4i",
+      "destination": "assets/shr4_demo_images/cartest.shr4i",
+      "action": "copy",
+      "bytes": 65536,
+      "sha256": "842dd0331ffce9ae8c7388f25a438e25463c3116f403fdd4e954d3f59e1a4be4"
+    },
+    {
+      "source": "software/shr4_demo_images/dragons.shr4i",
+      "destination": "assets/shr4_demo_images/dragons.shr4i",
+      "action": "copy",
+      "bytes": 65536,
+      "sha256": "b57856eeb185432f74c687ece2d5dad78a816bdb6cfa4d19b9ef45471e4823bc"
+    },
+    {
+      "source": "software/shr4_demo_images/eye320.shr4",
+      "destination": "assets/shr4_demo_images/eye320.shr4",
+      "action": "copy",
+      "bytes": 32768,
+      "sha256": "b12e6da8dca33ffde1f3a7517df35ad008d91f73a73ecf8811f937e8b021e8d4"
+    },
+    {
+      "source": "software/shr4_demo_images/fluidart.shr4i",
+      "destination": "assets/shr4_demo_images/fluidart.shr4i",
+      "action": "copy",
+      "bytes": 65536,
+      "sha256": "e51aacbba71765e41362733bc43a499ede25e5c563f548d76605bdba3adc3b7a"
+    },
+    {
+      "source": "software/shr4_demo_images/gothouses.shr4i",
+      "destination": "assets/shr4_demo_images/gothouses.shr4i",
+      "action": "copy",
+      "bytes": 65536,
+      "sha256": "00eccccf2e30409f938feecbf13dc92994e06cec68de14aec83edd85e493fb07"
+    },
+    {
+      "source": "software/shr4_demo_images/gridtest.shr4",
+      "destination": "assets/shr4_demo_images/gridtest.shr4",
+      "action": "copy",
+      "bytes": 32768,
+      "sha256": "bad8c75c122adf0ec459999d0759c3db40c658b864ac3167eaf7ccda43484ab9"
+    },
+    {
+      "source": "software/shr4_demo_images/observatory.pal256",
+      "destination": "assets/shr4_demo_images/observatory.pal256",
+      "action": "copy",
+      "bytes": 32768,
+      "sha256": "9ce3de22b218d3d519b905b55f5c1ea6e48fc678385fd87ea8ef4b9f82ac800c"
+    },
+    {
+      "source": "software/shr4_demo_images/skycity.pal256i",
+      "destination": "assets/shr4_demo_images/skycity.pal256i",
+      "action": "copy",
+      "bytes": 65536,
+      "sha256": "1f7fd5c8243809dda6905a8624267b5ef56cd397720bb1da27b852f93f0973c5"
+    },
+    {
+      "source": "software/Appletini_Demos.po",
+      "destination": "Appletini_Demos.po",
+      "action": "move",
+      "bytes": 33554432,
+      "sha256": "9d40c441dd26d9a39e20d208705b6e82a6aba2a6a25f15b02871da46ddf3dada"
+    },
+    {
+      "source": "scripts/test_demo_disk.py",
+      "destination": "tools/test_demo_disk.py",
+      "action": "move",
+      "bytes": 27762,
+      "sha256": "d7986d9b4fa7cdaa3148c152ea6496a9531cbd07d32a4cfbe8e3aa518f0c025d"
+    },
+    {
+      "source": "scripts/test_appletini_webserver.py",
+      "destination": "tools/test_appletini_webserver.py",
+      "action": "move",
+      "bytes": 11405,
+      "sha256": "8977f8e94bf408ae654d2046638b8efd940c8cb72876980e00c7029d386746e8"
+    },
+    {
+      "source": "hdl/apple/smartport_a2retronet_style_c700.mem",
+      "destination": "assets/smartport_a2retronet_style_c700.mem",
+      "action": "copy",
+      "bytes": 768,
+      "sha256": "4b8772c82581a2200f87c3facf5ec31b40a5095d07c7fb56816c537f3646e35b"
+    },
+    {
+      "source": "software/launcher_assets.a65",
+      "destination": "build/launcher_assets.a65",
+      "action": "regenerate",
+      "bytes": 12874,
+      "sha256": "502c24624da740d776b2230e6faf303d626d6af75c7e413766fe4ab470bb84e1"
+    }
+  ],
+  "hash_scope": "Original source checkout bytes before migration path edits; text may use checkout line endings."
+}

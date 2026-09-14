@@ -1,0 +1,3 @@
+build/
+appletini_webserver/build/
+appletini_webserver/*.o
