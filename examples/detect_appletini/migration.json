@@ -1,0 +1,21 @@
+{
+  "source_repository": "hasseily/appletini-one",
+  "source_commit": "336282c669d20f89d66513066947a5ff599e3539",
+  "hash_scope": "Original source checkout bytes before migration path edits.",
+  "files": [
+    {
+      "source": "software/detect_appletini.a65",
+      "destination": "detect_appletini.a65",
+      "action": "move",
+      "bytes": 3574,
+      "sha256": "6892149f12657d141713ef558ee9780610b383d950360957f860ad0b37ecc446"
+    },
+    {
+      "source": "README_APPLETINI_DETECTION.md",
+      "destination": "README.md",
+      "action": "move",
+      "bytes": 8840,
+      "sha256": "d21a8f6b485be9849043ea40bc193d9276d16eab1bd3c995171d149cbcbfefd4"
+    }
+  ]
+}

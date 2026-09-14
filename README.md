@@ -15,6 +15,17 @@ Apple II software and hardware demonstrations built to exercise Appletini.
   Apple //e fixed shooter using 33.3 MHz acceleration, DHGRi, Video-7 MIX,
   SmartPort, Mockingboard music and speech, and 8 MB RamWorks.
 
+## Diagnostics and examples
+
+- [AUXSTRESS / AUXTOOLS](diagnostics/aux_memory/README.md): auxiliary-memory
+  and RamWorks diagnostics, with DOS 3.3 and ProDOS disks.
+- [AD8088 tests](diagnostics/ad8088/README.md): mailbox, monitor, memory,
+  and 8088 execution diagnostics.
+- [Appli-Card CP/M](diagnostics/applicard/README.md): banking and CPU tests,
+  CP/M media, and disk tools.
+- [Appletini detection](examples/detect_appletini/README.md): a standalone
+  6502 SmartPort GETDIB example.
+
 ## Development layout
 
 Appletini Demos builds from its bundled inputs. Some other build and
@@ -27,7 +38,7 @@ Repos/
 └── gssquared/
 ```
 
-Build and test the demo with:
+Build and test Appletini Invasion with:
 
 ```sh
 cd demos/appletini_invasion

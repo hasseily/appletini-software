@@ -1,0 +1,3 @@
+# Preserve the original listing and third-party notice without line conversion.
+BANKTEST.lst -text
+extras/PCPI_ProDOS.txt -text

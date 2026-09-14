@@ -1,0 +1,35 @@
+{
+  "source_repository": "hasseily/appletini-one",
+  "source_commit": "336282c669d20f89d66513066947a5ff599e3539",
+  "hash_description": "Original source checkout bytes before path and build-output updates.",
+  "files": [
+    {
+      "source": "software/ad8088_test.a65",
+      "destination": "ad8088_test.a65",
+      "action": "move",
+      "bytes": 9326,
+      "sha256": "08962b8051784c706a79a7932cb515dd92e4f5a9c93986cee1966f440e8285af"
+    },
+    {
+      "source": "software/AD8088_Test.dsk",
+      "destination": "AD8088_Test.dsk",
+      "action": "move",
+      "bytes": 143360,
+      "sha256": "5b5cf2008b376e8add37de4061c3331637c755066706f6c9e6a35a52de50494a"
+    },
+    {
+      "source": "software/AD8088_Test.po",
+      "destination": "AD8088_Test.po",
+      "action": "move",
+      "bytes": 819200,
+      "sha256": "c2080dd8d6b786e1fd2564bbbf697e4eb52265b487d9f4eed66159054a158c42"
+    },
+    {
+      "source": "scripts/build_ad8088_test_disks.py",
+      "destination": "tools/build_ad8088_test_disks.py",
+      "action": "move",
+      "bytes": 4119,
+      "sha256": "7d44d2721c900d2af97e443b506790d3eb6c801c7386780d0dd03a19cbfd212a"
+    }
+  ]
+}

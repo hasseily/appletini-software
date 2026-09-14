@@ -1,0 +1,125 @@
+{
+  "source_repository": "hasseily/appletini-one",
+  "source_commit": "336282c669d20f89d66513066947a5ff599e3539",
+  "files": [
+    {
+      "source": "software/applicard/BANKTEST.COM",
+      "destination": "BANKTEST.COM",
+      "action": "move",
+      "bytes": 140,
+      "sha256": "4a9d09b0d9cdd1320c991c781c705652df1465cb722db0ad5ba8b37e3a7cd3ac"
+    },
+    {
+      "source": "software/applicard/BANKTEST.lst",
+      "destination": "BANKTEST.lst",
+      "action": "move",
+      "bytes": 1685,
+      "sha256": "b97bd97520cbac5e802dc025f7bb652e83462ac3d8718e5d18118fe5e4fdc972"
+    },
+    {
+      "source": "software/applicard/DEMOBOOT.DO",
+      "destination": "DEMOBOOT.DO",
+      "action": "move",
+      "bytes": 143360,
+      "sha256": "f596e2d287d7a2370f28e0ee5179aa00fc2ebb9f08e1150e6272c795236dfb09"
+    },
+    {
+      "source": "software/applicard/DEMOGAME.DO",
+      "destination": "DEMOGAME.DO",
+      "action": "move",
+      "bytes": 143360,
+      "sha256": "8e6ec06c8f4c0df7700dd4ee5af4555b342a902ec1c664a09a9ff90b2ef49bf2"
+    },
+    {
+      "source": "software/applicard/ZEXALL.COM",
+      "destination": "ZEXALL.COM",
+      "action": "move",
+      "bytes": 8704,
+      "sha256": "6e2da55147a04f28d303d5da6a1e6b771557ac244653590a0f24a2d39c8537e8"
+    },
+    {
+      "source": "software/applicard/extras/PCPI_ProDOS.txt",
+      "destination": "extras/PCPI_ProDOS.txt",
+      "action": "move",
+      "bytes": 7840,
+      "sha256": "bc8031e7348fcb1d133a9de7f573fce3a30e379f93b0f3415826339cb030ab7d"
+    },
+    {
+      "source": "software/applicard/extras/PCPI_ProDOS_Disk1.po",
+      "destination": "extras/PCPI_ProDOS_Disk1.po",
+      "action": "move",
+      "bytes": 143360,
+      "sha256": "0809cd6bc6e09c357d371453e0cbdc0b9c1e7019e17880f5b94b28455b52d85a"
+    },
+    {
+      "source": "software/applicard/extras/PCPI_ProDOS_Disk2.po",
+      "destination": "extras/PCPI_ProDOS_Disk2.po",
+      "action": "move",
+      "bytes": 143360,
+      "sha256": "f7aef686e044f39decf74560c010647faa0c2b72bab37c8c96099e748012d44f"
+    },
+    {
+      "source": "software/applicard/extras/PCPI_StarCard_Disk1.po",
+      "destination": "extras/PCPI_StarCard_Disk1.po",
+      "action": "move",
+      "bytes": 143360,
+      "sha256": "8d576ec668c844d5d1cd762f0fae85e5bff5235be4e583c1db487415b714c3ba"
+    },
+    {
+      "source": "software/applicard/extras/PCPI_StarCard_Disk2.po",
+      "destination": "extras/PCPI_StarCard_Disk2.po",
+      "action": "move",
+      "bytes": 143360,
+      "sha256": "1d5ef7a6ae5e4161bb949967aa9c72a989cda5330f1c062103a91df2edb2dac2"
+    },
+    {
+      "source": "software/applicard/extras/cpmfutil.do",
+      "destination": "extras/cpmfutil.do",
+      "action": "move",
+      "bytes": 143360,
+      "sha256": "5effab2454711fa3631efa0458f88a50251028d410a524b2c4498c7c644f3646"
+    },
+    {
+      "source": "software/applicard/extras/pcpidvrs.do",
+      "destination": "extras/pcpidvrs.do",
+      "action": "move",
+      "bytes": 143360,
+      "sha256": "ba232e27735ea9d0dd9f823aed65da5907ab4ae52acc091631307159515da46c"
+    },
+    {
+      "source": "software/applicard/extras/pcpigraf.do",
+      "destination": "extras/pcpigraf.do",
+      "action": "move",
+      "bytes": 143360,
+      "sha256": "44f012ef15d5cf78eadae16ea55cf382249d114a1d64a770128b2428a25e527a"
+    },
+    {
+      "source": "software/applicard/pcpiboot.do",
+      "destination": "pcpiboot.do",
+      "action": "move",
+      "bytes": 143360,
+      "sha256": "df8c1eb62fda5a3a0ef58dc72458be7bae0e572cab7a7cf6b4c93e580d042daf"
+    },
+    {
+      "source": "software/applicard/pcpiutil.do",
+      "destination": "pcpiutil.do",
+      "action": "move",
+      "bytes": 143360,
+      "sha256": "6b363092b1ffb56e4f1fdba59e5885743d6874b908f50d8d4e16048375de6fc2"
+    },
+    {
+      "source": "scripts/build_applicard_banktest.py",
+      "destination": "tools/build_applicard_banktest.py",
+      "action": "move",
+      "bytes": 5475,
+      "sha256": "f3dc406309e662d25d99a84af327c28d35adbb3dd87faf077a5498611359cf6f"
+    },
+    {
+      "source": "scripts/pcpi_disk.py",
+      "destination": "tools/pcpi_disk.py",
+      "action": "move",
+      "bytes": 8879,
+      "sha256": "adbc747a9feb0392f4240d845129794ce5220663d12c680035360bb8759434f4"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "source_repository": "hasseily/appletini-one",
+  "source_commit": "336282c669d20f89d66513066947a5ff599e3539",
+  "hash_description": "Original source checkout bytes before path and build-output updates.",
+  "files": [
+    {
+      "source": "software/auxstress.a65",
+      "destination": "auxstress.a65",
+      "action": "move",
+      "bytes": 29783,
+      "sha256": "ee3a959f1f2e5c39100134965de7a6e5df44c426f3a6eae0b9df64b47de76e0a"
+    },
+    {
+      "source": "software/bankmap.a65",
+      "destination": "bankmap.a65",
+      "action": "move",
+      "bytes": 6538,
+      "sha256": "52f347e592cbe8681d7396fd0425de756289d2500d201fa307ec7bdb2951a3e0"
+    },
+    {
+      "source": "software/AUXSTRESS.dsk",
+      "destination": "AUXSTRESS.dsk",
+      "action": "move",
+      "bytes": 143360,
+      "sha256": "8d76267581a496d0e1139be96bf507986e3fc9380d9ef293abf0db700390c368"
+    },
+    {
+      "source": "software/AUXTOOLS.po",
+      "destination": "AUXTOOLS.po",
+      "action": "move",
+      "bytes": 143360,
+      "sha256": "903589068576aaf93f24c1f15c2bc50c94860cb6bb1c6625cbb05a524b040494"
+    },
+    {
+      "source": "scripts/build_auxstress_disk.py",
+      "destination": "tools/build_auxstress_disk.py",
+      "action": "move",
+      "bytes": 3414,
+      "sha256": "da74a9a7c00495a97c0666c0e6642391864b8de0b05f99f703362166df9ad0b4"
+    }
+  ]
+}
