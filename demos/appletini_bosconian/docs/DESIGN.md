@@ -131,9 +131,13 @@ sprite variant:
   byte 1      : width in bytes W (of this variant, 1..32)
   H row records:
     byte      : run_off  (first byte of the run inside [0,W); $FF = empty row)
-    byte      : run_len  (bytes in the run, 1..W)
+    byte      : run_len  (bytes in the run, 1..W; 0 for an empty row)
     run_len bytes of pixel pairs (high nibble = left pixel)
 ```
+
+Every row record starts with the fixed two-byte header, so an empty row is
+exactly `$FF, $00` with no pixel data (the generator and the blitter both
+follow this).
 
 `build/assets.s` exports (all in `RODATA`):
 
