@@ -1,0 +1,14 @@
+gs2_version = 1
+id = "842b966e-967b-4ffa-aca1-6d23943e236d"
+name = "The Bilestoad SHR"
+description = "Enhanced Apple //e, Appletini, 8MB RamWorks, Mockingboard"
+platform = "apple2e_enhanced"
+scanner = "apple2e"
+
+[[cards]]
+slot = 4
+card = "mockingboard"
+
+[[cards]]
+slot = 7
+card = "appletini"

@@ -14,6 +14,11 @@ Apple II software and hardware demonstrations built to exercise Appletini.
 - [Appletini Invasion](demos/appletini_invasion/README.md) — an enhanced
   Apple //e fixed shooter using 33.3 MHz acceleration, DHGRi, Video-7 MIX,
   SmartPort, Mockingboard music and speech, and 8 MB RamWorks.
+- [The Bilestoad, SHR port](demos/bilestoad/README.md): the 1982 game with
+  its original logic, shown in SHR with 64-angle sprites and motion
+  interpolated to the video rate, 12-voice Phasor sound, and sprites in
+  RamWorks. The build converts the upstream game from a local clone; the game
+  itself is not in this repository. Not yet tested on hardware.
 - [Appletini Bosconian](demos/appletini_bosconian/README.md) — an original
   Bosconian-style multidirectional shooter for an enhanced Apple //e in
   320x200 Super Hi-Res at 60 frames per second, using the virtual TransWarp
