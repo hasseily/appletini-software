@@ -669,6 +669,19 @@ class VideoTest(unittest.TestCase):
         m.call("t_panel_dot", (10, 100, 0xFF))
         self.assertEqual(m.fb_byte(PANEL + 10, 100), 0x44)
 
+    def test_text_past_the_bottom_never_wraps_to_the_top(self):
+        # the one-byte row counter must not run past 255 into row 0
+        m = self.machine()
+        s = m.put_string("B")
+        m.call("t_panel_text", (0, 250, 1, s & 0xFF, s >> 8))
+        self.assertEqual(m.rows().count(0), 200 * ROW)
+        m.call("t_field_text_big", (0, 241, 1, s & 0xFF, s >> 8))
+        self.assertEqual(m.rows().count(0), 200 * ROW)
+        m.call("t_panel_text", (0, 196, 1, s & 0xFF, s >> 8))
+        for y in range(196, 200):
+            self.assertEqual(list(m.fb()[y * ROW + PANEL:y * ROW + PANEL + 4]), [0x11] * 4)
+        self.assertEqual(m.rows().count(0), 200 * ROW - 16)
+
     def test_panel_text_stops_at_edge(self):
         m = self.machine()
         s = m.put_string("BBBB")

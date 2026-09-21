@@ -1,8 +1,8 @@
 # Appletini Bosconian
 
 Appletini Bosconian is an original Bosconian-style shooter for an enhanced
-Apple //e with an Appletini ONE card. It is written from scratch in C and
-65C02 assembly (cc65/ca65). No Namco code, ROM data or art is used.
+Apple //e with an Appletini ONE card. The code is original C and 65C02
+assembly (cc65/ca65) and uses no Namco code, ROM data or art.
 
 The game runs at a locked 60 frames per second: one full logic and render
 pass per vertical blank, at the virtual TransWarp 33 MHz preset or in
@@ -15,8 +15,8 @@ TURBO mode.
   writing `$C1` to `$C029`. The playfield is the left 256 pixels; the
   right 64 pixels are the side panel (scores, condition lamp, radar,
   round, lives, bases and diagnostics).
-- **Virtual TransWarp** at the 33 MHz preset or TURBO. `$C074` is written
-  with 0 at start to release any 1 MHz lock.
+- **Virtual TransWarp** at the 33 MHz preset or TURBO. The game writes 0
+  to `$C074` at start to release any 1 MHz lock.
 - **Virtual Phasor** in its default Mockingboard-compatible mode in slot 4:
   AY-B (`$C480`) plays the music, AY-A (`$C400`) the sound effects, and
   the SSI-263 (`$C440`) speaks the alerts ("BLAST OFF", "ALERT", "SPY SHIP
@@ -41,7 +41,7 @@ make smoke    # boot the disk in GSSquared and check it runs
 The build needs cc65 (`cl65`, `ca65`, `ld65`) and python3. `make disk`
 needs the canonical Appletini checkout at `../../../appletini-one` (or
 `APPLETINI_ROOT=/path/to/appletini-one`) for `software/ProDOS_2_4_3.po`:
-the boot blocks and the `PRODOS` file are taken from it. The disk builder
+the builder takes the boot blocks and the `PRODOS` file from it. The disk builder
 is pure Python (no Java, no AppleCommander) and verifies its own image by
 reading it back.
 
@@ -52,17 +52,18 @@ reading it back.
 The linked program is the SYS file: `bosconian.cfg` links it at `$2000`
 and `crt0.s` is its first byte. ProDOS loads `BOSCO.SYSTEM` at `$2000`
 and jumps there. `crt0` copies the `DATA` segment to `$0C00`, clears
-`BSS`, sets the cc65 software stack to `$B800` (growing down to `$B000`,
-below ProDOS) and calls `main()`. When `main()` returns, `crt0` restores
-text mode and does a ProDOS `QUIT`.
+`BSS`, sets the cc65 software stack to `$BF00` (growing down to `$B700`,
+just below the ProDOS global page; nothing else uses that space because
+there is no BASIC.SYSTEM and the game opens no files) and calls `main()`.
+When `main()` returns, `crt0` restores text mode and does a ProDOS `QUIT`.
 
-Sizes from `build/BOSCO.map` (cc65 2.19, `-Oirs`): code `$2033-$7F51`
-(24,351 bytes), read-only tables `$7F52-$AEA9` (12,120 bytes, of which
-the sprites, font and palette are 10,690), `DATA` 2 bytes and `BSS`
-2,668 bytes at `$0C00-$166D`. The SYS file is 36,524 bytes and ends at
-`$AEAB`; the link area ends at `$AFFF`, so about 340 bytes are free.
-Any growth must come out of the sprite art or the C code (the software
-stack at `$B000-$B7FF` and ProDOS above it stay where they are).
+Sizes from `build/BOSCO.map` (cc65 2.19, `-Oirs`): code `$2033-$82C8`
+(25,238 bytes), read-only tables `$82C9-$B26A` (12,194 bytes, of which
+the sprites, font and palette are 10,764), `DATA` 2 bytes and `BSS`
+3,275 bytes at `$0C00-$18CC`. The SYS file is 37,485 bytes and ends at
+`$B26C`; the link area ends at `$B6FF`, so about 1,170 bytes are free.
+`tools/build_system.py` and `tools/build_disk.py` refuse an image that
+reaches `$B700`.
 
 ## Run in GSSquared
 
@@ -89,18 +90,21 @@ heading persists.
 
 - Arrows or `I` `J` `K` `L`: up, left, down, right
 - `U` `O` `M` `,` (or `.`): diagonals
-- Joystick: push past 35% of the calibrated center to set the heading
-  (calibrate on the title screen with the stick centered)
+- Joystick: push past 35% of the calibrated center to set the heading,
+  diagonals included (the game calibrates on the title screen; hold the
+  stick centered there)
 - Space, Open Apple, Closed Apple, game buttons: fire (hold for autofire;
   two shots at once, forward and backward)
 - Return (or fire): start a game from the title
 - Esc, `P` or `Q`: pause during play (any of them, or Return, resumes);
-  at the title all three quit to ProDOS
+  at the title Esc or `Q` quits to ProDOS and `P` does nothing
 
 Keys are read from `$C000`; a held key keeps its direction and fire bits
 active through the //e "any key down" flag at `$C010`, so holding Space
-is autofire and a held direction keeps steering. Start, pause and quit
-act once per key press.
+is autofire and a held direction keeps steering. The //e cannot say which
+key is still down, so a held fire also survives a direction tap: you can
+steer while holding Space, and firing stops once every key is up. Start,
+pause and quit act once per key press.
 
 ## The write budget
 
@@ -138,7 +142,8 @@ score, 11 round, 12 lives, 13 condition, 14-17 player world position,
 22-23 AUX bytes written by the last frame, 24-25 largest count this
 session, 26 RamWorks banks, 27-28 speed probe, 29 current SFX, 30 music
 track, 31 speech phrase, 32 input mask, 33 formation active, 34 spy
-active, 35 last event, 36-37 dropped frames, 38 star count. The full
+active, 35 last event, 36-37 dropped frames, 38 star count, 39 joystick
+status (bit 0 X axis usable, bit 1 Y axis usable). The full
 layout is in `docs/DESIGN.md` section 8 and `struct Mailbox` in `bosco.h`.
 
 ## Smoke test results
@@ -146,32 +151,36 @@ layout is in `docs/DESIGN.md` section 8 and `struct Mailbox` in `bosco.h`.
 `make smoke` on the reference host (GSSquared under `xvfb-run`, 33 MHz
 preset): 556,272 emulated cycles per frame = 59.9 fps emulated (the wall
 clock rate is lower because the host runs the emulator below real time),
-RamWorks 128 banks, speed probe 37,027 iterations, title -> play on
-Return, heading changes on `L`, held Space fires, no frame over the
-budget. A longer unattended run goes through play, dying, game over and
+RamWorks 128 banks, speed probe 37,027 iterations, both joystick axes
+calibrated at the title (GSSquared reports a centered stick without a
+game controller), title -> play on Return, heading changes on `L`, held
+Space fires, no frame over the budget. The wall-clock rate depends on the
+host: the test needs about 20 frames per second of wall time for its
+6-second cadence window. A longer unattended run goes through play, dying, game over and
 back to the title. The screenshots are `build/smoke_title.png` and
 `build/smoke_play.png`.
 
 ## Known limits
 
 - Not yet run on real hardware; all timing numbers come from GSSquared.
-- Joystick: at the 33 MHz preset with the virtual TransWarp "slow
-  paddles" option off, the 400-poll cap in `input.s` can be shorter than
-  a centered stick's timer. The driver then marks that axis unusable
-  (keyboard still works). Raise `JOY_DELAY` in `input.s` or turn on the
-  paddle slowdown if joystick play on hardware matters.
+- Joystick: the delay between paddle polls comes from the speed probe
+  (`input_joy_set_delay(2*MHz+3)`, about 11 us per poll), so the 400-poll
+  cap covers the full 558 timer range at 33 MHz and in TURBO. On hardware
+  each `$C064/$C065` read adds a 1 MHz bus cycle to the poll, which makes
+  the count smaller, not larger; the calibration still works because it
+  measures the same loop. A count at the cap at calibration time marks
+  the axis unusable (no paddle connected); mailbox byte 39 shows it.
 - Sound writes AY data through the no-handshake port (`$C40F`/`$C48F`)
   so the SSI-263 CA1 flag is not cleared by AY traffic; phonemes advance
   on CA1 from either VIA or on a 12-frame timeout. Speech was verified
   only by the register-level unit test, not by ear.
-- The sound module switches BLAST OFF to the ambient track on its own
-  after 90 frames; `main.c` also asks for it at 150 frames, which is
-  harmless.
+- Speech queues up to three phrases behind the one playing; a fourth
+  request while the queue is full is dropped.
 - `video_set_panel_color()` only affects `panel_*` calls whose color
   argument is `$FF`; the game passes explicit colors everywhere.
-- Field text is limited to 32 characters (256 px); the small panel text
-  (`panel_text_small`) draws every other glyph row and is meant for the
-  diagnostics corner only.
+- Field text is limited to 32 characters (256 px). `panel_text_small`
+  (every other glyph row) is still in the video API but the game no
+  longer uses it: the diagnostics corner uses the normal 8x8 font.
 - Sprites wider than 32 pixels are not supported by the blitter's
   unrolled copy; the largest sprite is the 32x32 explosion.
-- About 340 bytes of program space remain (see Build).
+- About 1,170 bytes of program space remain (see Build).

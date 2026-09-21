@@ -52,9 +52,10 @@ SPRITES = (
     + [(f"MISSILE_{i}", 6, 8) for i in range(2)]
     + [("ICON_SHIP", 8, 8), ("ICON_BASE", 8, 8), ("POD_HIT", 16, 16)]
     + [(f"BIGEXPL_{i}", 32, 32) for i in range(4)]
+    + [("SHOT_PLAYER_H", 6, 2), ("SHOT_PLAYER_D", 4, 4)]
 )
 SPR_COUNT = len(SPRITES)
-assert SPR_COUNT == 50
+assert SPR_COUNT == 52
 
 # #define names that bosco.h uses for the first id of each group (or the only
 # id). Every other id is reached from these by adding an offset.
@@ -64,7 +65,8 @@ SPR_DEFINES = (
     ("SPR_POD", 32), ("SPR_CORE_CLOSED", 33), ("SPR_CORE_OPEN", 34),
     ("SPR_EXPL_0", 35), ("SPR_SHOT_PLAYER", 39), ("SPR_SHOT_ENEMY", 40),
     ("SPR_MISSILE_0", 41), ("SPR_ICON_SHIP", 43), ("SPR_ICON_BASE", 44),
-    ("SPR_POD_HIT", 45), ("SPR_BIGEXPL_0", 46),
+    ("SPR_POD_HIT", 45), ("SPR_BIGEXPL_0", 46), ("SPR_SHOT_PLAYER_H", 50),
+    ("SPR_SHOT_PLAYER_D", 51),
 )
 
 # Palette 0, docs/DESIGN.md section 3: (index, name, R, G, B) with 4-bit parts.

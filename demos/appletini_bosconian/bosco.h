@@ -94,14 +94,16 @@ typedef unsigned long u32;
 #define SPR_CORE_CLOSED 33  /* 16x16 */
 #define SPR_CORE_OPEN 34    /* 16x16 */
 #define SPR_EXPL_0 35       /* 35..38 16x16 */
-#define SPR_SHOT_PLAYER 39  /* 2x6 */
+#define SPR_SHOT_PLAYER 39  /* 2x6 vertical bar, headings N/S */
 #define SPR_SHOT_ENEMY 40   /* 4x4 */
 #define SPR_MISSILE_0 41    /* 41..42 6x8 */
 #define SPR_ICON_SHIP 43    /* 8x8 */
 #define SPR_ICON_BASE 44    /* 8x8 */
 #define SPR_POD_HIT 45      /* 16x16 */
 #define SPR_BIGEXPL_0 46    /* 46..49 32x32 */
-#define SPR_COUNT 50
+#define SPR_SHOT_PLAYER_H 50 /* 6x2 horizontal bar, headings E/W */
+#define SPR_SHOT_PLAYER_D 51 /* 4x4 dot, diagonal headings */
+#define SPR_COUNT 52
 extern const u8 spr_width[SPR_COUNT];   /* pixel width per id (build/assets.s) */
 extern const u8 spr_height[SPR_COUNT];
 
@@ -191,8 +193,10 @@ extern u8 speech_current;        /* mailbox, SAY_NONE when idle */
 #define IN_PAUSE 0x40
 #define IN_QUIT  0x80
 u8 input_keys(void);
+void __fastcall__ input_joy_set_delay(u8 iterations); /* about 2*MHz+3 */
 void input_joy_calibrate(void);
-u8 input_joy(void);
+u8 input_joy(void);                 /* both axes' direction bits */
+u8 input_joy_status(void);          /* bit 0: X usable, bit 1: Y usable */
 
 /* ---- ramworks_probe.s (copied from Invasion) ---- */
 u8 __fastcall__ ramworks_probe(u8 bank);
@@ -245,7 +249,7 @@ struct Mailbox {
     u8 last_event;        /* 35 */
     u16 dropped_frames;   /* 36..37 */
     u8 star_count;        /* 38 */
-    u8 reserved0;         /* 39 */
+    u8 joy_status;        /* 39: bit 0 X axis usable, bit 1 Y axis usable */
     u8 reserved1;         /* 40 */
 };
 #define MAILBOX ((volatile struct Mailbox*)0x0300)

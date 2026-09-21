@@ -12,6 +12,7 @@
 void prodos_quit(void);         /* prodos_quit.s: video is already shut down */
 
 static void enter_play_round(void);
+static void dl_ship_at(u8 y);
 
 /* ---- frame budget: more AUX bytes than this stalls the 33 MHz bus ---- */
 #define WRITE_BUDGET 10000
@@ -20,7 +21,6 @@ static void enter_play_round(void);
 static u8 state;
 static u8 prev_in;              /* input mask of the last frame (edges) */
 static u16 state_timer;         /* frames left in a timed state */
-static u8 play_timer;           /* frames since the ship (re)started */
 static u8 ramworks_banks;
 static u16 speed_iters;
 static u8 mhz;
@@ -135,7 +135,7 @@ static void mailbox_tick(void)
     MAILBOX->last_event = last_event;
     MAILBOX->dropped_frames = dropped_frames;
     MAILBOX->star_count = star_count;
-    MAILBOX->reserved0 = 0;
+    MAILBOX->joy_status = input_joy_status();
     MAILBOX->reserved1 = 0;
 }
 
@@ -161,15 +161,15 @@ static void hud_labels(void)
     panel_fill(3, 108, 26, 2, C_DBLUE);
     panel_fill(3, 60, 1, 48, C_DBLUE);
     panel_fill(28, 60, 1, 48, C_DBLUE);
-    /* small glyphs are 8 px wide: 4 bytes per character */
-    textbuf[0] = 'M'; textbuf[1] = 'H'; textbuf[2] = 'Z'; textbuf[3] = ' ';
-    fmt_u16(textbuf + 4, mhz, 2);
-    textbuf[6] = 0;
-    panel_text_small(0, 184, C_DGRAY, textbuf);
-    textbuf[0] = 'R'; textbuf[1] = 'W'; textbuf[2] = ' ';
-    fmt_u16(textbuf + 3, ramworks_banks, 3);
-    textbuf[6] = 0;
-    panel_text_small(0, 192, C_DGRAY, textbuf);
+    /* diagnostics in the bottom corner: "33MHZ" and "RW128" (5 glyphs of
+     * 4 bytes fit the 32-byte panel; rows 184..199) */
+    fmt_u16(textbuf, mhz, 2);
+    textbuf[2] = 'M'; textbuf[3] = 'H'; textbuf[4] = 'Z'; textbuf[5] = 0;
+    panel_text(0, 184, C_DGRAY, textbuf);
+    textbuf[0] = 'R'; textbuf[1] = 'W';
+    fmt_u16(textbuf + 2, ramworks_banks, 3);
+    textbuf[5] = 0;
+    panel_text(0, 192, C_DGRAY, textbuf);
     hud_dirty = HUD_ALL;
 }
 
@@ -211,12 +211,17 @@ static void hud_update(void)
     if (d & HUD_BASES) hud_icons(140, SPR_ICON_BASE, bases_left);
 }
 
-/* radar: world/32 into the 48x48 box; a dot is one byte column wide */
+/* radar: world/32 into the 48x48 box; a dot is one byte column wide and
+ * two rows tall, so its row is clamped to 106 to keep it off the frame
+ * line at row 108 */
 static void radar_add(u16 x, u16 y, u8 color)
 {
+    u8 r;
     if (radar_new_n >= RADAR_MAX) return;
+    r = (u8)(y >> 5);
+    if (r > 46) r = 46;
     radar_new_px[radar_new_n] = 4 + (u8)(x >> 6);
-    radar_new_py[radar_new_n] = 60 + (u8)(y >> 5);
+    radar_new_py[radar_new_n] = 60 + r;
     radar_new_color[radar_new_n] = color;
     ++radar_new_n;
 }
@@ -290,7 +295,8 @@ static void enter_title(void)
 
 static void title_tick(u8 pressed)
 {
-    if (pressed & (IN_QUIT | IN_PAUSE)) {
+    /* Esc and Q quit (both carry IN_QUIT); a bare P is ignored here */
+    if (pressed & IN_QUIT) {
         sound_music(MUSIC_NONE);
         sound_update();
         video_shutdown();
@@ -330,7 +336,7 @@ static void enter_play_round(void)
     state = ST_PLAY;
     video_clear_playfield();
     stars_init(0);
-    play_timer = 0;
+    dl_ship_at(FIELD_CY - 8);       /* first frame: the ship, not a stale list */
     sound_tempo(condition);
     sound_music(MUSIC_BLASTOFF);
     speech_say(SAY_BLAST_OFF);
@@ -341,7 +347,6 @@ static void enter_play_respawn(void)
 {
     state = ST_PLAY;
     world_respawn();
-    play_timer = 0;
     sound_music(MUSIC_BLASTOFF);
     speech_say(SAY_BLAST_OFF);
 }
@@ -356,14 +361,16 @@ static void enter_dying(void)
     last_event = EV_PLAYER_DIED;
 }
 
-/* only the ship on a black field, holding its heading */
-static void dl_ship_only(void)
+/* only the ship, centered at row y, holding its heading */
+static void dl_ship_at(u8 y)
 {
     dl_items[0].id = SPR_SHIP_0 + player_h;
     dl_items[0].x = FIELD_CX - 8;
-    dl_items[0].y = FIELD_CY - 8;
+    dl_items[0].y = y;
     dl_count = 1;
 }
+
+#define ROUND_CLEAR_SHIP_Y 56   /* above "ROUND CLEAR" (row 80) and the bonus (96) */
 
 static void enter_round_clear(void)
 {
@@ -372,7 +379,7 @@ static void enter_round_clear(void)
     state_timer = 120;
     video_clear_playfield();
     star_count = 0;
-    dl_ship_only();
+    dl_ship_at(ROUND_CLEAR_SHIP_Y);
     bonus = round_no > 60 ? 60000U : (u16)round_no * 1000U;
     add_score(bonus);
     field_text(84, 80, C_WHITE, "ROUND CLEAR");
@@ -416,11 +423,7 @@ static void play_tick(u8 in, u8 pressed)
         enter_paused();
         return;
     }
-    world_tick(in, 1);
-    if (play_timer < 255) {
-        ++play_timer;
-        if (play_timer == 150) sound_music(MUSIC_AMBIENT);
-    }
+    world_tick(in, 1);      /* the BLAST OFF track hands over to the ambient one itself */
     if (player_dead) {
         enter_dying();
         world_build_dl(0);
@@ -447,7 +450,7 @@ static void dying_tick(u8 in)
 
 static void round_clear_tick(void)
 {
-    dl_ship_only();
+    dl_ship_at(ROUND_CLEAR_SHIP_Y);
     if (--state_timer == 0) {
         if (round_no < 99) ++round_no;
         world_new_round();
@@ -481,6 +484,8 @@ int main(void)
         u16 m = (speed_iters + 567) / 1135;
         mhz = m > 99 ? 99 : (u8)m;
     }
+    /* one paddle poll of about 11 us at the measured clock (input.s) */
+    input_joy_set_delay((u8)(mhz * 2 + 3));
     sound_init();
 
     frame = 0;

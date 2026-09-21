@@ -42,13 +42,16 @@ DESIGN_SPRITES = (
     + [("MISSILE_%d" % i, 6, 8) for i in range(2)]
     + [("ICON_SHIP", 8, 8), ("ICON_BASE", 8, 8), ("POD_HIT", 16, 16)]
     + [("BIGEXPL_%d" % i, 32, 32) for i in range(4)]
+    + [("SHOT_PLAYER_H", 6, 2), ("SHOT_PLAYER_D", 4, 4)]
 )
+SPR_COUNT = len(DESIGN_SPRITES)
 DESIGN_IDS = {
     "SPR_SHIP_0": 0, "SPR_ITYPE_0": 8, "SPR_PTYPE_0": 16, "SPR_ETYPE_0": 24,
     "SPR_MINE_0": 28, "SPR_ASTEROID_0": 30, "SPR_POD": 32, "SPR_CORE_CLOSED": 33,
     "SPR_CORE_OPEN": 34, "SPR_EXPL_0": 35, "SPR_SHOT_PLAYER": 39,
     "SPR_SHOT_ENEMY": 40, "SPR_MISSILE_0": 41, "SPR_ICON_SHIP": 43,
-    "SPR_ICON_BASE": 44, "SPR_POD_HIT": 45, "SPR_BIGEXPL_0": 46, "SPR_COUNT": 50,
+    "SPR_ICON_BASE": 44, "SPR_POD_HIT": 45, "SPR_BIGEXPL_0": 46,
+    "SPR_SHOT_PLAYER_H": 50, "SPR_SHOT_PLAYER_D": 51, "SPR_COUNT": 52,
 }
 # docs/DESIGN.md section 3, as (R, G, B) 4-bit values.
 DESIGN_PALETTE = [
@@ -179,8 +182,8 @@ class TestSpriteFormat(GeneratorRun):
     def variant(self, i, name):
         return bytes(self.blocks[f"spr_{i:02d}_{name}"])
 
-    def test_all_50_sprites_present_with_design_sizes(self):
-        self.assertEqual(len(DESIGN_SPRITES), 50)
+    def test_all_sprites_present_with_design_sizes(self):
+        self.assertEqual(len(DESIGN_SPRITES), 52)
         for i, (name, w, h) in enumerate(DESIGN_SPRITES):
             self.assertIn(name, self.grids, f"{name} missing in sprites.txt")
             g = self.grids[name]
@@ -285,6 +288,9 @@ class TestSpriteFormat(GeneratorRun):
         self.assertTrue({5, 6} & colors("CORE_OPEN"))        # orange/yellow center
         self.assertFalse({5, 6} & colors("CORE_CLOSED"))
         self.assertEqual(colors("SHOT_PLAYER") - {1}, {12})  # pink
+        self.assertEqual(colors("SHOT_PLAYER_H"), colors("SHOT_PLAYER"))
+        self.assertEqual(colors("SHOT_PLAYER_D"), colors("SHOT_PLAYER"))
+        self.assertEqual(g["SHOT_PLAYER_H"], [list(c) for c in zip(*g["SHOT_PLAYER"])])
         self.assertIn(6, colors("SHOT_ENEMY"))               # yellow
         self.assertIn(15, colors("MISSILE_0"))               # light blue
         self.assertTrue({1, 6} <= colors("POD_HIT"))         # white/yellow
@@ -305,7 +311,7 @@ class TestTablesFontPalette(GeneratorRun):
                                      ("_spr_odd_hi", "hibytes", "odd")):
             k, names = self.tables[label]
             self.assertEqual(k, kind, label)
-            self.assertEqual(names, [f"spr_{i:02d}_{variant}" for i in range(50)], label)
+            self.assertEqual(names, [f"spr_{i:02d}_{variant}" for i in range(SPR_COUNT)], label)
         self.assertEqual(list(self.blocks["_spr_width"]), [w for _n, w, _h in DESIGN_SPRITES])
         self.assertEqual(list(self.blocks["_spr_height"]), [h for _n, _w, h in DESIGN_SPRITES])
 
@@ -341,7 +347,7 @@ class TestTablesFontPalette(GeneratorRun):
             self.assertEqual(pal[2 * i + 1], r, f"palette {i} byte 1")
 
     def test_total_size(self):
-        total = sum(len(v) for v in self.blocks.values()) + 4 * 50
+        total = sum(len(v) for v in self.blocks.values()) + 4 * SPR_COUNT
         self.assertLess(total, MAX_TOTAL_BYTES)
         m = re.search(r";\s*total\s*:\s*(\d+)", self.asm_text)
         self.assertIsNotNone(m)
@@ -390,7 +396,7 @@ class TestAssemble(GeneratorRun):
         # rebuild the expected image: variants in id order, then the tables
         expected = bytearray()
         addr = {}
-        for i in range(50):
+        for i in range(SPR_COUNT):
             for v in ("even", "odd"):
                 addr[f"spr_{i:02d}_{v}"] = 0x4000 + len(expected)
                 expected += self.blocks[f"spr_{i:02d}_{v}"]

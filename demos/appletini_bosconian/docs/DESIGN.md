@@ -72,8 +72,8 @@ Main memory (`bosconian.cfg`):
 | `$0100-$01FF` | 6502 stack |
 | `$0300-$033F` | debug mailbox (section 8) |
 | `$0C00-$1FFF` | `DATA` (run address; copied from the load image by crt0) and `BSS` |
-| `$2000-$AFFF` | `STARTUP`, `CODE`, `RODATA`, `DATA` load image. Never written at runtime. |
-| `$B000-$B7FF` | cc65 software stack (`__STACKSTART__ = $B800`, size `$0800`) |
+| `$2000-$B6FF` | `STARTUP`, `CODE`, `RODATA`, `DATA` load image. Never written at runtime. |
+| `$B700-$BEFF` | cc65 software stack (`__STACKSTART__ = $BF00`, size `$0800`; no BASIC.SYSTEM and no MLI file buffers, so the space below the global page is free) |
 | `$BF00-$BFFF` | ProDOS global page (untouched) |
 
 The SYS file loads at `$2000` (ProDOS) and starts executing at `$2000`
@@ -93,8 +93,8 @@ probe writes `$1000/$1001` in each bank and restores bank 0.
   Layout (rows): `HI-SCORE` label + 7 digits (y 2/10), `1UP` + score (y 22/30),
   condition lamp box 56x10 at y 44 with text GREEN/YELLOW/RED, radar 48x48 box
   at x 264..311, y 60..107 (world/32), `ROUND nn` at y 116, lives icons at
-  y 128, remaining-base icons at y 140, `MHZ nn` / `RW nnn` diagnostics at
-  y 184/192 (small text).
+  y 128, remaining-base icons at y 140, `nnMHZ` / `RWnnn` diagnostics at
+  y 184/192 (8x8 text in dark gray; five glyphs fill 20 of the 32 bytes).
 - Palette 0 (all rows, SCB = 0):
 
 | idx | color | RGB (4-bit) | use |
@@ -192,8 +192,12 @@ void video_render(void);
       Erase-all-then-draw-all avoids holes where a later item's old box
       overlaps an earlier item's new box. At the 33 MHz preset the erase
       pass runs at bus speed inside the vertical blank; the game therefore
-      sorts dl_items by y (ascending, bucketed by y>>3) before calling
-      video_render so the draw pass stays ahead of the beam. */
+      sorts dl_items by y (ascending, a stable counting sort into 25
+      buckets of y>>3, rows above the screen in bucket 0 and below it in
+      bucket 24) in world_build_dl before calling video_render so the
+      draw pass stays ahead of the beam. Items of one bucket keep their
+      layer order, and the ship is appended after the sort so it stays on
+      top (it sits mid-screen, never in the beam race). */
 extern u16 video_frame_writes;      /* AUX bytes written by the last render */
 
 void video_clear_playfield(void);   /* black the 256x200 box AND forget all
@@ -205,7 +209,8 @@ void video_clear_all(void);         /* whole screen, also forgets panel state */
 void panel_text(u8 px, u8 py, u8 color, const char *s);  /* 8x8 font, ASCII 32..95,
                                        32 writes per char, bg black */
 void panel_text_small(u8 px, u8 py, u8 color, const char *s); /* same font, but
-                                       every other row (8x4) for diagnostics */
+                                       every other row (8x4); kept for
+                                       diagnostics, unused by the game */
 void panel_fill(u8 px, u8 py, u8 wbytes, u8 h, u8 color);   /* solid box */
 void panel_dot(u8 px, u8 py, u8 color);  /* 2x2 pixel dot at byte column px */
 void panel_sprite(u8 px, u8 py, u8 id);  /* icon at byte column px (even variant,
@@ -239,7 +244,8 @@ void sound_sfx(u8 id);        /* SFX_SHOT, SFX_HIT, SFX_EXPLODE, SFX_POD, SFX_BA
                                  SFX_MINE, SFX_PLAYER_DIE, SFX_ALERT, SFX_SPY,
                                  SFX_EXTRA_LIFE, SFX_MISSILE */
 void speech_say(u8 phrase);   /* SAY_BLAST_OFF, SAY_ALERT, SAY_SPY, SAY_RED,
-                                 SAY_BATTLE, SAY_GAME_OVER; queued, one at a time */
+                                 SAY_BATTLE, SAY_GAME_OVER; one plays at a time,
+                                 up to three wait in a FIFO (a fourth is dropped) */
 u8   speech_busy(void);
 ```
 
@@ -263,19 +269,31 @@ completion or 12-frame timeout (Invasion's `speech_tick`).
 u8 input_keys(void);      /* bit mask: IN_UP IN_DOWN IN_LEFT IN_RIGHT IN_FIRE
                              IN_START IN_PAUSE IN_QUIT; reads $C000 once, clears
                              $C010 if a key was there, reads $C061/$C062 */
-void input_joy_calibrate(void);   /* at title: sample both axes (stick centered) */
+void input_joy_set_delay(u8 n);   /* dey/bne iterations between paddle polls;
+                             main.c passes 2*MHz+3 so one poll takes ~11 us at
+                             the measured clock (the ROM PREAD granularity) */
+void input_joy_calibrate(void);   /* at title: sample both axes (stick centered);
+                             an axis whose count reaches the cap is unusable */
 u8 input_joy(void);       /* alternates axes each call (X even frames, Y odd):
-                             one $C070 trigger + polled $C064/$C065 reads with a
-                             ~40-cycle CPU delay between reads, capped at 400
-                             reads; returns the same IN_* mask */
+                             one $C070 trigger + polled $C064/$C065 reads with
+                             the CPU delay above between reads, capped at 400
+                             reads (a centered stick needs ~130, full deflection
+                             ~260); remembers each axis's last direction bit and
+                             returns both, so a diagonal stick gives a diagonal
+                             heading */
+u8 input_joy_status(void);  /* bit 0: X axis usable, bit 1: Y axis usable */
 ```
 
 Keys: arrows and `I J K L` for the four directions, `U O M ,` (and `. `)
 for diagonals (the classic `UIO/JKL/M,.` cluster), `Space` = fire, `Return`
-= start, `Esc` = pause / quit at title. Open-Apple, Closed-Apple and the game
-buttons = fire. The ship never stops: a direction key sets the new heading;
-the last heading persists. Joystick beyond the calibrated 35% dead zone sets
-the heading.
+= start, `Esc` = pause during play / quit at the title (`Q` also quits at
+the title, `P` pauses only). Open-Apple, Closed-Apple and the game buttons
+= fire. The ship never stops: a direction key sets the new heading; the last
+heading persists. Joystick beyond the calibrated 35% dead zone sets the
+heading. The //e keyboard latches one key and only reports "any key down",
+so the driver keeps a held fire in its held bits when a direction key is
+tapped: steering while holding `Space` keeps firing until every key is
+released.
 
 ## 8. Debug mailbox at `$0300` (magic `A13B`)
 
@@ -294,7 +312,8 @@ Written once per frame by the game (`mailbox_tick`). Offsets:
 26    ramworks_banks   27-28 speed_probe (u16)
 29    sfx_now   30 music_track   31 speech_phrase (0xFF idle)   32 input_mask
 33    formation_active   34 spy_active   35 last_event (see bosco.h EV_*)
-36-37 dropped-frame counter (u16)  38 star_count  39-40 reserved
+36-37 dropped-frame counter (u16)  38 star_count
+39    joystick status (bit 0 X axis usable, bit 1 Y axis usable)   40 reserved
 ```
 
 ## 9. Sprite id list (`SPR_*`, fixed order)
@@ -310,14 +329,16 @@ Written once per frame by the game (`mailbox_tick`). Offsets:
 33     SPR_CORE_CLOSED    16x16
 34     SPR_CORE_OPEN      16x16
 35..38 SPR_EXPL_0..3      16x16  explosion, 4 frames
-39     SPR_SHOT_PLAYER     2x6   vertical bar (drawn for all headings)
+39     SPR_SHOT_PLAYER     2x6   vertical bar (headings N and S)
 40     SPR_SHOT_ENEMY      4x4
 41..42 SPR_MISSILE_0..1    6x8
 43     SPR_ICON_SHIP       8x8   lives icon
 44     SPR_ICON_BASE       8x8   remaining-base icon
 45     SPR_BOSS_HIT        16x16 pod destroyed flash (single frame)
 46..49 SPR_BIGEXPL_0..3   32x32 base core explosion
-SPR_COUNT = 50
+50     SPR_SHOT_PLAYER_H   6x2   horizontal bar (headings E and W)
+51     SPR_SHOT_PLAYER_D   4x4   dot (diagonal headings)
+SPR_COUNT = 52
 ```
 
 Rows are single runs; art must be convex per row (no holes).
@@ -390,7 +411,8 @@ Rows are single runs; art must be convex per row (no holes).
   boots GSSquared (`GSSQUARED_ROOT`, default `../../../gssquared`, executable
   `build/GSSquared`; the `codex/appletini-108-postprocessing` branch has the
   Appletini card) with `appletini-bosconian.gs2`, `-ds7d1=<hdv>`, `--debug`,
-  waits for the mailbox magic, checks 60 Hz frame progress at 33 MHz, presses
+  waits for the mailbox magic, checks 60 Hz frame progress at 33 MHz, checks
+  that both joystick axes calibrated at the title (mailbox byte 39), presses
   Return, verifies state transitions, keys, score, the write budget, and dumps
   the AUX framebuffer to PNG via `tools/shr2png.py` (pure Python). On Linux run
   under `xvfb-run -a` with `SDL_AUDIODRIVER=dummy`.

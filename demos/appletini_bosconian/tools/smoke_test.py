@@ -7,7 +7,9 @@ Steps (each prints the debug mailbox at $0300):
   2. the frame counter advances
   3. frames per emulated second from the CPU cycle counter (33.3 MHz):
      40..70 fps
-  4. state is ST_TITLE; the title screen is dumped to build/smoke_title.png
+  4. state is ST_TITLE; the title screen is dumped to build/smoke_title.png;
+     both joystick axes calibrated (mailbox byte 39 = 3: GSSquared reports a
+     centered stick when no game controller is attached)
   5. Return -> ST_PLAY within 2 s
   6. Space held for 1 s produces display-list or score activity
   7. 'l' changes the heading
@@ -96,7 +98,7 @@ def describe(m: bytes) -> str:
             f"max_writes={word(m, 24)} rw_banks={m[26]} probe={word(m, 27)} "
             f"sfx={m[29]} music={m[30]} speech={m[31]:#04x} input={m[32]:#04x} "
             f"formation={m[33]} spy={m[34]} event={m[35]} dropped={word(m, 36)} "
-            f"stars={m[38]}")
+            f"stars={m[38]} joy={m[39]}")
 
 
 def wait_for(predicate: Callable[[], object], timeout: float, what: str) -> object:
@@ -192,6 +194,9 @@ def exercise(s: Session, timeout: float, play_seconds: float) -> dict:
     print(f"[title] wrote {title_png} ({title_nonzero} non-zero framebuffer bytes)")
     if title_nonzero < 200:
         fail("title framebuffer is blank")
+    if m[39] != 3:
+        fail(f"joystick calibration failed at the title: joy_status={m[39]:#04x} "
+             "(expected 3: both axes usable with a centered stick)")
 
     # 5. Return starts a game
     c.tap_key(SCANCODE_RETURN, hold_s=0.05)

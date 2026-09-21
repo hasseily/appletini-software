@@ -4,7 +4,7 @@
 The program is linked at $2000 by bosconian.cfg and crt0's STARTUP segment
 is its first byte, so the linker output already is the ProDOS SYS file.
 This script only checks that the image looks like code that starts at
-$2000 and that it does not reach the software stack at $B000.
+$2000 and that it does not reach the software stack at $B700.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from pathlib import Path
 
 
 LOAD_ADDRESS = 0x2000
-SAFE_LIMIT = 0xB000
+SAFE_LIMIT = 0xB700
 # opcodes a startup routine may plausibly begin with
 START_OPCODES = {
     0x4C: "JMP", 0x78: "SEI", 0xD8: "CLD", 0x20: "JSR",

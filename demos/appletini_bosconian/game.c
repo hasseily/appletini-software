@@ -152,12 +152,23 @@ void rng_seed(u16 s)
     rng_state = s;
 }
 
+/* Eight LFSR steps per call: one step would make consecutive values
+ * (used as x then y) differ by a single shift, which lines every field
+ * object and star up on a few diagonals. gcd(8, 65535) = 1, so the
+ * period stays 65535. The generator only runs at round, star and spawn
+ * time, never per frame. */
 u16 rng_next(void)
 {
     u16 v = rng_state;
-    u8 bit = (u8)v & 1;
-    v >>= 1;
-    if (bit) v ^= 0xB400;
+    u8 n;
+    for (n = 0; n < 8; ++n) {
+        if ((u8)v & 1) {
+            v >>= 1;
+            v ^= 0xB400;
+        } else {
+            v >>= 1;
+        }
+    }
     rng_state = v;
     return v;
 }
@@ -1078,6 +1089,44 @@ void world_clear(void)
 /* ------------------------------------------------------------------ */
 static struct DlItem *dlp;
 
+/* The list is built in dl_tmp and then counting-sorted by y into
+ * dl_items (docs/DESIGN.md section 5): 25 buckets of 8 rows, rows above
+ * the screen in bucket 0 and rows below it in bucket 24. The sort is
+ * stable, so items of one bucket keep their layer order. The ship is
+ * added after the sort so it stays on top. */
+#define DL_BUCKETS 25
+static struct DlItem dl_tmp[DL_MAX];
+static u8 dl_bucket_pos[DL_BUCKETS + 1];
+
+static u8 dl_bucket(s16 y)
+{
+    if (y < 0) return 0;
+    if (y >= FIELD_H) return DL_BUCKETS - 1;
+    return (u8)(y >> 3);
+}
+
+static void dl_sort(void)
+{
+    u8 i, b;
+    struct DlItem *src;
+    struct DlItem *dst;
+
+    for (b = 0; b <= DL_BUCKETS; ++b) dl_bucket_pos[b] = 0;
+    src = dl_tmp;
+    for (i = 0; i < dl_count; ++i, ++src) ++dl_bucket_pos[dl_bucket(src->y) + 1];
+    for (b = 1; b <= DL_BUCKETS; ++b) dl_bucket_pos[b] += dl_bucket_pos[b - 1];
+    src = dl_tmp;
+    for (i = 0; i < dl_count; ++i, ++src) {
+        b = dl_bucket(src->y);
+        dst = dl_items + dl_bucket_pos[b];
+        ++dl_bucket_pos[b];
+        dst->id = src->id;
+        dst->x = src->x;
+        dst->y = src->y;
+    }
+    dlp = dl_items + dl_count;
+}
+
 /* add sprite id centered at (sdx,sdy) relative to the ship */
 static void dl_add(u8 id, s16 sdx, s16 sdy)
 {
@@ -1102,7 +1151,7 @@ void world_build_dl(u8 with_player)
     u8 i, b, p, f;
 
     dl_count = 0;
-    dlp = dl_items;
+    dlp = dl_tmp;
 
     /* bases: pods then core; a dying base shows the big explosion */
     for (b = 0; b < base_count; ++b) {
@@ -1150,9 +1199,13 @@ void world_build_dl(u8 with_player)
         dl_add(id, en_sx[i], en_sy[i]);
     }
 
-    /* player shots */
+    /* player shots: a bar along the heading, a dot on diagonals */
     for (i = 0; i < PSHOT_MAX; ++i) {
-        if (ps_life[i]) dl_add(SPR_SHOT_PLAYER, ps_sx[i], ps_sy[i]);
+        if (!ps_life[i]) continue;
+        f = ps_h[i];
+        if (f & 1) dl_add(SPR_SHOT_PLAYER_D, ps_sx[i], ps_sy[i]);
+        else if (f & 2) dl_add(SPR_SHOT_PLAYER_H, ps_sx[i], ps_sy[i]);
+        else dl_add(SPR_SHOT_PLAYER, ps_sx[i], ps_sy[i]);
     }
 
     /* explosions */
@@ -1164,15 +1217,16 @@ void world_build_dl(u8 with_player)
             f = (u8)((16 - ex_timer[i]) >> 2) & 3;
             dl_add(SPR_EXPL_0 + f, ex_sx[i], ex_sy[i]);
         } else if (k == EX_BLAST) {
-            f = (20 - ex_timer[i]) / 5;
-            if (f > 3) f = 3;
+            f = ex_timer[i];                /* 20..1: frame 0..3, 5 frames each */
+            f = f > 15 ? 0 : (f > 10 ? 1 : (f > 5 ? 2 : 3));
             dl_add(SPR_BIGEXPL_0 + f, ex_sx[i], ex_sy[i]);
         } else {
             dl_add(SPR_POD_HIT, ex_sx[i], ex_sy[i]);
         }
     }
 
-    /* player last, always on top */
+    /* y order for the beam race, then the player last, always on top */
+    dl_sort();
     if (with_player) dl_add(SPR_SHIP_0 + player_h, 0, 0);
 }
 

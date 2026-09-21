@@ -267,7 +267,9 @@ static const u8 amb_pulse_len[3] = { 16, 11, 7 };
 
 /* ---- speech state (defined early: music ducks while speaking) ---- */
 static u8 speech_active;
-static u8 speech_pending;        /* queued phrase or SAY_NONE */
+#define SPEECH_QUEUE 3
+static u8 speech_queue[SPEECH_QUEUE]; /* phrases waiting, in order */
+static u8 speech_queued;         /* entries used in speech_queue */
 static const u8 *speech_ptr;
 static u8 speech_index;
 static u8 speech_timer;
@@ -644,7 +646,9 @@ static void sfx_tick(void)
 }
 
 /* =====================================================================
- * Speech. One phrase at a time, one queued. A phoneme is sent to the
+ * Speech. One phrase at a time, up to three queued in order (CONDITION
+ * RED, BATTLE STATIONS and the formation's ALERT can arrive within two
+ * frames). A phoneme is sent to the
  * SSI-263 DUR register; the next one goes out when the chip raises CA1
  * (VIA IFR bit 1) or after a 12-frame timeout. The SSI write also hits
  * VIA-A ORB, so VIA-A is restored and AY-A is fully resent afterwards.
@@ -684,7 +688,7 @@ void __fastcall__ speech_say(u8 phrase)
 {
     if (phrase > SAY_GAME_OVER) return;
     if (speech_active) {
-        speech_pending = phrase;
+        if (speech_queued < SPEECH_QUEUE) speech_queue[speech_queued++] = phrase;
         return;
     }
     speech_active = 1;
@@ -696,7 +700,7 @@ void __fastcall__ speech_say(u8 phrase)
 
 u8 speech_busy(void)
 {
-    return (u8)(speech_active || speech_pending != SAY_NONE);
+    return (u8)(speech_active || speech_queued);
 }
 
 static void speech_send(u8 phoneme)
@@ -712,9 +716,12 @@ static void speech_tick(void)
     u8 done;
 
     if (!speech_active) {
-        if (speech_pending == SAY_NONE) return;
-        phoneme = speech_pending;
-        speech_pending = SAY_NONE;
+        if (speech_queued == 0) return;
+        phoneme = speech_queue[0];
+        --speech_queued;
+        for (done = 0; done < speech_queued; ++done) {
+            speech_queue[done] = speech_queue[done + 1];
+        }
         speech_say(phoneme);
     }
     if (speech_index) {
@@ -754,7 +761,7 @@ void sound_init(void)
     sound_current_track = MUSIC_NONE;
     speech_current = SAY_NONE;
     speech_active = 0;
-    speech_pending = SAY_NONE;
+    speech_queued = 0;
     speech_index = 0;
     speech_timer = 0;
     amb_tempo = 0;

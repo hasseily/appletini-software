@@ -425,7 +425,7 @@ dRdddddddddddddd
 ................
 
 # ---------------------------------------------------------------- shots
-# Player shot: pink vertical bar with a white middle (2x6).
+# Player shot: pink vertical bar with a white middle (2x6), headings N/S.
 sprite SHOT_PLAYER 2 6
 PP
 PP
@@ -644,3 +644,17 @@ ddddddddddddddddddddddddddOddRRd
 .........dRddRRRdROddRd.........
 ..........dddddRdRRdddd.........
 ..........dddRdRdddR............
+
+# ---------------------------------------------------------------- shot variants
+# Player shot for headings E/W: the same bar lying down (6x2, ids 50/51 are
+# the last sprites so the ids of docs/DESIGN.md section 9 stay fixed).
+sprite SHOT_PLAYER_H 6 2
+PPWWPP
+PPWWPP
+
+# Player shot for the diagonal headings: a pink dot with a white core (4x4).
+sprite SHOT_PLAYER_D 4 4
+.PP.
+PWWP
+PWWP
+.PP.

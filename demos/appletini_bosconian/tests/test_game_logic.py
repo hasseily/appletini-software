@@ -148,12 +148,12 @@ class ToolchainTest(unittest.TestCase):
         cfg = """
 SYMBOLS {
     __STACKSIZE__:  type = weak, value = $0800;
-    __STACKSTART__: type = weak, value = $B800;
+    __STACKSTART__: type = weak, value = $BF00;
 }
 MEMORY {
     ZP:   file = "", define = yes, start = $0080, size = $0020;
     LOW:  file = "", define = yes, start = $0C00, size = $1400;
-    MAIN: file = %O, define = yes, start = $2000, size = $9000;
+    MAIN: file = %O, define = yes, start = $2000, size = $9700;
 }
 SEGMENTS {
     ZEROPAGE: load = ZP,   type = zp;

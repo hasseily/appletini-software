@@ -801,7 +801,8 @@ draw_text:
         sta     RAMWRTOFF
         rts
 
-; draw one glyph at V_PX / V_PY
+; draw one glyph at V_PX / V_PY. V_SY only grows, so the first row at or
+; past SCREEN_H ends the glyph (the one-byte row must not wrap to row 0).
 draw_glyph:
         lda     V_PY
         sta     V_SY
@@ -814,7 +815,7 @@ draw_glyph:
         sta     V_FBYTE
         lda     V_SY
         cmp     #SCREEN_H
-        bcs     @skip
+        bcs     @done
         jsr     glyph_dst
         lda     V_BIG
         bne     @big
@@ -825,7 +826,7 @@ draw_glyph:
         inc     V_SY
         lda     V_SY
         cmp     #SCREEN_H
-        bcs     @skip
+        bcs     @done
         jsr     glyph_dst
         jsr     glyph_row_8
 @skip:
@@ -836,6 +837,7 @@ draw_glyph:
         sta     V_FROW
         dec     V_ROWS
         bne     @row
+@done:
         rts
 
 ; V_DST = row[V_SY] + V_PX
