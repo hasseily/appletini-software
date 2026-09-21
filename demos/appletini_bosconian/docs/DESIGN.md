@@ -77,8 +77,8 @@ Main memory (`bosconian.cfg`):
 | `$0100-$01FF` | 6502 stack |
 | `$0300-$033F` | debug mailbox (section 8) |
 | `$0C00-$1FFF` | `DATA` (run address; copied from the load image by crt0) and `BSS` |
-| `$2000-$B6FF` | `STARTUP`, `CODE`, `RODATA`, `DATA` load image. Never written at runtime. |
-| `$B700-$BEFF` | cc65 software stack (`__STACKSTART__ = $BF00`, size `$0800`; no BASIC.SYSTEM and no MLI file buffers, so the space below the global page is free) |
+| `$2000-$BAFF` | `STARTUP`, `CODE`, `RODATA`, `DATA` load image. Never written at runtime. |
+| `$BB00-$BEFF` | cc65 software stack (`__STACKSTART__ = $BF00`, size `$0400`: the C code has no recursion and few locals; no BASIC.SYSTEM and no MLI file buffers, so the space below the global page is free) |
 | `$BF00-$BFFF` | ProDOS global page (untouched) |
 
 The SYS file loads at `$2000` (ProDOS) and starts executing at `$2000`
@@ -294,7 +294,8 @@ void input_joy_set_delay(u8 n);   /* dey/bne iterations between paddle polls;
                              the measured clock (the ROM PREAD granularity) */
 void input_joy_calibrate(void);   /* at title: sample both axes (stick centered);
                              an axis whose count reaches the cap is unusable */
-u8 input_joy(void);       /* alternates axes each call (X even frames, Y odd):
+u8 input_joy(void);       /* alternates axes each call; main.c calls it every
+                             fourth frame (a poll busy-waits ~1.4 ms of CPU):
                              one $C070 trigger + polled $C064/$C065 reads with
                              the CPU delay above between reads, capped at 400
                              reads (a centered stick needs ~130, full deflection

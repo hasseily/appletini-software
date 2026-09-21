@@ -472,6 +472,7 @@ static void game_over_tick(void)
 int main(void)
 {
     u8 in, pressed;
+    u8 joy_mask = 0;
 
     REG8(TWSPEED) = 0;
     REG8(RAMRDOFF) = 0;
@@ -522,7 +523,10 @@ int main(void)
         video_wait_vbl();
         ++frame;
 
-        in = input_keys() | input_joy();
+        /* the paddle timer is read by polling, about 1.4 ms of CPU time per
+         * axis at any clock, so read one axis every fourth frame */
+        if ((frame & 3) == 0) joy_mask = input_joy();
+        in = input_keys() | joy_mask;
         pressed = in & (u8)~prev_in;
         prev_in = in;
 

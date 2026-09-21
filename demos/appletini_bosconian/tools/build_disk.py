@@ -469,7 +469,7 @@ def main() -> None:
         if not path.is_file():
             raise SystemExit(f"missing {what}: {path}")
     system = args.system.read_bytes()
-    if len(system) < 16 or 0x2000 + len(system) > 0xB700:
+    if len(system) < 16 or 0x2000 + len(system) > 0xBB00:
         raise SystemExit(f"system program has an unusable size: {len(system)} bytes")
     try:
         notes = build(system, args.master, args.output, args.name)

@@ -147,13 +147,13 @@ class ToolchainTest(unittest.TestCase):
             stub.append("_%s: .res 8" % n)
         cfg = """
 SYMBOLS {
-    __STACKSIZE__:  type = weak, value = $0800;
+    __STACKSIZE__:  type = weak, value = $0400;
     __STACKSTART__: type = weak, value = $BF00;
 }
 MEMORY {
     ZP:   file = "", define = yes, start = $0080, size = $0020;
     LOW:  file = "", define = yes, start = $0C00, size = $1400;
-    MAIN: file = %O, define = yes, start = $2000, size = $9700;
+    MAIN: file = %O, define = yes, start = $2000, size = $9B00;
 }
 SEGMENTS {
     ZEROPAGE: load = ZP,   type = zp;

@@ -721,10 +721,11 @@ static void field_tick(u8 player_active)
     for (i = 0; i < FIELD_MAX; ++i) {
         if (fld_kind[i] == 0) { fld_near[i] = 0; continue; }
         dx = wdelta(fld_x[i], player_x);
+        if (dx < -176 || dx > 176) { fld_near[i] = 0; continue; }  /* far: skip y */
         dy = wdelta(fld_y[i], player_y);
         fld_sx[i] = dx;
         fld_sy[i] = dy;
-        fld_near[i] = near_range(dx, dy);
+        fld_near[i] = (u8)(dy >= -148 && dy <= 148);
         if (!player_active || !fld_near[i]) continue;
         w = fld_kind[i] == 3 ? 12 : 16;
         if (boxes_hit(dx, dy, 16, 16, w, w)) player_dead = 1;
