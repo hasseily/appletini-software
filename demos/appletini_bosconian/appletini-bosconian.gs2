@@ -1,0 +1,22 @@
+gs2_version = 1
+id = "7a1c2b0e-5d4f-4b8a-9c3e-b05c0a13b05c"
+name = "Appletini Bosconian"
+description = "Enhanced Apple //e, Appletini ONE 33 MHz, SHR, 8MB RamWorks, Mockingboard"
+platform = "apple2e_enhanced"
+clock = "ntsc"
+scanner = "apple2e"
+
+[appletini]
+accelerator = true
+speed = "33"
+ignore_c074 = false
+ramworks = true
+ram32 = false
+
+[[cards]]
+slot = 4
+card = "mockingboard"
+
+[[cards]]
+slot = 7
+card = "appletini"

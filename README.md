@@ -14,6 +14,11 @@ Apple II software and hardware demonstrations built to exercise Appletini.
 - [Appletini Invasion](demos/appletini_invasion/README.md) — an enhanced
   Apple //e fixed shooter using 33.3 MHz acceleration, DHGRi, Video-7 MIX,
   SmartPort, Mockingboard music and speech, and 8 MB RamWorks.
+- [Appletini Bosconian](demos/appletini_bosconian/README.md) — an original
+  Bosconian-style multidirectional shooter for an enhanced Apple //e in
+  320x200 Super Hi-Res at 60 frames per second, using the virtual TransWarp
+  (33 MHz or TURBO), the virtual Phasor for music, effects and SSI-263 speech,
+  and a RamWorks probe.
 
 ## Diagnostics and examples
 
