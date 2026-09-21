@@ -37,6 +37,7 @@ typedef unsigned long u32;
 /* Phasor / Mockingboard, slot 4, Mockingboard-compatible mode */
 #define VIA_A_ORB  0xC400
 #define VIA_A_ORA  0xC401
+#define VIA_A_ORA_NH 0xC40F   /* no-handshake ORA: keeps the CA1 speech flag */
 #define VIA_A_DDRB 0xC402
 #define VIA_A_DDRA 0xC403
 #define VIA_A_PCR  0xC40C
@@ -44,6 +45,7 @@ typedef unsigned long u32;
 #define VIA_A_IER  0xC40E
 #define VIA_B_ORB  0xC480
 #define VIA_B_ORA  0xC481
+#define VIA_B_ORA_NH 0xC48F
 #define VIA_B_DDRB 0xC482
 #define VIA_B_DDRA 0xC483
 #define VIA_B_PCR  0xC48C

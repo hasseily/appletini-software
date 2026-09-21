@@ -19,6 +19,7 @@ TWSPEED    = $C074
 
 VIA_A_ORB  = $C400
 VIA_A_ORA  = $C401
+VIA_A_ORA_NH = $C40F     ; no-handshake ORA: keeps the CA1 speech flag
 VIA_A_DDRB = $C402
 VIA_A_DDRA = $C403
 VIA_A_PCR  = $C40C
@@ -26,6 +27,7 @@ VIA_A_IFR  = $C40D
 VIA_A_IER  = $C40E
 VIA_B_ORB  = $C480
 VIA_B_ORA  = $C481
+VIA_B_ORA_NH = $C48F
 VIA_B_DDRB = $C482
 VIA_B_DDRA = $C483
 VIA_B_PCR  = $C48C
