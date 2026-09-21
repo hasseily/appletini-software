@@ -158,7 +158,12 @@ Space fires, no frame over the budget. The wall-clock rate depends on the
 host: the test needs about 20 frames per second of wall time for its
 6-second cadence window. A longer unattended run goes through play, dying, game over and
 back to the title. The screenshots are `build/smoke_title.png` and
-`build/smoke_play.png`.
+`build/smoke_play.png`. `tools/cheat_test.py OUT_DIR` goes further: it
+marks all bases but one dead through the debug protocol, moves the ship
+next to the last base and shoots its open core. On the reference host that
+run reached base destroyed (+1500), ROUND CLEAR (+1000 bonus), round 2,
+game over and the title with the high score kept, with at most 2,092
+framebuffer bytes in any frame.
 
 ## Known limits
 
