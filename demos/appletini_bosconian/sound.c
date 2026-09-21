@@ -1,21 +1,26 @@
 /*
  * Appletini Bosconian -- music, sound effects and speech.
  *
- * Hardware: Appletini virtual Phasor in Mockingboard mode, slot 4.
- *   AY-B (behind VIA-B, $C480) plays music on its three tone channels.
- *   AY-A (behind VIA-A, $C400) plays sound effects, one effect per channel,
- *   with priorities.
- *   SSI-263 speech at $C440-$C447. Those addresses also hit VIA-A registers
- *   (ORB, ORA, DDRB, DDRA, T1C-L), so after every SSI write the driver
- *   restores VIA-A (DDRA/DDRB, AY reset pulse) and resends every AY-A
- *   register.
+ * Hardware: Appletini virtual Phasor in slot 4. sound_init() selects Phasor
+ * native mode and probes for the second AY behind each VIA (sound_io.s):
+ *   four chips (native mode, 12 voices): chips 2 and 3 behind VIA-B play
+ *     music (lead, bass, arpeggio; detuned lead, chord pad, percussion),
+ *     chips 0 and 1 behind VIA-A play up to six sound effects with
+ *     priorities. Native mode doubles the PSG clock, so every period is
+ *     doubled before it is written.
+ *   two chips (a Mockingboard, or the card locked to Mockingboard mode):
+ *     chip 2 plays music on three voices, chip 0 three effects.
+ *   SSI-263 speech at $C440-$C447. In Mockingboard mode those addresses
+ *   also hit VIA-A registers (ORB, ORA, DDRB, DDRA, T1C-L), so after every
+ *   SSI write the driver restores VIA-A (DDRA/DDRB, AY reset pulse) and
+ *   resends every register of chip 0. In native mode nothing aliases.
  *
  * Bus rule: every $C4xx access slows the virtual TransWarp to 1 MHz for a
  * while, so all $C4xx traffic happens inside sound_init() and
- * sound_update() (one burst per frame). Both AY chips have a register
- * shadow; only registers whose value changed are written (6 bus accesses per
- * register). Worst case per frame: 2 x 11 registers x 6 = 132 accesses plus
- * a few speech accesses, well under 150. A quiet frame costs 0 accesses.
+ * sound_update() (one burst per frame). Every chip has a register shadow;
+ * only registers whose value changed are written (6 bus accesses per
+ * register). A quiet frame costs 0 accesses; a busy frame with four chips
+ * stays under 300.
  *
  * All $C4xx primitives live in sound_io.s.
  */
@@ -23,12 +28,12 @@
 #include "bosco.h"
 
 /* ---- sound_io.s ---- */
-void __fastcall__ ay_write_a(u8 reg, u8 val);
-void __fastcall__ ay_write_b(u8 reg, u8 val);
+u8   phasor_probe(void);                        /* native mode on; 1 = four chips */
+void __fastcall__ ay_write(u8 chip, u8 reg, u8 val);  /* chip 0..3 */
 void __fastcall__ ssi_write(u8 reg, u8 val);   /* reg = offset 0..4 from $C440 */
 void via_a_prep(void);                          /* IER=$7F, PCR=0, IFR=$7F */
 void via_b_prep(void);
-void via_a_ddr(void);                           /* DDRA=$FF, DDRB=$07, ORB=0, ORB=4 */
+void via_a_ddr(void);                           /* DDRA=$FF, DDRB=$1F, ORB=0, ORB=$0C */
 void via_b_ddr(void);
 
 /* SSI-263 register offsets for ssi_write() */
@@ -42,6 +47,7 @@ void via_b_ddr(void);
 u8 sound_current_sfx;
 u8 sound_current_track;
 u8 speech_current;
+u8 sound_chips;                  /* 4 native, 2 Mockingboard */
 
 /* =====================================================================
  * AY register shadows. want_* is what the engines ask for this frame,
@@ -53,36 +59,54 @@ u8 speech_current;
 #define AY_REGS 11
 #define MIX_ALL_OFF 0x3F
 #define MIX_TONES_ON 0x38
+#define MIX_PAD 0x1C             /* tones A and B, noise on C */
 
-static u8 want_a[AY_REGS];
-static u8 shadow_a[AY_REGS];
-static u8 force_a;               /* resend every AY-A register */
-static u8 want_b[AY_REGS];
-static u8 shadow_b[AY_REGS];
-static u8 force_b;
+#define CHIPS_MAX 4
+#define CHIP_SFX 0               /* first AY behind VIA-A */
+#define CHIP_SFX2 1              /* second AY behind VIA-A (native mode) */
+#define CHIP_MUS 2               /* first AY behind VIA-B */
+#define CHIP_MUS2 3              /* second AY behind VIA-B (native mode) */
 
-static void ay_flush_a(void)
+static u8 want[CHIPS_MAX][AY_REGS];
+static u8 shadow[CHIPS_MAX][AY_REGS];
+static u8 force[CHIPS_MAX];      /* resend every register of that chip */
+static u8 native;                /* 1 = Phasor native mode: four chips, doubled PSG clock */
+
+static void ay_flush(u8 chip)
 {
     u8 r;
+    u8 *w = want[chip];
+    u8 *sh = shadow[chip];
+    if ((chip & 1) && !native) return;     /* that chip does not exist */
     for (r = 0; r < AY_REGS; ++r) {
-        if (force_a || want_a[r] != shadow_a[r]) {
-            shadow_a[r] = want_a[r];
-            ay_write_a(r, want_a[r]);
+        if (force[chip] || w[r] != sh[r]) {
+            sh[r] = w[r];
+            ay_write(chip, r, w[r]);
         }
     }
-    force_a = 0;
+    force[chip] = 0;
 }
 
-static void ay_flush_b(void)
+/* tone period of channel chan (0..2) on chip; native mode doubles the
+ * PSG clock, so the period is doubled to keep the pitch */
+static void set_tone(u8 chip, u8 chan, u16 period)
 {
-    u8 r;
-    for (r = 0; r < AY_REGS; ++r) {
-        if (force_b || want_b[r] != shadow_b[r]) {
-            shadow_b[r] = want_b[r];
-            ay_write_b(r, want_b[r]);
-        }
+    u8 r = (u8)(chan << 1);
+    if (native) {
+        period <<= 1;
+        if (period > 0x0FFF) period = 0x0FFF;
     }
-    force_b = 0;
+    want[chip][r] = (u8)period;
+    want[chip][(u8)(r + 1)] = (u8)(period >> 8);
+}
+
+static void set_noise(u8 chip, u8 np)
+{
+    if (native) {
+        np = (u8)(np << 1);
+        if (np > 31) np = 31;
+    }
+    want[chip][6] = np;
 }
 
 /* =====================================================================
@@ -274,12 +298,17 @@ static const u8 *speech_ptr;
 static u8 speech_index;
 static u8 speech_timer;
 
+static u16 note_period(u8 note)
+{
+    return (u16)(note_lo[note] | ((u16)note_hi[note] << 8));
+}
+
 static void seq_set_period(u8 chan, u8 note)
 {
-    u8 r = (u8)(chan << 1);
-    want_b[r] = note_lo[note];
-    want_b[(u8)(r + 1)] = note_hi[note];
+    set_tone(CHIP_MUS, chan, note_period(note));
 }
+
+static u8 perc_v;                /* second music chip: percussion volume */
 
 static u8 duck(u8 vol)
 {
@@ -313,28 +342,26 @@ static const u8 *seq_next_step(void)
 static void music_silence(void)
 {
     /* volumes off; the mixer is left as it is so a quiet frame costs nothing */
-    want_b[8] = 0;
-    want_b[9] = 0;
-    want_b[10] = 0;
+    want[CHIP_MUS][8] = 0;
+    want[CHIP_MUS][9] = 0;
+    want[CHIP_MUS][10] = 0;
+    want[CHIP_MUS2][8] = 0;
+    want[CHIP_MUS2][9] = 0;
+    want[CHIP_MUS2][10] = 0;
 }
 
 static void ambient_tick(void)
 {
     u8 vol;
+    u8 start = (u8)(amb_pulse_t == 0);
+    u16 period = amb_phase ? 1031 : 913;
 
     /* engine pulse on channel A: two low pitches alternate */
-    if (amb_pulse_t == 0) {
-        if (amb_phase) { want_b[0] = 0x07; want_b[1] = 0x04; }   /* 1031 */
-        else           { want_b[0] = 0x91; want_b[1] = 0x03; }   /* 913 */
-        vol = 11;
-    } else if (amb_pulse_t < 2) {
-        vol = 11;
-    } else if (amb_pulse_t < 4) {
-        vol = 8;
-    } else {
-        vol = 6;
-    }
-    want_b[8] = duck(vol);
+    if (start) set_tone(CHIP_MUS, 0, period);
+    if (amb_pulse_t < 2) vol = 11;
+    else if (amb_pulse_t < 4) vol = 8;
+    else vol = 6;
+    want[CHIP_MUS][8] = duck(vol);
     ++amb_pulse_t;
     if (amb_pulse_t >= amb_pulse_len[amb_tempo]) {
         amb_pulse_t = 0;
@@ -342,23 +369,31 @@ static void ambient_tick(void)
     }
 
     /* channel B silent */
-    want_b[9] = 0;
+    want[CHIP_MUS][9] = 0;
 
     /* sparse high ping on channel C */
     if (amb_ping_t == 0) {
         amb_ping_t = AMB_PING_PERIOD;
         amb_ping_v = 8;
-        want_b[4] = 0x3D;          /* 61: about 1048 Hz */
-        want_b[5] = 0x00;
+        set_tone(CHIP_MUS, 2, 61);          /* about 1048 Hz */
     }
     --amb_ping_t;
     if (amb_ping_v) {
-        want_b[10] = duck(amb_ping_v);
+        want[CHIP_MUS][10] = duck(amb_ping_v);
         --amb_ping_v;
     } else {
-        want_b[10] = 0;
+        want[CHIP_MUS][10] = 0;
     }
-    want_b[7] = MIX_TONES_ON;
+    want[CHIP_MUS][7] = MIX_TONES_ON;
+
+    /* four chips: the second music chip doubles the pulse one octave down */
+    if (native) {
+        if (start) set_tone(CHIP_MUS2, 0, (u16)(period << 1));
+        want[CHIP_MUS2][8] = duck((u8)(vol - 4));
+        want[CHIP_MUS2][9] = 0;
+        want[CHIP_MUS2][10] = 0;
+        want[CHIP_MUS2][7] = MIX_TONES_ON;
+    }
 }
 
 static void seq_tick(void)
@@ -367,6 +402,7 @@ static void seq_tick(void)
     const u8 *next;
     u8 last;
     u8 vol;
+    u8 lead_vol = 0;
 
     if (seq_subtick == 0) seq_load_step();
     last = (u8)(seq_subtick == (u8)(t->fps - 1));
@@ -377,9 +413,10 @@ static void seq_tick(void)
         seq_set_period(0, seq_lead);
         vol = seq_lead_age ? 11 : 13;
         if (last && (next == 0 || next[0] != NOTE_HOLD)) vol = 0;
-        want_b[8] = duck(vol);
+        lead_vol = vol;
+        want[CHIP_MUS][8] = duck(vol);
     } else {
-        want_b[8] = 0;
+        want[CHIP_MUS][8] = 0;
     }
     ++seq_lead_age;
 
@@ -388,24 +425,48 @@ static void seq_tick(void)
         seq_set_period(1, seq_bass);
         vol = 10;
         if (last && (next == 0 || next[1] != NOTE_HOLD)) vol = 0;
-        want_b[9] = duck(vol);
+        want[CHIP_MUS][9] = duck(vol);
     } else {
-        want_b[9] = 0;
+        want[CHIP_MUS][9] = 0;
     }
 
     /* arpeggio: channel C cycles the chord every two frames */
     if (seq_chord) {
         seq_set_period(2, chord_notes[seq_chord][seq_arp_idx]);
-        want_b[10] = duck(7);
+        want[CHIP_MUS][10] = duck(7);
         seq_arp_tick ^= 1;
         if (!seq_arp_tick) {
             ++seq_arp_idx;
             if (seq_arp_idx == 3) seq_arp_idx = 0;
         }
     } else {
-        want_b[10] = 0;
+        want[CHIP_MUS][10] = 0;
     }
-    want_b[7] = MIX_TONES_ON;
+    want[CHIP_MUS][7] = MIX_TONES_ON;
+
+    /* four chips: the second music chip adds a detuned lead (A), the chord
+     * root as a pad (B) and a noise hit at every step (C) */
+    if (native) {
+        if (seq_lead) {
+            set_tone(CHIP_MUS2, 0, (u16)(note_period(seq_lead) + 2));
+            want[CHIP_MUS2][8] = duck((u8)(lead_vol > 3 ? lead_vol - 3 : 0));
+        } else {
+            want[CHIP_MUS2][8] = 0;
+        }
+        if (seq_chord) {
+            set_tone(CHIP_MUS2, 1, note_period(chord_notes[seq_chord][0]));
+            want[CHIP_MUS2][9] = duck(6);
+        } else {
+            want[CHIP_MUS2][9] = 0;
+        }
+        if (seq_subtick == 0) {
+            set_noise(CHIP_MUS2, 12);
+            perc_v = 10;
+        }
+        want[CHIP_MUS2][10] = duck(perc_v);
+        perc_v = (u8)(perc_v >= 3 ? perc_v - 3 : 0);
+        want[CHIP_MUS2][7] = MIX_PAD;
+    }
 
     /* advance */
     ++seq_subtick;
@@ -452,6 +513,7 @@ void __fastcall__ sound_music(u8 track)
     amb_phase = 0;
     amb_ping_t = 24;
     amb_ping_v = 0;
+    perc_v = 0;
     sound_current_track = track;
 }
 
@@ -462,10 +524,11 @@ void __fastcall__ sound_tempo(u8 level)
 }
 
 /* =====================================================================
- * Sound effects on AY-A. Three slots, one per channel. Each effect is a
- * small generator: sfx_gen() turns (id, frame) into tone period, noise
- * period and volume. A new effect takes a free slot, else it steals the
- * slot with the lowest priority when its own priority is at least as high.
+ * Sound effects on the chips behind VIA-A: three slots per chip, one per
+ * channel (six with four chips). Each effect is a small generator:
+ * sfx_gen() turns (id, frame) into tone period, noise period and volume. A
+ * new effect takes a free slot, else it steals the slot with the lowest
+ * priority when its own priority is at least as high.
  * ===================================================================== */
 struct SfxSlot {
     u8 id;       /* SFX_NONE = free */
@@ -474,7 +537,9 @@ struct SfxSlot {
     u8 prio;
     u8 retrig;   /* SFX_ALERT: restart when the loop ends */
 };
-static struct SfxSlot sfx_slot[3];
+#define SFX_SLOTS_MAX 6
+static struct SfxSlot sfx_slot[SFX_SLOTS_MAX];
+static u8 sfx_slots;             /* 3 or 6 */
 
 static const u8 sfx_len[12]  = { 0, 6, 10, 18, 12, 40, 24, 50, 60, 30, 20, 12 };
 static const u8 sfx_prio[12] = { 0, 1,  3,  5,  4,  8,  6,  9,  7,  5,  7,  2 };
@@ -565,7 +630,7 @@ void __fastcall__ sound_sfx(u8 id)
     prio = sfx_prio[id];
 
     /* already playing: the siren loops, everything else restarts */
-    for (i = 0; i < 3; ++i) {
+    for (i = 0; i < sfx_slots; ++i) {
         if (sfx_slot[i].id == id) {
             if (id == SFX_ALERT) sfx_slot[i].retrig = 1;
             else sfx_slot[i].t = 0;
@@ -578,7 +643,7 @@ void __fastcall__ sound_sfx(u8 id)
     victim = 0xFF;
     vprio = 0xFF;
     vt = 0;
-    for (i = 0; i < 3; ++i) {
+    for (i = 0; i < sfx_slots; ++i) {
         if (sfx_slot[i].id == SFX_NONE) { victim = i; vprio = 0; break; }
         if (sfx_slot[i].prio < vprio ||
             (sfx_slot[i].prio == vprio && sfx_slot[i].t > vt)) {
@@ -599,49 +664,52 @@ void __fastcall__ sound_sfx(u8 id)
 
 static void sfx_tick(void)
 {
-    u8 i;
-    u8 mixer = MIX_ALL_OFF;
-    u8 noise_prio = 0;
+    u8 c, chan, i;
+    u8 mixer;
+    u8 noise_prio;
     u8 top_prio = 0;
     u8 top_id = SFX_NONE;
-    u8 r;
     struct SfxSlot *s;
 
-    for (i = 0; i < 3; ++i) {
-        s = &sfx_slot[i];
-        r = (u8)(i << 1);
-        if (s->id == SFX_NONE) {
-            want_a[(u8)(8 + i)] = 0;
-            continue;
-        }
-        sfx_gen(s->id, s->t);
-        if (g_tone) {
-            want_a[r] = (u8)g_period;
-            want_a[(u8)(r + 1)] = (u8)(g_period >> 8);
-            mixer &= (u8)~(1 << i);
-        }
-        if (g_noise != NO_NOISE) {
-            mixer &= (u8)~(8 << i);
-            if (s->prio >= noise_prio) {
-                noise_prio = s->prio;
-                want_a[6] = (u8)(g_noise & 0x1F);
-            }
-        }
-        want_a[(u8)(8 + i)] = (u8)(g_vol & 0x0F);
-
-        ++s->t;
-        if (s->t >= s->len) {
-            if (s->retrig) {
-                s->t = 0;
-                s->retrig = 0;
-            } else {
-                s->id = SFX_NONE;       /* finished: silent from the next frame */
+    for (c = CHIP_SFX; c <= CHIP_SFX2; ++c) {
+        if (c == CHIP_SFX2 && !native) break;
+        mixer = MIX_ALL_OFF;
+        noise_prio = 0;
+        for (chan = 0; chan < 3; ++chan) {
+            i = (u8)((c == CHIP_SFX) ? chan : chan + 3);
+            s = &sfx_slot[i];
+            if (s->id == SFX_NONE) {
+                want[c][(u8)(8 + chan)] = 0;
                 continue;
             }
+            sfx_gen(s->id, s->t);
+            if (g_tone) {
+                set_tone(c, chan, g_period);
+                mixer &= (u8)~(1 << chan);
+            }
+            if (g_noise != NO_NOISE) {
+                mixer &= (u8)~(8 << chan);
+                if (s->prio >= noise_prio) {
+                    noise_prio = s->prio;
+                    set_noise(c, (u8)(g_noise & 0x1F));
+                }
+            }
+            want[c][(u8)(8 + chan)] = (u8)(g_vol & 0x0F);
+
+            ++s->t;
+            if (s->t >= s->len) {
+                if (s->retrig) {
+                    s->t = 0;
+                    s->retrig = 0;
+                } else {
+                    s->id = SFX_NONE;   /* finished: silent from the next frame */
+                    continue;
+                }
+            }
+            if (s->prio >= top_prio) { top_prio = s->prio; top_id = s->id; }
         }
-        if (s->prio >= top_prio) { top_prio = s->prio; top_id = s->id; }
+        want[c][7] = mixer;
     }
-    want_a[7] = mixer;
     sound_current_sfx = top_id;
 }
 
@@ -650,8 +718,9 @@ static void sfx_tick(void)
  * RED, BATTLE STATIONS and the formation's ALERT can arrive within two
  * frames). A phoneme is sent to the
  * SSI-263 DUR register; the next one goes out when the chip raises CA1
- * (VIA IFR bit 1) or after a 12-frame timeout. The SSI write also hits
- * VIA-A ORB, so VIA-A is restored and AY-A is fully resent afterwards.
+ * (VIA IFR bit 1) or after a 12-frame timeout. In Mockingboard mode the
+ * SSI write also hits VIA-A ORB, so VIA-A is restored and chip 0 is fully
+ * resent afterwards.
  * ===================================================================== */
 
 /* SSI-263 phoneme codes, duration in bits 7-6, $FF ends the phrase. */
@@ -706,8 +775,12 @@ u8 speech_busy(void)
 static void speech_send(u8 phoneme)
 {
     ssi_write(SSI_R_DUR, phoneme);
-    via_a_ddr();
-    force_a = 1;
+    if (!native) {
+        /* Mockingboard mode: the write also hit VIA-A; restore it and
+         * resend the chip behind it */
+        via_a_ddr();
+        force[CHIP_SFX] = 1;
+    }
 }
 
 static void speech_tick(void)
@@ -755,7 +828,7 @@ static void speech_tick(void)
  * ===================================================================== */
 void sound_init(void)
 {
-    u8 r;
+    u8 r, c;
 
     sound_current_sfx = SFX_NONE;
     sound_current_track = MUSIC_NONE;
@@ -765,7 +838,8 @@ void sound_init(void)
     speech_index = 0;
     speech_timer = 0;
     amb_tempo = 0;
-    for (r = 0; r < 3; ++r) sfx_slot[r].id = SFX_NONE;
+    native = 0;
+    for (r = 0; r < SFX_SLOTS_MAX; ++r) sfx_slot[r].id = SFX_NONE;
     sound_music(MUSIC_NONE);
 
     /* VIAs: no interrupts, CA1 negative edge, flags cleared */
@@ -780,28 +854,32 @@ void sound_init(void)
     ssi_write(SSI_R_CTL, 0x5A);
     ssi_write(SSI_R_FILT, 0xE8);
 
-    /* ports to the AYs, reset both chips */
+    /* ports to the AYs, reset the chips, then find out how many there are */
     via_a_ddr();
     via_b_ddr();
+    native = phasor_probe();
+    sound_chips = native ? 4 : 2;
+    sfx_slots = native ? 6 : 3;
 
     /* silence: mixer off, volumes 0, every register written once */
-    for (r = 0; r < AY_REGS; ++r) {
-        want_a[r] = 0;
-        want_b[r] = 0;
+    for (c = 0; c < CHIPS_MAX; ++c) {
+        for (r = 0; r < AY_REGS; ++r) want[c][r] = 0;
+        want[c][7] = MIX_ALL_OFF;
+        force[c] = 1;
     }
-    want_a[7] = MIX_ALL_OFF;
-    want_b[7] = MIX_ALL_OFF;
-    force_a = 1;
-    force_b = 1;
-    ay_flush_b();
-    ay_flush_a();
+    ay_flush(CHIP_MUS);
+    ay_flush(CHIP_MUS2);
+    ay_flush(CHIP_SFX);
+    ay_flush(CHIP_SFX2);
 }
 
 void sound_update(void)
 {
     music_tick();
     sfx_tick();
-    speech_tick();      /* may write the SSI-263 and set force_a */
-    ay_flush_b();
-    ay_flush_a();       /* after speech, so a clobbered AY-A is fixed now */
+    speech_tick();      /* may write the SSI-263 and force chip 0 */
+    ay_flush(CHIP_MUS);
+    ay_flush(CHIP_MUS2);
+    ay_flush(CHIP_SFX);  /* after speech, so a clobbered chip 0 is fixed now */
+    ay_flush(CHIP_SFX2);
 }

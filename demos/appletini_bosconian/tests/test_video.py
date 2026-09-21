@@ -754,26 +754,26 @@ class VideoTest(unittest.TestCase):
             self.assertEqual(list(m.fb()[y * ROW:y * ROW + 8]), [0x11] * 8)
 
     # --- VBL ---
-    def test_wait_vbl_returns_at_display_to_blank_edge(self):
+    def test_wait_vbl_returns_at_blank_to_display_edge(self):
         m = self.machine()
-        # already in blank on entry: must wait for display, then for blank
-        m.mem.vbl_seq = [0x00, 0x00, 0x80, 0x80, 0x80, 0x00, 0x80, 0x80]
-        m.mem.vbl_reads = 0
-        m.call("t_wait_vbl")
-        self.assertEqual(m.mem.vbl_reads, 6)
-        # in display on entry: returns at the first blank
-        m.mem.vbl_seq = [0x80, 0x80, 0x00, 0x00]
+        # already in blank on entry: returns at the next line 0
+        m.mem.vbl_seq = [0x00, 0x00, 0x80, 0x80, 0x80]
         m.mem.vbl_reads = 0
         m.call("t_wait_vbl")
         self.assertEqual(m.mem.vbl_reads, 3)
+        # in display on entry: waits for the blank, then for line 0
+        m.mem.vbl_seq = [0x80, 0x80, 0x00, 0x00, 0x80, 0x80]
+        m.mem.vbl_reads = 0
+        m.call("t_wait_vbl")
+        self.assertEqual(m.mem.vbl_reads, 5)
 
-    def test_speed_probe_counts_between_vbl_starts(self):
+    def test_speed_probe_counts_between_line_zeros(self):
         m = self.machine()
         k, n = 7, 11
-        m.mem.vbl_seq = [0x00, 0x80, 0x00] + [0x00] * k + [0x80] * n + [0x00, 0x80]
+        m.mem.vbl_seq = [0x00, 0x80] + [0x80] * k + [0x00] * n + [0x80]
         m.mem.vbl_reads = 0
         m.call("t_speed_probe")
-        self.assertEqual(m.mem.vbl_reads, 3 + k + n + 1)
+        self.assertEqual(m.mem.vbl_reads, 2 + k + 1 + n)
         self.assertEqual(m.peek16(self.syms["result"]), k + 1 + n)
 
     def test_speed_probe_saturates(self):

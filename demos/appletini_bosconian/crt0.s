@@ -5,7 +5,8 @@
 ; is the first instruction below.
 ;
 ; Order of work:
-;   1. interrupts off, binary mode, hardware stack reset
+;   1. interrupts off, binary mode, hardware stack reset; the power-up
+;      byte at $03F4 is cleared so CTRL-RESET restarts the machine
 ;   2. copy the DATA segment from its load image ($2000+) to its run
 ;      address ($0C00+) and clear BSS
 ;   3. set the cc65 software stack pointer to __STACKSTART__
@@ -34,6 +35,7 @@ start:
         cld
         ldx     #$FF
         txs
+        stz     $03F4           ; CTRL-RESET restarts the machine
         jsr     copydata
         jsr     zerobss
         lda     #<__STACKSTART__

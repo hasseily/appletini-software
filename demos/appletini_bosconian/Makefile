@@ -27,7 +27,7 @@ HEADERS := $(wildcard *.h)
 CFLAGS := -t none --cpu 65c02 --standard c99 -Oirs -I $(BUILD)
 AFLAGS := -t none --cpu 65c02 --asm-include-dir .
 
-.PHONY: all clean disk test smoke
+.PHONY: all clean disk test smoke measure profile
 
 all: $(SYSTEM)
 
@@ -73,3 +73,22 @@ smoke: $(DISK)
 
 clean:
 	rm -rf $(BUILD) $(DIST)
+
+# Per-frame CPU cycles and 1 MHz-bus bytes in the py65 test machine
+# (tools/a2sim.py). `profile` rebuilds with -g in build/prof so static C
+# functions get labels, then charges cycles to routines.
+PROF := $(BUILD)/prof
+ROM ?= ../../../appletini-one/docs/Apple2e_Enhanced.rom
+
+measure: $(SYSTEM)
+	$(PYTHON) tools/measure_frames.py --rom $(ROM) --frames 900
+
+profile: $(SYSTEM) build/assets.s
+	mkdir -p $(PROF)
+	for c in $(SRCS_C); do $(CL65) $(CFLAGS) -g -c -o $(PROF)/$${c%.c}.o $$c || exit 1; done
+	for a in crt0.s $(SRCS_S); do $(CL65) $(AFLAGS) -g -c -o $(PROF)/$${a%.s}.o $$a || exit 1; done
+	$(CL65) $(AFLAGS) -g -c -o $(PROF)/assets.o build/assets.s
+	$(CL65) -t none --cpu 65c02 -C bosconian.cfg -Ln $(PROF)/BOSCO.lbl -o $(PROF)/BOSCO \
+		$(PROF)/crt0.o $(PROF)/main.o $(filter-out $(PROF)/crt0.o $(PROF)/main.o,$(addprefix $(PROF)/,$(SRCS_C:.c=.o) $(SRCS_S:.s=.o))) $(PROF)/assets.o
+	cmp $(PROF)/BOSCO $(BUILD)/BOSCO
+	$(PYTHON) tools/measure_frames.py --rom $(ROM) --frames 300 --profile --labels $(PROF)/BOSCO.lbl

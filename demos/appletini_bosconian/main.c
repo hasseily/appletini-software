@@ -136,7 +136,7 @@ static void mailbox_tick(void)
     MAILBOX->dropped_frames = dropped_frames;
     MAILBOX->star_count = star_count;
     MAILBOX->joy_status = input_joy_status();
-    MAILBOX->reserved1 = 0;
+    MAILBOX->sound_chips = sound_chips;
 }
 
 static void mailbox_init(void)
@@ -273,6 +273,8 @@ static void title_draw(void)
     textbuf[20] = ' '; textbuf[21] = 'B'; textbuf[22] = 'A'; textbuf[23] = 'N';
     textbuf[24] = 'K'; textbuf[25] = 'S'; textbuf[26] = 0;
     field_text(24, 92, C_LGRAY, textbuf);
+    if (sound_chips == 4) field_text(36, 104, C_LGRAY, "PHASOR NATIVE 12 VOICES");
+    else field_text(44, 104, C_LGRAY, "MOCKINGBOARD 6 VOICES");
     for (i = 0; i < 11; ++i) textbuf[i] = "HIGH SCORE "[i];
     fmt_score(textbuf + 11, hi_score);
     field_text(56, 120, C_CYAN, textbuf);
@@ -512,6 +514,10 @@ int main(void)
     mailbox_init();
     enter_title();
 
+    /* One pass per frame. video_wait_vbl returns right after line 0, where
+     * the Appletini publishes the SHR shadow. The logic, the render burst
+     * and the sound I/O then all finish before the next line 0, so every
+     * published frame is complete. */
     for (;;) {
         video_wait_vbl();
         ++frame;

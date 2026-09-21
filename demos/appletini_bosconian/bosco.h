@@ -34,15 +34,19 @@ typedef unsigned long u32;
 #define RAMWORKS   0xC073
 #define TWSPEED    0xC074
 
-/* Phasor / Mockingboard, slot 4, Mockingboard-compatible mode */
-#define VIA_A_ORB  0xC400
-#define VIA_A_ORA  0xC401
-#define VIA_A_ORA_NH 0xC40F   /* no-handshake ORA: keeps the CA1 speech flag */
-#define VIA_A_DDRB 0xC402
-#define VIA_A_DDRA 0xC403
-#define VIA_A_PCR  0xC40C
-#define VIA_A_IFR  0xC40D
-#define VIA_A_IER  0xC40E
+/* Phasor, slot 4. VIA-A answers at $C41x and VIA-B at $C48x in both the
+ * Mockingboard and the Phasor native mode; sound_init selects native mode
+ * (read $C0C8 then $C0C5) and probes for the second AY behind each VIA. */
+#define PHASOR_MB     0xC0C8  /* read: Mockingboard mode */
+#define PHASOR_NATIVE 0xC0C5  /* read after PHASOR_MB: Phasor native mode */
+#define VIA_A_ORB  0xC410
+#define VIA_A_ORA  0xC411
+#define VIA_A_ORA_NH 0xC41F   /* no-handshake ORA: keeps the CA1 speech flag */
+#define VIA_A_DDRB 0xC412
+#define VIA_A_DDRA 0xC413
+#define VIA_A_PCR  0xC41C
+#define VIA_A_IFR  0xC41D
+#define VIA_A_IER  0xC41E
 #define VIA_B_ORB  0xC480
 #define VIA_B_ORA  0xC481
 #define VIA_B_ORA_NH 0xC48F
@@ -182,6 +186,7 @@ u8   speech_busy(void);
 extern u8 sound_current_sfx;     /* mailbox */
 extern u8 sound_current_track;   /* mailbox */
 extern u8 speech_current;        /* mailbox, SAY_NONE when idle */
+extern u8 sound_chips;           /* 4 = Phasor native mode (12 voices), 2 = Mockingboard */
 
 /* ---- input.s ---- */
 #define IN_UP    0x01
@@ -250,7 +255,7 @@ struct Mailbox {
     u16 dropped_frames;   /* 36..37 */
     u8 star_count;        /* 38 */
     u8 joy_status;        /* 39: bit 0 X axis usable, bit 1 Y axis usable */
-    u8 reserved1;         /* 40 */
+    u8 sound_chips;       /* 40: 4 = Phasor native, 2 = Mockingboard */
 };
 #define MAILBOX ((volatile struct Mailbox*)0x0300)
 

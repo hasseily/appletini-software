@@ -577,32 +577,30 @@ _video_shutdown:
 
 ; ---------------------------------------------------------------------------
 ; void video_wait_vbl(void)
-;   $C019 bit 7: 1 = display, 0 = blank. Return at the display -> blank edge.
+;   $C019 bit 7: 1 = display, 0 = blank. Return at the blank -> display edge,
+;   right after line 0. The Appletini publishes the SHR shadow at line 0, so
+;   a write burst that starts here and ends before the next line 0 lands
+;   whole in one published frame (no tearing). If the call lands in the
+;   display, it waits for the blank and then for the next line 0.
 ; ---------------------------------------------------------------------------
 _video_wait_vbl:
-@in_blank:
-        bit     RDVBLBAR
-        bpl     @in_blank               ; wait for display
 @in_display:
         bit     RDVBLBAR
-        bmi     @in_display             ; wait for blank
+        bmi     @in_display             ; wait for the blank
+@in_blank:
+        bit     RDVBLBAR
+        bpl     @in_blank               ; wait for line 0
         rts
 
 ; ---------------------------------------------------------------------------
 ; u16 video_speed_probe(void)
-;   Count loop iterations from one VBL start to the next (saturates at $FFFF).
+;   Count loop iterations from one line 0 to the next: through the display,
+;   then through the blank (saturates at $FFFF).
 ; ---------------------------------------------------------------------------
 _video_speed_probe:
         jsr     _video_wait_vbl
         stz     V_TMP
         stz     V_TMP+1
-@blank:
-        inc     V_TMP
-        bne     :+
-        inc     V_TMP+1
-        beq     @sat
-:       bit     RDVBLBAR
-        bpl     @blank
 @display:
         inc     V_TMP
         bne     :+
@@ -610,6 +608,13 @@ _video_speed_probe:
         beq     @sat
 :       bit     RDVBLBAR
         bmi     @display
+@blank:
+        inc     V_TMP
+        bne     :+
+        inc     V_TMP+1
+        beq     @sat
+:       bit     RDVBLBAR
+        bpl     @blank
         lda     V_TMP
         ldx     V_TMP+1
         rts

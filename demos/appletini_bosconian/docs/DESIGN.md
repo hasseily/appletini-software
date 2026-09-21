@@ -11,9 +11,9 @@ Targets:
   VBL).
 - Video: Appletini "VidHD-style" Super Hi-Res, 320x200, 16 colors per line,
   framebuffer in **AUX $2000-$9FFF**, enabled by writing `$C1` to `$C029`.
-- Sound: Appletini virtual Phasor in its default Mockingboard-compatible mode
-  in slot 4: AY-A behind VIA-A (`$C400`), AY-B behind VIA-B (`$C480`),
-  SSI-263 speech at `$C440-$C447`.
+- Sound: Appletini virtual Phasor in slot 4, switched to its native mode
+  (four AY chips, 12 voices) with a Mockingboard fallback (two chips):
+  VIA-A at `$C410`, VIA-B at `$C480`, SSI-263 speech at `$C440-$C447`.
 - RamWorks: probed at startup (bank count shown on the title screen and in the
   mailbox). Not required for play.
 - Z80 Appli-Card: not used.
@@ -50,10 +50,15 @@ test against GSSquared). Read that project first for conventions.
 6. **Slot 4 (Phasor) slowdown**: any `$C4xx` access drops the vTW to 1 MHz
    for a slowdown window. Batch every AY/SSI access into one burst per frame
    (`sound_update()` is called exactly once per frame, after rendering).
-7. **VBL**: `$C019` bit 7 = 1 during active display, 0 during vertical blank
-   (Invasion's convention, synthesized by the vTW without a bus cycle).
-   `video_wait_vbl()` returns at the *start* of VBL so rendering begins about
-   4.5 ms before the beam reaches row 0.
+7. **VBL and the SHR snapshot**: `$C019` bit 7 = 1 during active display,
+   0 during vertical blank (Invasion's convention, synthesized by the vTW
+   without a bus cycle). The Appletini renderer publishes the SHR shadow at
+   line 0 (`apple_cycle_renderer.c`: "SHR publishes the latest shadow at the
+   next frame marker"), not scanline by scanline. `video_wait_vbl()` therefore
+   returns at the *end* of VBL, right after line 0, and the whole frame's
+   writes (render burst, panel updates) happen before the next line 0, so a
+   published frame is always complete. This is the Bilestoad port's timing
+   (`demos/bilestoad`, branch `bilestoad-shr-port`).
 8. `$C074`: write 0 at start to release any 1 MHz lock (RocketChip/TW
    convention; GSSquared and Appletini honor it).
 9. `$C011-$C01F` status reads are free (no bus cycle). `$C000/$C010`
@@ -167,7 +172,7 @@ panel coordinates relative to x=256.
 void video_init(void);              /* 80STORE off, clear AUX $2000-$9FFF, SCBs=0,
                                        palette0, then $C029=$C1 */
 void video_shutdown(void);          /* $C029=$01, text mode restored */
-void video_wait_vbl(void);          /* returns at start of vertical blank */
+void video_wait_vbl(void);          /* returns right after line 0 (end of VBL) */
 u16  video_speed_probe(void);       /* loop iterations between two VBL starts */
 
 /* display list: filled by C, rendered by video_render(). */
@@ -190,14 +195,12 @@ void video_render(void);
       lists to the private previous lists (main RAM writes happen only after
       RAMWRT is off). Counts AUX bytes written into video_frame_writes.
       Erase-all-then-draw-all avoids holes where a later item's old box
-      overlaps an earlier item's new box. At the 33 MHz preset the erase
-      pass runs at bus speed inside the vertical blank; the game therefore
-      sorts dl_items by y (ascending, a stable counting sort into 25
-      buckets of y>>3, rows above the screen in bucket 0 and below it in
-      bucket 24) in world_build_dl before calling video_render so the
-      draw pass stays ahead of the beam. Items of one bucket keep their
-      layer order, and the ship is appended after the sort so it stays on
-      top (it sits mid-screen, never in the beam race). */
+      overlaps an earlier item's new box. The burst starts right after the
+      line-0 snapshot (video_wait_vbl) and must end before the next one: at
+      the 33 MHz preset that is about 16,000 posted bytes. The game also
+      sorts dl_items by y (a stable counting sort into 25 buckets of y>>3 in
+      world_build_dl, ship last); that is cheap and keeps the burst
+      top-to-bottom for emulators that scan the beam. */
 extern u16 video_frame_writes;      /* AUX bytes written by the last render */
 
 void video_clear_playfield(void);   /* black the 256x200 box AND forget all
@@ -249,13 +252,30 @@ void speech_say(u8 phrase);   /* SAY_BLAST_OFF, SAY_ALERT, SAY_SPY, SAY_RED,
 u8   speech_busy(void);
 ```
 
-Channel plan: AY-B (VIA-B `$C480`, ORA `$C481`/`$C48F`, ORB `$C480`) owns
-music (3 tone channels). AY-A (VIA-A `$C400`) owns SFX with priorities.
-SSI-263 writes (`$C440-$C447`) also alias VIA-A registers, so after any SSI
-write the driver re-writes VIA-A DDRA/DDRB and marks all AY-A registers dirty
-(they are resent on the next `sound_update`). AY register writes go through
-a shadow so unchanged registers cost no bus cycles. AY write sequence (per
-Invasion): `ORA=reg; ORB=7; ORB=4; ORA=val; ORB=6; ORB=4`.
+Phasor modes (from the Bilestoad port's driver and
+`appletini-one/hdl/apple/mockingboard.sv`): the card starts in Mockingboard
+mode; reading `$C0C8` then `$C0C5` selects Phasor native mode. VIA-A answers
+at `$C41x` and VIA-B at `$C48x` in both modes. In native mode ORB bit 4
+selects the first AY behind a VIA and bit 3 the second (both active low),
+and the PSG clock is doubled, so every period is doubled. `sound_init`
+switches to native mode, writes register 0 of chip 0 and chip 1 and reads
+chip 0 back: a plain Mockingboard (or the card locked to Mockingboard mode)
+ignores the select bits, so the second write lands on the first chip and
+the driver falls back to two chips. GSSquared has no native mode and takes
+this path.
+
+Channel plan: chips 2 and 3 (behind VIA-B) play music: lead, bass and
+arpeggio on chip 2; a detuned lead, the chord root and a noise hit per step
+on chip 3. Chips 0 and 1 (behind VIA-A) play up to six sound effects with
+priorities. With two chips: chip 2 music, chip 0 three effects. In
+Mockingboard mode SSI-263 writes (`$C440-$C447`) also alias VIA-A
+registers, so after any SSI write the driver re-writes VIA-A DDRA/DDRB (an
+AY reset pulse) and resends every register of chip 0; in native mode
+nothing aliases. Every chip has a register shadow so unchanged registers
+cost no bus cycles. AY write sequence: `ORA_NH=reg; ORB=latch; ORB=idle;
+ORA_NH=val; ORB=write; ORB=idle` with `$0F/$0C/$0E` for the first chip of a
+VIA and `$17/$14/$16` for the second. The mailbox reports `sound_chips`
+(4 or 2) and the title screen names the mode.
 
 Speech phonemes: SSI-263 codes (`00 PA, 01 E, 03 Y, 05 AY, 07 I, 08 A,
 0A EH, 0C AE, 0E AH, 10 AW, 11 O, 12 OU, 13 OO, 18 UH, 1C ER, 1D R, 20 L,
@@ -312,8 +332,9 @@ Written once per frame by the game (`mailbox_tick`). Offsets:
 26    ramworks_banks   27-28 speed_probe (u16)
 29    sfx_now   30 music_track   31 speech_phrase (0xFF idle)   32 input_mask
 33    formation_active   34 spy_active   35 last_event (see bosco.h EV_*)
-36-37 dropped-frame counter (u16)  38 star_count
-39    joystick status (bit 0 X axis usable, bit 1 Y axis usable)   40 reserved
+36-37 budget-overrun counter (u16)  38 star_count
+39    joystick status (bit 0 X axis usable, bit 1 Y axis usable)
+40    sound_chips (4 Phasor native, 2 Mockingboard)
 ```
 
 ## 9. Sprite id list (`SPR_*`, fixed order)

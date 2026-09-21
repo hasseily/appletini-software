@@ -8,12 +8,16 @@ links them with tests/sound_test.cfg and none.lib, loads the image into a
 Memory model: one flat 64 KB array with an observer on $C400-$C4FF that
 records every read and write (with the entry point that was running). VIA
 IFR reads return a scripted value so both the CA1 path and the timeout path
-of the speech stream can be exercised. Everything else in $C4xx reads as 0.
+of the speech stream can be exercised. The VIA-A "ORA no handshake" read of
+the chip probe returns `ora_value`: 0 (default) means the second AY behind
+VIA-A answered, so the driver runs in Phasor native mode with four chips;
+$AA means a Mockingboard with two chips. Everything else in $C4xx reads 0.
 
-Checks: the exact AY write sequence, no $C4xx access outside sound_init /
-sound_update, per-frame access budget, shadows suppressing repeated
-register writes, the speech stream terminating on both paths, VIA-A
-restore and AY-A resend after SSI writes, and the mailbox globals.
+Checks: the exact AY write and chip-select sequences, the probe, no $C4xx
+access outside sound_init / sound_update, per-frame access budget, shadows
+suppressing repeated register writes, the speech stream terminating on
+both paths, VIA-A restore and chip 0 resend after SSI writes in
+Mockingboard mode (and no restore in native mode), and the mailbox globals.
 
 Run:  python3 tests/test_sound.py
 """
@@ -29,7 +33,7 @@ from py65.devices.mpu65c02 import MPU
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
-VIA_A = 0xC400
+VIA_A = 0xC410           # VIA-A answers at $C41x in both Phasor modes
 VIA_B = 0xC480
 SSI = 0xC440
 R_ORB, R_ORA, R_DDRB, R_DDRA, R_PCR, R_IFR, R_IER, R_ORA_NH = 0, 1, 2, 3, 12, 13, 14, 15
@@ -45,8 +49,8 @@ PHRASE_BLAST_OFF = [0x24, 0x20, 0x0C, 0x30, 0x28, 0x00, 0x10, 0x34]
 SSI_SETUP = [(SSI + 3, 0x80), (SSI + 0, 0xC0), (SSI + 1, 0x40),
              (SSI + 2, 0xA8), (SSI + 3, 0x5A), (SSI + 4, 0xE8)]
 
-FRAME_BUDGET_MAX = 150
-FRAME_BUDGET_TYPICAL = 40
+FRAME_BUDGET_MAX = 300   # four chips
+FRAME_BUDGET_TYPICAL = 60
 STEP_LIMIT = 500_000
 
 
@@ -103,6 +107,7 @@ class SlotMemory:
         self.phase = "none"
         self.frame = -1
         self.ifr_value = 0      # returned by VIA IFR reads
+        self.ora_value = 0      # returned by the probe's VIA-A ORA_NH read
 
     def __getitem__(self, a):
         if isinstance(a, slice):
@@ -112,6 +117,8 @@ class SlotMemory:
             v = 0
             if a in (VIA_A + R_IFR, VIA_B + R_IFR):
                 v = self.ifr_value
+            elif a == VIA_A + R_ORA_NH:
+                v = self.ora_value
             self.log.append(Access(self.phase, self.frame, "r", a, v))
             return v
         return self.ram[a]
@@ -147,12 +154,20 @@ class AyEvent:
                                       self.chip, self.reg, self.val)
 
 
-def decode_via(log, base, chip):
+SEL_LATCH, SEL_WRITE, SEL_IDLE = (0x0F, 0x17), (0x0E, 0x16), (0x0C, 0x14)
+SEL_READ = 0x0D
+
+
+def decode_via(log, base, via):
     """Check the shape of every access to one VIA and return the AY events.
     Raises AssertionError on any access that is not one of:
-      AY write  : ORA_NH=reg, ORB=7, ORB=4, ORA_NH=val, ORB=6, ORB=4
-      reset     : DDRA=$FF, DDRB=$07, ORB=0, ORB=4
+      AY write  : ORA_NH=reg, ORB=latch, ORB=idle, ORA_NH=val, ORB=write,
+                  ORB=idle, with the chip-select values of one chip
+      reset     : DDRA=$FF, DDRB=$1F, ORB=0, ORB=$0C
+      probe     : (VIA-A only) ORA_NH=0, ORB=$0F, ORB=$0C, DDRA=0, ORB=$0D,
+                  read ORA_NH, ORB=$0C, DDRA=$FF
       setup     : IER / PCR / IFR writes, IFR reads
+    Chip names are via + select: A0, A1, B0, B1.
     """
     acc = [x for x in log if base <= x.addr < base + 16]
     events = []
@@ -169,25 +184,38 @@ def decode_via(log, base, chip):
             i += 1
             continue
         if reg == R_ORA_NH:
+            seq = acc[i:i + 8]
+            probe = [(R_ORA_NH, 0, "w"), (R_ORB, 0x0F, "w"), (R_ORB, 0x0C, "w"),
+                     (R_DDRA, 0x00, "w"), (R_ORB, SEL_READ, "w"), (R_ORA_NH, None, "r"),
+                     (R_ORB, 0x0C, "w"), (R_DDRA, 0xFF, "w")]
+            if via == "A" and len(seq) == 8 and all(
+                    s_.kind == k and s_.addr - base == r and (v is None or s_.value == v)
+                    for s_, (r, v, k) in zip(seq, probe)):
+                events.append(AyEvent(x.frame, x.phase, "probe", via + "0"))
+                i += 8
+                continue
             seq = acc[i:i + 6]
             assert len(seq) == 6, "truncated AY write at %r" % x
-            exp = [(R_ORA_NH, None), (R_ORB, 7), (R_ORB, 4), (R_ORA_NH, None),
-                   (R_ORB, 6), (R_ORB, 4)]
-            for s, (r, v) in zip(seq, exp):
-                assert s.kind == "w" and s.addr - base == r and (v is None or s.value == v), \
-                    "bad AY write sequence at %r: %r" % (x, seq)
+            sel = None
+            for k in (0, 1):
+                exp = [(R_ORA_NH, None), (R_ORB, SEL_LATCH[k]), (R_ORB, SEL_IDLE[k]),
+                       (R_ORA_NH, None), (R_ORB, SEL_WRITE[k]), (R_ORB, SEL_IDLE[k])]
+                if all(s_.kind == "w" and s_.addr - base == r and (v is None or s_.value == v)
+                       for s_, (r, v) in zip(seq, exp)):
+                    sel = k
+            assert sel is not None, "bad AY write sequence at %r: %r" % (x, seq)
             assert seq[0].value <= 13, "AY register out of range: %r" % seq
-            events.append(AyEvent(x.frame, x.phase, "ay", chip, seq[0].value,
-                                  seq[3].value))
+            events.append(AyEvent(x.frame, x.phase, "ay", via + str(sel),
+                                  seq[0].value, seq[3].value))
             i += 6
             continue
         if reg == R_DDRA:
             seq = acc[i:i + 4]
-            exp = [(R_DDRA, 0xFF), (R_DDRB, 0x07), (R_ORB, 0), (R_ORB, 4)]
+            exp = [(R_DDRA, 0xFF), (R_DDRB, 0x1F), (R_ORB, 0), (R_ORB, 0x0C)]
             assert len(seq) == 4 and all(
-                s.kind == "w" and s.addr - base == r and s.value == v
-                for s, (r, v) in zip(seq, exp)), "bad VIA restore at %r: %r" % (x, seq)
-            events.append(AyEvent(x.frame, x.phase, "reset", chip))
+                s_.kind == "w" and s_.addr - base == r and s_.value == v
+                for s_, (r, v) in zip(seq, exp)), "bad VIA restore at %r: %r" % (x, seq)
+            events.append(AyEvent(x.frame, x.phase, "reset", via + "0"))
             i += 4
             continue
         raise AssertionError("unexpected access %r" % x)
@@ -290,10 +318,11 @@ class SoundTests(unittest.TestCase):
         m = Machine(self.image, self.load, self.syms)
         return m
 
-    def scenario(self, frames=120, ifr=0):
+    def scenario(self, frames=120, ifr=0, ora=0):
         """The reference scenario: init, blast-off music, a shot, speech."""
         m = self.machine()
         m.mem.ifr_value = ifr
+        m.mem.ora_value = ora
         m.init()
         m.music(MUSIC_BLASTOFF)
         m.sfx(SFX_SHOT)
@@ -319,15 +348,19 @@ class SoundTests(unittest.TestCase):
         first_ddra = next(i for i, x in enumerate(log) if x.addr == VIA_A + R_DDRA)
         last_ssi = max(i for i, x in enumerate(log) if SSI <= x.addr < SSI + 8)
         self.assertLess(last_ssi, first_ddra)
-        # both chips reset, then every register written: mixer $3F, volumes 0
+        # both VIAs reset, the probe on VIA-A, then every register of every
+        # chip written: mixer $3F, volumes 0 (four chips: native mode)
         ev = m.events()
-        for chip in "AB":
-            ce = [e for e in ev if e.chip == chip]
-            self.assertEqual(ce[0].kind, "reset")
-            regs = {e.reg: e.val for e in ce if e.kind == "ay"}
-            self.assertEqual(sorted(regs), list(range(11)))
+        a0 = [e.kind for e in ev if e.chip == "A0"]
+        self.assertEqual(a0[0], "reset")
+        self.assertIn("probe", a0)
+        self.assertEqual([e.kind for e in ev if e.chip == "B0"][0], "reset")
+        for chip in ("A0", "A1", "B0", "B1"):
+            regs = {e.reg: e.val for e in ev if e.chip == chip and e.kind == "ay"}
+            self.assertEqual(sorted(regs), list(range(11)), chip)
             self.assertEqual(regs[7], 0x3F)
             self.assertEqual((regs[8], regs[9], regs[10]), (0, 0, 0))
+        self.assertEqual(m.g("_sound_chips"), 4)
         self.assertEqual(m.g("_sound_current_sfx"), SFX_NONE)
         self.assertEqual(m.g("_sound_current_track"), MUSIC_NONE)
         self.assertEqual(m.g("_speech_current"), SAY_NONE)
@@ -342,8 +375,8 @@ class SoundTests(unittest.TestCase):
     def test_write_sequence_shape(self):
         m = self.scenario()
         ev = m.events()
-        self.assertTrue(any(e.chip == "A" and e.kind == "ay" for e in ev))
-        self.assertTrue(any(e.chip == "B" and e.kind == "ay" for e in ev))
+        self.assertTrue(any(e.chip == "A0" and e.kind == "ay" for e in ev))
+        self.assertTrue(any(e.chip == "B0" and e.kind == "ay" for e in ev))
         # every SSI write in play is a DUR write with a phrase phoneme
         s = [x for x in ssi_writes(m.mem.log) if x.phase == "t_update"]
         self.assertTrue(all(x.addr == SSI for x in s))
@@ -379,12 +412,43 @@ class SoundTests(unittest.TestCase):
         counts = m.frame_counts()
         self.assertLessEqual(counts[0], FRAME_BUDGET_MAX)
 
+    # ---- chips ----
+    def test_mockingboard_fallback(self):
+        """A Mockingboard answers the probe with $AA: two chips, no second
+        chip-select ever used, VIA-A restored after each phoneme."""
+        m = self.scenario(ora=0xAA)
+        self.assertEqual(m.g("_sound_chips"), 2)
+        ev = m.events()
+        self.assertFalse([e for e in ev if e.chip in ("A1", "B1") and e.phase == "t_update"])
+        self.assertEqual([e for e in ev if e.chip == "A1"][0].reg, 0)   # the probe's write
+        self.assertTrue([e for e in ev if e.kind == "reset" and e.phase == "t_update"])
+
+    def test_native_uses_four_chips(self):
+        m = self.machine()
+        m.init()
+        m.music(MUSIC_TITLE)
+        for i in (SFX_BASE, SFX_MINE, SFX_PLAYER_DIE, SFX_ALERT, SFX_SPY, SFX_SHOT):
+            m.sfx(i)
+        m.say(SAY_SPY)
+        m.update(30)
+        self.assertEqual(m.g("_sound_chips"), 4)
+        ev = [e for e in m.events() if e.phase == "t_update"]
+        self.assertTrue([e for e in ev if e.chip == "B1" and e.kind == "ay"])
+        self.assertTrue([e for e in ev if e.chip == "A1" and e.kind == "ay"])
+        # native mode: the SSI write does not alias VIA-A, so no restore
+        self.assertFalse([e for e in ev if e.kind == "reset"])
+        # native mode doubles the PSG clock: the title's first lead note (A4,
+        # period 145) is written as 290 = $0122 on chip B0 channel A
+        lead = [(e.reg, e.val) for e in ev if e.chip == "B0" and e.kind == "ay" and e.reg in (0, 1)]
+        self.assertIn((0, 0x22), lead)
+        self.assertIn((1, 0x01), lead)
+
     # ---- shadows ----
     def test_shadows_suppress_repeats(self):
-        m = self.scenario(frames=200)
+        m = self.scenario(frames=200, ora=0xAA)
         ev = [e for e in m.events() if e.phase == "t_update"]
         forced = set(e.frame for e in ev if e.kind == "reset")
-        model = {"A": {}, "B": {}}
+        model = {"A0": {}, "A1": {}, "B0": {}, "B1": {}}
         repeats = []
         for e in ev:
             if e.kind == "reset":
@@ -396,6 +460,20 @@ class SoundTests(unittest.TestCase):
             regs[e.reg] = e.val
         self.assertEqual(repeats, [], "repeated writes: %r" % repeats[:8])
         self.assertTrue(forced, "no forced resend seen (speech did not run?)")
+
+    def test_shadows_suppress_repeats_native(self):
+        m = self.scenario(frames=200)
+        ev = [e for e in m.events() if e.phase == "t_update"]
+        model = {"A0": {}, "A1": {}, "B0": {}, "B1": {}}
+        repeats = []
+        for e in ev:
+            if e.kind != "ay":
+                continue
+            if model[e.chip].get(e.reg) == e.val:
+                repeats.append(e)
+            model[e.chip][e.reg] = e.val
+        self.assertEqual(repeats, [], "repeated writes: %r" % repeats[:8])
+        self.assertFalse([e for e in ev if e.kind == "reset"])
 
     # ---- speech ----
     def phoneme_frames(self, m):
@@ -440,7 +518,7 @@ class SoundTests(unittest.TestCase):
         self.assertGreaterEqual(len(clears), len(PHRASE_BLAST_OFF))
 
     def test_ssi_write_restores_via_a_and_resends_ay_a(self):
-        m = self.scenario(frames=120)
+        m = self.scenario(frames=120, ora=0xAA)     # Mockingboard mode
         log = m.mem.log
         ev = m.events()
         for x in ssi_writes(log):
@@ -451,9 +529,9 @@ class SoundTests(unittest.TestCase):
             later = [y for y in log if y.frame == f and y.phase == "t_update"
                      and log.index(y) > log.index(x)]
             self.assertTrue(any(y.addr == VIA_A + R_DDRA and y.value == 0xFF for y in later), f)
-            self.assertTrue(any(y.addr == VIA_A + R_DDRB and y.value == 0x07 for y in later), f)
-            # every AY-A register resent in this frame or the next one
-            regs = set(e.reg for e in ev if e.chip == "A" and e.kind == "ay"
+            self.assertTrue(any(y.addr == VIA_A + R_DDRB and y.value == 0x1F for y in later), f)
+            # every register of chip 0 resent in this frame or the next one
+            regs = set(e.reg for e in ev if e.chip == "A0" and e.kind == "ay"
                        and e.frame in (f, f + 1))
             self.assertEqual(regs, set(range(11)), "frame %d resent %r" % (f, sorted(regs)))
 
@@ -503,7 +581,7 @@ class SoundTests(unittest.TestCase):
             m.update(5)
             # silence after the volume-off writes: no more traffic
             self.assertLessEqual(len(m.mem.log) - n, 18)
-            ev = [e for e in m.events() if e.chip == "B" and e.kind == "ay"]
+            ev = [e for e in m.events() if e.chip == "B0" and e.kind == "ay"]
             vols = {}
             for e in ev:
                 if e.reg in (8, 9, 10):
@@ -516,7 +594,7 @@ class SoundTests(unittest.TestCase):
         m.music(MUSIC_TITLE)
         m.update(32 * 8 * 2 + 4)
         self.assertEqual(m.g("_sound_current_track"), MUSIC_TITLE)
-        ev = [e for e in m.events() if e.chip == "B" and e.kind == "ay"
+        ev = [e for e in m.events() if e.chip == "B0" and e.kind == "ay"
               and e.phase == "t_update"]
         # lead, bass and arpeggio all sounded
         self.assertTrue(any(e.reg == 8 and e.val > 0 for e in ev))
@@ -533,7 +611,7 @@ class SoundTests(unittest.TestCase):
             m.music(MUSIC_AMBIENT)
             m.tempo(level)
             m.update(240)
-            ev = [e for e in m.events() if e.chip == "B" and e.kind == "ay"
+            ev = [e for e in m.events() if e.chip == "B0" and e.kind == "ay"
                   and e.phase == "t_update" and e.reg == 0]
             self.assertLessEqual(max(m.frame_counts()), FRAME_BUDGET_MAX)
             return len(ev)
@@ -544,13 +622,14 @@ class SoundTests(unittest.TestCase):
     # ---- SFX ----
     def test_sfx_priority_and_slots(self):
         m = self.machine()
+        m.mem.ora_value = 0xAA      # Mockingboard mode: three slots
         m.init()
         m.music(MUSIC_NONE)
         m.sfx(SFX_SHOT)
         m.sfx(SFX_MISSILE)
         m.sfx(SFX_HIT)
         m.update(1)
-        ev = [e for e in m.events() if e.chip == "A" and e.kind == "ay"
+        ev = [e for e in m.events() if e.chip == "A0" and e.kind == "ay"
               and e.phase == "t_update"]
         vols = {e.reg: e.val for e in ev if e.reg in (8, 9, 10)}
         self.assertEqual(sorted(vols), [8, 9, 10])
@@ -564,7 +643,7 @@ class SoundTests(unittest.TestCase):
         self.assertEqual(m.g("_sound_current_sfx"), SFX_BASE)
         m.update(60)
         self.assertEqual(m.g("_sound_current_sfx"), SFX_NONE)
-        ev = [e for e in m.events() if e.chip == "A" and e.kind == "ay"]
+        ev = [e for e in m.events() if e.chip == "A0" and e.kind == "ay"]
         vols = {}
         for e in ev:
             if e.reg in (8, 9, 10):
@@ -596,7 +675,7 @@ class SoundTests(unittest.TestCase):
             self.assertEqual(m.g("_sound_current_sfx"), sid, sid)
             m.update(1)
             self.assertEqual(m.g("_sound_current_sfx"), SFX_NONE, sid)
-            ev = [e for e in m.events() if e.chip == "A" and e.kind == "ay"
+            ev = [e for e in m.events() if e.chip == "A0" and e.kind == "ay"
                   and e.phase == "t_update"]
             # volumes stay in 0..15 and noise periods in 0..31 (u8 math sanity)
             for e in ev:
