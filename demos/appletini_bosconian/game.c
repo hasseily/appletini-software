@@ -576,7 +576,7 @@ static void missile_fire(u16 x, u16 y)
         if (ms_life[i] == 0) break;
     }
     if (i == MISSILE_MAX) return;
-    ms_life[i] = 240;
+    ms_life[i] = 300;
     ms_x[i] = x;
     ms_y[i] = y;
     ms_h[i] = dir8(wdelta(player_x, x), wdelta(player_y, y));
@@ -599,8 +599,9 @@ static void missiles_tick(u8 player_active)
             h = turn_toward(h, dir8(-ms_sx[i], -ms_sy[i]));
             ms_h[i] = h;
         }
-        ms_x[i] = wrap_w((s16)ms_x[i] + mv_x[h] + mv_x[h]);
-        ms_y[i] = wrap_w((s16)ms_y[i] + mv_y[h] + mv_y[h]);
+        /* 1 px per frame: slower than the ship, so it can be outrun */
+        ms_x[i] = wrap_w((s16)ms_x[i] + mv_x[h]);
+        ms_y[i] = wrap_w((s16)ms_y[i] + mv_y[h]);
         dx = wdelta(ms_x[i], player_x);
         dy = wdelta(ms_y[i], player_y);
         ms_sx[i] = dx;
@@ -783,6 +784,17 @@ static u8 pshot_hit(u8 s)
         if (en_type[i] == EN_NONE || !en_near[i]) continue;
         if (boxes_hit(en_sx[i] - sx, en_sy[i] - sy, 2, 6, 12, 12)) {
             enemy_kill(i, 1);
+            return 1;
+        }
+    }
+    /* missiles can be shot down */
+    for (i = 0; i < MISSILE_MAX; ++i) {
+        if (ms_life[i] == 0) continue;
+        if (boxes_hit(ms_sx[i] - sx, ms_sy[i] - sy, 2, 6, 6, 8)) {
+            explosion_add(EX_SMALL, ms_x[i], ms_y[i]);
+            sound_sfx(SFX_HIT);
+            add_score(50);
+            ms_life[i] = 0;
             return 1;
         }
     }
