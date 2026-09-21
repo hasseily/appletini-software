@@ -32,6 +32,11 @@ routines around it:
   upstream disks do not hold the game's note file, so the music is a new
   arrangement of "Fuer Elise" (Beethoven, public domain). On a Mockingboard
   the driver uses the two chips that exist.
+- **Keys.** Upstream `PDL` compared the keyboard code with upper-case
+  letters only (the game came from an Apple II+). A //e sends lower-case
+  codes unless Caps Lock is down, so on a //e no torso or arm command ever
+  matched and only the paddle buttons (thrust) did anything. The port's
+  `PDL` (`src/keys.s`) folds a-z to A-Z and applies the same table.
 
 ## Video timing
 
@@ -121,8 +126,9 @@ loader and reports the CPU cycles and the bus bytes of each frame.
 
 ## Run in GSSquared
 
-`bilestoad.gs2` sets up an enhanced //e with the Appletini card in slot 7 and
-a Mockingboard in slot 4. Use a GSSquared build that has the `appletini` card:
+`bilestoad.gs2` sets up an enhanced //e with the Appletini card in slot 7
+(accelerator on at 33 MHz, RamWorks) and a Mockingboard in slot 4. Use a
+GSSquared build that has the `appletini` card:
 
 ```sh
 GSSquared bilestoad.gs2 -ds7d1=dist/Bilestoad.po
@@ -135,10 +141,15 @@ finds a Mockingboard there and plays on two chips.
 
 ## Controls
 
-As the original. Player 1: `Q` `E` turn the torso, `A` `D` the shield arm,
-`Z` `C` the axe arm, `W` `S` `X` stop each of these. Player 2: `I` `P`,
-`K` `;`, `,` `/`, and `O` `L` `.`. `ESC` pauses, `CTRL-S` sets the sound on
-and off, `CTRL-R` starts again.
+As the original, with or without Caps Lock. Player 1: `Q` `E` turn the
+torso, `A` `D` the shield arm, `Z` `C` the axe arm, `W` `S` `X` stop each of
+these; paddle button 0 (Open Apple) is thrust. Player 2: `I` `P`, `K` `;`,
+`,` `/`, and `O` `L` `.`; button 1 (Closed Apple) is thrust. `ESC` pauses,
+`CTRL-S` sets the sound on and off, `CTRL-R` starts again.
+
+`python tools/test_keys.py --rom ROM` runs the port to the first fight in
+the test machine and checks that lower-case and upper-case command keys
+both set the command bits.
 
 ## Not done yet
 

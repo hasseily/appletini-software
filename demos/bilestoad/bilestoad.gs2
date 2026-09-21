@@ -5,6 +5,13 @@ description = "Enhanced Apple //e, Appletini, 8MB RamWorks, Mockingboard"
 platform = "apple2e_enhanced"
 scanner = "apple2e"
 
+[appletini]
+accelerator = true
+speed = "33"
+ignore_c074 = false
+ramworks = true
+ram32 = false
+
 [[cards]]
 slot = 4
 card = "mockingboard"

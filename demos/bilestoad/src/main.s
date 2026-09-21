@@ -4,5 +4,6 @@
 .setcpu "65C02"
 .include "game.s"
 .include "engine.s"
+.include "keys.s"
 .include "sound.s"
 .include "boot.s"
