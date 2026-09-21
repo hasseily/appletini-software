@@ -94,6 +94,9 @@ make disk     # dist/Appletini-Bosconian.hdv, an 800 KB ProDOS image
 make test     # unit tests in tests/ (py65 for the asm and the sound driver)
 ```
 
+`Appletini-Bosconian.hdv` beside this README is the tracked copy of
+`dist/Appletini-Bosconian.hdv` built from the current sources.
+
 Needs cc65 (`cl65`, `ca65`, `ld65`) and Python 3 (Pillow only for the
 sprite preview and the test-machine screenshots). `PRODOS` and the boot
 blocks come from `../../../appletini-one/software/ProDOS_2_4_3.po`

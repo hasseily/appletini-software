@@ -75,7 +75,8 @@ software stack occupies `$B000-$B7FF`, below ProDOS's high-memory interface.
 The resulting 800 KiB SmartPort image, `dist/Appletini-Invasion.hdv`, contains
 `PRODOS`, the direct-boot `INVASION.SYSTEM`, and `PARALLAX`; the game loads the
 art into RamWorks through accelerated SmartPort before entering the main loop.
-There is no BASIC.SYSTEM or STARTUP launcher.
+There is no BASIC.SYSTEM or STARTUP launcher. `Appletini-Invasion.hdv` beside
+this README is the tracked copy of that image, built from the current sources.
 
 The offline build requires cc65, Java, AppleCommander, and the canonical local
 Appletini checkout, expected at `../../../appletini-one`. Set
@@ -93,9 +94,12 @@ GSSQUARED_ROOT="${GSSQUARED_ROOT:-../../../gssquared}"
 ```
 
 `make smoke` uses the same sibling checkout by default. Set
-`GSSQUARED_ROOT=/path/to/gssquared` when GSSquared is located elsewhere.
+`GSSQUARED_ROOT=/path/to/gssquared` when GSSquared is located elsewhere. On
+Linux and Windows the executable is `build/GSSquared`; the smoke test falls
+back to that path when the macOS bundle is absent.
 
-GSSquared selects Appletini MAX / 33.3 MHz when the card is enabled; F9 can
+`appletini-invasion.gs2` enables the Appletini accelerator at 33.3 MHz and the
+8 MB RamWorks in its `[appletini]` section; F9 can
 still cycle the clock manually. Appletini Invasion writes zero to `$C074` at
 entry so any prior TransWarp-compatible 1 MHz lock is released. ProDOS, the
 game, and its compiled parallax asset are read through the Appletini SmartPort

@@ -87,7 +87,8 @@ python build.py [--upstream DIR] [--master PRODOS_IMAGE]
 ```
 
 Output: `dist/Bilestoad.po`, an 800 KB ProDOS image with `PRODOS`,
-`TOAD.SYSTEM` and `BILESTOAD.SPR`.
+`TOAD.SYSTEM` and `BILESTOAD.SPR`. `Bilestoad.po` beside this README is the
+tracked copy of that image, built from the current sources.
 
 Needs Python 3 with Pillow, and `ca65`/`ld65` from cc65. `PRODOS` and the
 boot blocks come from `../../../appletini-one/software/ProDOS_2_4_3.po`.

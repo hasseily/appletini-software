@@ -21,11 +21,9 @@ the browser asks the saved gateway to resolve each requested host.
 
 ## Build
 
-Install [cc65](https://github.com/cc65/cc65), put `cl65` in `PATH`, then run:
-
-```bat
-build.bat
-```
+Install [cc65](https://github.com/cc65/cc65), put `cl65` in `PATH`, then run
+`build.bat` on Windows or `build.sh` on Linux and macOS. The build passes
+`--warnings-as-errors`, which needs a cc65 snapshot newer than release 2.19.
 
 The build uses the cc65 `apple2` target, `apple2-system.cfg`, and an explicit
 `--cpu 6502`. It creates AppleSingle ProDOS SYS files at

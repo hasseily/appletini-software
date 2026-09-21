@@ -79,6 +79,21 @@ def main():
             build.rindex("ip65\\ip65_web.lib"),
             "the Appletini timer must precede IP65 so a2_timer.o is not extracted")
 
+    build_sh = (APP / "build.sh").read_text(encoding="utf-8")
+    require("-t apple2" in build_sh and "--cpu 6502" in build_sh and
+            "apple2-system.cfg" in build_sh,
+            "build.sh must explicitly create NMOS-6502 ProDOS programs")
+    require("apple2enh" not in build_sh.lower(),
+            "build.sh must not use the enhanced Apple II target")
+    for target in ("A2WEBSRV", "A2BROWSE", "A2IMG"):
+        require(target in build_sh, f"build.sh must create {target}.SYSTEM")
+    require("appletini_net.c" in build_sh and "appletini_timer.s" in build_sh
+            and "ip65/ip65_web.lib" in build_sh,
+            "build.sh must use the shared W5100/IP65 path and wall-clock timer")
+    require(build_sh.rindex("appletini_timer.s") <
+            build_sh.rindex("ip65/ip65_web.lib"),
+            "build.sh must list the Appletini timer before IP65")
+
     require("RDVBLBAR       = $C019" in timer and
             "MACHINE_ID     = $FBB3" in timer and
             "cpx #IIE_ID" in timer,

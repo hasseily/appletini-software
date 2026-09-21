@@ -132,6 +132,7 @@ volume. Its volume name is FATDOG.MAGIC; ProDOS starts MAGIC.SYSTEM.
 
 The disk includes ProDOS 2.4.3 and BASIC.SYSTEM from the bundled
 `assets/ProDOS_2_4_3.po` master. To restart from BASIC, enter -MAGIC.SYSTEM.
+`FATDOG_MAGIC.po` beside this README is the tracked copy of the built image.
 
 Rebuild from the appletini-software repository root:
 

@@ -19,7 +19,9 @@ effects.
 
 ## Build and verify
 
-Run from the appletini-software repository root on Windows:
+Run from the appletini-software repository root (PowerShell shown; the same
+commands work on Linux and macOS, where the network apps build with
+`appletini_webserver/build.sh` instead of `build.bat`):
 
 ```powershell
 python demos/appletini_demos/tools/build_appletini_demo_disk.py
@@ -37,7 +39,9 @@ The bundled network library and its licenses are in
 Install `py65` for the tests that execute assembled viewer code.
 
 The fresh image is written to `build/Appletini_Demos.po`; the tracked disk
-beside this README includes the silent-menu fix. Generated assembly, binaries, and
+beside this README includes the silent-menu fix. A rebuild from this checkout
+matches the tracked disk file for file, except that the three network apps
+change by a few bytes with the cc65 snapshot used. Generated assembly, binaries, and
 logs also stay in `build/`. Network build output stays in
 `appletini_webserver/build/`. From this directory, the equivalent Make
 targets are `disk`, `verify`, and `verify-build`.

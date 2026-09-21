@@ -25,6 +25,9 @@ DEFAULT_CONFIG = GAME_DIR / "appletini-invasion.gs2"
 DEFAULT_EMULATOR = (
     GSSQUARED_ROOT / "build/GSSquared.app/Contents/MacOS/GSSquared"
 )
+if not DEFAULT_EMULATOR.is_file():
+    # Linux and Windows builds place the executable directly in build/.
+    DEFAULT_EMULATOR = GSSQUARED_ROOT / "build/GSSquared"
 CLIENT_SRC = GSSQUARED_ROOT / "clients/python/src"
 TOOLS_DIR = GAME_DIR / "tools"
 SDL_SCANCODE_SPACE = 44

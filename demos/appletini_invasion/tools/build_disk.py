@@ -26,10 +26,15 @@ A13C_PREFIX_SIZE = 4096
 
 def applecommander(jar: Path, *arguments: str, data: bytes | None = None,
                    check: bool = True) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
+    # Keep stderr out of stdout: "-g" output is file data, and a JVM notice
+    # (JAVA_TOOL_OPTIONS, for example) must not end up inside the image.
+    result = subprocess.run(
         ("java", "-jar", str(jar), *arguments), input=data,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=check,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=check,
     )
+    if result.returncode:
+        result.stdout += result.stderr
+    return result
 
 
 def main() -> None:

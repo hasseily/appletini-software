@@ -25,6 +25,24 @@ Apple II software and hardware demonstrations built to exercise Appletini.
   (33 MHz or TURBO), the virtual Phasor for music, effects and SSI-263 speech,
   and a RamWorks probe.
 
+## Disk images
+
+Each demo's bootable image is tracked next to its README. Mount one on an
+Appletini SmartPort drive (in GSSquared, `-ds7d1=<image>`) and boot it.
+
+| Project | Image | Size | Boots |
+|---|---|---|---|
+| Appletini Demos | [Appletini_Demos.po](demos/appletini_demos/Appletini_Demos.po) | 32 MB | BASIC.SYSTEM, STARTUP launcher |
+| FATDOG MAGIC | [FATDOG_MAGIC.po](demos/fatdog_magic/FATDOG_MAGIC.po) | 32 MB | MAGIC.SYSTEM |
+| Appletini Invasion | [Appletini-Invasion.hdv](demos/appletini_invasion/Appletini-Invasion.hdv) | 800 KB | INVASION.SYSTEM |
+| The Bilestoad, SHR port | [Bilestoad.po](demos/bilestoad/Bilestoad.po) | 800 KB | TOAD.SYSTEM |
+| Appletini Bosconian | [Appletini-Bosconian.hdv](demos/appletini_bosconian/Appletini-Bosconian.hdv) | 800 KB | BOSCO.SYSTEM |
+
+Each image is the `dist/` output of its project's build, copied next to the
+README at the commit that built it; the build directories themselves are not
+tracked. The Bilestoad image contains the converted upstream game, which has
+no licence: check its rights before you redistribute that image.
+
 ## Diagnostics and examples
 
 - [AUXSTRESS / AUXTOOLS](diagnostics/aux_memory/README.md): auxiliary-memory

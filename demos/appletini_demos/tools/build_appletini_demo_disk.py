@@ -52,6 +52,7 @@ SOFTWARE = REPO
 BUILD = REPO / "build"
 ASSETS = REPO / "assets"
 WEB_DIR = SOFTWARE / "appletini_webserver"
+WEB_BUILD_SCRIPT = "build.bat" if os.name == "nt" else "build.sh"
 WEB_APP = WEB_DIR / "build" / "A2WEBSRV.SYSTEM"
 BROWSER_APP = WEB_DIR / "build" / "A2BROWSE.SYSTEM"
 IMG_APP = WEB_DIR / "build" / "A2IMG.SYSTEM"
@@ -397,7 +398,7 @@ def main() -> int:
                 TEXT_OVERLAY_SRC,
                 MANDELBROT_SRC, WAVE_BASIC_SRC, WAVE_CODE_SRC,
                 LAUNCHER_SRC, SPEEDRACE_SRC, RASTER_SRC, GEN_ASSETS,
-                VIEWER_SRC, WEB_DIR / "build.bat"]
+                VIEWER_SRC, WEB_DIR / WEB_BUILD_SCRIPT]
     required += [source_path(d, s) for _, _, d, s, _, _, _ in IMAGE_FILES]
     missing = [str(path) for path in required if not path.is_file()]
     if shutil.which("java") is None:
@@ -418,12 +419,21 @@ def main() -> int:
 
     build_assembly_programs()
 
-    comspec = os.environ.get("COMSPEC", "cmd.exe")
-    web_build = subprocess.run([comspec, "/d", "/c", "build.bat"],
-                               cwd=WEB_DIR)
+    if os.name == "nt":
+        comspec = os.environ.get("COMSPEC", "cmd.exe")
+        web_command = [comspec, "/d", "/c", WEB_BUILD_SCRIPT]
+    else:
+        web_command = ["sh", WEB_BUILD_SCRIPT]
+    try:
+        web_build = subprocess.run(web_command, cwd=WEB_DIR)
+        web_build_failed = web_build.returncode != 0
+    except OSError as error:
+        print(f"WARNING: could not run {WEB_BUILD_SCRIPT}: {error}",
+              file=sys.stderr)
+        web_build_failed = True
     missing_apps = [path for path in (WEB_APP, BROWSER_APP, IMG_APP)
                     if not path.is_file()]
-    if web_build.returncode != 0:
+    if web_build_failed:
         if missing_apps:
             print("Web demo build failed and no prebuilt apps exist:\n  " +
                   "\n  ".join(str(path) for path in missing_apps),
