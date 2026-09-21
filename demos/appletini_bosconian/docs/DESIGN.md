@@ -182,13 +182,18 @@ extern u8 star_x[STAR_MAX], star_y[STAR_MAX], star_color[STAR_MAX];
 extern u8 star_count;
 
 void video_render(void);
-   /* RAMWRT on; for each star: erase old byte, draw new byte (old positions
-      kept privately by the renderer); then for each dl item i: erase the
-      previous frame's item i (id/x/y remembered privately), draw item i;
-      items beyond the previous count are only drawn, items missing this
-      frame (i >= dl_count) are only erased. RAMWRT off. Then copy current
+   /* RAMWRT on; erase every previous-frame item (zeros over its runs at its
+      old id/x/y, remembered privately), erase the previous stars, draw the
+      new stars, then draw every current item in list order; items beyond
+      the previous count are only drawn, items missing this frame
+      (i >= dl_count) are only erased. RAMWRT off. Then copy the current
       lists to the private previous lists (main RAM writes happen only after
-      RAMWRT is off). Counts AUX bytes written into video_frame_writes. */
+      RAMWRT is off). Counts AUX bytes written into video_frame_writes.
+      Erase-all-then-draw-all avoids holes where a later item's old box
+      overlaps an earlier item's new box. At the 33 MHz preset the erase
+      pass runs at bus speed inside the vertical blank; the game therefore
+      sorts dl_items by y (ascending, bucketed by y>>3) before calling
+      video_render so the draw pass stays ahead of the beam. */
 extern u16 video_frame_writes;      /* AUX bytes written by the last render */
 
 void video_clear_playfield(void);   /* black the 256x200 box AND forget all
@@ -209,6 +214,9 @@ void panel_sprite(u8 px, u8 py, u8 id);  /* icon at byte column px (even variant
 void field_text(u8 x, u8 y, u8 color, const char *s);
 void field_text_big(u8 x, u8 y, u8 color, const char *s);  /* 16x16 (2x scale) */
 ```
+
+`video_set_panel_color(c)` stores a default color; panel_text, panel_text_small,
+panel_fill and panel_dot use it when their color argument is `$FF`.
 
 All these switch RAMWRT on/off internally and never touch main RAM above
 `$01FF` while it is on. They may use ZP `$20-$4F`. `video_render` must run
