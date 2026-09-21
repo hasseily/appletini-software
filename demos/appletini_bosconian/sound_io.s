@@ -20,8 +20,6 @@
 .export _ay_write_a, _ay_write_b, _ssi_write
 .export _via_a_prep, _via_b_prep, _via_a_ddr, _via_b_ddr
 
-VIA_A_ORA_NH = $C40F
-VIA_B_ORA_NH = $C48F
 
 ZP_VAL = ZP_SOUND       ; $50: value being written
 

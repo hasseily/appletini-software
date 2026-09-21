@@ -56,6 +56,14 @@ and jumps there. `crt0` copies the `DATA` segment to `$0C00`, clears
 below ProDOS) and calls `main()`. When `main()` returns, `crt0` restores
 text mode and does a ProDOS `QUIT`.
 
+Sizes from `build/BOSCO.map` (cc65 2.19, `-Oirs`): code `$2033-$7F51`
+(24,351 bytes), read-only tables `$7F52-$AEA9` (12,120 bytes, of which
+the sprites, font and palette are 10,690), `DATA` 2 bytes and `BSS`
+2,668 bytes at `$0C00-$166D`. The SYS file is 36,524 bytes and ends at
+`$AEAB`; the link area ends at `$AFFF`, so about 340 bytes are free.
+Any growth must come out of the sprite art or the C code (the software
+stack at `$B000-$B7FF` and ProDOS above it stay where they are).
+
 ## Run in GSSquared
 
 ```sh
@@ -85,9 +93,14 @@ heading persists.
   (calibrate on the title screen with the stick centered)
 - Space, Open Apple, Closed Apple, game buttons: fire (hold for autofire;
   two shots at once, forward and backward)
-- Return: start
-- Esc: pause during play, quit to ProDOS at the title (`P` and `Q` do
-  the same, one each)
+- Return (or fire): start a game from the title
+- Esc, `P` or `Q`: pause during play (any of them, or Return, resumes);
+  at the title all three quit to ProDOS
+
+Keys are read from `$C000`; a held key keeps its direction and fire bits
+active through the //e "any key down" flag at `$C010`, so holding Space
+is autofire and a held direction keeps steering. Start, pause and quit
+act once per key press.
 
 ## The write budget
 
@@ -97,11 +110,15 @@ CPU when it is full, and one NTSC frame has about 17,000 bus cycles. The
 game therefore never redraws the whole screen during play: `video_render`
 erases the previous frame's sprites and stars with zeros and draws the new
 ones, and every sprite row is one run of bytes written with `STA` only.
-The hard budget is 10,000 AUX bytes per frame, typical frames are under
-6,000. The count for the last frame and the largest count seen are in the
-mailbox (`frame_writes`, `max_frame_writes`) and the smoke test fails
-when either goes over 10,000. Full clears happen only on state changes
-(title, round start, game over).
+The hard budget is 10,000 AUX bytes per frame. Measured in GSSquared:
+the title screen writes about 210 bytes per frame, a busy play frame
+300-1,000, and the largest frame seen in a 3,000-frame session (deaths
+and explosions included) was 2,350. The count for the last frame and the
+largest count seen are in the mailbox (`frame_writes`,
+`max_frame_writes`) and the smoke test fails when either goes over
+10,000. `dropped_frames` in the mailbox counts frames over the budget
+(there is no timer to detect real VBL overruns). Full clears happen only
+on state changes (title, round start, game over).
 
 The same rule keeps all writable game data out of main `$0400-$0BFF` and
 `$2000-$5FFF` (also posted regions): `DATA` and `BSS` run at
@@ -123,3 +140,38 @@ session, 26 RamWorks banks, 27-28 speed probe, 29 current SFX, 30 music
 track, 31 speech phrase, 32 input mask, 33 formation active, 34 spy
 active, 35 last event, 36-37 dropped frames, 38 star count. The full
 layout is in `docs/DESIGN.md` section 8 and `struct Mailbox` in `bosco.h`.
+
+## Smoke test results
+
+`make smoke` on the reference host (GSSquared under `xvfb-run`, 33 MHz
+preset): 556,272 emulated cycles per frame = 59.9 fps emulated (the wall
+clock rate is lower because the host runs the emulator below real time),
+RamWorks 128 banks, speed probe 37,027 iterations, title -> play on
+Return, heading changes on `L`, held Space fires, no frame over the
+budget. A longer unattended run goes through play, dying, game over and
+back to the title. The screenshots are `build/smoke_title.png` and
+`build/smoke_play.png`.
+
+## Known limits
+
+- Not yet run on real hardware; all timing numbers come from GSSquared.
+- Joystick: at the 33 MHz preset with the virtual TransWarp "slow
+  paddles" option off, the 400-poll cap in `input.s` can be shorter than
+  a centered stick's timer. The driver then marks that axis unusable
+  (keyboard still works). Raise `JOY_DELAY` in `input.s` or turn on the
+  paddle slowdown if joystick play on hardware matters.
+- Sound writes AY data through the no-handshake port (`$C40F`/`$C48F`)
+  so the SSI-263 CA1 flag is not cleared by AY traffic; phonemes advance
+  on CA1 from either VIA or on a 12-frame timeout. Speech was verified
+  only by the register-level unit test, not by ear.
+- The sound module switches BLAST OFF to the ambient track on its own
+  after 90 frames; `main.c` also asks for it at 150 frames, which is
+  harmless.
+- `video_set_panel_color()` only affects `panel_*` calls whose color
+  argument is `$FF`; the game passes explicit colors everywhere.
+- Field text is limited to 32 characters (256 px); the small panel text
+  (`panel_text_small`) draws every other glyph row and is meant for the
+  diagnostics corner only.
+- Sprites wider than 32 pixels are not supported by the blitter's
+  unrolled copy; the largest sprite is the 32x32 explosion.
+- About 340 bytes of program space remain (see Build).
