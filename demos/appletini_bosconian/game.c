@@ -576,7 +576,7 @@ static void missile_fire(u16 x, u16 y)
         if (ms_life[i] == 0) break;
     }
     if (i == MISSILE_MAX) return;
-    ms_life[i] = 300;
+    ms_life[i] = 240;                  /* u8: 240 px of travel at 1 px per frame */
     ms_x[i] = x;
     ms_y[i] = y;
     ms_h[i] = dir8(wdelta(player_x, x), wdelta(player_y, y));

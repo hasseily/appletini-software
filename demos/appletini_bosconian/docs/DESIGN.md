@@ -335,7 +335,7 @@ Rows are single runs; art must be convex per row (no holes).
   the 6th pod dies... the *base* score is awarded when the base dies).
   Core closed/open cycle: closed 180 frames, open 90 frames; while open it
   fires a homing missile (speed 1 px/frame so the 1.5 px/frame ship can
-  outrun it, homing turn every 8 frames, lifetime 300 frames) if the player
+  outrun it, homing turn every 8 frames, lifetime 240 frames) if the player
   is within 200 px. A player shot destroys a missile (50 points). A shot
   into the open core destroys the base. Base score 1500 + 500*(min(round,4)−1). A dead base
   shows big explosions for 60 frames. Pods fire enemy shots (speed 3, straight
