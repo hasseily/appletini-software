@@ -5,6 +5,8 @@ RAMRDOFF   = $C002
 RAMRDON    = $C003
 RAMWRTOFF  = $C004
 RAMWRTON   = $C005
+ALTZPOFF   = $C008       ; main zero page, stack and language card
+ALTZPON    = $C009       ; auxiliary ones
 KBDSTRB    = $C010
 RDVBLBAR   = $C019
 NEWVIDEO   = $C029
@@ -16,6 +18,10 @@ PADDLE1    = $C065
 PTRIG      = $C070
 RAMWORKS   = $C073
 TWSPEED    = $C074
+LCBANK2RD  = $C080       ; read: language card bank 2 RAM readable, write protected
+LCBANK2WR  = $C083       ; read twice: bank 2 RAM readable and writable
+LCBANK1RD  = $C088       ; read: bank 1 RAM readable, write protected
+LCBANK1WR  = $C08B       ; read twice: bank 1 RAM readable and writable
 
 PHASOR_MB  = $C0C8       ; read: Mockingboard mode
 PHASOR_NATIVE = $C0C5    ; read after PHASOR_MB: Phasor native mode
@@ -51,7 +57,13 @@ PANEL_BYTE0 = 128       ; first panel byte column
 DL_MAX     = 96
 STAR_MAX   = 48
 
+; _spr_bank codes (tools/gen_assets.py): 0 = main memory, else the
+; auxiliary language card (SPR_BANK_AUX), bank 1 if SPR_BANK_1 is set
+SPR_BANK_1   = $02
+SPR_BANK_AUX = $04
+
 ; zero page: video $20-$4F, sound $50-$5F, input $60-$6F, spare $70-$7F
 ZP_VIDEO   = $20
 ZP_SOUND   = $50
 ZP_INPUT   = $60
+ZP_SPARE   = $70

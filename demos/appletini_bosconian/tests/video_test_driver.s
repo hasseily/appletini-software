@@ -17,7 +17,7 @@
 .importzp sp
 
 .export _spr_even_lo, _spr_even_hi, _spr_odd_lo, _spr_odd_hi
-.export _spr_width, _spr_height, _font8, _palette0
+.export _spr_width, _spr_height, _spr_bank, _font8, _palette0
 .export param, result, sprite_buf, halt
 .export t_init, t_shutdown, t_wait_vbl, t_speed_probe, t_render
 .export t_clear_playfield, t_clear_all, t_set_panel_color
@@ -31,6 +31,7 @@ _spr_odd_lo:    .res 64
 _spr_odd_hi:    .res 64
 _spr_width:     .res 64
 _spr_height:    .res 64
+_spr_bank:      .res 64
 _font8:         .res 512
 sprite_buf:     .res 1024
 param:          .res 8

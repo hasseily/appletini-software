@@ -26,11 +26,14 @@ OBJECTS := $(BUILD)/crt0.o \
 ROMS ?=
 ifneq ($(ROMS),)
 SPRITES_TXT := $(BUILD)/rom/sprites.txt
+FONT_TXT := $(BUILD)/rom/font8.txt
 else
 SPRITES_TXT := assets/sprites.txt
+FONT_TXT := assets/font8.txt
 endif
-ASSET_SOURCES := $(SPRITES_TXT) assets/font8.txt
+ASSET_SOURCES := $(SPRITES_TXT) $(FONT_TXT)
 GEN_ASSETS := tools/gen_assets.py
+SPRFILE := $(BUILD)/BOSCO.SPR
 HEADERS := $(wildcard *.h)
 
 CFLAGS := -t none --cpu 65c02 --standard c99 -Oirs -I $(BUILD)
@@ -43,13 +46,14 @@ all: $(SYSTEM)
 $(BUILD) $(DIST):
 	mkdir -p $@
 
-# arcade graphics converted from the ROM set (only with ROMS=...)
-$(BUILD)/rom/sprites.txt: tools/bosco_rom.py assets/rom_map.txt assets/sprites.txt $(ROMS) | $(BUILD)
+# arcade graphics and font converted from the ROM set (only with ROMS=...)
+$(BUILD)/rom/sprites.txt $(BUILD)/rom/font8.txt: tools/bosco_rom.py assets/rom_map.txt assets/sprites.txt assets/font8.txt $(ROMS) | $(BUILD)
 	$(PYTHON) tools/bosco_rom.py $(ROMS) --map assets/rom_map.txt --out $(BUILD)/rom
 
-# generated sprite tables: build/assets.s and build/assets.h
-$(BUILD)/assets.s $(BUILD)/assets.h: $(GEN_ASSETS) $(ASSET_SOURCES) | $(BUILD)
-	$(PYTHON) $(GEN_ASSETS) --assets assets --sprites $(SPRITES_TXT) --build $(BUILD) --quiet
+# generated sprite tables: build/assets.s, build/assets.h and the sprite
+# file BOSCO.SPR that the game loads into the auxiliary language card
+$(BUILD)/assets.s $(BUILD)/assets.h $(SPRFILE): $(GEN_ASSETS) $(ASSET_SOURCES) | $(BUILD)
+	$(PYTHON) $(GEN_ASSETS) --assets assets --sprites $(SPRITES_TXT) --font $(FONT_TXT) --build $(BUILD) --quiet
 
 $(BUILD)/assets.o: $(BUILD)/assets.s | $(BUILD)
 	$(CL65) $(AFLAGS) -c -o $@ $<
@@ -69,8 +73,8 @@ $(SYSTEM): $(PROGRAM) tools/build_system.py | $(BUILD)
 
 disk: $(DISK)
 
-$(DISK): $(SYSTEM) tools/build_disk.py | $(DIST)
-	$(PYTHON) tools/build_disk.py --system $(SYSTEM) --output $@
+$(DISK): $(SYSTEM) $(SPRFILE) tools/build_disk.py | $(DIST)
+	$(PYTHON) tools/build_disk.py --system $(SYSTEM) --sprites $(SPRFILE) --output $@
 
 # python unit tests (py65 for the asm modules, pure python for the tools)
 test:

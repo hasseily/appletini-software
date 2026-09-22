@@ -5,81 +5,270 @@
 # Format
 # ------
 #   NAME: sprite N  color C [options]      16x16 sprite N (0..63) of bos1_13.5e
+#   NAME: sprites A B C D color C [opts]   2x2 block of sprites (row-major) = 32x32
 #   NAME: tile N    color C [options]      8x8 tile N (0..255) of bos1_14.5d
 #   NAME: tiles A B C D color C [options]  2x2 block of tiles (row-major) = 16x16
-#   NAME: ?                                not mapped yet: the drawn art in
+#   NAME: tilemap W H cells... [options]   W x H tiles, each cell CODE:ATTR in hex
+#                                          exactly as the game writes it to its
+#                                          video RAM (attr: colour code in the low
+#                                          6 bits, bit 6 clear = mirrored, bit 7 =
+#                                          upside down), or .. for an empty cell
+#   NAME: dot N [options]                  4x4 bullet dot N (0..7) of bos1-4.2r,
+#                                          in the fixed bullet colours
+#   NAME: ?                                not mapped: the drawn art in
 #                                          sprites.txt is used for this entry
+#   font: digits N letters N [space N] [minus N]
+#                                          tiles that stand for '0'..'9',
+#                                          'A'..'Z', ' ' and '-' in the font
 #
-# C is the arcade colour code 0..63 (the attribute the game gives the object);
-# build/rom/palettes.png shows the four colours of every code, and
-# build/rom/sheet.png every tile and sprite with its index. Numbers may be
-# decimal or 0x hex.
+# A line that starts with white space continues the previous line (handy for
+# tilemap cells). C is the arcade colour code 0..63 (the attribute the game
+# gives the object); build/rom/palettes.png shows the four colours of every
+# code, and build/rom/sheet.png every tile, sprite and dot with its index.
+# Numbers may be decimal or 0x hex.
 #
 # Options, applied in this order:
 #   crop X Y W H     use only this part of the decoded graphic
 #   fliph flipv      mirror; rot90 rot180 rot270 turn clockwise (square only)
-#   fit              (default) crop to the opaque pixels and center them in
-#                    the SPR_ box (sizes in docs/DESIGN.md section 9)
-#   center           center the whole graphic; pixels outside the box are lost
+#   fit              crop to the opaque pixels and center them in the SPR_
+#                    box (default; sizes in docs/DESIGN.md section 9)
+#   center           center the whole graphic (default for tilemap, whose
+#                    size normally equals the box); pixels outside are lost
 #   at X Y           put the graphic's top-left corner at X,Y in the box
 #
 # Arcade colours are turned into the nearest entry of palette 0 (DESIGN.md
 # section 3); build/rom/colors.txt lists every colour that was used.
 #
-# Everything below is a template: no entry is mapped until someone looks at
-# the sheets. The player ship exists in the ROM in a few headings only (the
-# board mirrors sprites in hardware), so most SHIP_/ITYPE_/PTYPE_ headings
-# will be a base sprite plus fliph/flipv/rot90.
+# Where the numbers come from
+# ---------------------------
+# The sprite ROM holds three headings of every ship (up, up-right, left; the
+# board mirrors them for the other five), so the 8 headings are the three
+# sprites plus fliph/flipv/rot180. The game's attract mode names the ships:
+# 10 I TYPE, 18 P TYPE, 08 E TYPE, 20 SPY SHIP. Sprite colour codes are what
+# the game puts in its sprite RAM; the tile grids of the bases, the mine and
+# the asteroids are what it writes to the background tile RAM, and the
+# destroyed cannons are its own replacement tables (sub CPU ROM). A base is
+# split into a core that never changes and six cannon pods; a corner pod is
+# 3x3 tiles because its strut is replaced together with it.
 
-SHIP_0: ?
-SHIP_1: ?
-SHIP_2: ?
-SHIP_3: ?
-SHIP_4: ?
-SHIP_5: ?
-SHIP_6: ?
-SHIP_7: ?
-ITYPE_0: ?
-ITYPE_1: ?
-ITYPE_2: ?
-ITYPE_3: ?
-ITYPE_4: ?
-ITYPE_5: ?
-ITYPE_6: ?
-ITYPE_7: ?
-PTYPE_0: ?
-PTYPE_1: ?
-PTYPE_2: ?
-PTYPE_3: ?
-PTYPE_4: ?
-PTYPE_5: ?
-PTYPE_6: ?
-PTYPE_7: ?
-ETYPE_0: ?
-ETYPE_1: ?
-ETYPE_2: ?
-ETYPE_3: ?
-MINE_0: ?
-MINE_1: ?
-ASTEROID_0: ?
-ASTEROID_1: ?
-POD: ?
-CORE_CLOSED: ?
-CORE_OPEN: ?
-EXPL_0: ?
-EXPL_1: ?
-EXPL_2: ?
-EXPL_3: ?
-SHOT_PLAYER: ?
-SHOT_ENEMY: ?
-MISSILE_0: ?
-MISSILE_1: ?
-ICON_SHIP: ?
-ICON_BASE: ?
-POD_HIT: ?
-BIGEXPL_0: ?
-BIGEXPL_1: ?
-BIGEXPL_2: ?
-BIGEXPL_3: ?
-SHOT_PLAYER_H: ?
-SHOT_PLAYER_D: ?
+# player ship: 00 up, 02 up-right, 04 left (colour 1; 01/03/05 are the
+# alternate exhaust frames)
+SHIP_0: sprite 0x00 color 1
+SHIP_1: sprite 0x02 color 1
+SHIP_2: sprite 0x04 color 1 fliph
+SHIP_3: sprite 0x02 color 1 flipv
+SHIP_4: sprite 0x00 color 1 flipv
+SHIP_5: sprite 0x02 color 1 rot180
+SHIP_6: sprite 0x04 color 1
+SHIP_7: sprite 0x02 color 1 fliph
+
+# I-type fighter: 10 up, 13 up-right, 16 left (colour 3)
+ITYPE_0: sprite 0x10 color 3
+ITYPE_1: sprite 0x13 color 3
+ITYPE_2: sprite 0x16 color 3 fliph
+ITYPE_3: sprite 0x13 color 3 flipv
+ITYPE_4: sprite 0x10 color 3 flipv
+ITYPE_5: sprite 0x13 color 3 rot180
+ITYPE_6: sprite 0x16 color 3
+ITYPE_7: sprite 0x13 color 3 fliph
+
+# P-type: 18 up, 1b up-right, 1e left (colour 4)
+PTYPE_0: sprite 0x18 color 4
+PTYPE_1: sprite 0x1b color 4
+PTYPE_2: sprite 0x1e color 4 fliph
+PTYPE_3: sprite 0x1b color 4 flipv
+PTYPE_4: sprite 0x18 color 4 flipv
+PTYPE_5: sprite 0x1b color 4 rot180
+PTYPE_6: sprite 0x1e color 4
+PTYPE_7: sprite 0x1b color 4 fliph
+
+# E-type: 08 up, 0b up-right, 0e left (colour 2)
+ETYPE_0: sprite 0x08 color 2
+ETYPE_1: sprite 0x0b color 2
+ETYPE_2: sprite 0x0e color 2 fliph
+ETYPE_3: sprite 0x0b color 2 flipv
+ETYPE_4: sprite 0x08 color 2 flipv
+ETYPE_5: sprite 0x0b color 2 rot180
+ETYPE_6: sprite 0x0e color 2
+ETYPE_7: sprite 0x0b color 2 fliph
+
+# spy ship: 20 up, 23 up-right, 26 left (colour 7)
+SPY_0: sprite 0x20 color 7
+SPY_1: sprite 0x23 color 7
+SPY_2: sprite 0x26 color 7 fliph
+SPY_3: sprite 0x23 color 7 flipv
+SPY_4: sprite 0x20 color 7 flipv
+SPY_5: sprite 0x23 color 7 rot180
+SPY_6: sprite 0x26 color 7
+SPY_7: sprite 0x23 color 7 fliph
+
+# cosmo-mine and the three asteroid shapes: 2x2 background tiles
+MINE: tilemap 2 2
+    b0:45 b1:45
+    b2:45 b3:45
+ASTEROID_0: tilemap 2 2
+    b4:46 b5:46
+    b6:46 b7:46
+ASTEROID_1: tilemap 2 2
+    b8:46 b9:46
+    ba:46 bb:46
+ASTEROID_2: tilemap 2 2
+    bc:46 bd:46
+    be:46 bf:46
+
+# explosions: three 16x16 frames (colour 8) and three 32x32 frames of four
+# sprites each (colour 12)
+EXPL_0: sprite 0x28 color 8
+EXPL_1: sprite 0x29 color 8
+EXPL_2: sprite 0x2a color 8
+BIGEXPL_0: sprites 0x34 0x35 0x36 0x37 color 12
+BIGEXPL_1: sprites 0x38 0x39 0x3a 0x3b color 12
+BIGEXPL_2: sprites 0x3c 0x3d 0x3e 0x3f color 12
+
+# Vertical base, 8x9 tiles with the centre at (32,36) of its 64x72 image:
+#   r0: .. .. .. c0:4f c0:0f .. .. ..
+#   r1: .. .. c6:4f c1:4f c2:4f c6:0f .. ..
+#   r2: c0:4f c3:4f c7:4f c8:50 c8:11 c7:0f c3:0f c0:0f
+#   r3: c0:cf c2:4f c9:50 ca:50 ca:11 c9:11 c1:4f c4:4f
+#   r4: .. .. .. f3:52 f3:12 .. .. ..
+#   r5: c0:4f c1:8f cb:50 cc:64 cc:25 cb:11 c1:cf c0:0f
+#   r6: c0:cf c5:4f cd:4f ce:50 ce:11 cd:0f c3:8f c4:4f
+#   r7: .. .. cf:4f c1:cf c1:8f cf:0f .. ..
+#   r8: .. .. .. c0:cf c4:4f .. .. ..
+# The core is columns 2-5 of rows 2-6 (32x40, at 16,16 of the image); the
+# pods are the top (24,0), UL (0,8), UR (40,8), LL (0,40), LR (40,40) and
+# bottom (24,56) blocks, the corner ones with their strut tiles.
+CORE_V: tilemap 4 5
+    ..    c8:50 c8:11 ..
+    c9:50 ca:50 ca:11 c9:11
+    ..    f3:52 f3:12 ..
+    cb:50 cc:64 cc:25 cb:11
+    ..    ce:50 ce:11 ..
+POD_V0: tilemap 2 2
+    c0:4f c0:0f
+    c1:4f c2:4f
+POD_V1: tilemap 3 3
+    ..    ..    c6:4f
+    c0:4f c3:4f c7:4f
+    c0:cf c2:4f ..
+POD_V2: tilemap 3 3
+    c6:0f ..    ..
+    c7:0f c3:0f c0:0f
+    ..    c1:4f c4:4f
+POD_V3: tilemap 3 3
+    c0:4f c1:8f ..
+    c0:cf c5:4f cd:4f
+    ..    ..    cf:4f
+POD_V4: tilemap 3 3
+    ..    c1:cf c0:0f
+    cd:0f c3:8f c4:4f
+    cf:0f ..    ..
+POD_V5: tilemap 2 2
+    c1:cf c1:8f
+    c0:cf c4:4f
+# the same pods destroyed (the game's replacement tiles)
+PODDEAD_V0: tilemap 2 2
+    ..    ..
+    dd:53 de:53
+PODDEAD_V1: tilemap 3 3
+    ..    ..    dc:53
+    ..    e1:14 ..
+    e3:13 ef:53 ..
+PODDEAD_V2: tilemap 3 3
+    df:53 ..    ..
+    e0:53 e1:54 ..
+    ..    e2:54 e3:53
+PODDEAD_V3: tilemap 3 3
+    e3:93 e2:94 ..
+    ..    e1:94 e0:93
+    ..    ..    df:93
+PODDEAD_V4: tilemap 3 3
+    ..    e2:d4 e3:d3
+    e0:d3 e1:d4 ..
+    df:d3 ..    ..
+PODDEAD_V5: tilemap 2 2
+    de:93 dd:93
+    ..    ..
+
+# Horizontal base, 9x8 tiles with the centre at (36,32) of its 72x64 image:
+#   r0: .. .. c0:4f c0:0f .. c0:4f c0:0f .. ..
+#   r1: .. .. d0:4f d2:4f .. d1:4f d3:4f .. ..
+#   r2: .. d4:4f d5:51 d6:50 .. d6:11 d5:11 d4:0f ..
+#   r3: c0:4f d1:8f d7:50 d8:64 fb:52 d9:50 d7:10 d1:cf c0:0f
+#   r4: c0:cf d2:4f d7:d1 d8:e5 fb:d2 d9:d1 d7:91 d1:4f c4:4f
+#   r5: .. da:4f d5:d0 db:51 .. db:10 d5:90 da:0f ..
+#   r6: .. .. d0:cf d1:8f .. d1:cf d0:8f .. ..
+#   r7: .. .. c0:cf c4:4f .. c0:cf c4:4f .. ..
+# The core is columns 2-6 of rows 2-5 (40x32, at 16,16); the pods are the
+# left (0,24), TL (8,0), TR (40,0), BL (8,40), BR (40,40) and right (56,24)
+# blocks.
+CORE_H: tilemap 5 4
+    ..    d6:50 ..    d6:11 ..
+    d7:50 d8:64 fb:52 d9:50 d7:10
+    d7:d1 d8:e5 fb:d2 d9:d1 d7:91
+    ..    db:51 ..    db:10 ..
+POD_H0: tilemap 2 2
+    c0:4f d1:8f
+    c0:cf d2:4f
+POD_H1: tilemap 3 3
+    ..    c0:4f c0:0f
+    ..    d0:4f d2:4f
+    d4:4f d5:51 ..
+POD_H2: tilemap 3 3
+    c0:4f c0:0f ..
+    d1:4f d3:4f ..
+    ..    d5:11 d4:0f
+POD_H3: tilemap 3 3
+    da:4f d5:d0 ..
+    ..    d0:cf d1:8f
+    ..    c0:cf c4:4f
+POD_H4: tilemap 3 3
+    ..    d5:90 da:0f
+    d1:cf d0:8f ..
+    c0:cf c4:4f ..
+POD_H5: tilemap 2 2
+    d1:cf c0:0f
+    d1:4f c4:4f
+PODDEAD_H0: tilemap 2 2
+    ..    ea:53
+    ..    eb:53
+PODDEAD_H1: tilemap 3 3
+    ..    ..    e4:53
+    ..    e5:17 e6:53
+    e8:53 e9:53 ..
+PODDEAD_H2: tilemap 3 3
+    e4:13 ..    ..
+    e7:53 e5:53 ..
+    ..    ..    ec:93
+PODDEAD_H3: tilemap 3 3
+    ec:53 ..    ..
+    ..    e5:97 ed:53
+    ..    ..    ee:53
+PODDEAD_H4: tilemap 3 3
+    ..    e9:97 e8:93
+    ed:13 e5:c7 ..
+    e4:93 ..    ..
+PODDEAD_H5: tilemap 2 2
+    eb:97 ..
+    ea:93 ..
+
+# bullets: the player's shot is a 2x4 bar (dot 1), lying down (dot 0) or
+# diagonal (dots 2 and 3) for the other headings; enemy shots and the
+# homing missile are the red 3x3 dot 4, the missile blinking to dot 5
+SHOT_PLAYER: dot 1
+SHOT_PLAYER_H: dot 0
+SHOT_PLAYER_D1: dot 2
+SHOT_PLAYER_D2: dot 3
+SHOT_ENEMY: dot 4
+MISSILE_0: dot 4
+MISSILE_1: dot 5
+
+# panel: the lives icon is the 2x2 tile ship of the arcade panel, the radar
+# marker its base tile (colour 0x23 is the radar's own colour code)
+ICON_SHIP: tilemap 2 2
+    30:21 31:21
+    32:21 33:21
+ICON_BASE: tile 0x27 color 0x23
+
+# the arcade font for digits, letters and the dash
+font: digits 0x00 letters 0x0a space 0x24 minus 0x26

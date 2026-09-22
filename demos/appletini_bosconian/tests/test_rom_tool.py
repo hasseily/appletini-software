@@ -39,8 +39,9 @@ def encode_gfx(grids, layout) -> bytes:
         base = n * layout["inc"]
         for y, row in enumerate(grid):
             for x, pen in enumerate(row):
+                nplanes = len(layout["planes"])
                 for i, plane in enumerate(layout["planes"]):
-                    if (pen >> i) & 1:
+                    if (pen >> (nplanes - 1 - i)) & 1:   # first plane = high bit (MAME)
                         setbit(buf, base + plane + layout["yoff"][y] + layout["xoff"][x])
     return bytes(buf)
 
@@ -133,13 +134,22 @@ def make_romset(tmp: str, as_zip: bool):
     lookup[4:8] = bytes([3, 1, 2, 4])
     lookup[8:12] = bytes([15, 15, 15, 15])
 
+    # bullet dots: dot n is a 2x2 block of pen (n & 3) at the top left, the
+    # rest transparent (pen 4); dot 7 is a full block of pen 1
+    dots = []
+    for n in range(8):
+        if n == 7:
+            dots.append([[1] * 4 for _ in range(4)])
+        else:
+            dots.append([[(n & 3) if (x < 2 and y < 2) else 4 for x in range(4)]
+                         for y in range(4)])
     files = {
         "bos1_14.5d": encode_gfx(tiles, bosco_rom.TILE_LAYOUT),
         "bos1_13.5e": encode_gfx(sprites, bosco_rom.SPRITE_LAYOUT),
         "bos1-6.6b": bytes(pal),
         "bos1-5.4m": bytes(lookup),
+        "bos1-4.2r": encode_gfx(dots, bosco_rom.DOT_LAYOUT).ljust(0x100, b"\0"),
         "bos1_1.3n": bytes(0x1000),      # a code ROM: same size as the graphics
-        "bos1-4.2r": bytes(0x100),       # the dots PROM: same size as the lookup
     }
     if as_zip:
         path = os.path.join(tmp, "bosco.zip")
@@ -157,8 +167,8 @@ def make_romset(tmp: str, as_zip: bool):
 
 class DecodeTest(unittest.TestCase):
     def test_tile_bit_positions_follow_mame(self):
-        # pixel x=4,y=0 pen 1 -> plane 0, xoff 0: byte 0 bit 7
-        # pixel x=0,y=0 pen 2 -> plane 1 (offset 4), xoff 64: byte 8 bit 3
+        # pixel x=4,y=0 pen 2 -> plane 0 (the high bit), xoff 0: byte 0 bit 7
+        # pixel x=0,y=0 pen 1 -> plane 1 (offset 4, the low bit), xoff 64: byte 8 bit 3
         # pixel x=7,y=3 pen 3 -> plane 0 xoff 3 + y 24: byte 3 bit 4; plane 1: byte 3 bit 0
         rom = bytearray(0x1000)
         rom[0] = 0x80
@@ -166,23 +176,23 @@ class DecodeTest(unittest.TestCase):
         rom[3] = 0x10 | 0x01
         grids = bosco_rom.decode_gfx(bytes(rom), bosco_rom.TILE_LAYOUT)
         t = grids[0]
-        self.assertEqual(t[0][4], 1)
-        self.assertEqual(t[0][0], 2)
+        self.assertEqual(t[0][4], 2)
+        self.assertEqual(t[0][0], 1)
         self.assertEqual(t[3][7], 3)
         self.assertEqual(sum(sum(r) for r in t), 6)
         self.assertTrue(all(sum(sum(r) for r in g) == 0 for g in grids[1:]))
 
     def test_sprite_bit_positions_follow_mame(self):
-        # sprite 1 starts at byte 64. pixel x=12,y=0 pen 1 -> xoff 0: byte 64 bit 7
-        # pixel x=0,y=8 pen 1 -> xoff 64 + yoff 256: byte 64+40 bit 7
+        # sprite 1 starts at byte 64. pixel x=12,y=0 pen 2 -> plane 0, xoff 0: byte 64 bit 7
+        # pixel x=0,y=8 pen 2 -> xoff 64 + yoff 256: byte 64+40 bit 7
         rom = bytearray(0x1000)
         rom[64] = 0x80
         rom[64 + 40] = 0x80
         grids = bosco_rom.decode_gfx(bytes(rom), bosco_rom.SPRITE_LAYOUT)
         s = grids[1]
-        self.assertEqual(s[0][12], 1)
-        self.assertEqual(s[8][0], 1)
-        self.assertEqual(sum(sum(r) for r in s), 2)
+        self.assertEqual(s[0][12], 2)
+        self.assertEqual(s[8][0], 2)
+        self.assertEqual(sum(sum(r) for r in s), 4)
 
     def test_roundtrip_all_tiles_and_sprites(self):
         tmp = tempfile.mkdtemp()
@@ -195,7 +205,7 @@ class DecodeTest(unittest.TestCase):
         self.assertEqual(bosco_rom.decode_gfx(parts["sprites"], bosco_rom.SPRITE_LAYOUT),
                          sprites)
         # synthetic data never has MAME's CRCs: every part was found by name
-        self.assertEqual(len(notes), 4)
+        self.assertEqual(len(notes), 5)
 
     def test_palette_formula(self):
         colors = bosco_rom.decode_palette(bytes([0x00, 0xFF, 0x07, 0x38, 0xC0, 0x01]) + bytes(26))
@@ -273,22 +283,43 @@ class ConvertTest(unittest.TestCase):
         p.write_text(text)
         return p
 
-    def test_template_map_maps_nothing(self):
-        entries = bosco_rom.parse_map(Path(ROOT) / "assets" / "rom_map.txt")
+    def test_project_map_maps_every_sprite(self):
+        entries, font_map = bosco_rom.parse_map(Path(ROOT) / "assets" / "rom_map.txt")
         self.assertEqual(set(entries), {n for n, _, _ in gen_assets.SPRITES})
-        self.assertFalse(any(e.mapped for e in entries.values()))
+        self.assertTrue(all(e.mapped for e in entries.values()))
+        kinds = {e.kind for e in entries.values()}
+        self.assertEqual(kinds, {"sprite", "sprites", "tile", "tilemap", "dot"})
+        # every 16x16 ship heading is one of the ROM's three headings, flipped
+        for base in ("SHIP", "ITYPE", "PTYPE", "ETYPE", "SPY"):
+            codes = {entries[f"{base}_{h}"].indices[0] for h in range(8)}
+            self.assertEqual(len(codes), 3, base)
+            self.assertEqual(entries[f"{base}_2"].ops, ["fliph"])
+            self.assertEqual(entries[f"{base}_5"].ops, ["rot180"])
+            self.assertEqual(entries[f"{base}_6"].ops, [])
+        # the base parts are tile grids of the arcade's own tile codes
+        for name, w, h in gen_assets.SPRITES:
+            if name.startswith(("POD", "CORE")):
+                e = entries[name]
+                self.assertEqual(e.kind, "tilemap", name)
+                self.assertEqual((e.tw * 8, e.th * 8), (w, h), name)
+                self.assertTrue(any(c is not None for c in e.cells), name)
+        self.assertEqual(font_map["0"], 0x00)
+        self.assertEqual(font_map["9"], 0x09)
+        self.assertEqual(font_map["A"], 0x0A)
+        self.assertEqual(font_map["Z"], 0x23)
+        self.assertEqual(font_map["-"], 0x26)
 
     def test_convert_mixes_rom_and_drawn_art(self):
         m = self.write_map("SHIP_0: sprite 5 color 0\n"
                            "SHIP_1: sprite 5 color 0 rot90\n"
-                           "POD: tiles 0x10 0x11 0x20 0x21 color 1 center\n"
-                           "ICON_SHIP: tile 7 color 1\n"
+                           "MINE: tiles 0x10 0x11 0x20 0x21 color 1 center\n"
+                           "ICON_BASE: tile 7 color 1\n"
                            "SHOT_ENEMY: sprite 5 color 0 crop 6 6 4 4 center\n"
                            "ITYPE_0: ?\n")
         out = Path(self.tmp) / "out"
         summary = bosco_rom.convert(self.parts, m, Path(ROOT) / "assets" / "sprites.txt", out)
-        self.assertEqual(summary["mapped"], ["SHIP_0", "SHIP_1", "POD", "SHOT_ENEMY",
-                                             "ICON_SHIP"])
+        self.assertEqual(summary["mapped"], ["SHIP_0", "SHIP_1", "MINE", "SHOT_ENEMY",
+                                             "ICON_BASE"])
         self.assertIn("ITYPE_0", summary["unmapped"])
         self.assertEqual(summary["lost"], 0)
         grids = gen_assets.parse_sprites(out / "sprites.txt")
@@ -297,34 +328,91 @@ class ConvertTest(unittest.TestCase):
         self.assertEqual(grids["ITYPE_0"], art["ITYPE_0"])
         self.assertEqual(grids["BIGEXPL_0"], art["BIGEXPL_0"])
         # the diamond: pen 3 -> palette 4 (white) -> SHR white (1); its edge
-        # pen 1 -> palette 1 (red) -> SHR red (4); pen 0 -> palette 15 -> transparent.
+        # pen 1 -> palette 1 (red) -> SHR red (2); pen 0 -> palette 15 -> transparent.
         # Its opaque part is 15x15 (columns 1..15 of the source); fit crops it
         # and puts it at 0,0 of the 16x16 box, so row 7 is the widest row.
         ship = grids["SHIP_0"]
         self.assertEqual(len(ship), 16)
-        self.assertEqual(ship[7][:15], [4, 4] + [1] * 11 + [4, 4])
+        self.assertEqual(ship[7][:15], [2, 2] + [1] * 11 + [2, 2])
         self.assertIsNone(ship[7][15])
         self.assertEqual(ship[8][8], 1)
-        self.assertEqual(ship[8][2], 4)
+        self.assertEqual(ship[8][2], 2)
         self.assertIsNone(ship[0][0])
-        self.assertEqual([row[7] for row in ship[:15]], [4, 4] + [1] * 11 + [4, 4])
+        self.assertEqual([row[7] for row in ship[:15]], [2, 2] + [1] * 11 + [2, 2])
         # rot90 of a symmetric diamond is the same picture
         self.assertEqual(grids["SHIP_1"], ship)
         # the 2x2 tile block is 16x16 and uses tile colours (code 1: pen 0 opaque
         # blue -> palette 17+? tile lookup |0x10) -- every pixel is opaque
-        pod = grids["POD"]
-        self.assertEqual((len(pod), len(pod[0])), (16, 16))
-        self.assertTrue(all(p is not None for row in pod for p in row))
+        mine = grids["MINE"]
+        self.assertEqual((len(mine), len(mine[0])), (16, 16))
+        self.assertTrue(all(p is not None for row in mine for p in row))
         # crop 4x4 of the diamond centre, centred in the 4x4 shot box
         shot = grids["SHOT_ENEMY"]
         self.assertEqual((len(shot), len(shot[0])), (4, 4))
         self.assertTrue(all(p == 1 for row in shot for p in row))
         # the whole file builds like the drawn art does
-        encoded, _font, _g = gen_assets.build_all(Path(ROOT) / "assets", out / "sprites.txt")
+        encoded, _font, _g, _blobs = gen_assets.build_all(Path(ROOT) / "assets",
+                                                          out / "sprites.txt")
         self.assertEqual(len(encoded), gen_assets.SPR_COUNT)
         self.assertTrue((out / "colors.txt").exists())
         text = (out / "colors.txt").read_text()
         self.assertIn("SHIP_0", text)
+        # without a font: line the font is the drawn one
+        self.assertEqual(gen_assets.parse_font(out / "font8.txt"),
+                         gen_assets.parse_font(Path(ROOT) / "assets" / "font8.txt"))
+
+    def test_tilemap_dot_and_font_sources(self):
+        m = self.write_map("ASTEROID_0: tilemap 2 2\n"
+                           "    10:41 11:01\n"
+                           "    20:c1 ..\n"
+                           "SHOT_PLAYER: dot 1\n"
+                           "SHOT_ENEMY: dot 7 fliph\n"
+                           "MISSILE_0: dot 0\n"
+                           "font: digits 0x10 minus 0x30\n")
+        out = Path(self.tmp) / "out2"
+        summary = bosco_rom.convert(self.parts, m, Path(ROOT) / "assets" / "sprites.txt", out)
+        self.assertEqual(summary["mapped"], ["ASTEROID_0", "SHOT_PLAYER", "SHOT_ENEMY",
+                                             "MISSILE_0"])
+        self.assertEqual(summary["glyphs"], 11)
+        grids = gen_assets.parse_sprites(out / "sprites.txt")
+        # tile attribute: colour code in the low 6 bits, bit 6 clear = mirrored,
+        # bit 7 = upside down (bosco_v.cpp: TILE_FLIPYX(attr >> 6) ^ TILE_FLIPX)
+        conv = bosco_rom.Converter(self.parts)
+        tiles = bosco_rom.decode_gfx(self.parts["tiles"], bosco_rom.TILE_LAYOUT)
+        lookup = self.parts["lookup"]
+
+        def tile(code, attr):
+            g = bosco_rom.colorize(tiles[code], lookup, attr & 0x3F, True)
+            if not attr & 0x40:
+                g = [row[::-1] for row in g]
+            if attr & 0x80:
+                g = g[::-1]
+            return [[None if p is None else conv.shr_index(p, "x") for p in row] for row in g]
+
+        rock = grids["ASTEROID_0"]
+        self.assertEqual([row[:8] for row in rock[:8]], tile(0x10, 0x41))
+        self.assertEqual([row[8:] for row in rock[:8]], tile(0x11, 0x01))
+        self.assertEqual([row[:8] for row in rock[8:]], tile(0x20, 0xC1))
+        self.assertTrue(all(p is None for row in rock[8:] for p in row[8:]), "empty cell")
+        # dot 1: a 2x2 block of pen 1 (bullet palette entry 30 of this PROM)
+        # drawn upside down and mirrored like the arcade's bullets, fit into
+        # the 2x4 box
+        c = conv.shr_index(bosco_rom.DOT_FIRST_COLOR - 1, "x")
+        shot = grids["SHOT_PLAYER"]
+        self.assertEqual(shot, [[None, None], [c, c], [c, c], [None, None]])
+        # dot 7 is a full block of pen 1; dot 0 is pen 0 = opaque black
+        self.assertEqual(grids["SHOT_ENEMY"], [[c] * 4 for _ in range(4)])
+        missile = grids["MISSILE_0"]
+        self.assertEqual(sum(p == 0 for row in missile for p in row), 4)
+        self.assertEqual(sum(p is None for row in missile for p in row), 12)
+        # the font: '0'..'9' from tiles 0x10.., '-' from 0x30, the rest drawn
+        font = gen_assets.parse_font(out / "font8.txt")
+        drawn = gen_assets.parse_font(Path(ROOT) / "assets" / "font8.txt")
+        for ch, code in list(zip("0123456789", range(0x10, 0x1A))) + [("-", 0x30)]:
+            rows = [int("".join("1" if p else "0" for p in row), 2) for row in tiles[code]]
+            self.assertEqual(font[ord(ch) - 32], rows, ch)
+        self.assertEqual(font[ord("A") - 32], drawn[ord("A") - 32])
+        self.assertEqual(font[0], drawn[0])
 
     def test_map_errors(self):
         for bad, msg in (("SHIP_0: sprite 5\n", "color"),
@@ -333,7 +421,13 @@ class ConvertTest(unittest.TestCase):
                          ("SHIP_0: sprite 99 color 0\n", None),
                          ("SHIP_0: tiles 1 2 3 color 0\n", "4 indices"),
                          ("SHIP_0: sprite 5 color 64\n", "0..63"),
-                         ("SHIP_0: sprite 5 color 0 wobble\n", "unknown option")):
+                         ("SHIP_0: sprite 5 color 0 wobble\n", "unknown option"),
+                         ("SHIP_0: tilemap 2 2 10:41 11:01 20:41\n", "needs 4 cells"),
+                         ("SHIP_0: tilemap 2 2 10:41 zz 20:41 21:01\n", "not CODE:ATTR"),
+                         ("SHIP_0: dot 1 color 2\n", "no color"),
+                         ("SHIP_0: dot 9\n", "0..7"),
+                         ("font: digits\n", "RUN N pairs"),
+                         ("font: vowels 3\n", "font run")):
             m = self.write_map(bad)
             with self.assertRaises(bosco_rom.RomError, msg=bad) as ctx:
                 bosco_rom.convert(self.parts, m, Path(ROOT) / "assets" / "sprites.txt",

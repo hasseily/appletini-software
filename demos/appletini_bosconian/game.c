@@ -1,14 +1,15 @@
 /*
  * Appletini Bosconian -- world simulation (docs/DESIGN.md section 10).
  *
- * Positions are integer world pixels (u16, 0..1535) and wrap. Fractional
+ * Positions are integer world pixels (u16, x 0..1023, y 0..1791) and wrap
+ * on both axes like the arcade's. Fractional
  * speeds use frame parity: a 1.5 px/frame object moves 2 px on even frames
  * and 1 px on odd frames. Every object is a set of parallel arrays indexed
  * by a u8 slot, which is what cc65 turns into cheap absolute,X code.
  *
  * Screen coordinates are deltas from the ship, which sits at the playfield
  * center (128,100). "sdx/sdy" below always means "object center minus ship
- * center", wrapped into -768..767.
+ * center", wrapped into -512..511 (x) and -896..895 (y).
  */
 
 #include "game.h"
@@ -40,22 +41,36 @@ u8 base_state[BASE_MAX];
 u8 base_hz[BASE_MAX];
 u8 base_count;
 static u8 base_pods[BASE_MAX];     /* 6-bit pod mask */
-static u8 base_open[BASE_MAX];     /* 1 while the core is open */
-static u8 base_timer[BASE_MAX];    /* core cycle / dying countdown */
+static u8 base_timer[BASE_MAX];    /* dying countdown */
 static u8 base_cool[BASE_MAX];     /* pod shot cooldown */
-static u8 base_fired[BASE_MAX];    /* missile launched in this open phase */
+static u8 base_mcool[BASE_MAX];    /* missile cooldown */
 static s16 base_sx[BASE_MAX];
 static s16 base_sy[BASE_MAX];
 static u8 base_near[BASE_MAX];
 
-/* pod centers relative to the core: [0] vertical base (points up and
- * down, core exposed from the top and bottom), [1] horizontal base */
+/* Base geometry (docs/DESIGN.md section 10), from the arcade's tile grids.
+ * [0] vertical base (64x72, core exposed at the top and bottom), [1]
+ * horizontal base (72x64). pod_ox/oy are the centres of the pod SPRITES
+ * relative to the base centre (a corner pod's 24x24 box includes its strut),
+ * pod_hx/hy the centres of the 16x16 cannon bodies that are hit and that
+ * shoot. Pods: axis pod, four corner pods, axis pod. */
 static const s8 pod_ox[2][POD_COUNT] = {
-    { 0, -24, 24, -24, 24, 0 }, { -28, -14, -14, 14, 14, 28 }
+    { 0, -20, 20, -20, 20, 0 }, { -28, -16, 16, -16, 16, 28 }
 };
 static const s8 pod_oy[2][POD_COUNT] = {
-    { -28, -14, -14, 14, 14, 28 }, { 0, -24, 24, -24, 24, 0 }
+    { -28, -16, -16, 16, 16, 28 }, { 0, -20, -20, 20, 20, 0 }
 };
+static const s8 pod_hx[2][POD_COUNT] = {
+    { 0, -24, 24, -24, 24, 0 }, { -28, -12, 12, -12, 12, 28 }
+};
+static const s8 pod_hy[2][POD_COUNT] = {
+    { -28, -12, -12, 12, 12, 28 }, { 0, -24, -24, 24, 24, 0 }
+};
+/* the core box (32x40 / 40x32) and the 16 px wide tube along its axis */
+static const u8 core_w[2] = { 32, 40 };
+static const u8 core_h[2] = { 40, 32 };
+static const u8 tube_w[2] = { 16, 40 };
+static const u8 tube_h[2] = { 40, 16 };
 
 /* ---- enemies ---- */
 u8 en_type[ENEMY_MAX];
@@ -105,7 +120,7 @@ static u16 ex_y[EXPL_MAX];
 static s16 ex_sx[EXPL_MAX];
 static s16 ex_sy[EXPL_MAX];
 
-/* ---- field objects: 0 none, 1/2 asteroid shape, 3 mine ---- */
+/* ---- field objects: 0 none, 1..3 asteroid shape, 4 mine ---- */
 static u8 fld_kind[FIELD_MAX];
 static u16 fld_x[FIELD_MAX];
 static u16 fld_y[FIELD_MAX];
@@ -182,19 +197,35 @@ u8 rng8(void)
 /* ------------------------------------------------------------------ */
 /* small helpers                                                        */
 /* ------------------------------------------------------------------ */
-static u16 wrap_w(s16 v)
+static u16 wrap_x(s16 v)
 {
     if (v < 0) v += WORLD_W;
     else if (v >= WORLD_W) v -= WORLD_W;
     return (u16)v;
 }
 
-/* a - b wrapped into -768..767 */
-static s16 wdelta(u16 a, u16 b)
+static u16 wrap_y(s16 v)
+{
+    if (v < 0) v += WORLD_H;
+    else if (v >= WORLD_H) v -= WORLD_H;
+    return (u16)v;
+}
+
+/* a - b wrapped into -512..511 */
+static s16 wdelta_x(u16 a, u16 b)
 {
     s16 d = (s16)(a - b);
-    if (d > 767) d -= WORLD_W;
-    else if (d < -768) d += WORLD_W;
+    if (d > WORLD_W / 2 - 1) d -= WORLD_W;
+    else if (d < -WORLD_W / 2) d += WORLD_W;
+    return d;
+}
+
+/* a - b wrapped into -896..895 */
+static s16 wdelta_y(u16 a, u16 b)
+{
+    s16 d = (s16)(a - b);
+    if (d > WORLD_H / 2 - 1) d -= WORLD_H;
+    else if (d < -WORLD_H / 2) d += WORLD_H;
     return d;
 }
 
@@ -306,11 +337,9 @@ static u8 explosion_add(u8 kind, u16 x, u16 y)
     ex_kind[oldest] = kind;
     ex_x[oldest] = x;
     ex_y[oldest] = y;
-    ex_sx[oldest] = wdelta(x, player_x);
-    ex_sy[oldest] = wdelta(y, player_y);
-    if (kind == EX_SMALL) ex_timer[oldest] = 16;
-    else if (kind == EX_BLAST) ex_timer[oldest] = 20;
-    else ex_timer[oldest] = 8;
+    ex_sx[oldest] = wdelta_x(x, player_x);
+    ex_sy[oldest] = wdelta_y(y, player_y);
+    ex_timer[oldest] = kind == EX_BLAST ? 20 : 16;
     return oldest;
 }
 
@@ -343,8 +372,8 @@ static void spawn_pos(u8 slot, u8 dist)
     case 2: ox = spread; oy = (s16)dist; break;
     default: ox = -(s16)dist - 30; oy = spread; break;
     }
-    en_x[slot] = wrap_w((s16)player_x + ox);
-    en_y[slot] = wrap_w((s16)player_y + oy);
+    en_x[slot] = wrap_x((s16)player_x + ox);
+    en_y[slot] = wrap_y((s16)player_y + oy);
     en_h[slot] = dir8(-ox, -oy);
 }
 
@@ -491,13 +520,13 @@ static void enemies_tick(u8 player_active)
         }
         d = mv_x[h];
         if (step == 2) d += d;
-        en_x[i] = wrap_w((s16)en_x[i] + d);
+        en_x[i] = wrap_x((s16)en_x[i] + d);
         d = mv_y[h];
         if (step == 2) d += d;
-        en_y[i] = wrap_w((s16)en_y[i] + d);
+        en_y[i] = wrap_y((s16)en_y[i] + d);
 
-        dx = wdelta(en_x[i], player_x);
-        dy = wdelta(en_y[i], player_y);
+        dx = wdelta_x(en_x[i], player_x);
+        dy = wdelta_y(en_y[i], player_y);
         en_sx[i] = dx;
         en_sy[i] = dy;
 
@@ -518,10 +547,10 @@ static void enemies_tick(u8 player_active)
                 u8 s = FORM_FIRST + j;
                 if (en_type[s] == EN_NONE) continue;
                 en_h[s] = en_h[i];
-                en_x[s] = wrap_w((s16)en_x[i] + form_ox[j]);
-                en_y[s] = wrap_w((s16)en_y[i] + form_oy[j]);
-                en_sx[s] = wdelta(en_x[s], player_x);
-                en_sy[s] = wdelta(en_y[s], player_y);
+                en_x[s] = wrap_x((s16)en_x[i] + form_ox[j]);
+                en_y[s] = wrap_y((s16)en_y[i] + form_oy[j]);
+                en_sx[s] = wdelta_x(en_x[s], player_x);
+                en_sy[s] = wdelta_y(en_y[s], player_y);
             }
         }
     }
@@ -535,7 +564,7 @@ static void enemies_tick(u8 player_active)
         if (i < FORM_FIRST) ++free_alive;
         en_near[i] = near_range(en_sx[i], en_sy[i]);
         if (player_active && en_near[i] &&
-            boxes_hit(en_sx[i], en_sy[i], 16, 16, 12, 12)) {
+            boxes_hit(en_sx[i], en_sy[i], 16, 16, 16, 16)) {
             player_dead = 1;
             enemy_kill(i, 0);
         }
@@ -552,7 +581,7 @@ static void eshot_fire(u16 x, u16 y)
         if (es_life[i] == 0) break;
     }
     if (i == ESHOT_MAX) return;
-    d = dir16(wdelta(player_x, x), wdelta(player_y, y));
+    d = dir16(wdelta_x(player_x, x), wdelta_y(player_y, y));
     es_life[i] = 90;
     es_x[i] = x;
     es_y[i] = y;
@@ -567,10 +596,10 @@ static void eshots_tick(u8 player_active)
     for (i = 0; i < ESHOT_MAX; ++i) {
         if (es_life[i] == 0) continue;
         --es_life[i];
-        es_x[i] = wrap_w((s16)es_x[i] + es_dx[i]);
-        es_y[i] = wrap_w((s16)es_y[i] + es_dy[i]);
-        dx = wdelta(es_x[i], player_x);
-        dy = wdelta(es_y[i], player_y);
+        es_x[i] = wrap_x((s16)es_x[i] + es_dx[i]);
+        es_y[i] = wrap_y((s16)es_y[i] + es_dy[i]);
+        dx = wdelta_x(es_x[i], player_x);
+        dy = wdelta_y(es_y[i], player_y);
         es_sx[i] = dx;
         es_sy[i] = dy;
         if (abs16(dx) > 160 || abs16(dy) > 140) { es_life[i] = 0; continue; }
@@ -591,7 +620,7 @@ static void missile_fire(u16 x, u16 y)
     ms_life[i] = 240;                  /* u8: 240 px of travel at 1 px per frame */
     ms_x[i] = x;
     ms_y[i] = y;
-    ms_h[i] = dir8(wdelta(player_x, x), wdelta(player_y, y));
+    ms_h[i] = dir8(wdelta_x(player_x, x), wdelta_y(player_y, y));
     sound_sfx(SFX_MISSILE);
 }
 
@@ -612,13 +641,13 @@ static void missiles_tick(u8 player_active)
             ms_h[i] = h;
         }
         /* 1 px per frame: slower than the ship, so it can be outrun */
-        ms_x[i] = wrap_w((s16)ms_x[i] + mv_x[h]);
-        ms_y[i] = wrap_w((s16)ms_y[i] + mv_y[h]);
-        dx = wdelta(ms_x[i], player_x);
-        dy = wdelta(ms_y[i], player_y);
+        ms_x[i] = wrap_x((s16)ms_x[i] + mv_x[h]);
+        ms_y[i] = wrap_y((s16)ms_y[i] + mv_y[h]);
+        dx = wdelta_x(ms_x[i], player_x);
+        dy = wdelta_y(ms_y[i], player_y);
         ms_sx[i] = dx;
         ms_sy[i] = dy;
-        if (player_active && boxes_hit(dx, dy, 16, 16, 6, 8)) {
+        if (player_active && boxes_hit(dx, dy, 16, 16, 4, 4)) {
             player_dead = 1;
             explosion_add(EX_SMALL, ms_x[i], ms_y[i]);
             ms_life[i] = 0;
@@ -639,14 +668,14 @@ static u16 base_score(void)
 static void base_kill(u8 b)
 {
     u8 p;
-    const s8 *ox = pod_ox[base_hz[b]];
-    const s8 *oy = pod_oy[base_hz[b]];
+    const s8 *hx = pod_hx[base_hz[b]];
+    const s8 *hy = pod_hy[base_hz[b]];
     base_state[b] = BASE_DYING;
     base_timer[b] = 60;
     for (p = 0; p < POD_COUNT; ++p) {
         if (base_pods[b] & (1 << p)) {
-            explosion_add(EX_SMALL, wrap_w((s16)base_x[b] + ox[p]),
-                          wrap_w((s16)base_y[b] + oy[p]));
+            explosion_add(EX_SMALL, wrap_x((s16)base_x[b] + hx[p]),
+                          wrap_y((s16)base_y[b] + hy[p]));
         }
     }
     base_pods[b] = 0;
@@ -654,64 +683,83 @@ static void base_kill(u8 b)
     sound_sfx(SFX_BASE);
     set_event(EV_BASE_DESTROYED);
     if (bases_left) --bases_left;
-    hud_dirty |= HUD_BASES;
+}
+
+/* cannon p of base b destroyed: 200 points, a small explosion, rubble; the
+ * sixth one takes the base with it */
+static void pod_kill(u8 b, u8 p)
+{
+    const s8 *hx = pod_hx[base_hz[b]];
+    const s8 *hy = pod_hy[base_hz[b]];
+    base_pods[b] &= (u8)~(1 << p);
+    explosion_add(EX_SMALL, wrap_x((s16)base_x[b] + hx[p]),
+                  wrap_y((s16)base_y[b] + hy[p]));
+    sound_sfx(SFX_POD);
+    add_score(200);
+    if (base_pods[b] == 0) base_kill(b);
 }
 
 static void bases_tick(u8 player_active)
 {
-    u8 b, p;
+    u8 b, p, hz;
     s16 dx, dy, px, py;
     u8 all_gone = 1;
-    const s8 *ox;
-    const s8 *oy;
+    const s8 *hx;
+    const s8 *hy;
 
     for (b = 0; b < base_count; ++b) {
         if (base_state[b] == BASE_DEAD) continue;
         all_gone = 0;
-        dx = wdelta(base_x[b], player_x);
-        dy = wdelta(base_y[b], player_y);
+        dx = wdelta_x(base_x[b], player_x);
+        dy = wdelta_y(base_y[b], player_y);
         base_sx[b] = dx;
         base_sy[b] = dy;
-        /* a base is 64 px tall: widen the range by half of that */
-        base_near[b] = (dx >= -208 && dx <= 208 && dy >= -180 && dy <= 180);
+        /* a base is up to 72 px across: widen the range by half of that */
+        base_near[b] = (dx >= -212 && dx <= 212 && dy >= -184 && dy <= 184);
 
         if (base_state[b] == BASE_DYING) {
             if (--base_timer[b] == 0) base_state[b] = BASE_DEAD;
             continue;
         }
 
-        /* core cycle: closed 180, open 90 */
-        if (--base_timer[b] == 0) {
-            base_open[b] ^= 1;
-            base_timer[b] = base_open[b] ? 90 : 180;
-            base_fired[b] = 0;
-        }
         if (base_cool[b]) --base_cool[b];
+        if (base_mcool[b]) --base_mcool[b];
 
         if (!player_active || !base_near[b]) continue;
 
-        /* homing missile from an open core */
-        if (base_open[b] && !base_fired[b] &&
+        /* homing missile from the core, from round 3 on */
+        if (round_no >= 3 && base_mcool[b] == 0 &&
             abs16(dx) <= 200 && abs16(dy) <= 200) {
-            base_fired[b] = 1;
+            base_mcool[b] = 250;
             missile_fire(base_x[b], base_y[b]);
         }
 
-        /* contact with the core */
-        if (boxes_hit(dx, dy, 16, 16, 16, 16)) player_dead = 1;
+        hz = base_hz[b];
+        /* ramming the core destroys the base and the ship */
+        if (boxes_hit(dx, dy, 16, 16, core_w[hz], core_h[hz])) {
+            player_dead = 1;
+            base_kill(b);
+            continue;
+        }
 
-        ox = pod_ox[base_hz[b]];
-        oy = pod_oy[base_hz[b]];
+        hx = pod_hx[hz];
+        hy = pod_hy[hz];
         for (p = 0; p < POD_COUNT; ++p) {
             if (!(base_pods[b] & (1 << p))) continue;
-            px = dx + ox[p];
-            py = dy + oy[p];
-            if (boxes_hit(px, py, 16, 16, 16, 16)) player_dead = 1;
-            /* pod shot: pod on screen (which also puts it within 140 px) */
+            px = dx + hx[p];
+            py = dy + hy[p];
+            /* ramming a cannon destroys it and the ship */
+            if (boxes_hit(px, py, 16, 16, 16, 16)) {
+                player_dead = 1;
+                pod_kill(b, p);
+                if (base_state[b] != BASE_ALIVE) break;
+                continue;
+            }
+            /* cannon shot: cannon on screen (which also puts it within 140 px) */
             if (base_cool[b] == 0 && abs16(px) <= 128 && abs16(py) <= 100) {
                 base_cool[b] = 90;
-                eshot_fire(wrap_w((s16)base_x[b] + ox[p]),
-                           wrap_w((s16)base_y[b] + oy[p]));
+                eshot_fire(wrap_x((s16)base_x[b] + hx[p]),
+                           wrap_y((s16)base_y[b] + hy[p]));
             }
         }
     }
@@ -727,14 +775,14 @@ static void field_tick(u8 player_active)
     s16 dx, dy;
     for (i = 0; i < FIELD_MAX; ++i) {
         if (fld_kind[i] == 0) { fld_near[i] = 0; continue; }
-        dx = wdelta(fld_x[i], player_x);
+        dx = wdelta_x(fld_x[i], player_x);
         if (dx < -176 || dx > 176) { fld_near[i] = 0; continue; }  /* far: skip y */
-        dy = wdelta(fld_y[i], player_y);
+        dy = wdelta_y(fld_y[i], player_y);
         fld_sx[i] = dx;
         fld_sy[i] = dy;
         fld_near[i] = (u8)(dy >= -148 && dy <= 148);
         if (!player_active || !fld_near[i]) continue;
-        w = fld_kind[i] == 3 ? 12 : 16;
+        w = fld_kind[i] == 4 ? 12 : 16;
         if (boxes_hit(dx, dy, 16, 16, w, w)) player_dead = 1;
     }
 }
@@ -760,8 +808,8 @@ static void explosions_tick(u8 player_active)
     u8 i;
     for (i = 0; i < EXPL_MAX; ++i) {
         if (ex_kind[i] == EX_NONE) continue;
-        ex_sx[i] = wdelta(ex_x[i], player_x);
-        ex_sy[i] = wdelta(ex_y[i], player_y);
+        ex_sx[i] = wdelta_x(ex_x[i], player_x);
+        ex_sy[i] = wdelta_y(ex_y[i], player_y);
         if (ex_kind[i] == EX_BLAST) blast_check(i, player_active);
         if (--ex_timer[i] == 0) ex_kind[i] = EX_NONE;
     }
@@ -797,13 +845,13 @@ static u8 pshot_hit(u8 s)
     s16 dx, dy, px, py;
     s16 sx = ps_sx[s];
     s16 sy = ps_sy[s];
-    const s8 *ox;
-    const s8 *oy;
+    const s8 *hx;
+    const s8 *hy;
 
     /* enemies */
     for (i = 0; i < ENEMY_MAX; ++i) {
         if (en_type[i] == EN_NONE || !en_near[i]) continue;
-        if (boxes_hit(en_sx[i] - sx, en_sy[i] - sy, 2, 6, 12, 12)) {
+        if (boxes_hit(en_sx[i] - sx, en_sy[i] - sy, 4, 4, 16, 16)) {
             enemy_kill(i, 1);
             return 1;
         }
@@ -811,7 +859,7 @@ static u8 pshot_hit(u8 s)
     /* missiles can be shot down */
     for (i = 0; i < MISSILE_MAX; ++i) {
         if (ms_life[i] == 0) continue;
-        if (boxes_hit(ms_sx[i] - sx, ms_sy[i] - sy, 2, 6, 6, 8)) {
+        if (boxes_hit(ms_sx[i] - sx, ms_sy[i] - sy, 4, 4, 4, 4)) {
             explosion_add(EX_SMALL, ms_x[i], ms_y[i]);
             sound_sfx(SFX_HIT);
             add_score(50);
@@ -822,9 +870,9 @@ static u8 pshot_hit(u8 s)
     /* field objects */
     for (i = 0; i < FIELD_MAX; ++i) {
         if (fld_kind[i] == 0 || !fld_near[i]) continue;
-        w = fld_kind[i] == 3 ? 12 : 16;
-        if (boxes_hit(fld_sx[i] - sx, fld_sy[i] - sy, 2, 6, w, w)) {
-            if (fld_kind[i] == 3) {
+        w = fld_kind[i] == 4 ? 12 : 16;
+        if (boxes_hit(fld_sx[i] - sx, fld_sy[i] - sy, 4, 4, w, w)) {
+            if (fld_kind[i] == 4) {
                 explosion_add(EX_BLAST, fld_x[i], fld_y[i]);
                 sound_sfx(SFX_MINE);
                 add_score(20);
@@ -837,36 +885,30 @@ static u8 pshot_hit(u8 s)
             return 1;
         }
     }
-    /* bases: pods then the core */
+    /* bases: cannons, then the core */
     for (b = 0; b < base_count; ++b) {
         if (base_state[b] != BASE_ALIVE || !base_near[b]) continue;
         dx = base_sx[b] - sx;
         dy = base_sy[b] - sy;
-        ox = pod_ox[base_hz[b]];
-        oy = pod_oy[base_hz[b]];
+        w = base_hz[b];
+        hx = pod_hx[w];
+        hy = pod_hy[w];
         for (p = 0; p < POD_COUNT; ++p) {
             if (!(base_pods[b] & (1 << p))) continue;
-            px = dx + ox[p];
-            py = dy + oy[p];
-            if (boxes_hit(px, py, 2, 6, 16, 16)) {
-                base_pods[b] &= ~(1 << p);
-                explosion_add(EX_PODHIT, wrap_w((s16)base_x[b] + ox[p]),
-                              wrap_w((s16)base_y[b] + oy[p]));
-                sound_sfx(SFX_POD);
-                if (base_pods[b] == 0) {
-                    /* the sixth pod takes the base with it */
-                    add_score(200);
-                    base_kill(b);
-                }
+            px = dx + hx[p];
+            py = dy + hy[p];
+            if (boxes_hit(px, py, 4, 4, 16, 16)) {
+                pod_kill(b, p);
                 return 1;
             }
         }
-        if (boxes_hit(dx, dy, 2, 6, 16, 16)) {
-            /* the open core is exposed only along the base's axis: a vertical
-             * base takes a shot flying up or down, a horizontal one a shot
-             * flying left or right (diagonal shots glance off) */
-            w = base_hz[b] ? (mv_y[ps_h[s]] == 0) : (mv_x[ps_h[s]] == 0);
-            if (base_open[b] && w) {
+        if (boxes_hit(dx, dy, 4, 4, core_w[w], core_h[w])) {
+            /* the core is open only along the base's axis: a vertical base
+             * takes a shot flying up or down into its 16 px tube, a
+             * horizontal one a shot flying left or right; everything else
+             * bounces off the hull */
+            if (boxes_hit(dx, dy, 4, 4, tube_w[w], tube_h[w]) &&
+                (w ? (mv_y[ps_h[s]] == 0) : (mv_x[ps_h[s]] == 0))) {
                 base_kill(b);
             } else {
                 sound_sfx(SFX_HIT);
@@ -884,10 +926,10 @@ static void pshots_tick(void)
         if (ps_life[i] == 0) continue;
         --ps_life[i];
         h = ps_h[i];
-        ps_x[i] = wrap_w((s16)ps_x[i] + mv_x[h] * 5);
-        ps_y[i] = wrap_w((s16)ps_y[i] + mv_y[h] * 5);
-        ps_sx[i] = wdelta(ps_x[i], player_x);
-        ps_sy[i] = wdelta(ps_y[i], player_y);
+        ps_x[i] = wrap_x((s16)ps_x[i] + mv_x[h] * 5);
+        ps_y[i] = wrap_y((s16)ps_y[i] + mv_y[h] * 5);
+        ps_sx[i] = wdelta_x(ps_x[i], player_x);
+        ps_sy[i] = wdelta_y(ps_y[i], player_y);
         if (pshot_hit(i)) ps_life[i] = 0;
     }
 }
@@ -916,11 +958,11 @@ static void player_tick(u8 in)
     d = mv_x[h];
     if (step == 2) d += d;
     cam_dx = d;
-    player_x = wrap_w((s16)player_x + d);
+    player_x = wrap_x((s16)player_x + d);
     d = mv_y[h];
     if (step == 2) d += d;
     cam_dy = d;
-    player_y = wrap_w((s16)player_y + d);
+    player_y = wrap_y((s16)player_y + d);
 
     if (fire_cool) --fire_cool;
     if ((in & IN_FIRE) && fire_cool == 0) {
@@ -997,9 +1039,9 @@ void world_respawn(void)
 static u8 spot_is_free(u16 x, u16 y)
 {
     u8 b;
-    if (abs16(wdelta(x, START_X)) < 160 && abs16(wdelta(y, START_Y)) < 160) return 0;
+    if (abs16(wdelta_x(x, START_X)) < 160 && abs16(wdelta_y(y, START_Y)) < 160) return 0;
     for (b = 0; b < base_count; ++b) {
-        if (abs16(wdelta(x, base_x[b])) < 96 && abs16(wdelta(y, base_y[b])) < 96) return 0;
+        if (abs16(wdelta_x(x, base_x[b])) < 96 && abs16(wdelta_y(y, base_y[b])) < 96) return 0;
     }
     return 1;
 }
@@ -1014,15 +1056,14 @@ void world_new_round(void)
     for (b = 0; b < BASE_MAX; ++b) {
         base_state[b] = BASE_DEAD;
         if (b >= base_count) continue;
-        base_x[b] = (u16)rd->x8[b] << 3;
-        base_y[b] = (u16)rd->y8[b] << 3;
+        base_x[b] = rd->x[b];
+        base_y[b] = rd->y[b];
         base_hz[b] = (rd->hz >> b) & 1;
         base_state[b] = BASE_ALIVE;
         base_pods[b] = 0x3F;
-        base_open[b] = 0;
-        base_timer[b] = (u8)(120 + (rng8() & 63));
+        base_timer[b] = 0;
         base_cool[b] = 0;
-        base_fired[b] = 0;
+        base_mcool[b] = (u8)(120 + (rng8() & 63));
     }
     bases_left = base_count;
 
@@ -1036,8 +1077,8 @@ void world_new_round(void)
         if (tries == 8) continue;
         fld_x[i] = x;
         fld_y[i] = y;
-        if (i < ASTEROID_COUNT) fld_kind[i] = 1 + (rng8() & 1);
-        else fld_kind[i] = 3;
+        if (i < ASTEROID_COUNT) fld_kind[i] = 1 + rng8() % 3;
+        else fld_kind[i] = 4;
     }
 
     condition = 0;
@@ -1045,7 +1086,7 @@ void world_new_round(void)
     zig_timer = 0;
     zig_phase = 0;
     round_done = 0;
-    hud_dirty |= HUD_COND | HUD_ROUND | HUD_BASES;
+    hud_dirty |= HUD_COND | HUD_ROUND;
     world_respawn();
 }
 
@@ -1080,9 +1121,9 @@ void world_death_burst(void)
 {
     u8 e;
     explosion_add(EX_SMALL, player_x, player_y);
-    e = explosion_add(EX_SMALL, wrap_w((s16)player_x - 8), wrap_w((s16)player_y + 6));
+    e = explosion_add(EX_SMALL, wrap_x((s16)player_x - 8), wrap_y((s16)player_y + 6));
     ex_timer[e] = 24;
-    e = explosion_add(EX_SMALL, wrap_w((s16)player_x + 8), wrap_w((s16)player_y - 6));
+    e = explosion_add(EX_SMALL, wrap_x((s16)player_x + 8), wrap_y((s16)player_y - 6));
     ex_timer[e] = 32;
 }
 
@@ -1160,33 +1201,37 @@ static void dl_add(u8 id, s16 sdx, s16 sdy)
 
 void world_build_dl(u8 with_player)
 {
-    u8 i, b, p, f;
+    u8 i, b, p, f, hz, id;
+    const s8 *ox;
+    const s8 *oy;
 
     dl_count = 0;
     dlp = dl_tmp;
 
-    /* bases: pods then core; a dying base shows the big explosion */
+    /* bases: the six pods (live or rubble) then the core; a dying base
+     * shows the big explosion */
     for (b = 0; b < base_count; ++b) {
         if (base_state[b] == BASE_DEAD || !base_near[b]) continue;
         if (base_state[b] == BASE_DYING) {
-            f = (u8)((60 - base_timer[b]) >> 4) & 3;
+            f = base_timer[b] > 40 ? 0 : (base_timer[b] > 20 ? 1 : 2);
             dl_add(SPR_BIGEXPL_0 + f, base_sx[b], base_sy[b]);
             continue;
         }
+        hz = base_hz[b];
+        ox = pod_ox[hz];
+        oy = pod_oy[hz];
         for (p = 0; p < POD_COUNT; ++p) {
-            if (base_pods[b] & (1 << p)) {
-                dl_add(SPR_POD, base_sx[b] + pod_ox[base_hz[b]][p],
-                       base_sy[b] + pod_oy[base_hz[b]][p]);
-            }
+            if (base_pods[b] & (1 << p)) id = hz ? SPR_POD_H0 : SPR_POD_V0;
+            else id = hz ? SPR_PODDEAD_H0 : SPR_PODDEAD_V0;
+            dl_add(id + p, base_sx[b] + ox[p], base_sy[b] + oy[p]);
         }
-        dl_add(base_open[b] ? SPR_CORE_OPEN : SPR_CORE_CLOSED, base_sx[b], base_sy[b]);
+        dl_add(hz ? SPR_CORE_H : SPR_CORE_V, base_sx[b], base_sy[b]);
     }
 
     /* field objects */
-    f = (u8)(frame >> 4) & 1;
     for (i = 0; i < FIELD_MAX; ++i) {
         if (!fld_near[i]) continue;
-        if (fld_kind[i] == 3) dl_add(SPR_MINE_0 + f, fld_sx[i], fld_sy[i]);
+        if (fld_kind[i] == 4) dl_add(SPR_MINE, fld_sx[i], fld_sy[i]);
         else dl_add(SPR_ASTEROID_0 + fld_kind[i] - 1, fld_sx[i], fld_sy[i]);
     }
 
@@ -1199,42 +1244,38 @@ void world_build_dl(u8 with_player)
         if (ms_life[i]) dl_add(SPR_MISSILE_0 + f, ms_sx[i], ms_sy[i]);
     }
 
-    /* enemies */
-    f = (u8)(frame >> 2) & 3;
+    /* enemies: every type has the eight headings */
     for (i = 0; i < ENEMY_MAX; ++i) {
         u8 t = en_type[i];
-        u8 id;
         if (t == EN_NONE || !en_near[i]) continue;
-        if (t == EN_I) id = (en_flags[i] & EF_LEADER) ? SPR_PTYPE_0 + en_h[i]
-                                                     : SPR_ITYPE_0 + en_h[i];
-        else if (t == EN_P) id = SPR_PTYPE_0 + en_h[i];
-        else id = SPR_ETYPE_0 + f;
-        dl_add(id, en_sx[i], en_sy[i]);
+        if (t == EN_I) id = (en_flags[i] & EF_LEADER) ? SPR_PTYPE_0 : SPR_ITYPE_0;
+        else if (t == EN_P) id = SPR_PTYPE_0;
+        else if (t == EN_E) id = SPR_ETYPE_0;
+        else id = SPR_SPY_0;
+        dl_add(id + en_h[i], en_sx[i], en_sy[i]);
     }
 
-    /* player shots: a bar along the heading, a dot on diagonals */
+    /* player shots: a bar along the heading, a diagonal on the diagonals */
     for (i = 0; i < PSHOT_MAX; ++i) {
         if (!ps_life[i]) continue;
         f = ps_h[i];
-        if (f & 1) dl_add(SPR_SHOT_PLAYER_D, ps_sx[i], ps_sy[i]);
-        else if (f & 2) dl_add(SPR_SHOT_PLAYER_H, ps_sx[i], ps_sy[i]);
-        else dl_add(SPR_SHOT_PLAYER, ps_sx[i], ps_sy[i]);
+        if (f & 1) id = (f == 1 || f == 5) ? SPR_SHOT_PLAYER_D1 : SPR_SHOT_PLAYER_D2;
+        else id = (f & 2) ? SPR_SHOT_PLAYER_H : SPR_SHOT_PLAYER;
+        dl_add(id, ps_sx[i], ps_sy[i]);
     }
 
-    /* explosions */
+    /* explosions: three frames each */
     for (i = 0; i < EXPL_MAX; ++i) {
         u8 k = ex_kind[i];
         if (k == EX_NONE) continue;
         if (!near_range(ex_sx[i], ex_sy[i])) continue;
+        f = ex_timer[i];
         if (k == EX_SMALL) {
-            f = (u8)((16 - ex_timer[i]) >> 2) & 3;
+            f = f > 10 ? 0 : (f > 5 ? 1 : 2);
             dl_add(SPR_EXPL_0 + f, ex_sx[i], ex_sy[i]);
-        } else if (k == EX_BLAST) {
-            f = ex_timer[i];                /* 20..1: frame 0..3, 5 frames each */
-            f = f > 15 ? 0 : (f > 10 ? 1 : (f > 5 ? 2 : 3));
-            dl_add(SPR_BIGEXPL_0 + f, ex_sx[i], ex_sy[i]);
         } else {
-            dl_add(SPR_POD_HIT, ex_sx[i], ex_sy[i]);
+            f = f > 13 ? 0 : (f > 6 ? 1 : 2);
+            dl_add(SPR_BIGEXPL_0 + f, ex_sx[i], ex_sy[i]);
         }
     }
 
@@ -1260,10 +1301,10 @@ void stars_init(u8 title)
             star_y[i] = rng8() % FIELD_H;
         }
         if (i < 24) {
-            star_color[i] = C_DGRAY;                 /* far layer */
+            star_color[i] = C_DTEAL;                 /* far layer */
         } else {
             band = rng8() & 3;
-            star_color[i] = band == 0 ? C_LBLUE : (band == 1 ? C_LGRAY : C_WHITE);
+            star_color[i] = band == 0 ? C_CYAN : (band == 1 ? C_GRAY : C_WHITE);
         }
     }
     far_acc_x = 0;

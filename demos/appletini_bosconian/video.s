@@ -22,7 +22,7 @@
 .export _video_frame_writes
 
 .import _spr_even_lo, _spr_even_hi, _spr_odd_lo, _spr_odd_hi
-.import _spr_width, _spr_height, _font8, _palette0
+.import _spr_width, _spr_height, _spr_bank, _font8, _palette0
 .import popa
 .macpack longbranch
 
@@ -33,8 +33,6 @@ V_SRC     = ZP_VIDEO+$00   ; 2  run source pointer
 V_DST     = ZP_VIDEO+$02   ; 2  row destination pointer
 V_REC     = ZP_VIDEO+$04   ; 2  sprite row record pointer
 V_TMP     = ZP_VIDEO+$06   ; 2  scratch
-V_X       = ZP_VIDEO+$08   ; 2  sprite x (signed)
-V_Y       = ZP_VIDEO+$0A   ; 2  sprite y (signed)
 V_H       = ZP_VIDEO+$0C   ; sprite height
 V_W       = ZP_VIDEO+$0D   ; sprite width in bytes (this variant)
 V_BC      = ZP_VIDEO+$0E   ; byte column of the sprite (signed 8-bit)
@@ -42,9 +40,6 @@ V_ROWS    = ZP_VIDEO+$0F   ; rows left to draw
 V_SY      = ZP_VIDEO+$10   ; current screen row
 V_LEN     = ZP_VIDEO+$11   ; run length after clipping
 V_START   = ZP_VIDEO+$12   ; first byte column of the clipped run
-V_MODE    = ZP_VIDEO+$13   ; 0 = draw, 1 = erase
-V_ID      = ZP_VIDEO+$14   ; sprite id
-V_WR      = ZP_VIDEO+$15   ; 2  AUX bytes written (copied out after RAMWRT off)
 V_CNT     = ZP_VIDEO+$17   ; loop counter
 V_ITEM    = ZP_VIDEO+$18   ; 2  display list item pointer
 V_COLOR   = ZP_VIDEO+$1A   ; color nibble (low)
@@ -63,6 +58,10 @@ V_WB      = ZP_VIDEO+$28   ; fill width in bytes
 V_HH      = ZP_VIDEO+$29   ; fill height
 V_GW      = ZP_VIDEO+$2A   ; glyph width in bytes (4 or 8)
 V_PTR     = ZP_VIDEO+$2B   ; 2  generic pointer for clears/copies
+V_MORE    = ZP_VIDEO+$2D   ; bit 7: the current run record is not the row's last
+V_ACC     = ZP_VIDEO+$2E   ; 2  AUX bytes written by the sprite being blitted
+V_WR      = ZP_VIDEO+$15   ; 2  AUX bytes written this frame (main zero page only)
+; ($08-$0B, $13, $14 are free: the blit inputs moved to B_* in BSS)
 
 SCREEN_H  = 200
 FIELD_H   = 200
@@ -89,6 +88,16 @@ prev_star_x:        .res STAR_MAX
 prev_star_y:        .res STAR_MAX
 prev_star_count:    .res 1
 panel_color:        .res 1
+
+; blit_sprite inputs live in main memory, not in the zero page: the blitter
+; switches to the auxiliary zero page (ALTZP) for sprites that live in the
+; auxiliary language card, and the caller's values must stay readable there.
+; They are only ever stored with RAMWRT off (a store with RAMWRT on would
+; land in auxiliary memory).
+B_ID:               .res 1      ; sprite id
+B_X:                .res 2      ; sprite x (signed)
+B_Y:                .res 2      ; sprite y (signed)
+B_MODE:             .res 1      ; 0 = draw, 1 = erase
 
 ; ---------------------------------------------------------------------------
 ; read-only tables
@@ -145,13 +154,36 @@ erase_run:
         rts
 
 ; ---------------------------------------------------------------------------
-; blit_sprite: draw (V_MODE = 0) or erase (V_MODE = 1) sprite V_ID at
-; signed V_X / V_Y, clipped to x bytes 0..127 and rows 0..199. Adds the
-; number of AUX bytes written to V_WR. RAMWRT must already be on.
+; blit_sprite: draw (B_MODE = 0) or erase (B_MODE = 1) sprite B_ID at
+; signed B_X / B_Y, clipped to x bytes 0..127 and rows 0..199. Adds the
+; number of AUX bytes written to V_WR (main zero page). RAMWRT must already
+; be on; the B_* inputs must have been stored with RAMWRT off.
+;
+; Sprites whose _spr_bank is not 0 live in the auxiliary language card:
+; ALTZP is switched on for the whole blit (aux zero page, stack and card),
+; so every input is read from the B_* variables in main memory, the
+; zero-page scratch below is the auxiliary one, and the byte count is kept
+; in V_ACC and added to V_WR in registers after switching back. Bit 1 of
+; the bank code selects bank 1 of $D000-$DFFF instead of bank 2. The card
+; is left readable (write protected); nothing in the game reads ROM.
+;
+; A row is one or more run records; bit 7 of run_off says another run of
+; the same row follows (docs/DESIGN.md section 4).
 ; ---------------------------------------------------------------------------
 blit_sprite:
-        ldx     V_ID
-        lda     V_X
+        ldx     B_ID
+        lda     _spr_bank,x
+        beq     @mapped
+        sta     ALTZPON                 ; auxiliary zero page, stack, language card
+        and     #SPR_BANK_1
+        beq     @bank2
+        bit     LCBANK1RD               ; read bank 1 RAM, write protected
+        bra     @mapped
+@bank2: bit     LCBANK2RD               ; read bank 2 RAM, write protected
+@mapped:
+        stz     V_ACC                   ; (in whichever zero page is active now)
+        stz     V_ACC+1
+        lda     B_X
         lsr     a                       ; C = x & 1
         bcs     @odd
         lda     _spr_even_lo,x
@@ -179,11 +211,11 @@ blit_sprite:
         inc     V_REC+1
 :
         ; byte column = x >> 1 (arithmetic) as a signed 16-bit value in X:A
-        lda     V_X+1
+        lda     B_X+1
         cmp     #$80
         ror     a
         tax
-        lda     V_X
+        lda     B_X
         ror     a
         cpx     #0
         beq     @bc_pos
@@ -203,14 +235,14 @@ blit_sprite:
 @bc_done:
 
         ; vertical clip: first row r0 and row count
-        lda     V_Y+1
+        lda     B_Y+1
         beq     @y_pos
         cmp     #$FF
         jne     @off
         ; y in -256..-1: r0 = -y
         lda     #0
         sec
-        sbc     V_Y
+        sbc     B_Y
         jeq     @off                    ; y = -256
         cmp     V_H
         jcs     @off                    ; whole sprite above the screen
@@ -222,6 +254,8 @@ blit_sprite:
         stz     V_SY
         ; skip r0 row records
 @skip:
+        lda     (V_REC)                 ; run_off: $FF empty row, bit 7 more runs
+        tax
         ldy     #1
         lda     (V_REC),y
         clc
@@ -230,28 +264,36 @@ blit_sprite:
         sta     V_REC
         bcc     :+
         inc     V_REC+1
+:       cpx     #$FF
+        beq     :+
+        txa
+        bmi     @skip                   ; the same row continues
 :       dec     V_TMP
         bne     @skip
         bra     @rows
 @y_pos:
-        lda     V_Y
+        lda     B_Y
         cmp     #FIELD_H
         jcs     @off
         sta     V_SY
         lda     #FIELD_H
         sec
-        sbc     V_Y                     ; rows available below y
+        sbc     B_Y                     ; rows available below y
         cmp     V_H
         bcc     :+
         lda     V_H
 :       sta     V_ROWS
 
 @rows:
-        ; ---- one row per iteration ----
+        ; ---- one run per iteration; a row has one or more runs ----
 @row:
-        lda     (V_REC)                 ; run_off
+        lda     (V_REC)                 ; run_off, bit 7 = another run follows
         cmp     #$FF
-        jeq     @next                   ; empty row
+        bne     :+
+        stz     V_MORE                  ; empty row
+        jmp     @next
+:       sta     V_MORE
+        and     #$7F
         clc
         adc     V_BC                    ; start = bc + run_off
         bit     V_BC
@@ -325,18 +367,18 @@ blit_sprite:
         adc     #0
         sta     V_DST+1
         ; count the bytes
-        lda     V_WR
+        lda     V_ACC
         clc
         adc     V_LEN
-        sta     V_WR
+        sta     V_ACC
         bcc     :+
-        inc     V_WR+1
+        inc     V_ACC+1
 :       lda     V_LEN
         asl     a
         tax
         ldy     V_LEN
         dey
-        lda     V_MODE
+        lda     B_MODE
         bne     @erase
         jsr     copy_dispatch
         bra     @next
@@ -344,7 +386,7 @@ blit_sprite:
         lda     #0
         jsr     erase_dispatch
 @next:
-        ; advance to the next row record: rec += 2 + run_len
+        ; advance to the next run record: rec += 2 + run_len
         ldy     #1
         lda     (V_REC),y
         clc
@@ -353,34 +395,55 @@ blit_sprite:
         sta     V_REC
         bcc     :+
         inc     V_REC+1
-:       inc     V_SY
+:       bit     V_MORE
+        jmi     @row                    ; another run of the same row
+        inc     V_SY
         dec     V_ROWS
         jne     @row
 @off:
+        ; the count travels in A/X across the switch back to the main zero page
+        ldy     B_ID
+        lda     _spr_bank,y
+        beq     @nosw
+        lda     V_ACC
+        ldx     V_ACC+1
+        sta     ALTZPOFF                ; back to the main zero page and stack
+        bra     @add
+@nosw:  lda     V_ACC
+        ldx     V_ACC+1
+@add:   clc
+        adc     V_WR
+        sta     V_WR
+        txa
+        adc     V_WR+1
+        sta     V_WR+1
         rts
 
 ; ---------------------------------------------------------------------------
 ; blit_list: run blit_sprite over a display list. V_ITEM = list, V_CNT =
-; item count, V_MODE = draw/erase. RAMWRT must be on.
+; item count, B_MODE = draw/erase. RAMWRT must be on; it is turned off
+; while the item is copied into the B_* inputs (main memory).
 ; ---------------------------------------------------------------------------
 blit_list:
         lda     V_CNT
         beq     @done
 @loop:
+        sta     RAMWRTOFF
         lda     (V_ITEM)
-        sta     V_ID
+        sta     B_ID
         ldy     #1
         lda     (V_ITEM),y
-        sta     V_X
+        sta     B_X
         iny
         lda     (V_ITEM),y
-        sta     V_X+1
+        sta     B_X+1
         iny
         lda     (V_ITEM),y
-        sta     V_Y
+        sta     B_Y
         iny
         lda     (V_ITEM),y
-        sta     V_Y+1
+        sta     B_Y+1
+        sta     RAMWRTON
         jsr     blit_sprite
         lda     V_ITEM
         clc
@@ -467,10 +530,10 @@ draw_stars:
 _video_render:
         stz     V_WR
         stz     V_WR+1
+        lda     #1
+        sta     B_MODE                  ; main memory: store before RAMWRT goes on
         sta     RAMWRTON
 
-        lda     #1
-        sta     V_MODE
         lda     #<prev_items
         sta     V_ITEM
         lda     #>prev_items
@@ -482,7 +545,9 @@ _video_render:
         jsr     erase_stars
         jsr     draw_stars
 
-        stz     V_MODE
+        sta     RAMWRTOFF
+        stz     B_MODE
+        sta     RAMWRTON
         lda     #<_dl_items
         sta     V_ITEM
         lda     #>_dl_items
@@ -947,7 +1012,8 @@ fill_common:
 ; ---------------------------------------------------------------------------
 ; void panel_sprite(u8 px, u8 py, u8 id)
 ;   Even variant at byte column 128+px, no horizontal clipping; rows past
-;   199 are skipped.
+;   199 are skipped. Main-memory sprites only (the panel icons): no bank
+;   switching here.
 ; ---------------------------------------------------------------------------
 _panel_sprite:
         tax
@@ -973,9 +1039,13 @@ _panel_sprite:
         inc     V_REC+1
 :       sta     RAMWRTON
 @row:
-        lda     (V_REC)                 ; run_off
+        lda     (V_REC)                 ; run_off, bit 7 = another run follows
         cmp     #$FF
-        beq     @next
+        bne     :+
+        stz     V_MORE                  ; empty row
+        bra     @next
+:       sta     V_MORE
+        and     #$7F
         ldx     V_SY
         cpx     #SCREEN_H
         bcs     @next
@@ -1010,7 +1080,9 @@ _panel_sprite:
         sta     V_REC
         bcc     :+
         inc     V_REC+1
-:       inc     V_SY
+:       bit     V_MORE
+        bmi     @row                    ; another run of the same row
+        inc     V_SY
         dec     V_ROWS
         bne     @row
         sta     RAMWRTOFF

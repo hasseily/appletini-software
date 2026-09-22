@@ -28,6 +28,20 @@ static u16 max_writes;
 static u16 dropped_frames;
 static u8 title_blink;
 
+/* ---- side panel layout (docs/DESIGN.md section 6): the arcade's panel,
+ * 64 px wide, squeezed from 224 to 200 rows ---- */
+#define PANEL_Y_HI 0            /* HI-SCORE caption, then its digits */
+#define PANEL_Y_HI_VALUE 8
+#define PANEL_Y_1UP 16
+#define PANEL_Y_SCORE 24
+#define PANEL_Y_CONDITION 36    /* small caption */
+#define PANEL_Y_COND_BOX 44     /* 16 rows: rule, GREEN/YELLOW/RED, rule */
+#define RADAR_Y 64              /* the whole 1024x1792 world at 1/16: 64x112 */
+#define RADAR_H 112
+#define PANEL_Y_LIVES 176       /* up to four 16x16 ship icons */
+#define PANEL_Y_ROUND 192
+#define RADAR_COLOR C_PURPLE    /* the arcade radar's background */
+
 /* radar dots drawn last frame (erased before the new ones are drawn) */
 #define RADAR_MAX 12
 static u8 radar_px[RADAR_MAX];
@@ -37,6 +51,7 @@ static u8 radar_new_px[RADAR_MAX];
 static u8 radar_new_py[RADAR_MAX];
 static u8 radar_new_color[RADAR_MAX];
 static u8 radar_new_n;
+static u8 radar_marks[BASE_MAX];    /* base marker drawn on the radar */
 
 static char textbuf[36];
 
@@ -154,31 +169,19 @@ static void mailbox_init(void)
 /* ------------------------------------------------------------------ */
 static void hud_labels(void)
 {
-    panel_text(0, 2, C_WHITE, "HI-SCORE");
-    panel_text(0, 22, C_WHITE, "1UP");
-    /* radar frame around x 264..311, y 60..107 */
-    panel_fill(3, 58, 26, 2, C_DBLUE);
-    panel_fill(3, 108, 26, 2, C_DBLUE);
-    panel_fill(3, 60, 1, 48, C_DBLUE);
-    panel_fill(28, 60, 1, 48, C_DBLUE);
-    /* diagnostics in the bottom corner: "33MHZ" and "RW128" (5 glyphs of
-     * 4 bytes fit the 32-byte panel; rows 184..199) */
-    fmt_u16(textbuf, mhz, 2);
-    textbuf[2] = 'M'; textbuf[3] = 'H'; textbuf[4] = 'Z'; textbuf[5] = 0;
-    panel_text(0, 184, C_DGRAY, textbuf);
-    textbuf[0] = 'R'; textbuf[1] = 'W';
-    fmt_u16(textbuf + 2, ramworks_banks, 3);
-    textbuf[5] = 0;
-    panel_text(0, 192, C_DGRAY, textbuf);
+    panel_text(0, PANEL_Y_HI, C_RED, "HI-SCORE");
+    panel_text(0, PANEL_Y_1UP, C_WHITE, "1UP");
+    panel_text_small(0, PANEL_Y_CONDITION, C_GRAY, "CONDITION");
+    panel_fill(0, RADAR_Y, PANEL_BYTES, RADAR_H, RADAR_COLOR);
     hud_dirty = HUD_ALL;
 }
 
-static void hud_icons(u8 py, u8 id, u8 n)
+static void hud_lives(void)
 {
-    u8 i;
-    if (n > 8) n = 8;
-    panel_fill(0, py, 32, 8, C_BLACK);
-    for (i = 0; i < n; ++i) panel_sprite(i << 2, py, id);
+    u8 i, n = lives;
+    if (n > 4) n = 4;
+    panel_fill(0, PANEL_Y_LIVES, PANEL_BYTES, 16, C_BLACK);
+    for (i = 0; i < n; ++i) panel_sprite(i << 3, PANEL_Y_LIVES, SPR_ICON_SHIP);
 }
 
 static void hud_update(void)
@@ -188,16 +191,19 @@ static void hud_update(void)
     hud_dirty = 0;
     if (d & HUD_HI) {
         fmt_score(textbuf, hi_score);
-        panel_text(4, 10, C_CYAN, textbuf);
+        panel_text(4, PANEL_Y_HI_VALUE, C_WHITE, textbuf);
     }
     if (d & HUD_SCORE) {
         fmt_score(textbuf, score);
-        panel_text(4, 30, C_CYAN, textbuf);
+        panel_text(4, PANEL_Y_SCORE, C_WHITE, textbuf);
     }
     if (d & HUD_COND) {
+        /* the arcade's framed condition label in its colour */
         u8 c = cond_color[condition];
-        panel_fill(0, 44, 28, 10, c);
-        panel_text(2, 45, c, condition == 0 ? cond_name0 :
+        panel_fill(0, PANEL_Y_COND_BOX, PANEL_BYTES, 16, C_BLACK);
+        panel_fill(0, PANEL_Y_COND_BOX, PANEL_BYTES, 2, c);
+        panel_fill(0, PANEL_Y_COND_BOX + 14, PANEL_BYTES, 2, c);
+        panel_text(4, PANEL_Y_COND_BOX + 4, c, condition == 0 ? cond_name0 :
                              (condition == 1 ? cond_name1 : cond_name2));
     }
     if (d & HUD_ROUND) {
@@ -205,31 +211,64 @@ static void hud_update(void)
         textbuf[3] = 'N'; textbuf[4] = 'D'; textbuf[5] = ' ';
         fmt_u16(textbuf + 6, round_no, 2);
         textbuf[8] = 0;
-        panel_text(0, 116, C_WHITE, textbuf);
+        panel_text(0, PANEL_Y_ROUND, C_GRAY, textbuf);
     }
-    if (d & HUD_LIVES) hud_icons(128, SPR_ICON_SHIP, lives);
-    if (d & HUD_BASES) hud_icons(140, SPR_ICON_BASE, bases_left);
+    if (d & HUD_LIVES) hud_lives();
 }
 
-/* radar: world/32 into the 48x48 box; a dot is one byte column wide and
- * two rows tall, so its row is clamped to 106 to keep it off the frame
- * line at row 108 */
+/* Radar: the world at 1/16 in the 64x112 box, like the arcade's. Bases are
+ * the arcade's 8x8 marker tile, redrawn every frame so the dots that pass
+ * over them leave no holes; the ship and the enemies that show (spy ship,
+ * formation leader) are 2x2 dots erased in the background colour. */
+static void radar_base_pos(u8 i, u8 *px, u8 *py)
+{
+    s16 x = (s16)(base_x[i] >> 4) - 4;
+    s16 y = (s16)(base_y[i] >> 4) - 4;
+    if (x < 0) x = 0;
+    if (x > 56) x = 56;
+    if (y < 0) y = 0;
+    if (y > RADAR_H - 8) y = RADAR_H - 8;
+    *px = (u8)(x >> 1);
+    *py = (u8)(RADAR_Y + y);
+}
+
+/* new round or title: plain radar box, no markers */
+static void radar_reset(void)
+{
+    u8 i;
+    panel_fill(0, RADAR_Y, PANEL_BYTES, RADAR_H, RADAR_COLOR);
+    for (i = 0; i < BASE_MAX; ++i) radar_marks[i] = 0;
+    radar_n = 0;
+    radar_new_n = 0;
+}
+
 static void radar_add(u16 x, u16 y, u8 color)
 {
     u8 r;
     if (radar_new_n >= RADAR_MAX) return;
-    r = (u8)(y >> 5);
-    if (r > 46) r = 46;
-    radar_new_px[radar_new_n] = 4 + (u8)(x >> 6);
-    radar_new_py[radar_new_n] = 60 + r;
+    r = (u8)(y >> 4);
+    if (r > RADAR_H - 2) r = RADAR_H - 2;      /* a dot is two rows tall */
+    radar_new_px[radar_new_n] = (u8)(x >> 5);
+    radar_new_py[radar_new_n] = RADAR_Y + r;
     radar_new_color[radar_new_n] = color;
     ++radar_new_n;
 }
 
 static void radar_flush(void)
 {
-    u8 i;
-    for (i = 0; i < radar_n; ++i) panel_dot(radar_px[i], radar_py[i], C_BLACK);
+    u8 i, px, py;
+    for (i = 0; i < radar_n; ++i) panel_dot(radar_px[i], radar_py[i], RADAR_COLOR);
+    for (i = 0; i < base_count; ++i) {
+        if (base_state[i] == BASE_ALIVE) {
+            radar_base_pos(i, &px, &py);
+            panel_sprite(px, py, SPR_ICON_BASE);
+            radar_marks[i] = 1;
+        } else if (radar_marks[i]) {
+            radar_base_pos(i, &px, &py);
+            panel_fill(px, py, 4, 8, RADAR_COLOR);
+            radar_marks[i] = 0;
+        }
+    }
     for (i = 0; i < radar_new_n; ++i) {
         panel_dot(radar_new_px[i], radar_new_py[i], radar_new_color[i]);
         radar_px[i] = radar_new_px[i];
@@ -243,9 +282,6 @@ static void radar_update(u8 with_player)
 {
     u8 i;
     radar_new_n = 0;
-    for (i = 0; i < base_count; ++i) {
-        if (base_state[i] == BASE_ALIVE) radar_add(base_x[i], base_y[i], C_GREEN);
-    }
     for (i = 0; i < ENEMY_MAX; ++i) {
         if (en_type[i] == EN_SPY || (en_flags[i] & EF_LEADER)) {
             radar_add(en_x[i], en_y[i], C_RED);
@@ -262,7 +298,7 @@ static void title_draw(void)
 {
     u8 i;
     field_text_big(56, 40, C_WHITE, "BOSCONIAN");
-    field_text(4, 80, C_LGRAY, "APPLETINI //E SHR 320X200 60FPS");
+    field_text(4, 80, C_GRAY, "APPLETINI //E SHR 320X200 60FPS");
     fmt_u16(textbuf, mhz, 2);
     textbuf[2] = ' '; textbuf[3] = 'M'; textbuf[4] = 'H'; textbuf[5] = 'Z';
     textbuf[6] = ' '; textbuf[7] = ' ';
@@ -272,14 +308,14 @@ static void title_draw(void)
     fmt_u16(textbuf + 17, ramworks_banks, 3);
     textbuf[20] = ' '; textbuf[21] = 'B'; textbuf[22] = 'A'; textbuf[23] = 'N';
     textbuf[24] = 'K'; textbuf[25] = 'S'; textbuf[26] = 0;
-    field_text(24, 92, C_LGRAY, textbuf);
-    if (sound_chips == 4) field_text(36, 104, C_LGRAY, "PHASOR NATIVE 12 VOICES");
-    else field_text(44, 104, C_LGRAY, "MOCKINGBOARD 6 VOICES");
+    field_text(24, 92, C_GRAY, textbuf);
+    if (sound_chips == 4) field_text(36, 104, C_GRAY, "PHASOR NATIVE 12 VOICES");
+    else field_text(44, 104, C_GRAY, "MOCKINGBOARD 6 VOICES");
     for (i = 0; i < 11; ++i) textbuf[i] = "HIGH SCORE "[i];
     fmt_score(textbuf + 11, hi_score);
     field_text(56, 120, C_CYAN, textbuf);
     field_text(48, 150, C_YELLOW, "PRESS FIRE OR RETURN");
-    field_text(52, 176, C_DGRAY, "ESC QUITS TO PRODOS");
+    field_text(52, 176, C_DTEAL, "ESC QUITS TO PRODOS");
 }
 
 static void enter_title(void)
@@ -287,6 +323,7 @@ static void enter_title(void)
     state = ST_TITLE;
     world_clear();
     video_clear_playfield();
+    radar_reset();
     stars_init(1);
     title_draw();
     title_blink = 0;
@@ -337,6 +374,7 @@ static void enter_play_round(void)
 {
     state = ST_PLAY;
     video_clear_playfield();
+    radar_reset();
     stars_init(0);
     dl_ship_at(FIELD_CY - 8);       /* first frame: the ship, not a stale list */
     sound_tempo(condition);
@@ -469,7 +507,7 @@ static void game_over_tick(void)
 /* ------------------------------------------------------------------ */
 /* main                                                                 */
 /* ------------------------------------------------------------------ */
-int main(void)
+int main(void)                  /* never returns: the frame loop runs until QUIT */
 {
     u8 in, pressed;
     u8 joy_mask = 0;
@@ -563,5 +601,4 @@ int main(void)
         sound_update();
         mailbox_tick();
     }
-    return 0;
 }

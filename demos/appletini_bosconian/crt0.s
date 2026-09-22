@@ -10,8 +10,9 @@
 ;   2. copy the DATA segment from its load image ($2000+) to its run
 ;      address ($0C00+) and clear BSS
 ;   3. set the cc65 software stack pointer to __STACKSTART__
-;   4. call main()
-;   5. when main returns: text mode back on, SHR off, ProDOS QUIT
+;   4. load BOSCO.SPR into the auxiliary language card (loader.s)
+;   5. call main()
+;   6. when main returns: text mode back on, SHR off, ProDOS QUIT
 ;
 ; Interrupts stay disabled for the whole program. Nothing in the game uses
 ; them and ProDOS's own QUIT path does not need them.
@@ -20,7 +21,7 @@
 
 .export __STARTUP__ : absolute = 1
 .export _exit
-.import _main, copydata, zerobss
+.import _main, copydata, zerobss, load_sprites
 .import __STACKSTART__
 .include "zeropage.inc"
 
@@ -42,6 +43,7 @@ start:
         sta     sp
         lda     #>__STACKSTART__
         sta     sp+1
+        jsr     load_sprites
         jsr     _main
 
 ; exit(): also reached when main() returns. Restore the text screen and

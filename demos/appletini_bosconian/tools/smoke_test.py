@@ -169,9 +169,11 @@ def exercise(s: Session, timeout: float, play_seconds: float) -> dict:
     m0 = s.mailbox()
     cyc0 = s.cycles()
     t0 = time.monotonic()
+    # (wall-clock limit only: a slow host emulates the 33 MHz machine at a
+    # third of its speed and needs about 7 s for these 2 s of game time)
     m1 = wait_for(lambda: s.mailbox_when(
         lambda x: ((frame_number(x) - frame_number(m0)) & 0xFFFF) >= 120),
-        6.0, "120 frames")
+        20.0, "120 frames")
     cyc1 = s.cycles()
     elapsed = time.monotonic() - t0
     frames = (frame_number(m1) - frame_number(m0)) & 0xFFFF

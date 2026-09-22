@@ -1,7 +1,10 @@
 # Appletini Bosconian — design and interface contract
 
 An original, from-scratch Bosconian (Namco, 1981) recreation for an enhanced
-Apple //e with an Appletini ONE card. No Namco code, ROM data, or art is used.
+Apple //e with an Appletini ONE card. No Namco code is used and the source
+tree holds no ROM data or Namco art; the graphics, the base layouts and the
+round order are converted from a Bosconian ROM set at build time
+(`tools/bosco_rom.py`, section 11), with drawn art as the fallback.
 
 Targets:
 
@@ -77,15 +80,24 @@ Main memory (`bosconian.cfg`):
 | `$0100-$01FF` | 6502 stack |
 | `$0300-$033F` | debug mailbox (section 8) |
 | `$0C00-$1FFF` | `DATA` (run address; copied from the load image by crt0) and `BSS` |
-| `$2000-$BAFF` | `STARTUP`, `CODE`, `RODATA`, `DATA` load image. Never written at runtime. |
-| `$BB00-$BEFF` | cc65 software stack (`__STACKSTART__ = $BF00`, size `$0400`: the C code has no recursion and few locals; no BASIC.SYSTEM and no MLI file buffers, so the space below the global page is free) |
+| `$2000-$BAFF` | `STARTUP`, `CODE`, `RODATA` (with the sprites that stay in main memory), `DATA` load image. Never written at runtime. |
+| `$BB00-$BEFF` | cc65 software stack (`__STACKSTART__ = $BF00`, size `$0400`: the C code has no recursion and few locals). Before `main()` runs, `loader.s` uses it as the ProDOS file buffer while it reads `BOSCO.SPR`. |
 | `$BF00-$BFFF` | ProDOS global page (untouched) |
+| main language card | ProDOS (untouched) |
 
 The SYS file loads at `$2000` (ProDOS) and starts executing at `$2000`
 (crt0 in `STARTUP`). No `JMP $6000` padding is needed because the SHR
 framebuffer is in AUX, not main hires memory.
 
-AUX memory: `$2000-$9FFF` SHR framebuffer only. Nothing else in AUX.
+AUX memory: `$2000-$9FFF` SHR framebuffer, and the **auxiliary language
+card** holds the sprites: `$D000-$FFEF` with bank 2 of `$D000-$DFFF`
+(12,272 bytes) and `$D000-$DFFF` bank 1 (4,096 bytes), filled by `loader.s`
+from `BOSCO.SPR` before `main()` runs (section 4). The blitter switches
+ALTZP on while it draws a sprite that lives there. ProDOS never uses the
+auxiliary card; the `/RAM` volume, which does, is disconnected at start the
+way the ProDOS 8 Technical Reference describes, because the game overwrites
+its memory anyway. Without ProDOS (no `JMP` at `$BF00`: the py65 test
+machine) the loader does nothing and the test fills the card itself.
 
 RamWorks: probed like Invasion (`ramworks_probe`), bank count reported. The
 probe writes `$1000/$1001` in each bank and restores bank 0.
@@ -95,61 +107,85 @@ probe writes `$1000/$1001` in each bank and restores bank 0.
 - Playfield: x `0..255`, y `0..199` (128 bytes per row). All moving objects
   are clipped to this box by the asm blitter.
 - Side panel: x `256..319` (32 bytes per row), drawn by `panel_*` routines.
-  Layout (rows): `HI-SCORE` label + 7 digits (y 2/10), `1UP` + score (y 22/30),
-  condition lamp box 56x10 at y 44 with text GREEN/YELLOW/RED, radar 48x48 box
-  at x 264..311, y 60..107 (world/32), `ROUND nn` at y 116, lives icons at
-  y 128, remaining-base icons at y 140, `nnMHZ` / `RWnnn` diagnostics at
-  y 184/192 (8x8 text in dark gray; five glyphs fill 20 of the 32 bytes).
-- Palette 0 (all rows, SCB = 0):
+  It is the arcade's 64-pixel panel squeezed from 224 to 200 rows (`main.c`
+  `PANEL_Y_*`): `HI-SCORE` (red) at y 0 and its digits at y 8, `1UP` at 16
+  and the score at 24 (white, right-aligned, 8 glyphs), the small
+  `CONDITION` caption at 36, the framed GREEN/YELLOW/RED label at y 44..59,
+  the radar at y 64..175 (64x112: the whole 1024x1792 world at 1/16, purple
+  background like the arcade's, the base marker tile as an 8x8 sprite, 2x2
+  dots for the ship and the enemies), up to four 16x16 ship icons at y 176
+  for the lives, `ROUND nn` (gray) at y 192.
+- Palette 0 (all rows, SCB = 0) is the arcade's colour PROM: its 15 colours
+  plus black, the 8-bit values divided by 17:
 
-| idx | color | RGB (4-bit) | use |
-|---|---|---|---|
-| 0 | black | 000 | background / transparent |
-| 1 | white | FFF | ship, stars, text |
-| 2 | light gray | AAA | ship shading, far stars |
-| 3 | dark gray | 555 | asteroids, dim stars |
-| 4 | red | F00 | RED lamp, spy ship, explosions |
-| 5 | orange | F80 | explosions, core open |
-| 6 | yellow | FF0 | YELLOW lamp, shots |
-| 7 | green | 0C0 | GREEN lamp, base dots, pods |
-| 8 | cyan | 0FF | I-type, HUD values |
-| 9 | blue | 00F | P-type |
-| 10 | dark blue | 008 | radar box, panel frames |
-| 11 | magenta | F0F | E-type / mines |
-| 12 | pink | F8B | player shots |
-| 13 | brown | 840 | asteroid detail |
-| 14 | dark green | 060 | pod detail |
-| 15 | light blue | 8BF | missiles, blue stars |
+| idx | color | RGB (4-bit) | arcade | use |
+|---|---|---|---|---|
+| 0 | black | 000 | | background / transparent |
+| 1 | white | DDD | #dedede | ship, player shots, stars, text |
+| 2 | red | F00 | #ff0000 | RED lamp, ship markings, enemy shots, missiles |
+| 3 | orange | F60 | #ff6800 | E-type, P-type, mine |
+| 4 | yellow | FF0 | #ffff00 | YELLOW lamp, spy ship, big explosions |
+| 5 | purple | 90D | #9700de | I-type, pods, radar background |
+| 6 | pink | F6D | #ff68de | I-type, core |
+| 7 | cyan | 0FD | #00ffde | E-type, P-type |
+| 8 | blue | 06D | #0068de | P-type, mine |
+| 9 | brown | 620 | #682100 | mine |
+| 10 | green | 0B0 | #00b800 | GREEN lamp, base pods and core, radar marker |
+| 11 | violet | 60D | #6800de | (spare) |
+| 12 | dark teal | 244 | #214747 | base shading, asteroids, far stars |
+| 13 | gold | D90 | #de9700 | asteroids |
+| 14 | dark red | B20 | #b82100 | asteroids, rubble, big explosions |
+| 15 | gray | 999 | #979797 | ship, explosions, lives icon, ROUND text |
 
 ## 4. Sprite format (produced by `tools/gen_assets.py`, consumed by `video.s`)
 
 Every sprite exists in two pre-shifted variants: **even** (drawn at even x)
 and **odd** (x&1 = 1, the image shifted right one pixel, so the odd variant
 is one byte wider when the width is even). The blitter picks the variant
-from the x parity. Rows are stored as a single horizontal *run* covering the
-opaque pixels; transparent pixels inside the run are black (0). Rows with no
-opaque pixels have `run_off = $FF`.
+from the x parity. A row is stored as one or more horizontal *runs* of
+bytes: a gap of two or more fully transparent bytes (four pixels on byte
+boundaries) between opaque bytes starts a new run, so the inside of an
+explosion or the space between wing tips stays see-through; smaller gaps
+are black (0) inside the run. Rows with no opaque pixels have
+`run_off = $FF`.
 
 ```
 sprite variant:
-  byte 0      : height H (1..48)
+  byte 0      : height H (1..56)
   byte 1      : width in bytes W (of this variant, 1..32)
-  H row records:
-    byte      : run_off  (first byte of the run inside [0,W); $FF = empty row)
+  H rows, each one or more run records:
+    byte      : run_off  (first byte of the run inside [0,W); bit 7 set =
+                          another run of this row follows; $FF = empty row)
     byte      : run_len  (bytes in the run, 1..W; 0 for an empty row)
     run_len bytes of pixel pairs (high nibble = left pixel)
 ```
 
-Every row record starts with the fixed two-byte header, so an empty row is
+Every record starts with the fixed two-byte header, so an empty row is
 exactly `$FF, $00` with no pixel data (the generator and the blitter both
 follow this).
+
+Where the data lives: the arcade graphics are about 20 KB of run-encoded
+data, so `tools/gen_assets.py` places the sprites, in id order and both
+variants together, into the auxiliary language card first (`REGIONS`:
+bank 2 `$D000-$FFEF`, then bank 1 `$D000-$DFFF`) and assembles what is
+left, plus the two panel icons (`MAIN_ONLY`: `panel_sprite` does not
+switch banks), into `RODATA`. The card sprites go into `build/BOSCO.SPR`
+(`"BSPR"`, u8 region count, per region u16 load address, u16 length, u8
+bank code, then the region bytes) which `loader.s` reads through the MLI
+in 1 KB pieces and copies with ALTZP on. `_spr_bank` says per id where it
+is: 0 main memory, bit 2 (`SPR_BANK_AUX`) the auxiliary card, bit 1
+(`SPR_BANK_1`) its bank 1 instead of bank 2. `blit_sprite` switches ALTZP
+on for such a sprite (the auxiliary zero page and stack come with it, so its
+inputs are the `B_*` variables in main memory, stored only with RAMWRT off,
+and the byte count crosses back in registers) and off again at the end.
 
 `build/assets.s` exports (all in `RODATA`):
 
 ```
 _spr_even_lo, _spr_even_hi   ; byte tables indexed by sprite id -> variant address
-_spr_odd_lo,  _spr_odd_hi
+_spr_odd_lo,  _spr_odd_hi    ; ($D000+ for a card sprite)
 _spr_width,  _spr_height     ; pixel width/height per id (for C hit boxes)
+_spr_bank                     ; bank code per id (0 = main memory)
 _font8                        ; 64 glyphs * 8 bytes, ASCII 32..95, bit 7 = left pixel
 _palette0                     ; 32 bytes, SHR palette entries
 ```
@@ -158,9 +194,10 @@ and `build/assets.h` defines `SPR_*` ids and `SPR_COUNT`. The id list is
 fixed by this document (section 9) so C and the converter agree.
 
 The blitter draws a run with `STA` only (no read-modify-write; AUX cannot be
-read while code runs from main). So sprites are **opaque within their
-run**; art is designed so that transparent pixels inside a run are rare
-(convex shapes). Because the background is black, this looks right.
+read while code runs from main). So sprites are **opaque within a run**:
+a transparent pixel inside a run comes out black. With the run splitting
+above this only affects gaps under four pixels, and because the background
+is black it is only visible where sprites overlap.
 
 ## 5. Video API (`video.s`, C-callable, all `__fastcall__` or void)
 
@@ -340,82 +377,103 @@ Written once per frame by the game (`mailbox_tick`). Offsets:
 
 ## 9. Sprite id list (`SPR_*`, fixed order)
 
+The sizes are the arcade's: 16x16 sprites, 2x2-tile objects, the base
+parts cut from its tile grids, the bullet dots. Every ship type has eight
+headings (0 = up, clockwise), made from the ROM's three (up, up-right,
+left) by mirroring like the arcade hardware does.
+
 ```
 0..7   SPR_SHIP_0..7      16x16  player, heading 0=up clockwise (N,NE,E,SE,S,SW,W,NW)
-8..15  SPR_ITYPE_0..7     12x12  I-type interceptor, 8 headings
-16..23 SPR_PTYPE_0..7     12x12  P-type, 8 headings
-24..27 SPR_ETYPE_0..3     12x12  E-type spy ship, 4-frame spin
-28..29 SPR_MINE_0..1      12x12  cosmo-mine blink
-30..31 SPR_ASTEROID_0..1  16x16  two rock shapes
-32     SPR_POD            16x16  base cannon pod
-33     SPR_CORE_CLOSED    16x16
-34     SPR_CORE_OPEN      16x16
-35..38 SPR_EXPL_0..3      16x16  explosion, 4 frames
-39     SPR_SHOT_PLAYER     2x6   vertical bar (headings N and S)
-40     SPR_SHOT_ENEMY      4x4
-41..42 SPR_MISSILE_0..1    6x8
-43     SPR_ICON_SHIP       8x8   lives icon
-44     SPR_ICON_BASE       8x8   remaining-base icon
-45     SPR_BOSS_HIT        16x16 pod destroyed flash (single frame)
-46..49 SPR_BIGEXPL_0..3   32x32 base core explosion
-50     SPR_SHOT_PLAYER_H   6x2   horizontal bar (headings E and W)
-51     SPR_SHOT_PLAYER_D   4x4   dot (diagonal headings)
-SPR_COUNT = 52
+8..15  SPR_ITYPE_0..7     16x16  I-type, 8 headings
+16..23 SPR_PTYPE_0..7     16x16  P-type, 8 headings
+24..31 SPR_ETYPE_0..7     16x16  E-type, 8 headings
+32..39 SPR_SPY_0..7       16x16  spy ship, 8 headings
+40     SPR_MINE           16x16  cosmo-mine
+41..43 SPR_ASTEROID_0..2  16x16  three rock shapes
+44..46 SPR_EXPL_0..2      16x16  explosion, 3 frames
+47..49 SPR_BIGEXPL_0..2   32x32  base core / mine blast, 3 frames
+50     SPR_CORE_V         32x40  vertical base core (tube open at top and bottom)
+51     SPR_CORE_H         40x32  horizontal base core (tube open left and right)
+52..57 SPR_POD_V0..5      16,24,24,24,24,16  vertical base pods: top, UL, UR, LL, LR, bottom
+58..63 SPR_PODDEAD_V0..5  same   the same pods destroyed (rubble)
+64..69 SPR_POD_H0..5      16,24,24,24,24,16  horizontal base pods: left, TL, TR, BL, BR, right
+70..75 SPR_PODDEAD_H0..5  same
+76     SPR_SHOT_PLAYER     2x4   bar (headings N and S)
+77     SPR_SHOT_PLAYER_H   4x2   bar (headings E and W)
+78     SPR_SHOT_PLAYER_D1  4x4   "/" (headings NE and SW)
+79     SPR_SHOT_PLAYER_D2  4x4   "\" (headings NW and SE)
+80     SPR_SHOT_ENEMY      4x4   cannon shot
+81..82 SPR_MISSILE_0..1    4x4   homing missile, blinking
+83     SPR_ICON_SHIP      16x16  lives icon (the arcade panel's ship)
+84     SPR_ICON_BASE       8x8   radar marker for a base
+SPR_COUNT = 85
 ```
 
-Rows are single runs; art must be convex per row (no holes).
+A corner pod's 24x24 box holds the pod and its strut, because the arcade
+replaces both when the cannon dies; the axis pods are plain 16x16 objects.
+The base geometry (pod and core boxes) is in section 10.
 
 ## 10. Game rules (implemented in `main.c` / `game.c`)
 
-- World 1536x1536, wrapping (torus). Camera = player − (128,100). Screen
-  position = wrap(obj − cam) into −768..767.
+- World 1024x1792, the arcade's, wrapping on both axes (torus). Camera =
+  player − (128,100). Screen position = wrap(obj − cam) into −512..511
+  horizontally and −896..895 vertically. The ship starts at (512,1668)
+  heading up, like the arcade.
 - Player fixed at screen (128,100), always moving at 1.5 px/frame in the
   current heading (alternate 1/2 px, both axes on diagonals). Fires two
   shots at once (forward and backward), speed 5 px/frame, range 120 px, max
   two volleys in flight. Autofire when the fire input is held (every 8 frames).
 - Bases: laid out per round by the table in `rounds.c` (`RoundDef`: count,
-  orientation bits, x/8 and y/8 of every core). Round 1 has 3 bases in a
-  close triangle around the start, round 2 has 4 in two pairs (both as in
-  the arcade); rounds 3..11 use the arcade's named layouts (tight circle,
-  Orion, circle, big squiggle, straight line, tight cluster, sectors X, Y
-  and Z) with 6, 7 then 8 bases, and rounds 12 and up repeat six layouts
-  (tight circle, Orion, two clusters, "A", circle, question mark). The
-  later layouts are reconstructed from descriptions, not from the ROM
-  tables; `tests/test_rounds.py` checks the counts and spacing.
-  Each base: core at (bx,by); a vertical base has pods at (0,−28), (±24,−14),
-  (±24,+14), (0,+28), a horizontal one the same turned 90° (pods at (−28,0),
-  (−14,±24), (+14,±24), (+28,0)). Pod hit = destroyed (score 200 when the 6th
-  pod dies... the *base* score is awarded when the base dies).
-  Core closed/open cycle: closed 180 frames, open 90 frames; while open it
+  orientation bits, centre of every base in world pixels), which is the
+  arcade's own: the sub CPU ROM's 14 layouts (radar tile and orientation
+  per base, turned into centres the way the arcade's main CPU does) and its
+  round list. Round 1 has 3 bases, round 2 four, rounds 3 to 17 eight, and
+  rounds 18 and up play rounds 12 to 17 again. `tests/test_rounds.py` holds
+  an independent copy of the tables and checks the geometry.
+  Base geometry (from the arcade's tile grids): a vertical base is a 64x72
+  image with its centre at (32,36): the core `SPR_CORE_V` (32x40) centred
+  on it and six pods whose sprite boxes sit at (24,0), (0,8), (40,8),
+  (0,40), (40,40) and (24,56) of the image, i.e. sprite centres (0,−28),
+  (±20,−16), (±20,16), (0,28) from the base centre (`pod_ox/oy`). The
+  cannon bodies that are hit and that shoot are 16x16 boxes at (0,−28),
+  (±24,−12), (±24,12), (0,28) (`pod_hx/hy`). A horizontal base is the same
+  turned by 90°: 72x64 image, centre (36,32), core `SPR_CORE_H` (40x32),
+  pod sprite centres (−28,0), (−16,±20), (16,±20), (28,0), cannon bodies
+  (−28,0), (−12,±24), (12,±24), (28,0).
+  A cannon hit by a shot is destroyed: 200 points, a small explosion, and
+  its rubble sprite (`SPR_PODDEAD_*`) stays; the sixth cannon takes the base
+  with it. The core is always open along the base's axis, like the arcade's:
+  a shot flying up or down into the 16 px wide tube of a vertical base
+  (left or right for a horizontal one) destroys the base; every other hit on
+  the 32x40 (40x32) core box bounces off (`SFX_HIT`). Ramming the core
+  destroys the base and the ship; ramming a cannon destroys that cannon and
+  the ship. Base score 1500 + 500*(min(round,4)−1). From round 3 on a base
   fires a homing missile (speed 1 px/frame so the 1.5 px/frame ship can
-  outrun it, homing turn every 8 frames, lifetime 240 frames) if the player
-  is within 200 px. A player shot destroys a missile (50 points). A shot
-  into the open core destroys the base only along the base's axis: a
-  vertical base takes shots flying up or down, a horizontal one shots flying
-  left or right; other shots glance off (SFX_HIT). Base score 1500 +
-  500*(min(round,4)−1). A dead base shows big explosions for 60 frames. Pods
-  fire enemy shots (speed 3, straight toward the player's current position,
-  cooldown 90 frames) when the player is within 140 px and the pod is on
-  screen.
-- Field objects per round: 24 asteroids (10 pts, 1 hit) and 16 mines
-  (20 pts; when shot they explode into a 32x32 blast that destroys enemies and
-  the player within 14 px for 20 frames). Placed randomly, at least 96 px from
-  any base and 160 px from the start position.
+  outrun it, homing turn every 8 frames, lifetime 240 frames) every 250
+  frames while the player is within 200 px; a player shot destroys a missile
+  (50 points). Cannons fire enemy shots (speed 3, straight toward the
+  player's current position, cooldown 90 frames per base) when the player is
+  within 140 px and the cannon is on screen. A dead base shows the big
+  explosion (3 frames) for 60 frames.
+- Field objects per round: 24 asteroids (10 pts, 1 hit, three shapes) and
+  16 mines (20 pts; when shot they explode into a 32x32 blast that destroys
+  enemies and the player within 14 px for 20 frames). Placed randomly, at
+  least 96 px from any base and 160 px from the start position.
 - Enemies (I-type 50, P-type 60, E-type 70): spawn just outside the screen
   edge nearest a random side, at most `2 + condition*2 + round/2` alive
   (cap 12). I-type homes on the player (turns one heading step per 12
   frames), speed 1.5. P-type, from round 2, speed 2, homes with a 90-frame
-  zigzag. E-type spins and flies straight across.
+  zigzag. E-type flies straight across. All are 16x16 with eight headings.
 - Formation: every 20 s (green) / 14 s (yellow) / 10 s (red), a V of 5
   I-types plus a leader spawns off screen and homes as a group: "ALERT!
   ALERT!" (yellow/red also SFX_ALERT siren). Shooting the leader destroys the
   whole formation: bonus 500/1000/1500 by condition; a follower is worth 50.
-- Spy ship: every 25 s while none is active, an E-type "SPY SHIP SIGHTED!"
-  flies past at speed 1; if it leaves the 320 px radius alive the condition
-  escalates one step ("CONDITION RED" when reaching red, then "BATTLE
-  STATIONS!" and an immediate formation). Shot: 200 pts.
+- Spy ship: every 25 s while none is active, a spy ship ("SPY SHIP
+  SIGHTED!") flies past at speed 1; if it leaves the 320 px radius alive the
+  condition escalates one step ("CONDITION RED" when reaching red, then
+  "BATTLE STATIONS!" and an immediate formation). Shot: 200 pts.
 - Condition timer: green→yellow at 45 s, yellow→red at 90 s of round time.
-- Player death: contact with any enemy, shot, missile, pod, core, asteroid,
+- Player death: contact with any enemy, shot, missile, cannon, core, asteroid,
   mine or blast. 90-frame death sequence, then respawn at the round start
   position with enemies cleared, bases kept. Lives 3, extra life at 20,000
   then every 70,000 (SFX_EXTRA_LIFE).
@@ -426,22 +484,39 @@ Rows are single runs; art must be convex per row (no holes).
   (`APPLETINI //E  SHR 320X200  60 FPS`, `nn MHZ  RAMWORKS nnn BANKS`), high
   score, `PRESS FIRE OR RETURN`. Esc at title → `video_shutdown()` and ProDOS
   QUIT (`JSR $BF00; .byte $65; .word quit_parms`).
-- Radar: bases (green 2x2 dots), player (white, blinks every 8 frames),
-  spy/formation leader (red) at world/32.
-- Stars: 24 far (color 3, moves at half the camera delta) and 24 near
-  (colors 1/2/15, full delta); wrap on screen; re-randomized on state change.
+- Radar (section 3): the world at 1/16 in a 64x112 box; live bases as the
+  arcade's 8x8 marker (`SPR_ICON_BASE`, redrawn every frame), the player
+  (white, blinks every 8 frames) and the spy ship / formation leader (red)
+  as 2x2 dots erased in the background colour.
+- Stars: 24 far (dark teal, moves at half the camera delta) and 24 near
+  (white, gray, cyan, full delta); wrap on screen; re-randomized on state
+  change.
 
 ## 11. Build and test
 
-- `make` → `build/BOSCO.SYSTEM` (cc65, cfg above; `-Oirs`, `--standard c99`).
+- `make` → `build/BOSCO.SYSTEM` and `build/BOSCO.SPR` (cc65, cfg above;
+  `-Oirs`, `--standard c99`) from the drawn art in `assets/`.
+- `make ROMS=/path/to/bosco.zip` → the same from the arcade graphics:
+  `tools/bosco_rom.py` decodes the tile, sprite and dot ROMs and the colour
+  PROMs of a MAME Bosconian ROM set as `galaga.cpp` / `bosco_v.cpp` do and,
+  following `assets/rom_map.txt` (sprite and tile indices, the base tile
+  grids as the game writes them to its video RAM, the bullet dots, the
+  font), writes `build/rom/sprites.txt` and `build/rom/font8.txt` for
+  `gen_assets.py`, plus `sheet.png`, `palettes.png` and `colors.txt`. The
+  ROM set and `build/` stay out of git.
 - `make disk` → `dist/Appletini-Bosconian.hdv`: an 800 KB ProDOS SmartPort
   image built by `tools/build_disk.py` in pure Python (no Java): boot blocks
   and `PRODOS` come from `appletini-one/software/ProDOS_2_4_3.po`
   (`APPLETINI_ROOT`, default `../../../appletini-one`), then `BOSCO.SYSTEM`
-  (SYS, aux `$2000`). The volume name is `A13BOSCO`. The builder verifies its
-  own image by re-reading the directory.
-- `make test` → `tests/test_video.py` (py65 unit tests of `video.s` blit,
-  erase, clip, text, budget counter) and `tests/test_disk.py`.
+  (SYS, aux `$2000`) and `BOSCO.SPR` (BIN). The volume name is `A13BOSCO`.
+  The builder verifies its own image by re-reading the directory.
+- `make test` → `tests/test_video.py` (py65 unit tests of `video.s`: blit,
+  multi-run rows, auxiliary-card sprites through a model of ALTZP and the
+  language card, erase, clip, text, budget counter), `test_assets.py`
+  (generator output, card regions, `BOSCO.SPR`), `test_rom_tool.py`
+  (converter, synthetic ROM set), `test_rounds.py` (the layout table
+  against the ROM data), `test_game_logic.py`, `test_sound.py`,
+  `test_disk.py`.
 - `make smoke` → `tools/smoke_test.py --disk dist/Appletini-Bosconian.hdv`
   boots GSSquared (`GSSQUARED_ROOT`, default `../../../gssquared`, executable
   `build/GSSquared`; the `codex/appletini-108-postprocessing` branch has the

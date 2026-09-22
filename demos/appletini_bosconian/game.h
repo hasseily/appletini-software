@@ -8,11 +8,12 @@
 
 #include "bosco.h"
 
-/* ---- world ---- */
-#define WORLD_W 1536
-#define WORLD_H 1536
-#define START_X 768
-#define START_Y 768
+/* ---- world: the arcade's 1024x1792, wrapping on both axes; the ship starts
+ * near the bottom, heading up, like the arcade ---- */
+#define WORLD_W 1024
+#define WORLD_H 1792
+#define START_X 512
+#define START_Y 1668
 
 /* ---- object pools ---- */
 #define ENEMY_MAX 18            /* 12 free enemies + 6 formation slots */
@@ -40,9 +41,8 @@
 
 /* explosion kinds */
 #define EX_NONE 0
-#define EX_SMALL 1              /* 16x16, 4 frames */
-#define EX_BLAST 2              /* mine blast, 32x32, kills for 20 frames */
-#define EX_PODHIT 3             /* pod destroyed flash */
+#define EX_SMALL 1              /* 16x16, 3 frames */
+#define EX_BLAST 2              /* mine blast, 32x32, 3 frames, kills for 20 frames */
 
 /* base life state */
 #define BASE_DEAD 0
@@ -55,8 +55,7 @@
 #define HUD_COND 0x04
 #define HUD_ROUND 0x08
 #define HUD_LIVES 0x10
-#define HUD_BASES 0x20
-#define HUD_ALL 0x3F
+#define HUD_ALL 0x1F
 
 /* ---- shared state (defined in game.c) ---- */
 extern u16 frame;               /* frames since boot, counts in every state */
@@ -85,12 +84,12 @@ extern u8 base_state[BASE_MAX];
 extern u8 base_hz[BASE_MAX];    /* 1 = horizontal base (core exposed left/right) */
 extern u8 base_count;
 
-/* round layouts (rounds.c): base positions in world pixels / 8 */
+/* round layouts (rounds.c, from the arcade ROM): base centres in world pixels */
 typedef struct {
     u8 count;                   /* bases in this layout, 3..BASE_MAX */
     u8 hz;                      /* bit b set = base b is horizontal */
-    u8 x8[BASE_MAX];
-    u8 y8[BASE_MAX];
+    u16 x[BASE_MAX];
+    u16 y[BASE_MAX];
 } RoundDef;
 #define ROUND_LAYOUTS 14
 extern const RoundDef round_layouts[ROUND_LAYOUTS];

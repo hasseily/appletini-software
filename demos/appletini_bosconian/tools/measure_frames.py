@@ -11,8 +11,8 @@ $2000 and the CPU starts there. The idle time in video_wait_vbl is skipped,
 so the script sees the work of every frame: CPU cycles between two waits,
 bytes that would use the 1 MHz bus (main $0400-$0BFF and $2000-$5FFF, aux
 $2000-$9FFF) and $Cxxx accesses. Play is scripted like tools/cheat_test.py:
-start a game, leave one base alive, put the ship east of it and shoot the
-open core; keys and fire are pressed through the model's keyboard.
+start a game, leave one base alive, put the ship on its axis and shoot the
+cannon and the core; keys and fire are pressed through the model's keyboard.
 
 It prints the median, 99th percentile and maximum of the CPU work and the
 bus bytes over the play frames, the number of frames over the 60 Hz budget,
@@ -38,7 +38,7 @@ FRAME_1MHZ = 17030
 BUS_BUDGET = 16000
 ST = {0: "BOOT", 1: "TITLE", 2: "PLAY", 3: "DYING", 4: "GAME_OVER",
       5: "ROUND_CLEAR", 6: "PAUSED"}
-KEY_FOR_HEADING = {0: "i", 2: "l", 4: "k", 6: "j"}
+KEY_FOR_HEADING = {0: "i", 2: "l", 4: "k", 6: "j", 1: "o", 3: ",", 5: "m", 7: "u"}
 
 
 def labels_from(path):
@@ -54,9 +54,25 @@ def word(machine, address):
     return machine.main[address] | (machine.main[address + 1] << 8)
 
 
-def wrap(delta):
-    delta %= 1536
-    return delta - 1536 if delta >= 768 else delta
+def wrap(delta, size):
+    delta %= size
+    return delta - size if delta >= size // 2 else delta
+
+
+def load_sprite_file(machine, path):
+    """Put the regions of build/BOSCO.SPR where loader.s would: the machine has
+    no ProDOS, so the game's loader does nothing and the test fills the
+    language card itself (gen_assets.py describes the file)."""
+    sys.path.insert(0, str(GAME / "tools"))
+    import gen_assets
+    for addr, length, bank, blob in gen_assets.parse_spr_file(path.read_bytes()):
+        altzp = bool(bank & gen_assets.BANK_AUX)
+        for i, value in enumerate(blob):
+            a = addr + i
+            if a < 0xE000 and bank & gen_assets.BANK_1:
+                machine.lc_bank1[altzp][a - 0xD000] = value
+            else:
+                machine.lc[altzp][a - 0xC000] = value
 
 
 def main():
@@ -82,6 +98,7 @@ def main():
     L = lambda name: labels["_" + name]        # noqa: E731
     machine = a2sim.Machine(args.rom, speed=args.speed)
     machine.load(0x2000, (GAME / "build/BOSCO.SYSTEM").read_bytes())
+    load_sprite_file(machine, GAME / "build/BOSCO.SPR")
     mpu = machine.mpu
     mpu.pc = 0x2000
     mpu.sp = 0xFF
@@ -100,18 +117,31 @@ def main():
     placed = False
     heading = None
     fire_due = 0
+    dodge = []                       # headings to fly for the next frames (sidestep)
     pending_keys = []                # keys to press at the next frame
 
     def mailbox():
         return bytes(machine.main[0x300:0x329])
 
-    def core_open():
-        n = machine.main[L("dl_count")]
-        base = L("dl_items")
-        return any(machine.main[base + i * 6] == 34 for i in range(n))
-
     def press(key):
         machine.press(key, at_cycle=mpu.processorCycles)
+
+    def shot_closing_in():
+        """An enemy shot (SPR_SHOT_ENEMY, id 80) within 56 px of the ship, from
+        the display list (screen positions, the ship sits at 128,100)."""
+        n = machine.main[L("dl_count")]
+        base = L("dl_items")
+        for i in range(n):
+            item = machine.main[base + i * 6:base + i * 6 + 6]
+            if item[0] != 80:
+                continue
+            x = item[1] | (item[2] << 8)
+            y = item[3] | (item[4] << 8)
+            x = x - 0x10000 if x >= 0x8000 else x
+            y = y - 0x10000 if y >= 0x8000 else y
+            if abs(x + 2 - 128) <= 56 and abs(y + 2 - 100) <= 56:
+                return True
+        return False
 
     while frames < args.frames:
         if args.profile and last_state == 2:
@@ -164,34 +194,43 @@ def main():
             if alive:
                 b = alive[0]
                 bx, by = word(machine, L("base_x") + 2 * b), word(machine, L("base_y") + 2 * b)
+                hz = machine.main[L("base_hz") + b]
+                # along the base's axis: east of a horizontal base (heading 6
+                # attacks, 2 retreats), south of a vertical one (0 and 4)
+                toward, away = (6, 2) if hz else (0, 4)
                 if not placed:
-                    px = (bx + 160) % 1536
+                    px, py = ((bx + 160) % 1024, by) if hz else (bx, (by + 160) % 1792)
                     machine.main[L("player_x")] = px & 0xFF
                     machine.main[L("player_x") + 1] = px >> 8
-                    machine.main[L("player_y")] = by & 0xFF
-                    machine.main[L("player_y") + 1] = by >> 8
-                    machine.main[L("player_h")] = 6
+                    machine.main[L("player_y")] = py & 0xFF
+                    machine.main[L("player_y") + 1] = py >> 8
+                    machine.main[L("player_h")] = toward
                     placed = True
-                    heading = 6
+                    heading = toward
                 else:
-                    px = word(machine, L("player_x"))
-                    dx = wrap(px - bx)
-                    opened = core_open()
-                    want = heading
-                    if opened:
-                        if dx < 60:
-                            want = 2
-                        elif dx > 126 or heading != 2:
-                            want = 6
+                    if hz:
+                        d = wrap(word(machine, L("player_x")) - bx, 1024)
                     else:
-                        if dx < 150:
-                            want = 2
-                        elif dx > 170:
-                            want = 6
+                        d = wrap(word(machine, L("player_y")) - by, 1792)
+                    # run in firing (the axis cannon goes first, then the
+                    # core), back out before touching the cannons; a cannon
+                    # shot that comes close is dodged with a diagonal
+                    # sidestep of 10 frames (15 px), held for 10 frames while
+                    # the shot passes, then 10 frames back onto the axis
+                    want = heading
+                    if dodge:
+                        want = dodge.pop(0)
+                    elif d < 60:
+                        want = away
+                    elif shot_closing_in() and heading == toward:
+                        dodge = [(toward + 1) & 7] * 10 + [toward] * 10 + [(toward - 1) & 7] * 10
+                        want = dodge.pop(0)
+                    elif d > 126 or heading != toward:
+                        want = toward
                     if want != heading:
                         press(KEY_FOR_HEADING[want])
                         heading = want
-                    if opened and heading == 6 and dx <= 130 and frames >= fire_due:
+                    if heading == toward and d <= 130 and frames >= fire_due:
                         press(" ")
                         fire_due = frames + 8
         if frames % 300 == 0 and machine.newvideo & 0x80:

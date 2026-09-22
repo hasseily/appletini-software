@@ -203,6 +203,23 @@ class TestBuildDisk(unittest.TestCase):
         }, 1600)
 
     @unittest.skipUnless(MASTER.is_file(), f"ProDOS master not found: {MASTER}")
+    def test_build_with_sprite_file(self):
+        payload = bytes([0x78, 0xD8]) + os.urandom(3000)
+        sprites = b"BSPR" + bytes([1, 0x00, 0xD0, 0x00, 0x10, 0x04]) + os.urandom(0x1000)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "test.hdv"
+            build_disk.build(payload, MASTER, out, sprites=sprites)
+            image = out.read_bytes()
+        master = MASTER.read_bytes()
+        _, master_entries, _ = walk_directory(master)
+        prodos = read_contents(master, next(e for e in master_entries if e["name"] == "PRODOS"))
+        check_volume(self, image, {
+            "PRODOS": (0xFF, 0x0000, prodos),
+            "BOSCO.SYSTEM": (0xFF, 0x2000, payload),
+            "BOSCO.SPR": (0x06, 0xD000, sprites),
+        }, 1600)
+
+    @unittest.skipUnless(MASTER.is_file(), f"ProDOS master not found: {MASTER}")
     def test_cli(self):
         import subprocess
         with tempfile.TemporaryDirectory() as tmp:

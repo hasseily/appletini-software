@@ -1,13 +1,17 @@
 # Appletini Bosconian
 
-An original Bosconian-style shooter for an enhanced Apple //e with an
-Appletini ONE card, in Super Hi-Res at 60 frames per second. It needs the
-vTW accelerator (33 MHz or TURBO) and the Phasor in slot 4; RamWorks memory
-is probed and reported but not needed. The code is original C and 65C02
-assembly (cc65/ca65) and uses no Namco code. The repository holds no ROM
-data or Namco art: the drawn sprites in `assets/` are original, and
-`tools/bosco_rom.py` can replace them with the arcade graphics converted
-from a Bosconian ROM set you own (see "Arcade graphics" below).
+A Bosconian recreation for an enhanced Apple //e with an Appletini ONE
+card, in Super Hi-Res at 60 frames per second. It needs the vTW
+accelerator (33 MHz or TURBO) and the Phasor in slot 4; RamWorks memory is
+probed and reported but not needed. The code is original C and 65C02
+assembly (cc65/ca65) and uses no Namco code. The source tree holds no ROM
+data or Namco art: `make ROMS=/path/to/bosco.zip` converts the arcade
+graphics from a Bosconian ROM set you own at build time (see "Arcade
+graphics" below), and without a ROM set the drawn sprites in `assets/` are
+used. The round layouts and the round order are the arcade's, read from
+its ROM tables. Note that `Appletini-Bosconian.hdv` beside this README is
+built from the ROM set and therefore contains the converted arcade
+graphics.
 
 Status: builds, passes its unit tests, and plays in GSSquared and in the
 project's py65 test machine. It is **not yet tested on hardware**.
@@ -15,30 +19,38 @@ project's py65 test machine. It is **not yet tested on hardware**.
 ## What the game does
 
 You fly a ship that never stops, fire forward and backward at once, and
-clear a 1536x1536 wrapping map of three to eight enemy bases (six cannon
-pods around a core that opens and fires homing missiles; a vertical base
-exposes its core to shots from above and below, a horizontal one from the
-left and right). Round 1 has the arcade's three bases in a close triangle,
-round 2 its four in two pairs, and later rounds use the arcade's named
-layouts (`rounds.c`, docs/DESIGN.md section 10). Asteroids and mines
-litter the field; interceptors and formations home in on you; a spy ship
-escalates the condition from GREEN to YELLOW to RED. The side panel shows
-the scores, the condition lamp, a radar, the round, lives and the bases
-left. The rules are in `docs/DESIGN.md` section 10.
+clear the arcade's 1024x1792 wrapping map of three to eight enemy bases:
+six cannons around a core whose tube is open along the base's axis, so a
+vertical base takes shots flying up or down and a horizontal one shots
+flying left or right; destroying all six cannons also destroys the base,
+and later rounds add homing missiles. The base positions of every round
+come from the arcade's own tables (`rounds.c`, docs/DESIGN.md section 10):
+round 1 has its three bases, round 2 four, rounds 3 and up eight, and
+rounds 18 and up repeat rounds 12 to 17. Asteroids and mines litter the
+field; interceptors and formations home in on you; a spy ship escalates
+the condition from GREEN to YELLOW to RED. The side panel is the arcade's:
+scores, the condition label, the radar with the base markers, the lives and
+the round. The rules are in `docs/DESIGN.md` section 10.
 
 ## Video
 
 - SHR 320x200, 16 colours, 4 bits for each pixel, framebuffer in AUX
   `$2000-$9FFF`, selected with `$C1` at `$C029`. Playfield 256x200 on the
   left, 64-pixel panel on the right.
-- Every sprite is stored twice (even and odd pixel phase) as one run of
-  bytes per row, so a row is drawn with `STA` only: AUX cannot be read while
-  code runs from main memory. `tools/gen_assets.py` makes them from the text
-  art in `assets/`.
+- Every sprite is stored twice (even and odd pixel phase) as runs of bytes
+  per row, so a row is drawn with `STA` only: AUX cannot be read while code
+  runs from main memory. A gap of four pixels or more starts a new run, so
+  the inside of an explosion stays transparent. `tools/gen_assets.py` makes
+  them from the text art (drawn, or converted from the ROM set).
+- The sprites (about 20 KB) do not fit next to the code, so most of them
+  live in the auxiliary language card, which ProDOS never uses: `loader.s`
+  reads `BOSCO.SPR` from the disk before `main()` and the blitter switches
+  ALTZP on while it draws such a sprite. ProDOS's own language card is
+  untouched, so Esc still quits cleanly.
 - Each frame erases the previous frame's sprites and stars with zeros and
-  draws the new ones. Nothing is cleared during play. A typical frame
-  writes 300-1,000 bytes; the largest frame seen in scripted play wrote
-  2,350.
+  draws the new ones. Nothing is cleared during play. A typical play frame
+  writes about 1,400 bytes (a base on screen is seven sprites); 99 % of
+  the scripted play frames stayed under 3,000.
 
 ### Video timing
 
@@ -83,26 +95,31 @@ Registers go through shadows, so a quiet frame costs no bus cycles.
 | main `$0080-$009F` | cc65 zero page |
 | main `$0300-$0328` | debug mailbox |
 | main `$0C00-$1FFF` | `DATA` and `BSS` (not mirrored to the bus) |
-| main `$2000-$BAFF` | `BOSCO.SYSTEM`: code, sprites, font, tables |
-| main `$BB00-$BEFF` | cc65 software stack |
+| main `$2000-$BAFF` | `BOSCO.SYSTEM`: code, a few sprites, font, tables |
+| main `$BB00-$BEFF` | cc65 software stack (the ProDOS file buffer while `BOSCO.SPR` loads) |
 | aux `$2000-$9FFF` | SHR pixels, SCBs, palette |
+| aux language card | the sprites from `BOSCO.SPR` (`$D000-$FFEF` bank 2, `$D000-$DFFF` bank 1) |
 
 `crt0.s` is the first byte of the SYS file: it clears `$03F4` (so
 CTRL-RESET restarts the machine), copies `DATA`, clears `BSS`, sets the
-stack and calls `main()`. Sizes are in `build/BOSCO.map`;
-`tools/build_system.py` and `tools/build_disk.py` refuse an image that
-reaches `$BB00`.
+stack, loads the sprites (`loader.s`: the `/RAM` volume is disconnected
+first, as the ProDOS 8 Technical Reference describes, because the game
+overwrites auxiliary memory) and calls `main()`. Sizes are in
+`build/BOSCO.map`; `tools/build_system.py` and `tools/build_disk.py`
+refuse an image that reaches `$BB00`.
 
 ## Build
 
 ```sh
-make          # build/BOSCO.SYSTEM
-make disk     # dist/Appletini-Bosconian.hdv, an 800 KB ProDOS image
-make test     # unit tests in tests/ (py65 for the asm and the sound driver)
+make                              # build/BOSCO.SYSTEM and build/BOSCO.SPR, drawn art
+make ROMS=/path/to/bosco.zip disk # the same with the arcade graphics, then the disk
+make disk                         # dist/Appletini-Bosconian.hdv, an 800 KB ProDOS image
+make test                         # unit tests in tests/ (py65 for the asm and the sound driver)
 ```
 
 `Appletini-Bosconian.hdv` beside this README is the tracked copy of
-`dist/Appletini-Bosconian.hdv` built from the current sources.
+`dist/Appletini-Bosconian.hdv` built from the current sources with the
+arcade graphics (`make ROMS=... disk`).
 
 Needs cc65 (`cl65`, `ca65`, `ld65`) and Python 3 (Pillow only for the
 sprite preview, the ROM sheets and the test-machine screenshots). `PRODOS` and the boot
@@ -120,30 +137,36 @@ make measure   # tools/measure_frames.py: CPU cycles and bus bytes per frame
 make profile   # the same with a -g build: cycles charged to routines
 ```
 
-`measure_frames.py` skips the ProDOS loader and the idle time in the VBL
-wait, starts a game, leaves one base alive, moves the ship next to it and
-shoots the open core, and reports for each frame the CPU cycles of work,
-the bytes that would use the 1 MHz bus and the `$Cxxx` accesses.
+`measure_frames.py` skips the ProDOS loader (it fills the auxiliary
+language card from `build/BOSCO.SPR` itself) and the idle time in the VBL
+wait, starts a game, leaves one base alive, moves the ship onto the base's
+axis, dodges the cannon shots and shoots the cannon and the core, and
+reports for each frame the CPU cycles of work, the bytes that would use
+the 1 MHz bus and the `$Cxxx` accesses.
 
 Measured at a modelled 33 MHz (one frame = 561,990 CPU cycles and about
 16,000 bytes on the 1 MHz bus), over the play frames of that script:
 
 | | median | 99 % | maximum |
 |---|---:|---:|---:|
-| CPU work for each frame (cycles) | 173,305 | 351,522 | 1,158,154 |
-| Bytes on the 1 MHz bus for each frame | 336 | 2,114 | 27,594 |
-| `$Cxxx` accesses for each frame | 14 | 141 | 169 |
+| CPU work for each frame (cycles) | 221,893 | 384,056 | 1,203,864 |
+| Bytes on the 1 MHz bus for each frame | 1,388 | 2,965 | 31,634 |
+| `$Cxxx` accesses for each frame | 82 | 237 | 243 |
 
-568 play frames of a 900-frame run that reached a base kill, ROUND CLEAR
-and round 2. Two frames went over the budget, both state changes: the
-round start (world layout plus the 25,600-byte playfield clear) and the
-round clear screen. They cost one or two extra video frames each. No play
-frame did. The profile (`make profile`) charges the play frames mostly to
-cc65's argument passing (`pushax` and friends, about a quarter), the
-joystick poll (`@wait`, 11k cycles per frame with one axis every fourth
-frame), the field-object pass, the stars, the display-list sort and the
-sound register flush; the SHR blitter itself is under 25k cycles. In TURBO
-the bus column is free and only the CPU column counts.
+508 play frames of a 900-frame run that destroyed a base in each of rounds
+1 to 3 (with the arcade layouts and graphics) and reached round 4. Four
+frames went over the budget, all state changes: the three round starts
+(world layout plus the 25,600-byte playfield clear) and a round clear
+screen. They cost one or two extra video frames each. No play frame did.
+The `$Cxxx` count is mostly the blitter: two RAMWRT switches per sprite
+(its inputs are stored in main memory) and, for a sprite in the auxiliary
+card, the ALTZP switch and the bank select. The profile (`make profile`) charges the play frames mostly to
+the SHR blitter (about 58k cycles a frame with a base on screen: run
+set-up and clipping, the copy and erase loops), cc65's argument passing
+(`pushax` and friends, about 15 %), the joystick poll (`@wait`, 11k cycles
+per frame with one axis every fourth frame), the field-object pass, the
+stars, the display-list sort and the sound register flush. In TURBO the
+bus column is free and only the CPU column counts.
 
 `make smoke` boots the disk in GSSquared through its debug protocol and
 checks the frame cadence, the state changes, keys, the write budget and
@@ -192,37 +215,38 @@ layout is `struct Mailbox` in `bosco.h` and `docs/DESIGN.md` section 8.
 
 ## Arcade graphics
 
-The sprites in `assets/sprites.txt` are drawn for this project. To use the
-original arcade artwork instead, point the build at a MAME Bosconian ROM
-set you own (`bosco.zip`, or any of the bosco3, bosco1, boscoo and boscomd
-sets, zipped or unpacked; they share the same graphics ROMs and colour
-PROMs):
+`make ROMS=/path/to/bosco.zip` builds the game with the original arcade
+artwork from a MAME Bosconian ROM set you own (`bosco.zip`, or any of the
+bosco3, bosco1, boscoo and boscomd sets, zipped or unpacked; they share the
+same graphics ROMs and colour PROMs). `tools/bosco_rom.py` finds the two
+graphics ROMs, the bullet dot PROM and the two colour PROMs by their MAME
+CRCs, decodes the 256 8x8 tiles, the 64 16x16 sprites, the 8 4x4 dots and
+the palette exactly as MAME's `galaga.cpp` and `bosco_v.cpp` do, and writes
+`build/rom/sheet.png` (every tile, sprite and dot with its index),
+`build/rom/palettes.png` (the 64 colour codes), `build/rom/colors.txt`
+(how each arcade colour was matched to palette 0) and the two files the
+build then uses: `build/rom/sprites.txt`, the sprite art, and
+`build/rom/font8.txt`, the project's font with the arcade digits, letters
+and dash.
 
-```sh
-make ROMS=/path/to/bosco.zip disk
-```
+`assets/rom_map.txt` says what makes each `SPR_` entry: the ship sprites
+and their colour codes (the ROM holds three headings of every ship; the
+other five are mirrored, as the arcade hardware does), the 2x2 tile blocks
+of the mine and the asteroids, the tile grids of the bases exactly as the
+game writes them to its video RAM (the six cannon pods, their destroyed
+replacements from the game's own tables, the core), the bullet dots and the
+panel's ship and radar-marker tiles. The map was filled in from MAME
+captures of the game's video RAM and sprite RAM and from its attract mode,
+which names every object. The palette is the arcade colour PROM itself.
+Without `ROMS=` the drawn art in `assets/sprites.txt` and `assets/font8.txt`
+is used; an entry set to `?` in the map keeps its drawn art.
 
-`tools/bosco_rom.py` finds the two graphics ROMs and the two colour PROMs
-by their MAME CRCs, decodes the 256 8x8 tiles, the 64 16x16 sprites and the
-palette exactly as MAME's `galaga.cpp` and `bosco_v.cpp` do, and writes
-`build/rom/sheet.png` (every tile and sprite with its index),
-`build/rom/palettes.png` (the 64 colour codes) and `build/rom/sprites.txt`,
-the sprite art the build then uses. `assets/rom_map.txt` says which tile,
-sprite and colour code makes each `SPR_` entry, with mirror, rotate and
-crop options; entries left at `?` keep the drawn art, so an incomplete map
-still builds. The map is a template until someone with the ROM set reads
-the sheets and fills it in; `build/rom/colors.txt` then lists how each
-arcade colour was matched to palette 0. The ROM set and everything under
-`build/` stay out of git.
+Not ported from the ROM: the score pop-up sprites (200, 400, ... 1500) and
+the `GAME OVER` letter sprites (the game prints text instead), and the
+ship's second exhaust frame.
 
 ## Not done yet
 
-- The ROM map: `assets/rom_map.txt` has no entries yet, so a build with
-  `ROMS=` still shows the drawn art until the sheets have been read and
-  the tile/sprite indices and colour codes written down.
-- Round layouts 3 and up are reconstructed from descriptions of the arcade
-  rounds (names, counts, repeat order), not from the ROM's own tables. Fix
-  a layout by editing `rounds.c`; `make test` checks spacing and counts.
 - Hardware test on a //e with the Appletini: every timing number comes
   from GSSquared or the py65 model. The paddle timing, the slot 4 slowdown
   window and TURBO are only modelled.

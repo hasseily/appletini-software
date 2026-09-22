@@ -38,6 +38,7 @@ ENTRY_LENGTH = 0x27
 ENTRIES_PER_BLOCK = 0x0D
 ACCESS_DEFAULT = 0xC3               # destroy, rename, write, read
 FILE_TYPE_SYS = 0xFF
+FILE_TYPE_BIN = 0x06
 STORAGE_SEEDLING = 1
 STORAGE_SAPLING = 2
 STORAGE_TREE = 3
@@ -435,17 +436,24 @@ def verify_image(data: bytes, expected: dict[str, tuple[int, int, bytes]]) -> li
 
 # ---------------------------------------------------------------------------
 def build(system: bytes, master: Path, output: Path,
-          system_name: str = "BOSCO.SYSTEM") -> list[str]:
+          system_name: str = "BOSCO.SYSTEM", sprites: bytes | None = None,
+          sprites_name: str = "BOSCO.SPR") -> list[str]:
+    """Write the image: PRODOS, the system program and, when given, the
+    sprite file (BIN, aux $D000: the game reads it through the MLI)."""
     boot, prodos = extract_prodos(master)
     writer = VolumeWriter()
     writer.set_boot_blocks(boot)
     writer.add_file("PRODOS", prodos, FILE_TYPE_SYS, 0x0000)
     writer.add_file(system_name, system, FILE_TYPE_SYS, 0x2000)
-    data = writer.finish()
-    notes = verify_image(data, {
+    expected = {
         "PRODOS": (FILE_TYPE_SYS, 0x0000, prodos),
         system_name.upper(): (FILE_TYPE_SYS, 0x2000, system),
-    })
+    }
+    if sprites is not None:
+        writer.add_file(sprites_name, sprites, FILE_TYPE_BIN, 0xD000)
+        expected[sprites_name.upper()] = (FILE_TYPE_BIN, 0xD000, sprites)
+    data = writer.finish()
+    notes = verify_image(data, expected)
     if data[:2 * BLOCK] != boot:
         raise DiskError("boot block copy failed")
     if len(data) != TOTAL_BLOCKS * BLOCK:
@@ -463,6 +471,8 @@ def main() -> None:
     parser.add_argument("--master", type=Path, default=DEFAULT_MASTER,
                         help="ProDOS master image (boot blocks and PRODOS file)")
     parser.add_argument("--name", default="BOSCO.SYSTEM")
+    parser.add_argument("--sprites", type=Path, default=None,
+                        help="sprite file to add as BOSCO.SPR (build/BOSCO.SPR)")
     args = parser.parse_args()
 
     for path, what in ((args.system, "system program"), (args.master, "ProDOS master")):
@@ -471,8 +481,13 @@ def main() -> None:
     system = args.system.read_bytes()
     if len(system) < 16 or 0x2000 + len(system) > 0xBB00:
         raise SystemExit(f"system program has an unusable size: {len(system)} bytes")
+    sprites = None
+    if args.sprites is not None:
+        if not args.sprites.is_file():
+            raise SystemExit(f"missing sprite file: {args.sprites}")
+        sprites = args.sprites.read_bytes()
     try:
-        notes = build(system, args.master, args.output, args.name)
+        notes = build(system, args.master, args.output, args.name, sprites)
     except DiskError as error:
         raise SystemExit(f"disk build failed: {error}")
     for note in notes:

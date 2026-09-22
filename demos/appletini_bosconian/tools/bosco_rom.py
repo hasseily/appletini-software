@@ -4,20 +4,24 @@
 The repository holds no Namco data. This tool reads the MAME ROM set that
 you own (bosco.zip or an unpacked directory; the bosco, bosco3, bosco1,
 bosco1o, boscoo and boscomd sets all share the same graphics ROMs and colour
-PROMs), decodes the 8x8 tiles, 16x16 sprites and colour PROMs exactly as
-MAME's galaga.cpp and bosco_v.cpp do, and writes into --out (build/rom):
+PROMs), decodes the 8x8 tiles, 16x16 sprites, the 4x4 bullet dots and the
+colour PROMs exactly as MAME's galaga.cpp and bosco_v.cpp do, and writes
+into --out (build/rom):
 
-  sheet.png      every tile and sprite with its index, drawn in the colour
-                 code given by --sheet-code (default: a grey ramp)
+  sheet.png      every tile, sprite and dot with its index, drawn in the
+                 colour code given by --sheet-code (default: a grey ramp)
   palettes.png   the 64 four-colour codes of the sprites and of the tiles
   sprites.txt    the project's sprite text art: every SPR_ entry that
                  assets/rom_map.txt maps is taken from the ROM graphics, the
                  rest is copied from assets/sprites.txt (the drawn art)
+  font8.txt      the project's font with the arcade digits and letters put
+                 in where the map's "font:" line says
   colors.txt     the arcade colours used and the palette entry each became
 
-assets/rom_map.txt says which tile or sprite (and which colour code) makes
-each SPR_ entry; see its header for the syntax. Entries marked "?" are not
-mapped yet: sheet.png and palettes.png are what you look at to fill them in.
+assets/rom_map.txt says which tile, sprite, tile grid or dot (and which
+colour code) makes each SPR_ entry; see its header for the syntax.
+Entries marked "?" are not mapped: sheet.png and palettes.png are what you
+look at to fill them in.
 
 Usage:
   python3 tools/bosco_rom.py ROMSET [--map assets/rom_map.txt] [--out build/rom]
@@ -42,19 +46,22 @@ import gen_assets  # noqa: E402  (PALETTE, PIXEL_CHARS, SPRITES, parse_sprites, 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_MAP = PROJECT_DIR / "assets" / "rom_map.txt"
 DEFAULT_ART = PROJECT_DIR / "assets" / "sprites.txt"
+DEFAULT_FONT = PROJECT_DIR / "assets" / "font8.txt"
 DEFAULT_OUT = PROJECT_DIR / "build" / "rom"
 
-# The four ROM parts this tool needs, as MAME's galaga.cpp lists them.
+# The ROM parts this tool needs, as MAME's galaga.cpp lists them.
 ROM_PARTS = {
     "tiles": dict(size=0x1000, crc=0xA956D3C5, names=("bos1_14.5d", "5300.5d")),
     "sprites": dict(size=0x1000, crc=0xE869219C,
                     names=("bos1_13.5e", "5300.5e", "5300.5f")),
+    "dots": dict(size=0x0100, crc=0x9B69B543, names=("bos1-4.2r", "prom.2r")),
     "palette": dict(size=0x0020, crc=0xD2B96FB0, names=("bos1-6.6b", "prom.6b")),
     "lookup": dict(size=0x0100, crc=0x4E15D59C, names=("bos1-5.4m", "prom.4m")),
 }
 
-# MAME gfx layouts (bit offsets, MSB of byte 0 = bit 0). Pixel value bit i comes
-# from plane i. charlayout_2bpp and spritelayout_bosco in galaga.cpp.
+# MAME gfx layouts (bit offsets, MSB of byte 0 = bit 0). As in MAME's
+# gfx_element::decode, the first plane is the most significant pen bit.
+# charlayout_2bpp, spritelayout_bosco and dotlayout in galaga.cpp.
 TILE_LAYOUT = dict(
     w=8, h=8, planes=(0, 4),
     xoff=(64, 65, 66, 67, 0, 1, 2, 3),
@@ -67,11 +74,24 @@ SPRITE_LAYOUT = dict(
     yoff=tuple(y * 8 for y in range(8)) + tuple(256 + y * 8 for y in range(8)),
     inc=64 * 8, count=64,
 )
+DOT_LAYOUT = dict(
+    w=4, h=4, planes=(5, 6, 7),     # "2 bits color + 1 bit transparency"
+    xoff=(0, 8, 16, 24),
+    yoff=(0, 32, 64, 96),
+    inc=16 * 8, count=8,
+)
 SPRITE_TRANSPARENT = 0x0F   # bosco_v.cpp: transpen_mask(gfx(1), color, 0x0f)
 TILE_TRANSPARENT = 0x1F     # bosco_v.cpp: configure_groups(gfx(0), 0x1f)
+DOT_TRANSPARENT_BIT = 4     # draw_bullets: transmask 0xf0, pens 4..7 see-through
+DOT_FIRST_COLOR = 31        # bullets lookup table: pen p -> palette 31 - p
 
 CHAR_FOR_INDEX = {v: k for k, v in gen_assets.PIXEL_CHARS.items() if v is not None}
 TRANSPARENT_CHAR = "."
+BLANK_CELL = ".."
+
+# "font:" line: which characters a tile run stands for.
+FONT_RUNS = {"digits": "0123456789", "letters": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+             "space": " ", "minus": "-"}
 
 
 class RomError(Exception):
@@ -136,8 +156,9 @@ def readbit(data: bytes, bit: int) -> int:
 
 
 def decode_gfx(data: bytes, layout: dict) -> list[list[list[int]]]:
-    """Return count grids of h rows x w pens (0..3), MAME style."""
+    """Return count grids of h rows x w pens, MAME style."""
     grids = []
+    nplanes = len(layout["planes"])
     for n in range(layout["count"]):
         base = n * layout["inc"]
         grid = []
@@ -147,7 +168,7 @@ def decode_gfx(data: bytes, layout: dict) -> list[list[list[int]]]:
                 pen = 0
                 for i, plane in enumerate(layout["planes"]):
                     pen |= readbit(data, base + plane + layout["yoff"][y]
-                                   + layout["xoff"][x]) << i
+                                   + layout["xoff"][x]) << (nplanes - 1 - i)
                 row.append(pen)
             grid.append(row)
         grids.append(grid)
@@ -176,6 +197,13 @@ def tile_pen_color(lookup: bytes, code: int, pen: int) -> int:
     return (lookup[(code & 0x3F) * 4 + (pen & 3)] & 0x0F) | 0x10
 
 
+def dot_pen_color(pen: int) -> int | None:
+    """Palette index (28..31) of a bullet pen, None where see-through."""
+    if pen & DOT_TRANSPARENT_BIT:
+        return None
+    return DOT_FIRST_COLOR - (pen & 3)
+
+
 def colorize(grid, lookup: bytes, code: int, is_tile: bool):
     """Pens -> palette indices, None where transparent."""
     fn = tile_pen_color if is_tile else sprite_pen_color
@@ -185,6 +213,11 @@ def colorize(grid, lookup: bytes, code: int, is_tile: bool):
         out.append([None if fn(lookup, code, p) == transparent else fn(lookup, code, p)
                     for p in row])
     return out
+
+
+def tile_flips(attr: int) -> tuple[bool, bool]:
+    """(flipx, flipy) of a tile attribute: TILE_FLIPYX(attr >> 6) ^ TILE_FLIPX."""
+    return not (attr & 0x40), bool(attr & 0x80)
 
 
 # ------------------------------------------------------------------ SHR palette
@@ -211,36 +244,54 @@ class MapEntry:
     def __init__(self, name: str, line_no: int):
         self.name = name
         self.line_no = line_no
-        self.kind = None        # "sprite", "tile", "tiles"
+        self.kind = None        # "sprite", "sprites", "tile", "tiles", "tilemap", "dot"
         self.indices: list[int] = []
+        self.cells: list[tuple[int, int] | None] = []   # tilemap: (code, attr) or None
+        self.tw = self.th = 0   # tilemap size in tiles
         self.color = None
         self.ops: list[str] = []
         self.place = "fit"      # "fit", "center", ("at", x, y)
         self.crop = None        # (x, y, w, h)
         self.mapped = False
 
+    def source_text(self) -> str:
+        if self.kind == "tilemap":
+            return f"tilemap {self.tw}x{self.th}"
+        text = f"{self.kind} {' '.join(str(i) for i in self.indices)}"
+        if self.color is not None:
+            text += f" color {self.color}"
+        return text
 
-def parse_map(path: Path) -> dict[str, MapEntry]:
-    """Parse rom_map.txt. Lines: NAME: source [options]; "?" leaves it unmapped."""
-    entries: dict[str, MapEntry] = {}
-    known = {n for n, _, _ in gen_assets.SPRITES}
+
+def logical_lines(path: Path) -> list[tuple[int, str]]:
+    """Join indented continuation lines onto the line before them."""
+    out: list[tuple[int, str]] = []
     for line_no, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        line = raw.split("#", 1)[0].strip()
-        if not line:
+        text = raw.split("#", 1)[0].rstrip()
+        if not text.strip():
             continue
+        if text[0] in " \t" and out:
+            out[-1] = (out[-1][0], out[-1][1] + " " + text.strip())
+        else:
+            out.append((line_no, text.strip()))
+    return out
+
+
+def parse_map(path: Path) -> tuple[dict[str, MapEntry], dict[str, int]]:
+    """Parse rom_map.txt.
+
+    Lines: NAME: source [options]; "?" leaves an entry unmapped; a line that
+    starts with white space continues the previous one. "font: digits N
+    letters N ..." maps characters of the font to tile runs. Returns
+    (entries by sprite name, font map char -> tile index)."""
+    entries: dict[str, MapEntry] = {}
+    font_map: dict[str, int] = {}
+    known = set(gen_assets.SPRITE_SIZES)
+    for line_no, line in logical_lines(path):
         if ":" not in line:
             raise RomError(f"{path}:{line_no}: expected NAME: source")
         name, rest = (s.strip() for s in line.split(":", 1))
-        if name not in known:
-            raise RomError(f"{path}:{line_no}: unknown sprite {name}")
-        if name in entries:
-            raise RomError(f"{path}:{line_no}: {name} mapped twice")
-        entry = MapEntry(name, line_no)
-        entries[name] = entry
         tokens = rest.split()
-        if not tokens or "?" in tokens:
-            continue
-        pos = 0
 
         def num(tok: str) -> int:
             try:
@@ -248,51 +299,108 @@ def parse_map(path: Path) -> dict[str, MapEntry]:
             except ValueError:
                 raise RomError(f"{path}:{line_no}: bad number {tok!r}") from None
 
+        if name == "font":
+            if len(tokens) % 2:
+                raise RomError(f"{path}:{line_no}: font needs RUN N pairs")
+            for run, tok in zip(tokens[0::2], tokens[1::2]):
+                if run not in FONT_RUNS:
+                    raise RomError(f"{path}:{line_no}: font run must be one of "
+                                   f"{', '.join(FONT_RUNS)}")
+                first = num(tok)
+                for k, ch in enumerate(FONT_RUNS[run]):
+                    if not 0 <= first + k < 256:
+                        raise RomError(f"{path}:{line_no}: font tiles run past 255")
+                    font_map[ch] = first + k
+            continue
+        if name not in known:
+            raise RomError(f"{path}:{line_no}: unknown sprite {name}")
+        if name in entries:
+            raise RomError(f"{path}:{line_no}: {name} mapped twice")
+        entry = MapEntry(name, line_no)
+        entries[name] = entry
+        if not tokens or "?" in tokens:
+            continue
+        pos = 0
+
+        def cell(tok: str) -> tuple[int, int] | None:
+            if tok == BLANK_CELL:
+                return None
+            if ":" not in tok:
+                raise RomError(f"{path}:{line_no}: tilemap cell {tok!r} is not CODE:ATTR")
+            code, attr = tok.split(":", 1)
+            try:
+                code_v, attr_v = int(code, 16), int(attr, 16)
+            except ValueError:
+                raise RomError(f"{path}:{line_no}: tilemap cell {tok!r} is not hex") from None
+            if not 0 <= code_v < 256 or not 0 <= attr_v < 256:
+                raise RomError(f"{path}:{line_no}: tilemap cell {tok!r} out of range")
+            return (code_v, attr_v)
+
         kind = tokens[pos]
         pos += 1
-        if kind == "sprite":
-            entry.kind = "sprite"
-            entry.indices = [num(tokens[pos])]
-            pos += 1
-        elif kind == "tile":
-            entry.kind = "tile"
-            entry.indices = [num(tokens[pos])]
-            pos += 1
-        elif kind == "tiles":
-            entry.kind = "tiles"
-            while pos < len(tokens) and tokens[pos][0].isdigit():
-                entry.indices.append(num(tokens[pos]))
+        try:
+            if kind in ("sprite", "tile", "dot"):
+                entry.kind = kind
+                entry.indices = [num(tokens[pos])]
                 pos += 1
-            if len(entry.indices) != 4:
-                raise RomError(f"{path}:{line_no}: tiles needs 4 indices (2x2, row-major)")
-        else:
-            raise RomError(f"{path}:{line_no}: source must be sprite, tile or tiles")
+            elif kind in ("tiles", "sprites"):
+                entry.kind = kind
+                while pos < len(tokens) and tokens[pos][0].isdigit():
+                    entry.indices.append(num(tokens[pos]))
+                    pos += 1
+                if len(entry.indices) != 4:
+                    raise RomError(f"{path}:{line_no}: {kind} needs 4 indices (2x2, row-major)")
+            elif kind == "tilemap":
+                entry.kind = kind
+                entry.tw, entry.th = num(tokens[pos]), num(tokens[pos + 1])
+                pos += 2
+                if not 1 <= entry.tw <= 16 or not 1 <= entry.th <= 16:
+                    raise RomError(f"{path}:{line_no}: tilemap size must be 1..16 tiles")
+                n = entry.tw * entry.th
+                entry.cells = [cell(t) for t in tokens[pos:pos + n]]
+                if len(entry.cells) != n:
+                    raise RomError(f"{path}:{line_no}: tilemap {entry.tw}x{entry.th} needs "
+                                   f"{n} cells (CODE:ATTR or ..)")
+                pos += n
+                entry.place = "center"
+            else:
+                raise RomError(f"{path}:{line_no}: source must be sprite, sprites, tile, "
+                               "tiles, tilemap or dot")
+        except IndexError:
+            raise RomError(f"{path}:{line_no}: {kind}: missing numbers") from None
         while pos < len(tokens):
             tok = tokens[pos]
             pos += 1
-            if tok == "color":
-                entry.color = num(tokens[pos])
-                pos += 1
-            elif tok in ("fliph", "flipv", "rot90", "rot180", "rot270"):
-                entry.ops.append(tok)
-            elif tok in ("fit", "center"):
-                entry.place = tok
-            elif tok == "at":
-                entry.place = ("at", num(tokens[pos]), num(tokens[pos + 1]))
-                pos += 2
-            elif tok == "crop":
-                entry.crop = tuple(num(t) for t in tokens[pos:pos + 4])
-                if len(entry.crop) != 4:
-                    raise RomError(f"{path}:{line_no}: crop needs x y w h")
-                pos += 4
-            else:
-                raise RomError(f"{path}:{line_no}: unknown option {tok!r}")
-        if entry.color is None:
-            raise RomError(f"{path}:{line_no}: {name} needs a color code")
-        if not 0 <= entry.color < 64:
-            raise RomError(f"{path}:{line_no}: color code must be 0..63")
+            try:
+                if tok == "color":
+                    entry.color = num(tokens[pos])
+                    pos += 1
+                elif tok in ("fliph", "flipv", "rot90", "rot180", "rot270"):
+                    entry.ops.append(tok)
+                elif tok in ("fit", "center"):
+                    entry.place = tok
+                elif tok == "at":
+                    entry.place = ("at", num(tokens[pos]), num(tokens[pos + 1]))
+                    pos += 2
+                elif tok == "crop":
+                    entry.crop = tuple(num(t) for t in tokens[pos:pos + 4])
+                    if len(entry.crop) != 4:
+                        raise RomError(f"{path}:{line_no}: crop needs x y w h")
+                    pos += 4
+                else:
+                    raise RomError(f"{path}:{line_no}: unknown option {tok!r}")
+            except IndexError:
+                raise RomError(f"{path}:{line_no}: {tok}: missing numbers") from None
+        if entry.kind in ("sprite", "sprites", "tile", "tiles"):
+            if entry.color is None:
+                raise RomError(f"{path}:{line_no}: {name} needs a color code")
+            if not 0 <= entry.color < 64:
+                raise RomError(f"{path}:{line_no}: color code must be 0..63")
+        elif entry.color is not None:
+            raise RomError(f"{path}:{line_no}: {entry.kind} takes no color code "
+                           "(tilemap cells carry their own, dots have fixed colours)")
         entry.mapped = True
-    return entries
+    return entries, font_map
 
 
 # ------------------------------------------------------------------ building art
@@ -336,10 +444,17 @@ def place(grid, w: int, h: int, mode, name: str):
     return out, lost
 
 
+def paste(dest, src, x0: int, y0: int) -> None:
+    for y, row in enumerate(src):
+        for x, p in enumerate(row):
+            dest[y0 + y][x0 + x] = p
+
+
 class Converter:
     def __init__(self, parts: dict[str, bytes]):
         self.tiles = decode_gfx(parts["tiles"], TILE_LAYOUT)
         self.sprites = decode_gfx(parts["sprites"], SPRITE_LAYOUT)
+        self.dots = decode_gfx(parts["dots"], DOT_LAYOUT)
         self.palette = decode_palette(parts["palette"])
         self.lookup = parts["lookup"]
         self.shr_of_arcade: dict[int, int] = {}   # arcade palette index -> SHR index
@@ -352,13 +467,47 @@ class Converter:
         self.used.setdefault(arcade_index, set()).add(name)
         return self.shr_of_arcade[arcade_index]
 
+    def tile(self, code: int, attr: int):
+        """One coloured 8x8 tile as the hardware shows it for this attribute."""
+        grid = colorize(self.tiles[code], self.lookup, attr & 0x3F, True)
+        flipx, flipy = tile_flips(attr)
+        if flipx:
+            grid = gen_assets.transform(grid, "fliph")
+        if flipy:
+            grid = gen_assets.transform(grid, "flipv")
+        return grid
+
+    def dot(self, n: int):
+        """One bullet dot as drawn on an unflipped screen (draw_bullets flips both ways)."""
+        grid = [[dot_pen_color(p) for p in row] for row in self.dots[n]]
+        return gen_assets.transform(grid, "rot180")
+
     def source_grid(self, entry: MapEntry):
         """Decoded, coloured (palette indices / None) graphic of a map entry."""
-        if entry.kind == "sprite":
+        if entry.kind in ("sprite", "sprites"):
+            for idx in entry.indices:
+                if not 0 <= idx < len(self.sprites):
+                    raise RomError(f"{entry.name}: sprite index {idx} is not 0..63")
+            grids = [colorize(self.sprites[i], self.lookup, entry.color, False)
+                     for i in entry.indices]
+            if entry.kind == "sprite":
+                return grids[0]
+            top = [a + b for a, b in zip(grids[0], grids[1])]
+            bottom = [a + b for a, b in zip(grids[2], grids[3])]
+            return top + bottom
+        if entry.kind == "dot":
             idx = entry.indices[0]
-            if not 0 <= idx < len(self.sprites):
-                raise RomError(f"{entry.name}: sprite index {idx} is not 0..63")
-            return colorize(self.sprites[idx], self.lookup, entry.color, False)
+            if not 0 <= idx < len(self.dots):
+                raise RomError(f"{entry.name}: dot index {idx} is not 0..7")
+            return self.dot(idx)
+        if entry.kind == "tilemap":
+            out = [[None] * (entry.tw * 8) for _ in range(entry.th * 8)]
+            for k, cell in enumerate(entry.cells):
+                if cell is None:
+                    continue
+                code, attr = cell
+                paste(out, self.tile(code, attr), (k % entry.tw) * 8, (k // entry.tw) * 8)
+            return out
         for idx in entry.indices:
             if not 0 <= idx < len(self.tiles):
                 raise RomError(f"{entry.name}: tile index {idx} is not 0..255")
@@ -384,16 +533,57 @@ class Converter:
                for row in grid]
         return shr, lost
 
+    def glyph(self, code: int) -> list[int]:
+        """A tile as an 8-row 1-bit glyph (any pen but 0 is ink, bit 7 = left)."""
+        if not 0 <= code < len(self.tiles):
+            raise RomError(f"font: tile index {code} is not 0..255")
+        rows = []
+        for row in self.tiles[code]:
+            value = 0
+            for pen in row:
+                value = (value << 1) | (1 if pen else 0)
+            rows.append(value)
+        return rows
+
 
 def grid_lines(grid) -> list[str]:
     return ["".join(TRANSPARENT_CHAR if p is None else CHAR_FOR_INDEX[p] for p in row)
             for row in grid]
 
 
+def write_font(conv: Converter, font_map: dict[str, int], art_font: Path,
+               out_path: Path) -> int:
+    """font8.txt: the drawn font with the mapped characters replaced by tiles."""
+    glyphs = gen_assets.parse_font(art_font)
+    replaced = 0
+    lines = [
+        "# Generated by tools/bosco_rom.py: the drawn font of assets/font8.txt with",
+        "# the characters that rom_map.txt's font: line maps taken from the arcade",
+        "# tiles. Do not edit.",
+        "",
+    ]
+    for k, rows in enumerate(glyphs):
+        code = gen_assets.FONT_FIRST + k
+        ch = chr(code)
+        if ch in font_map:
+            rows = conv.glyph(font_map[ch])
+            replaced += 1
+            origin = f"tile 0x{font_map[ch]:02x}"
+        else:
+            origin = "drawn"
+        lines.append(f"glyph {code} {'space' if ch == ' ' else ch}    # {origin}")
+        for value in rows:
+            lines.append("".join("#" if value & (0x80 >> x) else "." for x in range(8)))
+        lines.append("")
+    out_path.write_text("\n".join(lines), encoding="utf-8")
+    return replaced
+
+
 def convert(parts: dict[str, bytes], map_path: Path, art_path: Path,
-            out_dir: Path, sheet_code: int | None = None) -> dict:
-    """Write sprites.txt, colors.txt and the sheets. Returns a summary dict."""
-    entries = parse_map(map_path)
+            out_dir: Path, sheet_code: int | None = None,
+            font_path: Path = DEFAULT_FONT) -> dict:
+    """Write sprites.txt, font8.txt, colors.txt and the sheets. Returns a summary dict."""
+    entries, font_map = parse_map(map_path)
     art = gen_assets.parse_sprites(art_path)
     conv = Converter(parts)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -411,8 +601,8 @@ def convert(parts: dict[str, bytes], map_path: Path, art_path: Path,
             grid, lost = conv.build(entry, w, h)
             lost_total += lost
             mapped.append(name)
-            src = f"{entry.kind} {' '.join(str(i) for i in entry.indices)} color {entry.color}"
-            lines.append(f"# {name}: {src}" + (f" ({lost} pixels outside the box)" if lost else ""))
+            lines.append(f"# {name}: {entry.source_text()}"
+                         + (f" ({lost} pixels outside the box)" if lost else ""))
         else:
             if name not in art:
                 raise RomError(f"{art_path}: missing sprite {name}")
@@ -425,6 +615,8 @@ def convert(parts: dict[str, bytes], map_path: Path, art_path: Path,
         lines.extend(grid_lines(grid))
         lines.append("")
     (out_dir / "sprites.txt").write_text("\n".join(lines), encoding="utf-8")
+
+    glyphs = write_font(conv, font_map, font_path, out_dir / "font8.txt")
 
     report = ["# arcade palette index: RGB -> SHR palette entry (used by)"]
     for idx in sorted(conv.used):
@@ -441,7 +633,7 @@ def convert(parts: dict[str, bytes], map_path: Path, art_path: Path,
 
     sheets = write_sheets(conv, out_dir, sheet_code)
     return dict(mapped=mapped, unmapped=unmapped, lost=lost_total, sheets=sheets,
-                colors=len(conv.used))
+                colors=len(conv.used), glyphs=glyphs)
 
 
 # ------------------------------------------------------------------ sheets
@@ -458,17 +650,18 @@ def write_sheets(conv: Converter, out_dir: Path, sheet_code: int | None) -> bool
     def pen_rgb(pen: int, is_tile: bool):
         if sheet_code is None:
             return grey[pen]
-        fn = tile_pen_color if is_tile else sprite_pen_color
-        idx = fn(conv.lookup, sheet_code, pen)
-        if idx == (TILE_TRANSPARENT if is_tile else SPRITE_TRANSPARENT):
-            return None
-        return conv.palette[idx]
+        return pen_rgb_code(conv, sheet_code, pen, is_tile)
 
-    def draw_set(grids, size, per_row, is_tile, title):
+    def dot_rgb(pen: int, _is_tile: bool):
+        idx = dot_pen_color(pen)
+        return None if idx is None else conv.palette[idx]
+
+    def draw_set(grids, size, per_row, is_tile, title, rgb_of, scale):
         cell_w = size * scale + 4
         cell_h = size * scale + 14
         rows = (len(grids) + per_row - 1) // per_row
-        img = Image.new("RGB", (per_row * cell_w + 4, rows * cell_h + 16), (0x20, 0x20, 0x30))
+        img = Image.new("RGB", (max(per_row * cell_w + 4, 200), rows * cell_h + 16),
+                        (0x20, 0x20, 0x30))
         draw = ImageDraw.Draw(img)
         draw.text((4, 2), title, fill=(255, 255, 255))
         for n, grid in enumerate(grids):
@@ -476,7 +669,7 @@ def write_sheets(conv: Converter, out_dir: Path, sheet_code: int | None) -> bool
             oy = 16 + (n // per_row) * cell_h
             for y, row in enumerate(grid):
                 for x, pen in enumerate(row):
-                    rgb = pen_rgb(pen, is_tile)
+                    rgb = rgb_of(pen, is_tile)
                     if rgb is None:
                         rgb = (0x10, 0x10, 0x18) if (x + y) & 1 else (0x18, 0x18, 0x24)
                     draw.rectangle([ox + x * scale, oy + y * scale,
@@ -485,12 +678,17 @@ def write_sheets(conv: Converter, out_dir: Path, sheet_code: int | None) -> bool
             draw.text((ox, oy + size * scale + 1), f"{n:02x}", fill=(200, 200, 100))
         return img
 
-    tiles_img = draw_set(conv.tiles, 8, 16, True, "tiles (bos1_14.5d), hex index")
-    sprites_img = draw_set(conv.sprites, 16, 8, False, "sprites (bos1_13.5e), hex index")
-    sheet = Image.new("RGB", (max(tiles_img.width, sprites_img.width),
-                              tiles_img.height + sprites_img.height), (0x20, 0x20, 0x30))
-    sheet.paste(tiles_img, (0, 0))
-    sheet.paste(sprites_img, (0, tiles_img.height))
+    parts = [
+        draw_set(conv.tiles, 8, 16, True, "tiles (bos1_14.5d), hex index", pen_rgb, scale),
+        draw_set(conv.sprites, 16, 8, False, "sprites (bos1_13.5e), hex index", pen_rgb, scale),
+        draw_set(conv.dots, 4, 8, False, "bullet dots (bos1-4.2r), as drawn", dot_rgb, 8),
+    ]
+    sheet = Image.new("RGB", (max(p.width for p in parts), sum(p.height for p in parts)),
+                      (0x20, 0x20, 0x30))
+    y = 0
+    for p in parts:
+        sheet.paste(p, (0, y))
+        y += p.height
     sheet.save(out_dir / "sheet.png")
 
     # 64 colour codes x 4 pens, sprites on the left, tiles on the right
@@ -530,6 +728,8 @@ def main(argv=None) -> int:
     parser.add_argument("--map", type=Path, default=DEFAULT_MAP)
     parser.add_argument("--art", type=Path, default=DEFAULT_ART,
                         help="drawn sprite art used for unmapped entries")
+    parser.add_argument("--font", type=Path, default=DEFAULT_FONT,
+                        help="drawn font that the arcade digits and letters go into")
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--sheet-code", type=lambda s: int(s, 0), default=None,
                         help="colour code (0..63) to draw sheet.png with; default grey ramp")
@@ -538,7 +738,7 @@ def main(argv=None) -> int:
 
     try:
         parts, notes = load_romset(args.romset)
-        summary = convert(parts, args.map, args.art, args.out, args.sheet_code)
+        summary = convert(parts, args.map, args.art, args.out, args.sheet_code, args.font)
     except (RomError, gen_assets.AssetError, OSError, ValueError) as err:
         print(f"bosco_rom: {err}", file=sys.stderr)
         return 1
@@ -548,7 +748,8 @@ def main(argv=None) -> int:
             print(f"note: {note}")
         print(f"{args.out / 'sprites.txt'}: {len(summary['mapped'])} sprites from the ROM, "
               f"{len(summary['unmapped'])} from the drawn art, "
-              f"{summary['colors']} arcade colours mapped")
+              f"{summary['colors']} arcade colours mapped; font8.txt: "
+              f"{summary['glyphs']} glyphs from the ROM")
         if summary["lost"]:
             print(f"{summary['lost']} ROM pixels fell outside their sprite boxes "
                   "(use crop, at or a bigger sprite)")

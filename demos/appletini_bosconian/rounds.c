@@ -1,75 +1,71 @@
 /*
- * Appletini Bosconian -- round layouts (docs/DESIGN.md section 10).
+ * Appletini Bosconian -- round layouts, from the arcade ROM (docs/DESIGN.md
+ * section 10).
  *
- * One entry per distinct arcade layout. Coordinates are world pixels / 8
- * (the world is 1536x1536, the ship starts at 768,768 = 96,96 here), and
- * bit b of hz makes base b horizontal (core exposed left/right) instead of
- * vertical (core exposed top/bottom).
+ * The sub CPU ROM of the arcade game keeps 14 base layouts: for every base
+ * its radar tile (y/32, x/32) and its orientation, which the main CPU turns
+ * into a base centre at (x*32+36, y*32+32) for a horizontal base and at
+ * (x*32+32, y*32+36) for a vertical one. The values below are those centres
+ * in world pixels (the world is 1024x1792). A second table gives the layout
+ * of rounds 1 to 17; every later round plays rounds 12 to 17 again.
  *
- * The layouts follow the arcade round names and base counts as far as they
- * are documented: round 1 has three bases in a close triangle and round 2
- * four bases in two pairs; the later layouts (tight circle, Orion, circle,
- * big squiggle, straight line, tight cluster, sectors X/Y/Z, clusters, "A",
- * question mark) are reconstructed from their descriptions, and rounds 12
- * and up repeat six of them like the arcade does. tools/bosco_rom.py is the
- * place to add a table extractor once the ROM code has been read; until
- * then edit these numbers to correct a layout.
+ * Read from the ROM set with MAME (tools/bosco_rom.py converts only the
+ * graphics; the numbers here were copied by hand and are checked by
+ * tests/test_rounds.py).
  */
 #include "game.h"
 
 const RoundDef round_layouts[ROUND_LAYOUTS] = {
-    /* 1: close triangle */
-    { 3, 0x06, {  96,  60, 132,   0,   0,   0,   0,   0 },
-               {  56, 124, 124,   0,   0,   0,   0,   0 } },
-    /* 2: two pairs */
-    { 4, 0x0C, {  40,  40, 152, 152,   0,   0,   0,   0 },
-               {  76, 116,  76, 116,   0,   0,   0,   0 } },
-    /* 3: tight circle */
-    { 6, 0x2A, { 136, 116,  76,  56,  76, 116,   0,   0 },
-               {  96, 131, 131,  96,  61,  61,   0,   0 } },
-    /* 4: Orion (Betelgeuse, Bellatrix, the belt, Saiph, Rigel) */
-    { 7, 0x2A, {  56, 136,  80,  96, 112,  68, 128,   0 },
-               {  24,  28,  64,  60,  56, 132, 136,   0 } },
-    /* 5: circle */
-    { 8, 0xAA, { 152, 136,  96,  56,  40,  56,  96, 136 },
-               {  96, 136, 152, 136,  96,  56,  40,  56 } },
-    /* 6: big squiggle */
-    { 8, 0x55, {  16,  48,  80, 112, 144, 176, 152, 120 },
-               {  40,  24,  40,  64,  88, 112, 144, 160 } },
-    /* 7: straight line */
-    { 8, 0xFF, {  12,  36,  60,  84, 108, 132, 156, 180 },
-               {  56,  56,  56,  56,  56,  56,  56,  56 } },
-    /* 8: tight cluster */
-    { 8, 0x33, { 126, 144, 162, 170, 160, 142, 124, 140 },
-               {  30,  26,  34,  52,  70,  76,  66,  50 } },
-    /* 9: sector X */
-    { 8, 0xF0, {  56,  72, 120, 136, 136, 120,  72,  56 },
-               {  56,  72, 120, 136,  56,  72, 120, 136 } },
-    /* 10: sector Y */
-    { 8, 0x3F, {  76,  56,  36, 116, 136, 156,  96,  96 },
-               {  76,  56,  36,  76,  56,  36, 128, 156 } },
-    /* 11: sector Z */
-    { 8, 0x18, {  40,  96, 152, 124,  68,  40,  96, 152 },
-               {  40,  40,  40,  68, 124, 152, 152, 152 } },
-    /* 12 (arcade round 14): two clusters */
-    { 8, 0xF0, {  36,  60,  36,  60, 138, 162, 138, 162 },
-               {  36,  36,  60,  60, 138, 138, 162, 162 } },
-    /* 13 (arcade round 15): "A" */
-    { 8, 0xAA, {  96,  82, 110,  68, 124,  54, 138,  96 },
-               {  16,  44,  44,  72,  72, 100, 100,  68 } },
-    /* 14 (arcade round 17): question mark */
-    { 8, 0x55, { 100, 124, 148, 160, 148, 128, 128, 128 },
-               {  40,  28,  40,  64,  88, 104, 128, 160 } },
+    /* layout 0: round 1 (H H H) */
+    { 3, 0x07, {  484,  612,  356,    0,    0,    0,    0,    0 },
+                { 1504, 1440, 1184,    0,    0,    0,    0,    0 } },
+    /* layout 1: round 2 (H H V V) */
+    { 4, 0x03, {  164,  164,  736,  928,    0,    0,    0,    0 },
+                {  672,  864,  804,  804,    0,    0,    0,    0 } },
+    /* layout 2: round 17 (H V V H H V H H) */
+    { 8, 0xD9, {  228,  352,  544,  740,  676,  544,  484,  484 },
+                {  416,  228,  228,  416,  672,  868, 1056, 1312 } },
+    /* layout 3: round 6 (V H V V H H V H) */
+    { 8, 0xB2, {   32,  612,  864,  864,  676,  548,  416,  548 },
+                {  100,  224,  292,  612,  736, 1056, 1316, 1632 } },
+    /* layout 4: round 9 (H H V V H H V V) */
+    { 8, 0x33, {  164,  804,  352,  608,  356,  612,  160,  800 },
+                {  544,  544,  740,  740, 1056, 1056, 1252, 1252 } },
+    /* layout 5: round 14 (V H H H H V V H) */
+    { 8, 0x9E, {  736,  804,  804,  484,  484,  672,  608,  228 },
+                {  996,  992, 1056, 1120, 1184, 1380, 1380, 1504 } },
+    /* layout 6: round 15 (V V V V V V H V) */
+    { 8, 0x40, {  544,  416,  672,  480,  288,  608,   36,  800 },
+                {  164,  548,  676,  740,  868,  932, 1248, 1636 } },
+    /* layout 7: rounds 3, 12 (H H H V V H H H) */
+    { 8, 0xE7, {  484,  356,  612,  288,  672,  356,  484,  612 },
+                {  800,  864,  864,  932,  932, 1056, 1056, 1056 } },
+    /* layout 8: rounds 4, 13 (H H V V V H H H) */
+    { 8, 0xE3, {  164,  740,  608,  480,  352,  484,  868,  228 },
+                {  288,  480,  996, 1060, 1124, 1376, 1504, 1632 } },
+    /* layout 9: round 11 (V V V H H V V V) */
+    { 8, 0x18, {  160,  480,  800,  612,  356,  160,  480,  800 },
+                {  548,  548,  548,  736, 1056, 1252, 1252, 1252 } },
+    /* layout 10: round 7 (V V V V V V V H) */
+    { 8, 0x80, {   32,  160,  288,  416,  544,  672,  800,  932 },
+                {  996,  996,  996,  996,  996,  996,  996,  992 } },
+    /* layout 11: round 10 (H H V V H V V V) */
+    { 8, 0x13, {  228,  740,  352,  608,  484,  480,  480,  480 },
+                {  800,  800,  996,  996, 1120, 1252, 1380, 1508 } },
+    /* layout 12: round 8 (H H H V H H H V) */
+    { 8, 0x77, {  356,  484,  612,  416,  580,  356,  484,  608 },
+                {  800,  800,  800,  868,  864,  992,  992,  996 } },
+    /* layout 13: rounds 5, 16 (V V V V H H H H) */
+    { 8, 0xF0, {  480,  800,  224,  480,  100,  868,  164,  740 },
+                {  548,  676,  612, 1316,  864,  928, 1120, 1184 } },
 };
 
-/* rounds 12 and up cycle through these layouts (0-based indices) */
-static const u8 repeat_seq[6] = { 2, 3, 11, 12, 4, 13 };
+/* layout of rounds 1..17 (0-based layout numbers) */
+static const u8 round_seq[17] = { 0, 1, 7, 8, 13, 3, 10, 12, 4, 11, 9, 7, 8, 5, 6, 13, 2 };
 
 const RoundDef *round_layout(u8 round_no)
 {
-    u8 i;
     if (round_no == 0) round_no = 1;
-    if (round_no <= 11) i = (u8)(round_no - 1);
-    else i = repeat_seq[(u8)(round_no - 12) % 6];
-    return &round_layouts[i];
+    while (round_no > 17) round_no -= 6;         /* 18.. play 12..17 again */
+    return &round_layouts[round_seq[round_no - 1]];
 }

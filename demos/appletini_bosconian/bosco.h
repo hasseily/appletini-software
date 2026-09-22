@@ -68,46 +68,51 @@ typedef unsigned long u32;
 #define FIELD_CY   100
 #define PANEL_BYTES 32          /* panel is byte columns 0..31 (pixels 256..319) */
 
-/* palette indexes (docs/DESIGN.md section 3) */
+/* palette indexes (docs/DESIGN.md section 3): the arcade colour PROM */
 #define C_BLACK 0
 #define C_WHITE 1
-#define C_LGRAY 2
-#define C_DGRAY 3
-#define C_RED 4
-#define C_ORANGE 5
-#define C_YELLOW 6
-#define C_GREEN 7
-#define C_CYAN 8
-#define C_BLUE 9
-#define C_DBLUE 10
-#define C_MAGENTA 11
-#define C_PINK 12
-#define C_BROWN 13
-#define C_DGREEN 14
-#define C_LBLUE 15
+#define C_RED 2
+#define C_ORANGE 3
+#define C_YELLOW 4
+#define C_PURPLE 5
+#define C_PINK 6
+#define C_CYAN 7
+#define C_BLUE 8
+#define C_BROWN 9
+#define C_GREEN 10
+#define C_VIOLET 11
+#define C_DTEAL 12
+#define C_GOLD 13
+#define C_DRED 14
+#define C_GRAY 15
 
 
-/* ---- sprite ids (fixed order, docs/DESIGN.md section 9) ---- */
-#define SPR_SHIP_0 0        /* 0..7  16x16 player, heading 0=N clockwise */
-#define SPR_ITYPE_0 8       /* 8..15 12x12 */
-#define SPR_PTYPE_0 16      /* 16..23 12x12 */
-#define SPR_ETYPE_0 24      /* 24..27 12x12 spin */
-#define SPR_MINE_0 28       /* 28..29 12x12 */
-#define SPR_ASTEROID_0 30   /* 30..31 16x16 */
-#define SPR_POD 32          /* 16x16 */
-#define SPR_CORE_CLOSED 33  /* 16x16 */
-#define SPR_CORE_OPEN 34    /* 16x16 */
-#define SPR_EXPL_0 35       /* 35..38 16x16 */
-#define SPR_SHOT_PLAYER 39  /* 2x6 vertical bar, headings N/S */
-#define SPR_SHOT_ENEMY 40   /* 4x4 */
-#define SPR_MISSILE_0 41    /* 41..42 6x8 */
-#define SPR_ICON_SHIP 43    /* 8x8 */
-#define SPR_ICON_BASE 44    /* 8x8 */
-#define SPR_POD_HIT 45      /* 16x16 */
-#define SPR_BIGEXPL_0 46    /* 46..49 32x32 */
-#define SPR_SHOT_PLAYER_H 50 /* 6x2 horizontal bar, headings E/W */
-#define SPR_SHOT_PLAYER_D 51 /* 4x4 dot, diagonal headings */
-#define SPR_COUNT 52
+/* ---- sprite ids (fixed order, docs/DESIGN.md section 9; build/assets.h
+ * has the same values and the compiler reports a mismatch) ---- */
+#define SPR_SHIP_0 0          /* 0..7   16x16 player, heading 0=N clockwise */
+#define SPR_ITYPE_0 8         /* 8..15  16x16 */
+#define SPR_PTYPE_0 16        /* 16..23 16x16 */
+#define SPR_ETYPE_0 24        /* 24..31 16x16 */
+#define SPR_SPY_0 32          /* 32..39 16x16 */
+#define SPR_MINE 40           /* 16x16 */
+#define SPR_ASTEROID_0 41     /* 41..43 16x16 */
+#define SPR_EXPL_0 44         /* 44..46 16x16 */
+#define SPR_BIGEXPL_0 47      /* 47..49 32x32 */
+#define SPR_CORE_V 50         /* 32x40 */
+#define SPR_CORE_H 51         /* 40x32 */
+#define SPR_POD_V0 52         /* 52..57 top UL UR LL LR bottom: 16,24,24,24,24,16 */
+#define SPR_PODDEAD_V0 58     /* 58..63 the same pods destroyed */
+#define SPR_POD_H0 64         /* 64..69 left TL TR BL BR right */
+#define SPR_PODDEAD_H0 70     /* 70..75 */
+#define SPR_SHOT_PLAYER 76    /* 2x4 bar, headings N/S */
+#define SPR_SHOT_PLAYER_H 77  /* 4x2 bar, headings E/W */
+#define SPR_SHOT_PLAYER_D1 78 /* 4x4 "/", headings NE/SW */
+#define SPR_SHOT_PLAYER_D2 79 /* 4x4 "\", headings NW/SE */
+#define SPR_SHOT_ENEMY 80     /* 4x4 */
+#define SPR_MISSILE_0 81      /* 81..82 4x4 */
+#define SPR_ICON_SHIP 83      /* 16x16 */
+#define SPR_ICON_BASE 84      /* 8x8 */
+#define SPR_COUNT 85
 extern const u8 spr_width[SPR_COUNT];   /* pixel width per id (build/assets.s) */
 extern const u8 spr_height[SPR_COUNT];
 

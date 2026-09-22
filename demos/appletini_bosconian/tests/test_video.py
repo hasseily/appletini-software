@@ -11,8 +11,12 @@ above $0200 lands in AUX; the test records any such write that falls
 outside the SHR framebuffer ($2000-$9FFF) as a violation of the RAMWRT
 rule (it would have been a lost main-memory write on real hardware).
 Writes to main $2000-$9FFF with RAMWRT off are also flagged (code lives
-there). Reads always come from main (RAMRD off); $C019 reads are served
-from a scripted sequence so VBL waits can be tested.
+there). Reads come from main (RAMRD off); $C019 reads are served from a
+scripted sequence so VBL waits can be tested. ALTZP ($C008/$C009) switches
+$0000-$01FF and the language card between the main and the auxiliary set,
+and reads of $C080/$C088 select bank 2/1 of $D000-$DFFF with the card
+readable, so sprites kept in the auxiliary card (docs/DESIGN.md section 2)
+can be tested: they are placed there directly, as loader.s would.
 
 Run:  python3 tests/test_video.py
 """
@@ -75,10 +79,24 @@ def build(tmpdir):
 # ---------------------------------------------------------------------------
 # memory with a separate AUX bank
 # ---------------------------------------------------------------------------
+ALTZPOFF = 0xC008
+ALTZPON = 0xC009
+LCBANK2RD = 0xC080
+LCBANK1RD = 0xC088
+BANK_1 = 2                 # _spr_bank bits (tools/gen_assets.py)
+BANK_AUX = 4
+
+
 class BankedMemory:
     def __init__(self):
         self.main = bytearray(0x10000)
         self.aux = bytearray(0x10000)
+        # language cards: (altzp, bank2) -> $D000-$DFFF, altzp -> $E000-$FFFF
+        self.lc_d = {(z, b): bytearray(0x1000) for z in (False, True) for b in (False, True)}
+        self.lc_e = {False: bytearray(0x2000), True: bytearray(0x2000)}
+        self.altzp = False
+        self.lc_read = False
+        self.lc_bank2 = True
         self.ramwrt = False
         self.vbl_seq = []          # values returned by $C019 reads
         self.vbl_reads = 0
@@ -86,6 +104,11 @@ class BankedMemory:
         self.bad_aux_writes = []   # RAMWRT on, address outside the framebuffer
         self.bad_main_writes = []  # RAMWRT off, write into main $2000-$9FFF
         self.aux_write_count = 0
+
+    def lc_slot(self, a):
+        if a < 0xE000:
+            return self.lc_d[(self.altzp, self.lc_bank2)], a - 0xD000
+        return self.lc_e[self.altzp], a - 0xE000
 
     def __getitem__(self, a):
         if isinstance(a, slice):
@@ -96,6 +119,17 @@ class BankedMemory:
             if self.vbl_seq:
                 return self.vbl_seq.pop(0)
             return 0x00
+        if a in (LCBANK2RD, LCBANK1RD, 0xC083, 0xC08B):
+            self.lc_bank2 = a in (LCBANK2RD, 0xC083)
+            self.lc_read = True
+            return 0
+        if 0xC000 <= a < 0xC100:
+            return 0
+        if a < 0x200:
+            return (self.aux if self.altzp else self.main)[a]
+        if a >= 0xD000 and self.lc_read:
+            arr, off = self.lc_slot(a)
+            return arr[off]
         return self.main[a]
 
     def __setitem__(self, a, v):
@@ -111,6 +145,17 @@ class BankedMemory:
                 self.ramwrt = True
             elif a == RAMWRTOFF:
                 self.ramwrt = False
+            elif a == ALTZPON:
+                self.altzp = True
+            elif a == ALTZPOFF:
+                self.altzp = False
+            return
+        if a < 0x200:
+            (self.aux if self.altzp else self.main)[a] = v
+            return
+        if a >= 0xD000:
+            arr, off = self.lc_slot(a)       # the card is always writable here
+            arr[off] = v
             return
         if self.ramwrt and a >= 0x200:
             self.aux[a] = v
@@ -126,10 +171,16 @@ class BankedMemory:
 # ---------------------------------------------------------------------------
 # sprite encoder (docs/DESIGN.md section 4)
 # ---------------------------------------------------------------------------
+RUN_MORE = 0x80            # run_off flag: another run of the same row follows
+SPLIT_GAP = 2              # transparent bytes between opaque bytes that start a new run
+
+
 def encode_variant(pixels, shift):
     """pixels: list of rows, each a list of color indexes (0 = transparent).
     shift = 0 for the even variant, 1 for the odd variant (image moved one
-    pixel to the right). Returns the variant bytes."""
+    pixel to the right). Returns the variant bytes: a row is one run record
+    per group of opaque bytes that are less than SPLIT_GAP bytes apart, bit
+    7 of run_off set on every record but the row's last."""
     h = len(pixels)
     w = len(pixels[0])
     wbytes = (w + shift + 1) // 2
@@ -142,20 +193,37 @@ def encode_variant(pixels, shift):
         if not opaque:
             out += bytes([0xFF, 0])
             continue
-        first, last = opaque[0], opaque[-1]
-        out += bytes([first, last - first + 1]) + bytes(bts[first:last + 1])
+        runs = []
+        first = prev = opaque[0]
+        for i in opaque[1:]:
+            if i - prev - 1 >= SPLIT_GAP:
+                runs.append((first, prev))
+                first = i
+            prev = i
+        runs.append((first, prev))
+        for n, (first, last) in enumerate(runs):
+            flag = RUN_MORE if n + 1 < len(runs) else 0
+            out += bytes([first | flag, last - first + 1]) + bytes(bts[first:last + 1])
     return bytes(out)
 
 
 def decode_runs(variant):
-    """Return (wbytes, [(run_off, data bytes) per row]) of a variant."""
+    """Return (wbytes, rows) of a variant; a row is a list of (run_off, data
+    bytes) runs, empty for an empty row."""
     h, wbytes = variant[0], variant[1]
     rows = []
     p = 2
     for _ in range(h):
-        off, ln = variant[p], variant[p + 1]
-        rows.append((off, variant[p + 2:p + 2 + ln]))
-        p += 2 + ln
+        runs = []
+        while True:
+            off, ln = variant[p], variant[p + 1]
+            p += 2 + ln
+            if off == 0xFF:
+                break
+            runs.append((off & ~RUN_MORE, variant[p - ln:p]))
+            if not off & RUN_MORE:
+                break
+        rows.append(runs)
     return wbytes, rows
 
 
@@ -167,15 +235,16 @@ def model_draw(fb, sprites, sid, x, y, erase=False):
     _, rows = decode_runs(variant)
     bc = x >> 1  # floor division, matches the arithmetic shift in asm
     n = 0
-    for r, (off, data) in enumerate(rows):
+    for r, runs in enumerate(rows):
         sy = y + r
-        if off == 0xFF or not (0 <= sy < 200):
+        if not (0 <= sy < 200):
             continue
-        for k, b in enumerate(data):
-            col = bc + off + k
-            if 0 <= col < PANEL:
-                fb[sy * ROW + col] = 0 if erase else b
-                n += 1
+        for off, data in runs:
+            for k, b in enumerate(data):
+                col = bc + off + k
+                if 0 <= col < PANEL:
+                    fb[sy * ROW + col] = 0 if erase else b
+                    n += 1
     return n
 
 
@@ -244,6 +313,7 @@ class Machine:
                 raise AssertionError("%s did not finish within %d steps (pc=%04X)"
                                      % (entry, steps, self.mpu.pc))
         assert not self.mem.ramwrt, "%s left RAMWRT on" % entry
+        assert not self.mem.altzp, "%s left ALTZP on" % entry
         assert not self.mem.bad_aux_writes, \
             "%s wrote outside AUX $2000-$9FFF with RAMWRT on: %s" % (
                 entry, ["%04X" % a for a in self.mem.bad_aux_writes[:8]])
@@ -252,29 +322,55 @@ class Machine:
                 entry, ["%04X" % a for a in self.mem.bad_main_writes[:8]])
         return n
 
-    def load_sprites(self, defs):
-        """defs: {id: pixel rows}. Encodes both variants into sprite_buf and
-        fills the lookup tables."""
+    def poke_lc(self, addr, data, bank):
+        """Write into the language card that a _spr_bank code names."""
+        altzp = bool(bank & BANK_AUX)
+        bank2 = not bank & BANK_1
+        for i, v in enumerate(data):
+            a = addr + i
+            if a < 0xE000:
+                self.mem.lc_d[(altzp, bank2)][a - 0xD000] = v
+            else:
+                self.mem.lc_e[altzp][a - 0xE000] = v
+
+    def load_sprites(self, defs, banks=None):
+        """defs: {id: pixel rows}. Encodes both variants into sprite_buf (or,
+        for ids that banks maps to a _spr_bank code, into that language card
+        from $D000 on) and fills the lookup tables."""
         s = self.syms
         buf = s["sprite_buf"]
         p = buf
+        lc_next = {}
+        banks = banks or {}
         self.sprites = {}
         for sid, pixels in defs.items():
             even = encode_variant(pixels, 0)
             odd = encode_variant(pixels, 1)
-            self.poke(p, even)
-            ea = p
-            p += len(even)
-            self.poke(p, odd)
-            oa = p
-            p += len(odd)
-            assert p < buf + 1024, "sprite_buf overflow"
+            bank = banks.get(sid, 0)
+            if bank:
+                q = lc_next.get(bank, 0xD000)
+                self.poke_lc(q, even, bank)
+                ea = q
+                q += len(even)
+                self.poke_lc(q, odd, bank)
+                oa = q
+                q += len(odd)
+                lc_next[bank] = q
+            else:
+                self.poke(p, even)
+                ea = p
+                p += len(even)
+                self.poke(p, odd)
+                oa = p
+                p += len(odd)
+                assert p < buf + 1024, "sprite_buf overflow"
             self.poke(s["_spr_even_lo"] + sid, ea & 0xFF)
             self.poke(s["_spr_even_hi"] + sid, ea >> 8)
             self.poke(s["_spr_odd_lo"] + sid, oa & 0xFF)
             self.poke(s["_spr_odd_hi"] + sid, oa >> 8)
             self.poke(s["_spr_width"] + sid, len(pixels[0]))
             self.poke(s["_spr_height"] + sid, len(pixels))
+            self.poke(s["_spr_bank"] + sid, bank)
             self.sprites[sid] = (even, odd)
 
     def set_dl(self, items):
@@ -344,7 +440,7 @@ class VideoTest(unittest.TestCase):
     def tearDownClass(cls):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def machine(self, init=True):
+    def machine(self, init=True, banks=None):
         m = Machine(self.image, self.load, self.syms)
         m.load_sprites({
             0: numbered(4, 2),      # 4x2, every pixel a different color
@@ -353,7 +449,9 @@ class VideoTest(unittest.TestCase):
             3: [[0, 0, 0, 0], [0, 5, 5, 0], [0, 0, 0, 0]],  # empty rows
             4: rect(62, 3, 9),      # 62 px: 31 bytes even, 32 bytes odd (the widest run)
             5: rect(8, 8, 8),       # icon
-        })
+            6: [[3] * 4 + [0] * 8 + [5] * 4] * 2,           # two runs per row (8 px gap)
+            7: [[3, 3, 0, 0, 5, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],  # a 2 px gap: one run
+        }, banks)
         m.set_font_glyph("A", GLYPH_A)
         m.set_font_glyph("B", GLYPH_B)
         m.set_font_glyph("0", GLYPH_0)
@@ -429,8 +527,8 @@ class VideoTest(unittest.TestCase):
         model_draw(fb, m.sprites, 3, 20, 20)
         self.assertEqual(m.rows(), bytes(fb))
 
-    def check_clip(self, sid, x, y):
-        m = self.machine()
+    def check_clip(self, sid, x, y, banks=None):
+        m = self.machine(banks=banks)
         m.set_dl([(sid, x, y)])
         m.call("t_render")
         fb = bytearray(200 * ROW)
@@ -504,6 +602,77 @@ class VideoTest(unittest.TestCase):
         self.assertEqual(m.frame_writes(), 96)
         m = self.check_clip(4, 64, 100)  # 31-byte run
         self.assertEqual(m.frame_writes(), 93)
+
+    # --- rows with more than one run ---
+    def test_wide_gap_makes_two_runs(self):
+        m = self.machine()
+        even, _odd = m.sprites[6]
+        self.assertEqual(even[2] & RUN_MORE, RUN_MORE, "first record flags a second run")
+        m.set_dl([(6, 20, 10)])
+        m.call("t_render")
+        row = m.rows()[10 * ROW:11 * ROW]
+        self.assertEqual(row[10:12], bytes([0x33, 0x33]))
+        self.assertEqual(row[12:16], bytes(4), "the gap is not written")
+        self.assertEqual(row[16:18], bytes([0x55, 0x55]))
+        self.assertEqual(m.frame_writes(), 8)
+        fb = bytearray(200 * ROW)
+        model_draw(fb, m.sprites, 6, 20, 10)
+        self.assertEqual(m.rows(), bytes(fb))
+        # the odd variant too, and both runs are erased again
+        m.set_dl([(6, 21, 10)])
+        m.call("t_render")
+        fb = bytearray(200 * ROW)
+        model_draw(fb, m.sprites, 6, 21, 10)
+        self.assertEqual(m.rows(), bytes(fb))
+        m.set_dl([])
+        m.call("t_render")
+        self.assertEqual(m.rows().count(0), 200 * ROW)
+
+    def test_two_run_rows_clip_and_skip_like_others(self):
+        for x, y in ((-6, 10), (250, 10), (20, -1), (20, 199), (-14, 5), (244, 5)):
+            self.check_clip(6, x, y)
+
+    def test_small_gap_is_drawn_black(self):
+        m = self.machine()
+        m.set_dl([(7, 0, 0)])
+        m.call("t_render")
+        self.assertEqual(m.rows()[:4], bytes([0x33, 0x00, 0x55, 0x00]))
+        self.assertEqual(m.frame_writes(), 3)
+
+    # --- sprites in the auxiliary language card ---
+    def test_aux_card_sprites_draw_and_erase(self):
+        for bank in (BANK_AUX, BANK_AUX | BANK_1):
+            m = self.machine(banks={0: bank, 2: bank, 6: bank})
+            m.set_dl([(2, 100, 50), (0, 11, 5), (6, 30, 90), (1, 50, 50)])
+            m.call("t_render")
+            fb = bytearray(200 * ROW)
+            n = 0
+            for sid, x, y in ((2, 100, 50), (0, 11, 5), (6, 30, 90), (1, 50, 50)):
+                n += model_draw(fb, m.sprites, sid, x, y)
+            self.assertEqual(m.rows(), bytes(fb), f"bank {bank}")
+            self.assertEqual(m.frame_writes(), n)
+            addrs = [a for a, _ in m.mem.io_writes]
+            self.assertIn(ALTZPON, addrs)
+            self.assertIn(ALTZPOFF, addrs)
+            self.assertFalse(m.mem.altzp)
+            self.assertEqual(m.mem.lc_bank2, bank == BANK_AUX)
+            # erasing reads the same card again
+            m.set_dl([])
+            m.call("t_render")
+            self.assertEqual(m.rows().count(0), 200 * ROW)
+            self.assertEqual(m.frame_writes(), n)
+
+    def test_aux_card_sprites_clip(self):
+        for x, y in ((-6, 10), (250, 195), (60, -3), (20, 190)):
+            self.check_clip(2, x, y, banks={2: BANK_AUX})
+            self.check_clip(6, x, y, banks={6: BANK_AUX | BANK_1})
+
+    def test_main_memory_sprites_never_switch(self):
+        m = self.machine()
+        m.set_dl([(0, 10, 5), (2, 50, 50)])
+        m.call("t_render")
+        addrs = [a for a, _ in m.mem.io_writes]
+        self.assertNotIn(ALTZPON, addrs)
 
     # --- erase ---
     def test_erase_on_next_render(self):
