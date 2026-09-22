@@ -6,11 +6,11 @@
 ; runs until PC reaches `halt`. u8 results land in `result`.
 
 .import _sound_init, _sound_update, _sound_music, _sound_tempo
-.import _sound_sfx, _speech_say, _speech_busy
+.import _sound_sfx, _speech_say, _speech_busy, _sound_shutdown
 .importzp sp
 
 .export param, result, halt
-.export t_init, t_update, t_music, t_tempo, t_sfx, t_say, t_busy
+.export t_init, t_update, t_music, t_tempo, t_sfx, t_say, t_busy, t_shutdown
 
 .segment "BSS"
 param:          .res 8
@@ -67,4 +67,9 @@ t_busy:
         jsr     _speech_busy
         sta     result
         stx     result+1
+        jmp     halt
+
+t_shutdown:
+        jsr     setup
+        jsr     _sound_shutdown
         jmp     halt

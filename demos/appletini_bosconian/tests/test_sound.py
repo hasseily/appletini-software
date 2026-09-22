@@ -7,7 +7,8 @@ links them with tests/sound_test.cfg and none.lib, loads the image into a
 
 Memory model: one flat 64 KB array with an observer on $C400-$C4FF that
 records every read and write (with the entry point that was running). VIA
-IFR reads return a scripted value so both the CA1 path and the timeout path
+IFR and SSI-263 reads return scripted values so the D7 path (native), the
+CA1 path (Mockingboard) and the timeout path
 of the speech stream can be exercised. The VIA-A "ORA no handshake" read of
 the chip probe returns `ora_value`: 0 (default) means the second AY behind
 VIA-A answered, so the driver runs in Phasor native mode with four chips;
@@ -45,7 +46,16 @@ SFX_PLAYER_DIE, SFX_ALERT, SFX_SPY, SFX_EXTRA_LIFE, SFX_MISSILE = 7, 8, 9, 10, 1
 SAY_NONE, SAY_BLAST_OFF, SAY_ALERT, SAY_SPY, SAY_RED, SAY_BATTLE, SAY_GAME_OVER = \
     0xFF, 0, 1, 2, 3, 4, 5
 
-PHRASE_BLAST_OFF = [0x24, 0x20, 0x0C, 0x30, 0x28, 0x00, 0x10, 0x34]
+# phoneme length in bits 7-6 (sound.c L4/L3/L2), pause, end
+def L4(c): return c
+def L3(c): return c | 0x40
+def L2(c): return c | 0x80
+PA = 0x00
+PHRASE_BLAST_OFF = [L2(0x24), L3(0x20), L4(0x0C), L3(0x30), L2(0x28), L2(PA),
+                    L4(0x10), L3(0x34)]
+PHRASE_ALERT_LEN = 9
+PHRASE_GAME_OVER = [L3(0x29), L4(0x05), L4(0x05), L4(0x37), L3(PA), L4(0x11),
+                    L4(0x11), L3(0x33), L4(0x1C), L4(0x1C)]
 SSI_SETUP = [(SSI + 3, 0x80), (SSI + 0, 0xC0), (SSI + 1, 0x40),
              (SSI + 2, 0xA8), (SSI + 3, 0x5A), (SSI + 4, 0xE8)]
 
@@ -108,6 +118,7 @@ class SlotMemory:
         self.frame = -1
         self.ifr_value = 0      # returned by VIA IFR reads
         self.ora_value = 0      # returned by the probe's VIA-A ORA_NH read
+        self.ssi_value = 0      # returned by SSI-263 reads (D7 = phoneme done)
 
     def __getitem__(self, a):
         if isinstance(a, slice):
@@ -119,6 +130,8 @@ class SlotMemory:
                 v = self.ifr_value
             elif a == VIA_A + R_ORA_NH:
                 v = self.ora_value
+            elif SSI <= a < SSI + 8:
+                v = self.ssi_value
             self.log.append(Access(self.phase, self.frame, "r", a, v))
             return v
         return self.ram[a]
@@ -223,10 +236,15 @@ def decode_via(log, base, via):
 
 
 def ssi_writes(log):
-    out = [x for x in log if SSI <= x.addr < SSI + 8]
-    for x in out:
-        assert x.kind == "w", "SSI read %r" % x
-    return out
+    return [x for x in log if SSI <= x.addr < SSI + 8 and x.kind == "w"]
+
+
+def ssi_reads(log):
+    return [x for x in log if SSI <= x.addr < SSI + 8 and x.kind == "r"]
+
+
+def ifr_reads(log):
+    return [x for x in log if x.addr in (VIA_A + R_IFR, VIA_B + R_IFR) and x.kind == "r"]
 
 
 def check_addresses(log):
@@ -287,6 +305,9 @@ class Machine:
     def busy(self):
         self.call("t_busy")
         return self.mem.ram[self.syms["result"]]
+
+    def shutdown(self):
+        self.call("t_shutdown")
 
     def g(self, name):
         return self.mem.ram[self.syms[name]]
@@ -479,15 +500,17 @@ class SoundTests(unittest.TestCase):
     def phoneme_frames(self, m):
         return [(x.frame, x.value) for x in ssi_writes(m.mem.log) if x.phase == "t_update"]
 
-    def test_speech_timeout_path(self):
+    def timeout_path(self, mockingboard):
         m = self.machine()
         m.mem.ifr_value = 0
+        m.mem.ssi_value = 0
+        m.mem.ora_value = 0xAA if mockingboard else 0
         m.init()
         m.say(SAY_BLAST_OFF)
         self.assertEqual(m.g("_speech_current"), SAY_BLAST_OFF)
         self.assertEqual(m.busy(), 1)
         busy_frames = 0
-        for _ in range(120):
+        for _ in range(140):
             m.update(1)
             if m.busy():
                 busy_frames += 1
@@ -496,26 +519,107 @@ class SoundTests(unittest.TestCase):
         self.assertEqual(m.busy(), 0, "speech never finished on the timeout path")
         self.assertEqual(m.g("_speech_current"), SAY_NONE)
         pf = self.phoneme_frames(m)
-        self.assertEqual([v for _, v in pf], PHRASE_BLAST_OFF)
+        # the phrase, then the pause that stops the last phoneme repeating
+        self.assertEqual([v for _, v in pf], PHRASE_BLAST_OFF + [PA])
         gaps = [b - a for (a, _), (b, _) in zip(pf, pf[1:])]
         self.assertTrue(all(g == 13 for g in gaps), gaps)   # 1 send + 12 timeout
         self.assertGreaterEqual(busy_frames, 8 * 13)
+        return m
 
-    def test_speech_ca1_path(self):
+    def test_speech_timeout_path_native(self):
+        m = self.timeout_path(mockingboard=False)
+        # native mode waits on D7 of the DUR register, never on the VIAs
+        self.assertTrue(ssi_reads(m.mem.log))
+        self.assertFalse([x for x in ifr_reads(m.mem.log) if x.phase == "t_update"])
+
+    def test_speech_timeout_path_mockingboard(self):
+        m = self.timeout_path(mockingboard=True)
+        # Mockingboard mode waits on the VIA CA1 flags; $C44x is write-only
+        self.assertFalse(ssi_reads(m.mem.log))
+        self.assertTrue([x for x in ifr_reads(m.mem.log) if x.phase == "t_update"])
+
+    def test_speech_d7_path(self):
+        # Phasor native mode: the chip reports the end of a phoneme as D7
         m = self.machine()
-        m.mem.ifr_value = 0x02
+        m.mem.ssi_value = 0x80
+        m.mem.ifr_value = 0
         m.init()
         m.say(SAY_BLAST_OFF)
         m.update(12)
         self.assertEqual(m.busy(), 0)
         pf = self.phoneme_frames(m)
-        self.assertEqual([v for _, v in pf], PHRASE_BLAST_OFF)
+        self.assertEqual([v for _, v in pf], PHRASE_BLAST_OFF + [PA])
+        gaps = [b - a for (a, _), (b, _) in zip(pf, pf[1:])]
+        self.assertTrue(all(g == 1 for g in gaps), gaps)
+        # one status read per waiting frame, all of the DUR register
+        reads = [x for x in ssi_reads(m.mem.log) if x.phase == "t_update"]
+        self.assertEqual(len(reads), len(PHRASE_BLAST_OFF))
+        self.assertTrue(all(x.addr == SSI for x in reads))
+        # no phoneme is sent before the chip has finished the last one
+        for i in range(1, len(pf)):
+            self.assertTrue(any(x.frame == pf[i][0] for x in reads), i)
+
+    def test_speech_d7_waits(self):
+        # D7 clear: the phoneme is not replaced until the timeout
+        m = self.machine()
+        m.mem.ssi_value = 0x7F
+        m.init()
+        m.say(SAY_BLAST_OFF)
+        m.update(12)
+        self.assertEqual(len(self.phoneme_frames(m)), 1)
+        m.mem.ssi_value = 0x80
+        m.update(1)
+        self.assertEqual(len(self.phoneme_frames(m)), 2)
+
+    def test_speech_ca1_path(self):
+        # Mockingboard mode: the chip raises CA1 on a VIA
+        m = self.machine()
+        m.mem.ora_value = 0xAA
+        m.mem.ifr_value = 0x02
+        m.init()
+        self.assertEqual(m.g("_sound_chips"), 2)
+        m.say(SAY_BLAST_OFF)
+        m.update(12)
+        self.assertEqual(m.busy(), 0)
+        pf = self.phoneme_frames(m)
+        self.assertEqual([v for _, v in pf], PHRASE_BLAST_OFF + [PA])
         gaps = [b - a for (a, _), (b, _) in zip(pf, pf[1:])]
         self.assertTrue(all(g == 1 for g in gaps), gaps)
         # the flag is cleared (write of $02 to IFR) after each completion
         clears = [x for x in m.mem.log if x.kind == "w" and x.addr == VIA_B + R_IFR
                   and x.value == 0x02 and x.phase == "t_update"]
         self.assertGreaterEqual(len(clears), len(PHRASE_BLAST_OFF))
+        self.assertFalse(ssi_reads(m.mem.log))
+
+    def test_shutdown_silences_and_powers_speech_down(self):
+        for ora in (0, 0xAA):
+            m = self.machine()
+            m.mem.ora_value = ora
+            m.mem.ssi_value = 0x80
+            m.init()
+            m.music(MUSIC_TITLE)
+            m.sfx(SFX_SHOT)
+            m.say(SAY_BLAST_OFF)
+            m.update(3)
+            m.shutdown()
+            log = [x for x in m.mem.log if x.phase == "t_shutdown"]
+            check_addresses(log)
+            # the last slot access powers the speech chip down (CTL bit 7)
+            self.assertEqual((log[-1].kind, log[-1].addr, log[-1].value), ("w", SSI + 3, 0x80))
+            # every chip the card has: mixer off, volumes 0 (replay of all
+            # AY writes; the probe's write with the second-chip select codes
+            # lands on the first chip of a two-chip card)
+            regs = {}
+            for e in m.events():
+                if e.kind == "reset":
+                    regs[e.chip] = {}
+                elif e.kind == "ay":
+                    regs.setdefault(e.chip, {})[e.reg] = e.val
+            chips = ("A0", "A1", "B0", "B1") if m.g("_sound_chips") == 4 else ("A0", "B0")
+            for chip in chips:
+                r = regs[chip]
+                self.assertEqual(r.get(7), 0x3F, chip)
+                self.assertEqual((r.get(8), r.get(9), r.get(10)), (0, 0, 0), chip)
 
     def test_ssi_write_restores_via_a_and_resends_ay_a(self):
         m = self.scenario(frames=120, ora=0xAA)     # Mockingboard mode
@@ -537,7 +641,7 @@ class SoundTests(unittest.TestCase):
 
     def test_speech_queue(self):
         m = self.machine()
-        m.mem.ifr_value = 0x02
+        m.mem.ssi_value = 0x80
         m.init()
         m.say(SAY_ALERT)
         m.say(SAY_GAME_OVER)
@@ -547,8 +651,8 @@ class SoundTests(unittest.TestCase):
         m.update(30)
         self.assertEqual(m.busy(), 0)
         pf = [v for _, v in self.phoneme_frames(m)]
-        self.assertEqual(len(pf), 9 + 7)
-        self.assertEqual(pf[-7:], [0x29, 0x05, 0x37, 0x00, 0x11, 0x33, 0x1C])
+        self.assertEqual(len(pf), PHRASE_ALERT_LEN + 1 + len(PHRASE_GAME_OVER) + 1)
+        self.assertEqual(pf[-len(PHRASE_GAME_OVER) - 1:], PHRASE_GAME_OVER + [PA])
 
     # ---- mailbox / sequencing ----
     def test_mailbox_globals(self):

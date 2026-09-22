@@ -42,6 +42,12 @@ class Phasor:
         self.latched = [0, 0, 0, 0]
         self.selected = [[False, False], [False, False]]
         self.log = []                               # (chip, reg, value)
+        # SSI-263 at $C44x in native mode: DUR/RATE registers and the time
+        # of the last phoneme, for the D7 (phoneme done) status
+        self.ssi_dur = 0xC0
+        self.ssi_rate = 0
+        self.ssi_started = None
+        self.ssi_phonemes = 0
 
     def mode_switch(self, address):
         if address & 8:
@@ -58,7 +64,30 @@ class Phasor:
             return hit
         return [1 if address & 0x80 else 0]
 
+    def _ssi_hit(self, address):
+        return self.mode == self.NATIVE and (address & 0xF8) == 0x40
+
+    def ssi_write(self, reg, value):
+        if reg == 0:
+            self.ssi_dur = value
+            self.ssi_started = self.bus_clock()
+            self.ssi_phonemes += 1
+        elif reg == 2:
+            self.ssi_rate = value
+        elif reg == 3 and value & 0x80:             # power down
+            self.ssi_started = None
+
+    def ssi_read(self):
+        # phoneme length: (4 - DR) * (16 - R) * 4096 XCK/2 edges, ~1 MHz
+        if self.ssi_started is None:
+            return 0x00
+        ticks = (4 - (self.ssi_dur >> 6)) * (16 - (self.ssi_rate >> 4)) * 4096
+        return 0x80 if self.bus_clock() - self.ssi_started >= ticks else 0x00
+
     def write(self, address, value):
+        if self._ssi_hit(address):
+            self.ssi_write(address & 7, value)
+            return
         for index in self._vias_for(address):
             via = self.via[index]
             reg = address & 0x0F
@@ -79,6 +108,8 @@ class Phasor:
         return (0xFFFF - (self.bus_clock() - self.t1_start[index])) & 0xFFFF
 
     def read(self, address):
+        if self._ssi_hit(address):
+            return self.ssi_read()
         for index in self._vias_for(address):
             via = self.via[index]
             reg = address & 0x0F

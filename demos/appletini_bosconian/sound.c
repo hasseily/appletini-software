@@ -716,34 +716,55 @@ static void sfx_tick(void)
 /* =====================================================================
  * Speech. One phrase at a time, up to three queued in order (CONDITION
  * RED, BATTLE STATIONS and the formation's ALERT can arrive within two
- * frames). A phoneme is sent to the
- * SSI-263 DUR register; the next one goes out when the chip raises CA1
- * (VIA IFR bit 1) or after a 12-frame timeout. In Mockingboard mode the
- * SSI write also hits VIA-A ORB, so VIA-A is restored and chip 0 is fully
+ * frames). A phoneme is written to the SSI-263 DUR register and the chip
+ * repeats it until the next one arrives, so speech_tick looks once per
+ * frame for the end of the phoneme and sends the next one then. Phasor
+ * native mode routes the chip's A/R request to the 6502 IRQ line (masked:
+ * the game runs with interrupts off), not to a VIA, so there the driver
+ * reads the request back as D7 of the DUR register; in Mockingboard mode
+ * the request sets the VIA CA1 flag (IFR bit 1) and $C44x cannot be read.
+ * A 12-frame timeout covers a card without a speech chip. A phrase ends
+ * with a pause phoneme, which the chip then repeats silently; without it
+ * the last phoneme would go on for ever. In Mockingboard mode an SSI
+ * write also hits VIA-A ORB, so VIA-A is restored and chip 0 is fully
  * resent afterwards.
  * ===================================================================== */
 
-/* SSI-263 phoneme codes, duration in bits 7-6, $FF ends the phrase. */
-static const u8 phrase_blast_off[] = {
-    0x24, 0x20, 0x0C, 0x30, 0x28, 0x00, 0x10, 0x34, 0xFF   /* B L AE S T - AW F */
+/* SSI-263 phoneme codes. Bits 7-6 scale the phoneme's length: at speech
+ * rate $A (RATE register $A8) a phoneme lasts 96 ms at full length, or
+ * 72, 48 and 24 ms; as the driver polls once per frame the next phoneme
+ * follows at the first frame after that. Vowels get the full length,
+ * fricatives, nasals and liquids three quarters, stops and word gaps a
+ * half; a vowel written twice is sustained. $FF ends the phrase. */
+#define L4(c) (c)                   /* 96 ms */
+#define L3(c) ((u8)((c) | 0x40))    /* 72 ms */
+#define L2(c) ((u8)((c) | 0x80))    /* 48 ms */
+#define PH_PA  0x00                 /* pause: silence */
+#define PH_END 0xFF
+
+static const u8 phrase_blast_off[] = {           /* B L AE S T - AW F */
+    L2(0x24), L3(0x20), L4(0x0C), L3(0x30), L2(0x28), L2(PH_PA), L4(0x10),
+    L3(0x34), PH_END
 };
-static const u8 phrase_alert[] = {
-    0x18, 0x20, 0x1C, 0x28, 0x00, 0x18, 0x20, 0x1C, 0x28, 0xFF /* UH L ER T - UH L ER T */
+static const u8 phrase_alert[] = {               /* UH L ER T - UH L ER T */
+    L3(0x18), L3(0x20), L4(0x1C), L2(0x28), L2(PH_PA),
+    L3(0x18), L3(0x20), L4(0x1C), L2(0x28), PH_END
 };
-static const u8 phrase_spy[] = {
-    0x30, 0x27, 0x05, 0x00, 0x32, 0x07, 0x27, 0x00,          /* S P AY - SCH I P - */
-    0x30, 0x05, 0x28, 0x07, 0x25, 0xFF                       /* S AY T I D */
+static const u8 phrase_spy[] = {                 /* S P AY - SCH I P - S AY T I D */
+    L3(0x30), L2(0x27), L4(0x05), L2(PH_PA), L3(0x32), L3(0x07), L2(0x27),
+    L2(PH_PA), L3(0x30), L4(0x05), L2(0x28), L3(0x07), L2(0x25), PH_END
 };
-static const u8 phrase_red[] = {
-    0x29, 0x18, 0x38, 0x25, 0x07, 0x32, 0x18, 0x38, 0x00,    /* K UH N D I SCH UH N - */
-    0x1D, 0x0A, 0x25, 0xFF                                   /* R EH D */
+static const u8 phrase_red[] = {                 /* K UH N D I SCH UH N - R EH D */
+    L2(0x29), L3(0x18), L3(0x38), L2(0x25), L3(0x07), L3(0x32), L3(0x18),
+    L3(0x38), L2(PH_PA), L3(0x1D), L4(0x0A), L2(0x25), PH_END
 };
-static const u8 phrase_battle[] = {
-    0x24, 0x0C, 0x28, 0x18, 0x20, 0x00,                      /* B AE T UH L - */
-    0x30, 0x28, 0x05, 0x32, 0x18, 0x38, 0x2F, 0xFF           /* S T AY SCH UH N Z */
+static const u8 phrase_battle[] = {              /* B AE T UH L - S T AY SCH UH N Z */
+    L2(0x24), L4(0x0C), L2(0x28), L3(0x18), L3(0x20), L2(PH_PA),
+    L3(0x30), L2(0x28), L4(0x05), L3(0x32), L3(0x18), L3(0x38), L3(0x2F), PH_END
 };
-static const u8 phrase_game_over[] = {
-    0x29, 0x05, 0x37, 0x00, 0x11, 0x33, 0x1C, 0xFF           /* K AY M - O V ER */
+static const u8 phrase_game_over[] = {           /* K AY AY M - O O V ER ER (slow) */
+    L3(0x29), L4(0x05), L4(0x05), L4(0x37), L3(PH_PA), L4(0x11), L4(0x11),
+    L3(0x33), L4(0x1C), L4(0x1C), PH_END
 };
 static const u8 *const phrases[6] = {
     phrase_blast_off, phrase_alert, phrase_spy, phrase_red, phrase_battle,
@@ -752,6 +773,7 @@ static const u8 *const phrases[6] = {
 
 #define SPEECH_TIMEOUT 12
 #define IFR_CA1 0x02
+#define SSI_D7  0x80
 
 void __fastcall__ speech_say(u8 phrase)
 {
@@ -783,6 +805,25 @@ static void speech_send(u8 phoneme)
     }
 }
 
+/* Mockingboard mode: drop the CA1 flag on both VIAs (the speech chip may
+ * sit behind either one) */
+static void speech_ack(void)
+{
+    REG8(VIA_B_IFR) = IFR_CA1;
+    REG8(VIA_A_IFR) = IFR_CA1;
+}
+
+/* has the chip finished the phoneme it was given? */
+static u8 speech_done(void)
+{
+    u8 done;
+
+    if (native) return (u8)(REG8(SSI_DUR) & SSI_D7);
+    done = (u8)((REG8(VIA_B_IFR) | REG8(VIA_A_IFR)) & IFR_CA1);
+    if (done) speech_ack();
+    return done;
+}
+
 static void speech_tick(void)
 {
     u8 phoneme;
@@ -798,23 +839,19 @@ static void speech_tick(void)
         speech_say(phoneme);
     }
     if (speech_index) {
-        /* wait for the current phoneme: CA1 flag on either VIA, or timeout */
-        done = (u8)((REG8(VIA_B_IFR) | REG8(VIA_A_IFR)) & IFR_CA1);
-        if (done) {
-            REG8(VIA_B_IFR) = IFR_CA1;
-            REG8(VIA_A_IFR) = IFR_CA1;
-        } else if (speech_timer) {
+        /* wait for the current phoneme, or for the timeout */
+        if (!speech_done() && speech_timer) {
             --speech_timer;
             return;
         }
-    } else {
-        /* new phrase: drop a stale completion flag */
-        REG8(VIA_B_IFR) = IFR_CA1;
-        REG8(VIA_A_IFR) = IFR_CA1;
+    } else if (!native) {
+        speech_ack();       /* new phrase: a stale flag from the last pause */
     }
     phoneme = speech_ptr[speech_index];
     ++speech_index;
-    if (phoneme == 0xFF) {
+    if (phoneme == PH_END) {
+        /* the chip repeats whatever it holds: leave it a pause */
+        speech_send(PH_PA);
         speech_active = 0;
         speech_current = SAY_NONE;
         return;
@@ -882,4 +919,24 @@ void sound_update(void)
     ay_flush(CHIP_MUS2);
     ay_flush(CHIP_SFX);  /* after speech, so a clobbered chip 0 is fixed now */
     ay_flush(CHIP_SFX2);
+}
+
+/* Before QUIT: every chip silent, the speech chip powered down. A Phasor
+ * in native mode holds the IRQ line while a finished phoneme waits to be
+ * acknowledged; ProDOS must not be handed that. */
+void sound_shutdown(void)
+{
+    u8 c;
+
+    for (c = 0; c < CHIPS_MAX; ++c) {
+        want[c][7] = MIX_ALL_OFF;
+        want[c][8] = 0;
+        want[c][9] = 0;
+        want[c][10] = 0;
+    }
+    ay_flush(CHIP_MUS);
+    ay_flush(CHIP_MUS2);
+    ay_flush(CHIP_SFX);
+    ay_flush(CHIP_SFX2);
+    ssi_write(SSI_R_CTL, 0x80);
 }

@@ -289,13 +289,18 @@ class ConvertTest(unittest.TestCase):
         self.assertTrue(all(e.mapped for e in entries.values()))
         kinds = {e.kind for e in entries.values()}
         self.assertEqual(kinds, {"sprite", "sprites", "tile", "tilemap", "dot"})
-        # every 16x16 ship heading is one of the ROM's three headings, flipped
+        # every 16x16 ship heading is one of the ROM's three headings (up,
+        # up-left, left), mirrored the way the arcade board does it
         for base in ("SHIP", "ITYPE", "PTYPE", "ETYPE", "SPY"):
             codes = {entries[f"{base}_{h}"].indices[0] for h in range(8)}
             self.assertEqual(len(codes), 3, base)
-            self.assertEqual(entries[f"{base}_2"].ops, ["fliph"])
-            self.assertEqual(entries[f"{base}_5"].ops, ["rot180"])
-            self.assertEqual(entries[f"{base}_6"].ops, [])
+            ops = [entries[f"{base}_{h}"].ops for h in range(8)]
+            self.assertEqual(ops, [[], ["fliph"], ["fliph"], ["rot180"],
+                                   ["flipv"], ["flipv"], [], []], base)
+            e = [entries[f"{base}_{h}"].indices[0] for h in range(8)]
+            self.assertEqual(e[0], e[4], base)                  # N / S
+            self.assertEqual(e[2], e[6], base)                  # E / W
+            self.assertEqual({e[1], e[3], e[5], e[7]}, {e[7]}, base)   # diagonals
         # the base parts are tile grids of the arcade's own tile codes
         for name, w, h in gen_assets.SPRITES:
             if name.startswith(("POD", "CORE")):

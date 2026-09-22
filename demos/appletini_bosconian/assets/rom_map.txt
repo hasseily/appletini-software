@@ -41,9 +41,11 @@
 #
 # Where the numbers come from
 # ---------------------------
-# The sprite ROM holds three headings of every ship (up, up-right, left; the
+# The sprite ROM holds three headings of every ship (up, up-left, left; the
 # board mirrors them for the other five), so the 8 headings are the three
-# sprites plus fliph/flipv/rot180. The game's attract mode names the ships:
+# sprites plus fliph/flipv/rot180: NE is the up-left sprite mirrored, SE is
+# it turned round, SW is it flipped top to bottom (MAME draws sprite 02 with
+# flipx set when the ship flies north-east). The game's attract mode names the ships:
 # 10 I TYPE, 18 P TYPE, 08 E TYPE, 20 SPY SHIP. Sprite colour codes are what
 # the game puts in its sprite RAM; the tile grids of the bases, the mine and
 # the asteroids are what it writes to the background tile RAM, and the
@@ -51,56 +53,56 @@
 # split into a core that never changes and six cannon pods; a corner pod is
 # 3x3 tiles because its strut is replaced together with it.
 
-# player ship: 00 up, 02 up-right, 04 left (colour 1; 01/03/05 are the
+# player ship: 00 up, 02 up-left, 04 left (colour 1; 01/03/05 are the
 # alternate exhaust frames)
 SHIP_0: sprite 0x00 color 1
-SHIP_1: sprite 0x02 color 1
+SHIP_1: sprite 0x02 color 1 fliph
 SHIP_2: sprite 0x04 color 1 fliph
-SHIP_3: sprite 0x02 color 1 flipv
+SHIP_3: sprite 0x02 color 1 rot180
 SHIP_4: sprite 0x00 color 1 flipv
-SHIP_5: sprite 0x02 color 1 rot180
+SHIP_5: sprite 0x02 color 1 flipv
 SHIP_6: sprite 0x04 color 1
-SHIP_7: sprite 0x02 color 1 fliph
+SHIP_7: sprite 0x02 color 1
 
-# I-type fighter: 10 up, 13 up-right, 16 left (colour 3)
+# I-type fighter: 10 up, 13 up-left, 16 left (colour 3)
 ITYPE_0: sprite 0x10 color 3
-ITYPE_1: sprite 0x13 color 3
+ITYPE_1: sprite 0x13 color 3 fliph
 ITYPE_2: sprite 0x16 color 3 fliph
-ITYPE_3: sprite 0x13 color 3 flipv
+ITYPE_3: sprite 0x13 color 3 rot180
 ITYPE_4: sprite 0x10 color 3 flipv
-ITYPE_5: sprite 0x13 color 3 rot180
+ITYPE_5: sprite 0x13 color 3 flipv
 ITYPE_6: sprite 0x16 color 3
-ITYPE_7: sprite 0x13 color 3 fliph
+ITYPE_7: sprite 0x13 color 3
 
-# P-type: 18 up, 1b up-right, 1e left (colour 4)
+# P-type: 18 up, 1b up-left, 1e left (colour 4)
 PTYPE_0: sprite 0x18 color 4
-PTYPE_1: sprite 0x1b color 4
+PTYPE_1: sprite 0x1b color 4 fliph
 PTYPE_2: sprite 0x1e color 4 fliph
-PTYPE_3: sprite 0x1b color 4 flipv
+PTYPE_3: sprite 0x1b color 4 rot180
 PTYPE_4: sprite 0x18 color 4 flipv
-PTYPE_5: sprite 0x1b color 4 rot180
+PTYPE_5: sprite 0x1b color 4 flipv
 PTYPE_6: sprite 0x1e color 4
-PTYPE_7: sprite 0x1b color 4 fliph
+PTYPE_7: sprite 0x1b color 4
 
-# E-type: 08 up, 0b up-right, 0e left (colour 2)
+# E-type: 08 up, 0b up-left, 0e left (colour 2)
 ETYPE_0: sprite 0x08 color 2
-ETYPE_1: sprite 0x0b color 2
+ETYPE_1: sprite 0x0b color 2 fliph
 ETYPE_2: sprite 0x0e color 2 fliph
-ETYPE_3: sprite 0x0b color 2 flipv
+ETYPE_3: sprite 0x0b color 2 rot180
 ETYPE_4: sprite 0x08 color 2 flipv
-ETYPE_5: sprite 0x0b color 2 rot180
+ETYPE_5: sprite 0x0b color 2 flipv
 ETYPE_6: sprite 0x0e color 2
-ETYPE_7: sprite 0x0b color 2 fliph
+ETYPE_7: sprite 0x0b color 2
 
-# spy ship: 20 up, 23 up-right, 26 left (colour 7)
+# spy ship: 20 up, 23 up-left, 26 left (colour 7)
 SPY_0: sprite 0x20 color 7
-SPY_1: sprite 0x23 color 7
+SPY_1: sprite 0x23 color 7 fliph
 SPY_2: sprite 0x26 color 7 fliph
-SPY_3: sprite 0x23 color 7 flipv
+SPY_3: sprite 0x23 color 7 rot180
 SPY_4: sprite 0x20 color 7 flipv
-SPY_5: sprite 0x23 color 7 rot180
+SPY_5: sprite 0x23 color 7 flipv
 SPY_6: sprite 0x26 color 7
-SPY_7: sprite 0x23 color 7 fliph
+SPY_7: sprite 0x23 color 7
 
 # cosmo-mine and the three asteroid shapes: 2x2 background tiles
 MINE: tilemap 2 2

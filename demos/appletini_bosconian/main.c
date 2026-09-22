@@ -340,6 +340,7 @@ static void title_tick(u8 pressed)
     if (pressed & IN_QUIT) {
         sound_music(MUSIC_NONE);
         sound_update();
+        sound_shutdown();
         video_shutdown();
         prodos_quit();
         return;

@@ -274,6 +274,7 @@ subroutine calls.
 
 ```c
 void sound_init(void);        /* VIA A/B DDR/PCR, silence both AYs, SSI setup */
+void sound_shutdown(void);    /* before QUIT: every chip silent, SSI-263 powered down */
 void sound_update(void);      /* ONE call per frame after video_render(): runs the
                                  music sequencer, the SFX engine, then the speech
                                  stream. All AY/SSI writes happen here, in one burst */
@@ -318,8 +319,17 @@ VIA and `$17/$14/$16` for the second. The mailbox reports `sound_chips`
 Speech phonemes: SSI-263 codes (`00 PA, 01 E, 03 Y, 05 AY, 07 I, 08 A,
 0A EH, 0C AE, 0E AH, 10 AW, 11 O, 12 OU, 13 OO, 18 UH, 1C ER, 1D R, 20 L,
 23 W, 24 B, 25 D, 27 P, 28 T, 29 K, 2F Z, 30 S, 32 SCH, 33 V, 34 F, 37 M,
-38 N`), duration in bits 7-6, `$FF` terminator, one phoneme per SSI-263 CA1
-completion or 12-frame timeout (Invasion's `speech_tick`).
+38 N`), length in bits 7-6 (at speech rate `$A` a phoneme lasts 96, 72, 48
+or 24 ms: vowels full length, fricatives, nasals and liquids three
+quarters, stops and word gaps half), `$FF` terminator. The chip repeats a
+phoneme until the next one is written, so `speech_tick` sends the next
+phoneme in the first `sound_update` after the chip reports the end of the
+current one: in Phasor native mode that is D7 of a read of `$C440` (the
+card routes the chip's A/R request to the IRQ line, which the game keeps
+masked), in Mockingboard mode the VIA CA1 flag (IFR bit 1; `$C44x` is
+write-only there). A 12-frame timeout covers a card without the chip. A
+phrase ends with a pause phoneme (`00`), which the chip then repeats
+silently, and `sound_shutdown` powers the chip down before QUIT.
 
 ## 7. Input API (`input.s` + C glue)
 
@@ -380,7 +390,7 @@ Written once per frame by the game (`mailbox_tick`). Offsets:
 
 The sizes are the arcade's: 16x16 sprites, 2x2-tile objects, the base
 parts cut from its tile grids, the bullet dots. Every ship type has eight
-headings (0 = up, clockwise), made from the ROM's three (up, up-right,
+headings (0 = up, clockwise), made from the ROM's three (up, up-left,
 left) by mirroring like the arcade hardware does.
 
 ```

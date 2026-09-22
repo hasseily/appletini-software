@@ -184,6 +184,7 @@ void field_text_big(u8 x, u8 y, u8 color, const char *s);
 
 void sound_init(void);
 void sound_update(void);
+void sound_shutdown(void);   /* before QUIT: silence, speech chip powered down */
 void __fastcall__ sound_music(u8 track);
 void __fastcall__ sound_tempo(u8 level);
 void __fastcall__ sound_sfx(u8 id);
