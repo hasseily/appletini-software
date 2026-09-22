@@ -51,7 +51,7 @@ DESIGN_SPRITES = (
     + [("SHOT_PLAYER_D1", 4, 4), ("SHOT_PLAYER_D2", 4, 4)]
     + [("SHOT_ENEMY", 4, 4)]
     + [("MISSILE_%d" % i, 4, 4) for i in range(2)]
-    + [("ICON_SHIP", 16, 16), ("ICON_BASE", 8, 8)]
+    + [("ICON_SHIP", 16, 16), ("ICON_BASE", 8, 8), ("CAPTION_COND", 62, 8)]
 )
 SPR_COUNT = len(DESIGN_SPRITES)
 DESIGN_IDS = {
@@ -61,7 +61,7 @@ DESIGN_IDS = {
     "SPR_PODDEAD_V0": 58, "SPR_POD_H0": 64, "SPR_PODDEAD_H0": 70,
     "SPR_SHOT_PLAYER": 76, "SPR_SHOT_PLAYER_H": 77, "SPR_SHOT_PLAYER_D1": 78,
     "SPR_SHOT_PLAYER_D2": 79, "SPR_SHOT_ENEMY": 80, "SPR_MISSILE_0": 81,
-    "SPR_ICON_SHIP": 83, "SPR_ICON_BASE": 84, "SPR_COUNT": 85,
+    "SPR_ICON_SHIP": 83, "SPR_ICON_BASE": 84, "SPR_CAPTION_COND": 85, "SPR_COUNT": 86,
 }
 # docs/DESIGN.md section 3: the arcade colour PROM, as (R, G, B) 4-bit values.
 DESIGN_PALETTE = [
@@ -77,7 +77,7 @@ RUN_MORE = 0x80
 SPLIT_GAP = 2
 # docs/DESIGN.md section 2: the auxiliary language card regions
 DESIGN_REGIONS = [(0xD000, 0x2FF0, 4), (0xD000, 0x1000, 6)]
-MAIN_ONLY = {"ICON_SHIP", "ICON_BASE"}
+MAIN_ONLY = {"ICON_SHIP", "ICON_BASE", "CAPTION_COND"}
 
 
 # ---------------------------------------------------------------- helpers
@@ -283,7 +283,7 @@ class GeneratorRun(unittest.TestCase):
 class TestSpriteFormat(GeneratorRun):
 
     def test_all_sprites_present_with_design_sizes(self):
-        self.assertEqual(SPR_COUNT, 85)
+        self.assertEqual(SPR_COUNT, 86)
         self.assertEqual(gen_assets.SPRITES, DESIGN_SPRITES)
         for i, (name, w, h) in enumerate(DESIGN_SPRITES):
             self.assertIn(name, self.grids, f"{name} missing in sprites.txt")
@@ -409,6 +409,8 @@ class TestSpriteFormat(GeneratorRun):
             self.assertTrue(colors(f"EXPL_{i}"), f"EXPL_{i} is empty")
             self.assertTrue(colors(f"BIGEXPL_{i}"), f"BIGEXPL_{i} is empty")
         self.assertTrue({GREEN, ORANGE} <= colors("ICON_BASE"))
+        self.assertEqual(colors("CAPTION_COND"), {GRAY})
+        self.assertTrue(all(p is None for p in g["CAPTION_COND"][7]), "caption: last row blank")
 
 
 class TestTablesFontPalette(GeneratorRun):

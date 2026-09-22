@@ -25,7 +25,8 @@ main card is ProDOS's own). REGIONS lists the areas in fill order; a sprite
 left over is assembled into RODATA. _spr_bank tells video.s how to reach an
 id: bit 2 = the auxiliary card (ALTZP on while blitting), bit 1 = bank 1 of
 $D000-$DFFF instead of bank 2. The two panel icons always stay in main
-memory (MAIN_ONLY) because panel_sprite does not switch banks.
+memory (MAIN_ONLY) because panel_sprite does not switch banks, and so does
+the panel's CONDITION caption.
 
 BOSCO.SPR: "BSPR", u8 region count, then per region u16 load address,
 u16 length, u8 bank code (5 bytes each), then the region blobs in order.
@@ -102,14 +103,15 @@ SPRITES = (
     + [("SHOT_ENEMY", 4, 4)]                           # 80
     + [(f"MISSILE_{i}", 4, 4) for i in range(2)]       # 81, 82
     + [("ICON_SHIP", 16, 16), ("ICON_BASE", 8, 8)]     # 83, 84
+    + [("CAPTION_COND", 62, 8)]                        # 85  the panel's CONDITION caption
 )
 SPR_COUNT = len(SPRITES)
-assert SPR_COUNT == 85
+assert SPR_COUNT == 86
 SPRITE_SIZES = {name: (w, h) for name, w, h in SPRITES}
 
 # Sprites that must stay in main memory (drawn by panel_sprite, which does
 # not switch language-card banks).
-MAIN_ONLY = {"ICON_SHIP", "ICON_BASE"}
+MAIN_ONLY = {"ICON_SHIP", "ICON_BASE", "CAPTION_COND"}
 
 # #define names that bosco.h uses for the first id of each group (or the only
 # id). Every other id is reached from these by adding an offset.
@@ -122,7 +124,7 @@ SPR_DEFINES = (
     ("SPR_SHOT_PLAYER", 76), ("SPR_SHOT_PLAYER_H", 77),
     ("SPR_SHOT_PLAYER_D1", 78), ("SPR_SHOT_PLAYER_D2", 79),
     ("SPR_SHOT_ENEMY", 80), ("SPR_MISSILE_0", 81), ("SPR_ICON_SHIP", 83),
-    ("SPR_ICON_BASE", 84),
+    ("SPR_ICON_BASE", 84), ("SPR_CAPTION_COND", 85),
 )
 for _name, _value in SPR_DEFINES:
     assert SPRITES[_value][0] == _name[4:], (_name, _value)

@@ -153,9 +153,11 @@ static const u8 spawn_interval[3] = { 120, 90, 60 };
 static const u16 form_interval[3] = { 1200, 840, 600 };
 static const u16 form_bonus[3] = { 500, 1000, 1500 };
 
-/* ---- title star rows: bands between the title text lines ---- */
-static const u8 band_start[6] = { 0, 58, 102, 130, 160, 186 };
-static const u8 band_len[6] = { 38, 20, 16, 18, 14, 14 };
+/* ---- title star rows: the bands between the title text lines (main.c
+ * title_draw: big text at 40, lines at 80, 92, 104, 120, 150, 176; the
+ * spinning ship at 60..75 is a sprite and covers stars itself) ---- */
+static const u8 band_start[6] = { 0, 56, 112, 128, 158, 184 };
+static const u8 band_len[6] = { 40, 24, 8, 22, 18, 16 };
 
 /* ------------------------------------------------------------------ */
 /* random numbers: 16-bit LFSR                                          */

@@ -263,12 +263,19 @@ SHOT_ENEMY: dot 4
 MISSILE_0: dot 4
 MISSILE_1: dot 5
 
-# panel: the lives icon is the 2x2 tile ship of the arcade panel, the radar
-# marker its base tile (colour 0x23 is the radar's own colour code)
+# panel: the lives icon is the 2x2 tile ship of the arcade panel (attribute
+# 0x61: colour 0x21, not mirrored), the radar marker its base tile (colour
+# 0x23 is the radar's own colour code), and the CONDITION caption its eight
+# tiles: COND in the full font and ITION in the narrow one, without the
+# blank first and last columns (62 px: a 64 px sprite's shifted variant
+# would be 33 bytes, one more than the blitter copies)
 ICON_SHIP: tilemap 2 2
-    30:21 31:21
-    32:21 33:21
+    30:61 31:61
+    32:61 33:61
 ICON_BASE: tile 0x27 color 0x23
+CAPTION_COND: tilemap 8 1
+    0c:70 18:70 17:70 0d:70 37:70 3a:70 3b:70 3c:70
+    crop 1 0 62 8
 
 # the arcade font for digits, letters and the dash
 font: digits 0x00 letters 0x0a space 0x24 minus 0x26

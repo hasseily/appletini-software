@@ -1144,6 +1144,7 @@ RR..
 
 # ---------------------------------------------------------------- panel icons
 # Lives icon: the ship itself (16x16). Radar marker for a base: green ring (8x8).
+# The CONDITION caption of the side panel (64x8, gray).
 derive ICON_SHIP = copy SHIP_0
 
 sprite ICON_BASE 8 8
@@ -1155,3 +1156,13 @@ dGGOOGGd
 ..dddd..
 ........
 ........
+
+sprite CAPTION_COND 62 8
+.lll....lll...l...l..llll...lllll..lllll..lllll...lll...l...l.
+l...l..l...l..ll..l..l...l....l......l......l....l...l..ll..l.
+l......l...l..l.l.l..l...l....l......l......l....l...l..l.l.l.
+l......l...l..l..ll..l...l....l......l......l....l...l..l..ll.
+l......l...l..l...l..l...l....l......l......l....l...l..l...l.
+l...l..l...l..l...l..l...l....l......l......l....l...l..l...l.
+.lll....lll...l...l..llll...lllll....l....lllll...lll...l...l.
+..............................................................

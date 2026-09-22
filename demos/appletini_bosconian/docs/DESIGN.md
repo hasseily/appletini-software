@@ -109,8 +109,9 @@ probe writes `$1000/$1001` in each bank and restores bank 0.
 - Side panel: x `256..319` (32 bytes per row), drawn by `panel_*` routines.
   It is the arcade's 64-pixel panel squeezed from 224 to 200 rows (`main.c`
   `PANEL_Y_*`): `HI-SCORE` (red) at y 0 and its digits at y 8, `1UP` at 16
-  and the score at 24 (white, right-aligned, 8 glyphs), the small
-  `CONDITION` caption at 36, the framed GREEN/YELLOW/RED label at y 44..59,
+  and the score at 24 (white, right-aligned, 8 glyphs), the `CONDITION`
+  caption at 36 (the arcade's eight tiles as one 62x8 sprite), the framed
+  GREEN/YELLOW/RED label centred at y 44..59,
   the radar at y 64..175 (64x112: the whole 1024x1792 world at 1/16, purple
   background like the arcade's, the base marker tile as an 8x8 sprite, 2x2
   dots for the ship and the enemies), up to four 16x16 ship icons at y 176
@@ -406,7 +407,8 @@ left) by mirroring like the arcade hardware does.
 81..82 SPR_MISSILE_0..1    4x4   homing missile, blinking
 83     SPR_ICON_SHIP      16x16  lives icon (the arcade panel's ship)
 84     SPR_ICON_BASE       8x8   radar marker for a base
-SPR_COUNT = 85
+85     SPR_CAPTION_COND   62x8   the panel's CONDITION caption (the arcade's eight tiles, blank edge columns cut)
+SPR_COUNT = 86
 ```
 
 A corner pod's 24x24 box holds the pod and its strut, because the arcade

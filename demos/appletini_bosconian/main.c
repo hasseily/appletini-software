@@ -34,7 +34,7 @@ static u8 title_blink;
 #define PANEL_Y_HI_VALUE 8
 #define PANEL_Y_1UP 16
 #define PANEL_Y_SCORE 24
-#define PANEL_Y_CONDITION 36    /* small caption */
+#define PANEL_Y_CONDITION 36    /* the 62x8 CONDITION caption sprite */
 #define PANEL_Y_COND_BOX 44     /* 16 rows: rule, GREEN/YELLOW/RED, rule */
 #define RADAR_Y 64              /* the whole 1024x1792 world at 1/16: 64x112 */
 #define RADAR_H 112
@@ -56,9 +56,10 @@ static u8 radar_marks[BASE_MAX];    /* base marker drawn on the radar */
 static char textbuf[36];
 
 static const u8 cond_color[3] = { C_GREEN, C_YELLOW, C_RED };
-static const char cond_name0[] = "GREEN ";
+static const char cond_name0[] = "GREEN";
 static const char cond_name1[] = "YELLOW";
-static const char cond_name2[] = "RED   ";
+static const char cond_name2[] = "RED";
+static const u8 cond_px[3] = { 6, 4, 10 };     /* byte column that centres each word */
 
 /* ------------------------------------------------------------------ */
 /* number formatting (no stdio in the none target)                      */
@@ -171,7 +172,7 @@ static void hud_labels(void)
 {
     panel_text(0, PANEL_Y_HI, C_RED, "HI-SCORE");
     panel_text(0, PANEL_Y_1UP, C_WHITE, "1UP");
-    panel_text_small(0, PANEL_Y_CONDITION, C_GRAY, "CONDITION");
+    panel_sprite(0, PANEL_Y_CONDITION, SPR_CAPTION_COND);
     panel_fill(0, RADAR_Y, PANEL_BYTES, RADAR_H, RADAR_COLOR);
     hud_dirty = HUD_ALL;
 }
@@ -203,8 +204,9 @@ static void hud_update(void)
         panel_fill(0, PANEL_Y_COND_BOX, PANEL_BYTES, 16, C_BLACK);
         panel_fill(0, PANEL_Y_COND_BOX, PANEL_BYTES, 2, c);
         panel_fill(0, PANEL_Y_COND_BOX + 14, PANEL_BYTES, 2, c);
-        panel_text(4, PANEL_Y_COND_BOX + 4, c, condition == 0 ? cond_name0 :
-                             (condition == 1 ? cond_name1 : cond_name2));
+        panel_text(cond_px[condition], PANEL_Y_COND_BOX + 4, c,
+                   condition == 0 ? cond_name0 :
+                   (condition == 1 ? cond_name1 : cond_name2));
     }
     if (d & HUD_ROUND) {
         textbuf[0] = 'R'; textbuf[1] = 'O'; textbuf[2] = 'U';

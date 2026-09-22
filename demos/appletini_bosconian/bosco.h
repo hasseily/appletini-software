@@ -112,7 +112,8 @@ typedef unsigned long u32;
 #define SPR_MISSILE_0 81      /* 81..82 4x4 */
 #define SPR_ICON_SHIP 83      /* 16x16 */
 #define SPR_ICON_BASE 84      /* 8x8 */
-#define SPR_COUNT 85
+#define SPR_CAPTION_COND 85   /* 62x8 the panel's CONDITION caption */
+#define SPR_COUNT 86
 extern const u8 spr_width[SPR_COUNT];   /* pixel width per id (build/assets.s) */
 extern const u8 spr_height[SPR_COUNT];
 
