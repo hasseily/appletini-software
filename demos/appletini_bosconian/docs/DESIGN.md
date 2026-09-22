@@ -373,17 +373,30 @@ Rows are single runs; art must be convex per row (no holes).
   current heading (alternate 1/2 px, both axes on diagonals). Fires two
   shots at once (forward and backward), speed 5 px/frame, range 120 px, max
   two volleys in flight. Autofire when the fire input is held (every 8 frames).
-- Bases: 6 (rounds 1-2), 7 (3-4), 8 (5+). Each: core at (bx,by), pods at
-  (0,−28), (±24,−14), (±24,+14), (0,+28). Pod hit = destroyed (score 200 when
-  the 6th pod dies... the *base* score is awarded when the base dies).
+- Bases: laid out per round by the table in `rounds.c` (`RoundDef`: count,
+  orientation bits, x/8 and y/8 of every core). Round 1 has 3 bases in a
+  close triangle around the start, round 2 has 4 in two pairs (both as in
+  the arcade); rounds 3..11 use the arcade's named layouts (tight circle,
+  Orion, circle, big squiggle, straight line, tight cluster, sectors X, Y
+  and Z) with 6, 7 then 8 bases, and rounds 12 and up repeat six layouts
+  (tight circle, Orion, two clusters, "A", circle, question mark). The
+  later layouts are reconstructed from descriptions, not from the ROM
+  tables; `tests/test_rounds.py` checks the counts and spacing.
+  Each base: core at (bx,by); a vertical base has pods at (0,−28), (±24,−14),
+  (±24,+14), (0,+28), a horizontal one the same turned 90° (pods at (−28,0),
+  (−14,±24), (+14,±24), (+28,0)). Pod hit = destroyed (score 200 when the 6th
+  pod dies... the *base* score is awarded when the base dies).
   Core closed/open cycle: closed 180 frames, open 90 frames; while open it
   fires a homing missile (speed 1 px/frame so the 1.5 px/frame ship can
   outrun it, homing turn every 8 frames, lifetime 240 frames) if the player
   is within 200 px. A player shot destroys a missile (50 points). A shot
-  into the open core destroys the base. Base score 1500 + 500*(min(round,4)−1). A dead base
-  shows big explosions for 60 frames. Pods fire enemy shots (speed 3, straight
-  toward the player's current position, cooldown 90 frames) when the player is
-  within 140 px and the pod is on screen.
+  into the open core destroys the base only along the base's axis: a
+  vertical base takes shots flying up or down, a horizontal one shots flying
+  left or right; other shots glance off (SFX_HIT). Base score 1500 +
+  500*(min(round,4)−1). A dead base shows big explosions for 60 frames. Pods
+  fire enemy shots (speed 3, straight toward the player's current position,
+  cooldown 90 frames) when the player is within 140 px and the pod is on
+  screen.
 - Field objects per round: 24 asteroids (10 pts, 1 hit) and 16 mines
   (20 pts; when shot they explode into a 32x32 blast that destroys enemies and
   the player within 14 px for 20 frames). Placed randomly, at least 96 px from

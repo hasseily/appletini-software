@@ -82,7 +82,19 @@ extern u8 spy_active;
 extern u16 base_x[BASE_MAX];
 extern u16 base_y[BASE_MAX];
 extern u8 base_state[BASE_MAX];
+extern u8 base_hz[BASE_MAX];    /* 1 = horizontal base (core exposed left/right) */
 extern u8 base_count;
+
+/* round layouts (rounds.c): base positions in world pixels / 8 */
+typedef struct {
+    u8 count;                   /* bases in this layout, 3..BASE_MAX */
+    u8 hz;                      /* bit b set = base b is horizontal */
+    u8 x8[BASE_MAX];
+    u8 y8[BASE_MAX];
+} RoundDef;
+#define ROUND_LAYOUTS 14
+extern const RoundDef round_layouts[ROUND_LAYOUTS];
+const RoundDef *round_layout(u8 round_no);
 
 /* enemies: the radar shows the spy ship and the formation leader */
 extern u8 en_type[ENEMY_MAX];

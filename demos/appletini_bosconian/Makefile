@@ -20,7 +20,16 @@ OBJECTS := $(BUILD)/crt0.o \
 	$(patsubst %.s,$(BUILD)/%.o,$(SRCS_S)) \
 	$(BUILD)/assets.o
 
-ASSET_SOURCES := assets/sprites.txt assets/font8.txt
+# Sprite art: the drawn art in assets/, or -- with ROMS=/path/to/bosco.zip
+# (a MAME Bosconian ROM set you own; also an unpacked directory) -- the
+# arcade graphics that tools/bosco_rom.py converts through assets/rom_map.txt.
+ROMS ?=
+ifneq ($(ROMS),)
+SPRITES_TXT := $(BUILD)/rom/sprites.txt
+else
+SPRITES_TXT := assets/sprites.txt
+endif
+ASSET_SOURCES := $(SPRITES_TXT) assets/font8.txt
 GEN_ASSETS := tools/gen_assets.py
 HEADERS := $(wildcard *.h)
 
@@ -34,9 +43,13 @@ all: $(SYSTEM)
 $(BUILD) $(DIST):
 	mkdir -p $@
 
+# arcade graphics converted from the ROM set (only with ROMS=...)
+$(BUILD)/rom/sprites.txt: tools/bosco_rom.py assets/rom_map.txt assets/sprites.txt $(ROMS) | $(BUILD)
+	$(PYTHON) tools/bosco_rom.py $(ROMS) --map assets/rom_map.txt --out $(BUILD)/rom
+
 # generated sprite tables: build/assets.s and build/assets.h
 $(BUILD)/assets.s $(BUILD)/assets.h: $(GEN_ASSETS) $(ASSET_SOURCES) | $(BUILD)
-	$(PYTHON) $(GEN_ASSETS) --assets assets --build $(BUILD) --quiet
+	$(PYTHON) $(GEN_ASSETS) --assets assets --sprites $(SPRITES_TXT) --build $(BUILD) --quiet
 
 $(BUILD)/assets.o: $(BUILD)/assets.s | $(BUILD)
 	$(CL65) $(AFLAGS) -c -o $@ $<

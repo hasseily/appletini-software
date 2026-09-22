@@ -1,0 +1,85 @@
+# Appletini Bosconian -- which arcade ROM graphic makes each SPR_ entry.
+# Read by tools/bosco_rom.py together with a Bosconian ROM set you own
+# (make ROMS=/path/to/bosco.zip). The repository holds no Namco data.
+#
+# Format
+# ------
+#   NAME: sprite N  color C [options]      16x16 sprite N (0..63) of bos1_13.5e
+#   NAME: tile N    color C [options]      8x8 tile N (0..255) of bos1_14.5d
+#   NAME: tiles A B C D color C [options]  2x2 block of tiles (row-major) = 16x16
+#   NAME: ?                                not mapped yet: the drawn art in
+#                                          sprites.txt is used for this entry
+#
+# C is the arcade colour code 0..63 (the attribute the game gives the object);
+# build/rom/palettes.png shows the four colours of every code, and
+# build/rom/sheet.png every tile and sprite with its index. Numbers may be
+# decimal or 0x hex.
+#
+# Options, applied in this order:
+#   crop X Y W H     use only this part of the decoded graphic
+#   fliph flipv      mirror; rot90 rot180 rot270 turn clockwise (square only)
+#   fit              (default) crop to the opaque pixels and center them in
+#                    the SPR_ box (sizes in docs/DESIGN.md section 9)
+#   center           center the whole graphic; pixels outside the box are lost
+#   at X Y           put the graphic's top-left corner at X,Y in the box
+#
+# Arcade colours are turned into the nearest entry of palette 0 (DESIGN.md
+# section 3); build/rom/colors.txt lists every colour that was used.
+#
+# Everything below is a template: no entry is mapped until someone looks at
+# the sheets. The player ship exists in the ROM in a few headings only (the
+# board mirrors sprites in hardware), so most SHIP_/ITYPE_/PTYPE_ headings
+# will be a base sprite plus fliph/flipv/rot90.
+
+SHIP_0: ?
+SHIP_1: ?
+SHIP_2: ?
+SHIP_3: ?
+SHIP_4: ?
+SHIP_5: ?
+SHIP_6: ?
+SHIP_7: ?
+ITYPE_0: ?
+ITYPE_1: ?
+ITYPE_2: ?
+ITYPE_3: ?
+ITYPE_4: ?
+ITYPE_5: ?
+ITYPE_6: ?
+ITYPE_7: ?
+PTYPE_0: ?
+PTYPE_1: ?
+PTYPE_2: ?
+PTYPE_3: ?
+PTYPE_4: ?
+PTYPE_5: ?
+PTYPE_6: ?
+PTYPE_7: ?
+ETYPE_0: ?
+ETYPE_1: ?
+ETYPE_2: ?
+ETYPE_3: ?
+MINE_0: ?
+MINE_1: ?
+ASTEROID_0: ?
+ASTEROID_1: ?
+POD: ?
+CORE_CLOSED: ?
+CORE_OPEN: ?
+EXPL_0: ?
+EXPL_1: ?
+EXPL_2: ?
+EXPL_3: ?
+SHOT_PLAYER: ?
+SHOT_ENEMY: ?
+MISSILE_0: ?
+MISSILE_1: ?
+ICON_SHIP: ?
+ICON_BASE: ?
+POD_HIT: ?
+BIGEXPL_0: ?
+BIGEXPL_1: ?
+BIGEXPL_2: ?
+BIGEXPL_3: ?
+SHOT_PLAYER_H: ?
+SHOT_PLAYER_D: ?

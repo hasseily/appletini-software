@@ -4,7 +4,10 @@ An original Bosconian-style shooter for an enhanced Apple //e with an
 Appletini ONE card, in Super Hi-Res at 60 frames per second. It needs the
 vTW accelerator (33 MHz or TURBO) and the Phasor in slot 4; RamWorks memory
 is probed and reported but not needed. The code is original C and 65C02
-assembly (cc65/ca65) and uses no Namco code, ROM data or art.
+assembly (cc65/ca65) and uses no Namco code. The repository holds no ROM
+data or Namco art: the drawn sprites in `assets/` are original, and
+`tools/bosco_rom.py` can replace them with the arcade graphics converted
+from a Bosconian ROM set you own (see "Arcade graphics" below).
 
 Status: builds, passes its unit tests, and plays in GSSquared and in the
 project's py65 test machine. It is **not yet tested on hardware**.
@@ -12,8 +15,12 @@ project's py65 test machine. It is **not yet tested on hardware**.
 ## What the game does
 
 You fly a ship that never stops, fire forward and backward at once, and
-clear a 1536x1536 wrapping map of six to eight enemy bases (six cannon pods
-around a core that opens and fires homing missiles). Asteroids and mines
+clear a 1536x1536 wrapping map of three to eight enemy bases (six cannon
+pods around a core that opens and fires homing missiles; a vertical base
+exposes its core to shots from above and below, a horizontal one from the
+left and right). Round 1 has the arcade's three bases in a close triangle,
+round 2 its four in two pairs, and later rounds use the arcade's named
+layouts (`rounds.c`, docs/DESIGN.md section 10). Asteroids and mines
 litter the field; interceptors and formations home in on you; a spy ship
 escalates the condition from GREEN to YELLOW to RED. The side panel shows
 the scores, the condition lamp, a radar, the round, lives and the bases
@@ -98,7 +105,7 @@ make test     # unit tests in tests/ (py65 for the asm and the sound driver)
 `dist/Appletini-Bosconian.hdv` built from the current sources.
 
 Needs cc65 (`cl65`, `ca65`, `ld65`) and Python 3 (Pillow only for the
-sprite preview and the test-machine screenshots). `PRODOS` and the boot
+sprite preview, the ROM sheets and the test-machine screenshots). `PRODOS` and the boot
 blocks come from `../../../appletini-one/software/ProDOS_2_4_3.po`
 (`APPLETINI_ROOT` to point elsewhere). The image writer is Python; no Java.
 
@@ -183,8 +190,39 @@ and largest), RamWorks banks, speed probe, sound and speech state, input,
 events, budget overruns, joystick status and sound chips (4 or 2). The
 layout is `struct Mailbox` in `bosco.h` and `docs/DESIGN.md` section 8.
 
+## Arcade graphics
+
+The sprites in `assets/sprites.txt` are drawn for this project. To use the
+original arcade artwork instead, point the build at a MAME Bosconian ROM
+set you own (`bosco.zip`, or any of the bosco3, bosco1, boscoo and boscomd
+sets, zipped or unpacked; they share the same graphics ROMs and colour
+PROMs):
+
+```sh
+make ROMS=/path/to/bosco.zip disk
+```
+
+`tools/bosco_rom.py` finds the two graphics ROMs and the two colour PROMs
+by their MAME CRCs, decodes the 256 8x8 tiles, the 64 16x16 sprites and the
+palette exactly as MAME's `galaga.cpp` and `bosco_v.cpp` do, and writes
+`build/rom/sheet.png` (every tile and sprite with its index),
+`build/rom/palettes.png` (the 64 colour codes) and `build/rom/sprites.txt`,
+the sprite art the build then uses. `assets/rom_map.txt` says which tile,
+sprite and colour code makes each `SPR_` entry, with mirror, rotate and
+crop options; entries left at `?` keep the drawn art, so an incomplete map
+still builds. The map is a template until someone with the ROM set reads
+the sheets and fills it in; `build/rom/colors.txt` then lists how each
+arcade colour was matched to palette 0. The ROM set and everything under
+`build/` stay out of git.
+
 ## Not done yet
 
+- The ROM map: `assets/rom_map.txt` has no entries yet, so a build with
+  `ROMS=` still shows the drawn art until the sheets have been read and
+  the tile/sprite indices and colour codes written down.
+- Round layouts 3 and up are reconstructed from descriptions of the arcade
+  rounds (names, counts, repeat order), not from the ROM's own tables. Fix
+  a layout by editing `rounds.c`; `make test` checks spacing and counts.
 - Hardware test on a //e with the Appletini: every timing number comes
   from GSSquared or the py65 model. The paddle timing, the slot 4 slowdown
   window and TURBO are only modelled.

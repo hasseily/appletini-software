@@ -4,6 +4,8 @@
 Inputs (see the header comments of each file for the exact syntax):
   assets/sprites.txt   sprite art, one character per pixel, plus "derive"
                        lines that rotate or mirror an earlier sprite
+                       (--sprites FILE reads another file in the same format,
+                       such as build/rom/sprites.txt from tools/bosco_rom.py)
   assets/font8.txt     64 glyphs of 8x8 pixels for ASCII 32..95
 
 Outputs:
@@ -289,8 +291,8 @@ def byte_lines(data: bytes, per_line: int = 16) -> list[str]:
     return lines
 
 
-def build_all(assets_dir: Path):
-    grids = parse_sprites(assets_dir / "sprites.txt")
+def build_all(assets_dir: Path, sprites_path: Path | None = None):
+    grids = parse_sprites(sprites_path or assets_dir / "sprites.txt")
     font = parse_font(assets_dir / "font8.txt")
 
     missing = [n for n, _, _ in SPRITES if n not in grids]
@@ -474,12 +476,15 @@ def write_preview(path: Path, encoded, font) -> bool:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--assets", type=Path, default=DEFAULT_ASSETS)
+    parser.add_argument("--sprites", type=Path, default=None,
+                        help="sprite text art to use instead of assets/sprites.txt "
+                             "(tools/bosco_rom.py writes one from the arcade ROMs)")
     parser.add_argument("--build", type=Path, default=DEFAULT_BUILD)
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
 
     try:
-        encoded, font, _grids = build_all(args.assets)
+        encoded, font, _grids = build_all(args.assets, args.sprites)
     except (AssetError, OSError, ValueError) as err:
         print(f"gen_assets: {err}", file=sys.stderr)
         return 1

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build checks for the game module (main.c, game.c, game.h, prodos_quit.s).
+"""Build checks for the game module (main.c, game.c, rounds.c, game.h, prodos_quit.s).
 
 This is not a simulation. It runs the real cc65 toolchain on the game
 sources and checks that:
@@ -27,7 +27,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
-C_FILES = ["main.c", "game.c"]
+C_FILES = ["main.c", "game.c", "rounds.c"]
 ASM_FILES = ["prodos_quit.s"]
 HEADERS = ["bosco.h", "game.h"]
 
@@ -220,9 +220,10 @@ class InterfaceTest(unittest.TestCase):
         game_vars = declared_externs(self.game_h)
         defined = set()
         for src in self.sources.values():
-            defined |= set(re.findall(r"^\s*(?:u8|s8|u16|s16|u32)\s+([A-Za-z_]\w*)",
+            types = r"(?:const\s+)?(?:u8|s8|u16|s16|u32|RoundDef)"
+            defined |= set(re.findall(r"^\s*" + types + r"\s+([A-Za-z_]\w*)",
                                       strip_comments(src), flags=re.M))
-            defined |= set(re.findall(r"^\s*(?:u8|s8|u16|s16|u32)\s+[^;]*?,\s*([A-Za-z_]\w*)\s*;",
+            defined |= set(re.findall(r"^\s*" + types + r"\s+[^;]*?,\s*([A-Za-z_]\w*)\s*;",
                                       strip_comments(src), flags=re.M))
         missing = sorted(game_vars - defined)
         self.assertEqual(missing, [], "game.h externs without a definition: %s" % missing)

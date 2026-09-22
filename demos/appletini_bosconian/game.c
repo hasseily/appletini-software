@@ -37,6 +37,7 @@ u8 spy_active;
 u16 base_x[BASE_MAX];
 u16 base_y[BASE_MAX];
 u8 base_state[BASE_MAX];
+u8 base_hz[BASE_MAX];
 u8 base_count;
 static u8 base_pods[BASE_MAX];     /* 6-bit pod mask */
 static u8 base_open[BASE_MAX];     /* 1 while the core is open */
@@ -47,14 +48,14 @@ static s16 base_sx[BASE_MAX];
 static s16 base_sy[BASE_MAX];
 static u8 base_near[BASE_MAX];
 
-/* pod centers relative to the core */
-static const s8 pod_ox[POD_COUNT] = { 0, -24, 24, -24, 24, 0 };
-static const s8 pod_oy[POD_COUNT] = { -28, -14, -14, 14, 14, 28 };
-
-/* base cells: column, row of a 3x3 grid (512 px cells), center cell is the
- * player start. Order spreads the first six bases evenly. */
-static const u8 base_cell_cx[BASE_MAX] = { 2, 0, 1, 1, 2, 0, 0, 2 };
-static const u8 base_cell_cy[BASE_MAX] = { 1, 1, 0, 2, 0, 2, 0, 2 };
+/* pod centers relative to the core: [0] vertical base (points up and
+ * down, core exposed from the top and bottom), [1] horizontal base */
+static const s8 pod_ox[2][POD_COUNT] = {
+    { 0, -24, 24, -24, 24, 0 }, { -28, -14, -14, 14, 14, 28 }
+};
+static const s8 pod_oy[2][POD_COUNT] = {
+    { -28, -14, -14, 14, 14, 28 }, { 0, -24, 24, -24, 24, 0 }
+};
 
 /* ---- enemies ---- */
 u8 en_type[ENEMY_MAX];
@@ -638,12 +639,14 @@ static u16 base_score(void)
 static void base_kill(u8 b)
 {
     u8 p;
+    const s8 *ox = pod_ox[base_hz[b]];
+    const s8 *oy = pod_oy[base_hz[b]];
     base_state[b] = BASE_DYING;
     base_timer[b] = 60;
     for (p = 0; p < POD_COUNT; ++p) {
         if (base_pods[b] & (1 << p)) {
-            explosion_add(EX_SMALL, wrap_w((s16)base_x[b] + pod_ox[p]),
-                          wrap_w((s16)base_y[b] + pod_oy[p]));
+            explosion_add(EX_SMALL, wrap_w((s16)base_x[b] + ox[p]),
+                          wrap_w((s16)base_y[b] + oy[p]));
         }
     }
     base_pods[b] = 0;
@@ -659,6 +662,8 @@ static void bases_tick(u8 player_active)
     u8 b, p;
     s16 dx, dy, px, py;
     u8 all_gone = 1;
+    const s8 *ox;
+    const s8 *oy;
 
     for (b = 0; b < base_count; ++b) {
         if (base_state[b] == BASE_DEAD) continue;
@@ -695,16 +700,18 @@ static void bases_tick(u8 player_active)
         /* contact with the core */
         if (boxes_hit(dx, dy, 16, 16, 16, 16)) player_dead = 1;
 
+        ox = pod_ox[base_hz[b]];
+        oy = pod_oy[base_hz[b]];
         for (p = 0; p < POD_COUNT; ++p) {
             if (!(base_pods[b] & (1 << p))) continue;
-            px = dx + pod_ox[p];
-            py = dy + pod_oy[p];
+            px = dx + ox[p];
+            py = dy + oy[p];
             if (boxes_hit(px, py, 16, 16, 16, 16)) player_dead = 1;
             /* pod shot: pod on screen (which also puts it within 140 px) */
             if (base_cool[b] == 0 && abs16(px) <= 128 && abs16(py) <= 100) {
                 base_cool[b] = 90;
-                eshot_fire(wrap_w((s16)base_x[b] + pod_ox[p]),
-                           wrap_w((s16)base_y[b] + pod_oy[p]));
+                eshot_fire(wrap_w((s16)base_x[b] + ox[p]),
+                           wrap_w((s16)base_y[b] + oy[p]));
             }
         }
     }
@@ -790,6 +797,8 @@ static u8 pshot_hit(u8 s)
     s16 dx, dy, px, py;
     s16 sx = ps_sx[s];
     s16 sy = ps_sy[s];
+    const s8 *ox;
+    const s8 *oy;
 
     /* enemies */
     for (i = 0; i < ENEMY_MAX; ++i) {
@@ -833,14 +842,16 @@ static u8 pshot_hit(u8 s)
         if (base_state[b] != BASE_ALIVE || !base_near[b]) continue;
         dx = base_sx[b] - sx;
         dy = base_sy[b] - sy;
+        ox = pod_ox[base_hz[b]];
+        oy = pod_oy[base_hz[b]];
         for (p = 0; p < POD_COUNT; ++p) {
             if (!(base_pods[b] & (1 << p))) continue;
-            px = dx + pod_ox[p];
-            py = dy + pod_oy[p];
+            px = dx + ox[p];
+            py = dy + oy[p];
             if (boxes_hit(px, py, 2, 6, 16, 16)) {
                 base_pods[b] &= ~(1 << p);
-                explosion_add(EX_PODHIT, wrap_w((s16)base_x[b] + pod_ox[p]),
-                              wrap_w((s16)base_y[b] + pod_oy[p]));
+                explosion_add(EX_PODHIT, wrap_w((s16)base_x[b] + ox[p]),
+                              wrap_w((s16)base_y[b] + oy[p]));
                 sound_sfx(SFX_POD);
                 if (base_pods[b] == 0) {
                     /* the sixth pod takes the base with it */
@@ -851,7 +862,11 @@ static u8 pshot_hit(u8 s)
             }
         }
         if (boxes_hit(dx, dy, 2, 6, 16, 16)) {
-            if (base_open[b]) {
+            /* the open core is exposed only along the base's axis: a vertical
+             * base takes a shot flying up or down, a horizontal one a shot
+             * flying left or right (diagonal shots glance off) */
+            w = base_hz[b] ? (mv_y[ps_h[s]] == 0) : (mv_x[ps_h[s]] == 0);
+            if (base_open[b] && w) {
                 base_kill(b);
             } else {
                 sound_sfx(SFX_HIT);
@@ -993,19 +1008,15 @@ void world_new_round(void)
 {
     u8 b, i, tries;
     u16 x, y;
-    s16 j;
+    const RoundDef *rd = round_layout(round_no);
 
-    if (round_no >= 5) base_count = 8;
-    else if (round_no >= 3) base_count = 7;
-    else base_count = 6;
-
+    base_count = rd->count;
     for (b = 0; b < BASE_MAX; ++b) {
         base_state[b] = BASE_DEAD;
         if (b >= base_count) continue;
-        j = (s16)(rng8() & 0x7F) - 64 + (s16)(rng8() & 0x3F) - 32;
-        base_x[b] = (u16)(256 + ((u16)base_cell_cx[b] << 9) + j);
-        j = (s16)(rng8() & 0x7F) - 64 + (s16)(rng8() & 0x3F) - 32;
-        base_y[b] = (u16)(256 + ((u16)base_cell_cy[b] << 9) + j);
+        base_x[b] = (u16)rd->x8[b] << 3;
+        base_y[b] = (u16)rd->y8[b] << 3;
+        base_hz[b] = (rd->hz >> b) & 1;
         base_state[b] = BASE_ALIVE;
         base_pods[b] = 0x3F;
         base_open[b] = 0;
@@ -1164,7 +1175,8 @@ void world_build_dl(u8 with_player)
         }
         for (p = 0; p < POD_COUNT; ++p) {
             if (base_pods[b] & (1 << p)) {
-                dl_add(SPR_POD, base_sx[b] + pod_ox[p], base_sy[b] + pod_oy[p]);
+                dl_add(SPR_POD, base_sx[b] + pod_ox[base_hz[b]][p],
+                       base_sy[b] + pod_oy[base_hz[b]][p]);
             }
         }
         dl_add(base_open[b] ? SPR_CORE_OPEN : SPR_CORE_CLOSED, base_sx[b], base_sy[b]);
