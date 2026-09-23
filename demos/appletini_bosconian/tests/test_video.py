@@ -83,6 +83,8 @@ ALTZPOFF = 0xC008
 ALTZPON = 0xC009
 LCBANK2RD = 0xC080
 LCBANK1RD = 0xC088
+# the soft-switch stores of one video_render, in order
+RENDER_SWITCHES = [RAMWRTON, ALTZPON, ALTZPOFF, RAMWRTOFF]
 BANK_1 = 2                 # _spr_bank bits (tools/gen_assets.py)
 BANK_AUX = 4
 
@@ -101,6 +103,7 @@ class BankedMemory:
         self.vbl_seq = []          # values returned by $C019 reads
         self.vbl_reads = 0
         self.io_writes = []        # (addr, value) for $C000-$C0FF stores
+        self.lc_reads = []         # language card bank selects ($C080/$C088)
         self.bad_aux_writes = []   # RAMWRT on, address outside the framebuffer
         self.bad_main_writes = []  # RAMWRT off, write into main $2000-$9FFF
         self.aux_write_count = 0
@@ -122,6 +125,7 @@ class BankedMemory:
         if a in (LCBANK2RD, LCBANK1RD, 0xC083, 0xC08B):
             self.lc_bank2 = a in (LCBANK2RD, 0xC083)
             self.lc_read = True
+            self.lc_reads.append(a)
             return 0
         if 0xC000 <= a < 0xC100:
             return 0
@@ -644,6 +648,7 @@ class VideoTest(unittest.TestCase):
         for bank in (BANK_AUX, BANK_AUX | BANK_1):
             m = self.machine(banks={0: bank, 2: bank, 6: bank})
             m.set_dl([(2, 100, 50), (0, 11, 5), (6, 30, 90), (1, 50, 50)])
+            m.mem.io_writes = []
             m.call("t_render")
             fb = bytearray(200 * ROW)
             n = 0
@@ -651,28 +656,67 @@ class VideoTest(unittest.TestCase):
                 n += model_draw(fb, m.sprites, sid, x, y)
             self.assertEqual(m.rows(), bytes(fb), f"bank {bank}")
             self.assertEqual(m.frame_writes(), n)
-            addrs = [a for a, _ in m.mem.io_writes]
-            self.assertIn(ALTZPON, addrs)
-            self.assertIn(ALTZPOFF, addrs)
+            # RAMWRT and ALTZP once for the whole frame, one bank select
+            self.assertEqual([a for a, _ in m.mem.io_writes], RENDER_SWITCHES)
+            self.assertEqual(m.mem.lc_reads, [LCBANK2RD if bank == BANK_AUX else LCBANK1RD])
             self.assertFalse(m.mem.altzp)
             self.assertEqual(m.mem.lc_bank2, bank == BANK_AUX)
-            # erasing reads the same card again
+            # erasing reads the same card again, again with one select
+            m.mem.io_writes = []
+            m.mem.lc_reads = []
             m.set_dl([])
             m.call("t_render")
             self.assertEqual(m.rows().count(0), 200 * ROW)
             self.assertEqual(m.frame_writes(), n)
+            self.assertEqual([a for a, _ in m.mem.io_writes], RENDER_SWITCHES)
+            self.assertEqual(len(m.mem.lc_reads), 1)
 
     def test_aux_card_sprites_clip(self):
         for x, y in ((-6, 10), (250, 195), (60, -3), (20, 190)):
             self.check_clip(2, x, y, banks={2: BANK_AUX})
             self.check_clip(6, x, y, banks={6: BANK_AUX | BANK_1})
 
-    def test_main_memory_sprites_never_switch(self):
+    def test_main_memory_sprites_never_select_a_bank(self):
         m = self.machine()
         m.set_dl([(0, 10, 5), (2, 50, 50)])
+        m.mem.io_writes = []
         m.call("t_render")
-        addrs = [a for a, _ in m.mem.io_writes]
-        self.assertNotIn(ALTZPON, addrs)
+        self.assertEqual([a for a, _ in m.mem.io_writes], RENDER_SWITCHES)
+        self.assertEqual(m.mem.lc_reads, [])
+
+    def test_render_selects_each_bank_once_per_pass(self):
+        # sprites from main memory and both card banks, interleaved in the
+        # list: the render draws them in three passes (main, bank 1, bank 2),
+        # so each bank is selected once per pass and a later pass lands on
+        # top of an earlier one
+        banks = {2: BANK_AUX, 6: BANK_AUX | BANK_1}
+        m = self.machine(banks=banks)
+        items = [(2, 40, 40), (6, 44, 44), (0, 48, 48), (2, 120, 100),
+                 (0, 124, 104), (6, 128, 108), (1, 200, 20)]
+        m.set_dl(items)
+        m.mem.io_writes = []
+        m.call("t_render")
+        self.assertEqual([a for a, _ in m.mem.io_writes], RENDER_SWITCHES)
+        self.assertEqual(m.mem.lc_reads, [LCBANK1RD, LCBANK2RD])
+        fb = bytearray(200 * ROW)
+        n = 0
+        for code in (0, BANK_AUX | BANK_1, BANK_AUX):
+            for sid, x, y in items:
+                if banks.get(sid, 0) == code:
+                    n += model_draw(fb, m.sprites, sid, x, y)
+        self.assertEqual(m.rows(), bytes(fb))
+        self.assertEqual(m.frame_writes(), n)
+        # next frame: the erase pass and the draw pass each select both banks
+        m.mem.io_writes = []
+        m.mem.lc_reads = []
+        m.set_dl([(6, 10, 10), (2, 60, 60)])
+        m.call("t_render")
+        self.assertEqual([a for a, _ in m.mem.io_writes], RENDER_SWITCHES)
+        self.assertEqual(m.mem.lc_reads, [LCBANK1RD, LCBANK2RD, LCBANK1RD, LCBANK2RD])
+        fb = bytearray(200 * ROW)
+        model_draw(fb, m.sprites, 6, 10, 10)
+        model_draw(fb, m.sprites, 2, 60, 60)
+        self.assertEqual(m.rows(), bytes(fb))
 
     # --- erase ---
     def test_erase_on_next_render(self):

@@ -36,16 +36,29 @@ test against GSSquared). Read that project first for conventions.
 3. **Writing AUX**: set RAMWRT (`STA $C005`), write `$0200-$BFFF`, clear
    (`STA $C004`). While RAMWRT is on, **no code may write main RAM above
    `$01FF`**: no C code, no cc65 software stack, no absolute stores to game
-   variables. Zero page and the hardware stack stay in main (ALTZP off) and
-   are fine. Reads still come from main (RAMRD off), so asm can read sprite
-   data, tables and the display list from main while writing AUX.
-4. **vTW 33 MHz preset bus budget**: every write to AUX `$2000-$9FFF` (and
-   main `$0400-$0BFF`, `$2000-$5FFF`) is a *posted* 1 MHz bus write. The
-   posted queue is 512 deep and back-pressures the CPU when full. One NTSC
-   frame has about 17,000 bus cycles. **Hard budget: at most 10,000 AUX
-   framebuffer bytes written per frame, typical under 6,000.** Full-frame
-   redraws are impossible at 33 MHz; TURBO lifts this but we design for 33.
-   Consequence: erase/redraw of small sprites only, no clears during play.
+   variables. Zero page and the hardware stack are not routed by RAMWRT
+   (ALTZP selects them) and are fine. Reads still come from main (RAMRD
+   off), so asm can read sprite data, tables and the display list from
+   main while writing AUX. `video_render` switches RAMWRT and ALTZP on
+   once for the whole frame (its scratch and the blit inputs then live in
+   the auxiliary zero page) and off once at the end; the panel routines
+   switch RAMWRT around their own few writes.
+4. **vTW bus budget**: every write to AUX `$2000-$9FFF` (and main
+   `$0400-$0BFF`, `$2000-$5FFF`) is also copied to the motherboard at 1 MHz.
+   At the 33 MHz preset it is a *posted* bus write: the CPU goes on, the
+   queue (512 deep) drains one byte per idle bus cycle and back-pressures
+   the CPU when full, and a write to `$C000-$C007` or an access to
+   `$C054-$C057` waits for the queue to drain first. In TURBO the write
+   enters the renderer at once and a latest-value mirror drains to the
+   motherboard in the background; the CPU is not slowed by the write, but
+   its next `$Cxxx` access waits until the mirror is empty. Either way the
+   1 MHz copy is the floor: one NTSC frame has about 17,000 bus cycles.
+   **Hard budget: at most 10,000 AUX framebuffer bytes written per frame,
+   typical under 6,000.** Full-frame redraws are impossible; TURBO shortens
+   the CPU side only. Consequence: erase/redraw of small sprites only, no
+   clears during play, and as few soft-switch accesses as possible between
+   the video writes, so the copy overlaps the CPU work instead of
+   serialising with it.
 5. Because of (4), also keep **all writable game data out of main
    `$0400-$0BFF` and `$2000-$5FFF`**. The linker config below places DATA/BSS
    at `$0C00-$1FFF`. Code and read-only tables may live in `$2000-$5FFF`
@@ -92,8 +105,8 @@ framebuffer is in AUX, not main hires memory.
 AUX memory: `$2000-$9FFF` SHR framebuffer, and the **auxiliary language
 card** holds the sprites: `$D000-$FFEF` with bank 2 of `$D000-$DFFF`
 (12,272 bytes) and `$D000-$DFFF` bank 1 (4,096 bytes), filled by `loader.s`
-from `BOSCO.SPR` before `main()` runs (section 4). The blitter switches
-ALTZP on while it draws a sprite that lives there. ProDOS never uses the
+from `BOSCO.SPR` before `main()` runs (section 4). `video_render` keeps
+ALTZP on for the whole frame, so the card is readable while it draws. ProDOS never uses the
 auxiliary card; the `/RAM` volume, which does, is disconnected at start the
 way the ProDOS 8 Technical Reference describes, because the game overwrites
 its memory anyway. Without ProDOS (no `JMP` at `$BF00`: the py65 test
@@ -175,10 +188,13 @@ switch banks), into `RODATA`. The card sprites go into `build/BOSCO.SPR`
 bank code, then the region bytes) which `loader.s` reads through the MLI
 in 1 KB pieces and copies with ALTZP on. `_spr_bank` says per id where it
 is: 0 main memory, bit 2 (`SPR_BANK_AUX`) the auxiliary card, bit 1
-(`SPR_BANK_1`) its bank 1 instead of bank 2. `blit_sprite` switches ALTZP
-on for such a sprite (the auxiliary zero page and stack come with it, so its
-inputs are the `B_*` variables in main memory, stored only with RAMWRT off,
-and the byte count crosses back in registers) and off again at the end.
+(`SPR_BANK_1`) its bank 1 instead of bank 2. `video_render` switches ALTZP
+on once for the whole frame (the auxiliary zero page and stack come with
+it, so the blitter's scratch and its `B_*` inputs are the auxiliary zero
+page for the duration, and the byte count crosses back in registers at the
+end) and runs each display list in three passes, main-memory sprites, bank
+1, bank 2, so a bank select (`BIT $C088` / `BIT $C080`) happens at most
+once per pass instead of once per sprite.
 
 `build/assets.s` exports (all in `RODATA`):
 
@@ -225,20 +241,24 @@ extern u8 star_x[STAR_MAX], star_y[STAR_MAX], star_color[STAR_MAX];
 extern u8 star_count;
 
 void video_render(void);
-   /* RAMWRT on; erase every previous-frame item (zeros over its runs at its
-      old id/x/y, remembered privately), erase the previous stars, draw the
-      new stars, then draw every current item in list order; items beyond
-      the previous count are only drawn, items missing this frame
-      (i >= dl_count) are only erased. RAMWRT off. Then copy the current
-      lists to the private previous lists (main RAM writes happen only after
-      RAMWRT is off). Counts AUX bytes written into video_frame_writes.
+   /* RAMWRT and ALTZP on for the whole frame; erase every previous-frame
+      item (zeros over its runs at its old id/x/y, remembered privately),
+      erase the previous stars, draw the new stars, then draw every current
+      item; items beyond the previous count are only drawn, items missing
+      this frame (i >= dl_count) are only erased. Each list is run in three
+      passes by sprite home (main memory, card bank 1, card bank 2), in
+      list order within a pass, so the card bank is selected at most once
+      per pass: the whole render makes at most eight soft-switch accesses.
+      ALTZP and RAMWRT off. Then copy the current lists to the private
+      previous lists (main RAM writes happen only after RAMWRT is off).
+      Counts AUX bytes written into video_frame_writes.
       Erase-all-then-draw-all avoids holes where a later item's old box
       overlaps an earlier item's new box. The burst starts right after the
-      line-0 snapshot (video_wait_vbl) and must end before the next one: at
-      the 33 MHz preset that is about 16,000 posted bytes. The game also
-      sorts dl_items by y (a stable counting sort into 25 buckets of y>>3 in
-      world_build_dl, ship last); that is cheap and keeps the burst
-      top-to-bottom for emulators that scan the beam. */
+      line-0 snapshot (video_wait_vbl) and must end before the next one:
+      about 16,000 bytes on the 1 MHz bus. The game also sorts dl_items by
+      y (a stable counting sort into 25 buckets of y>>3 in world_build_dl,
+      ship last); that is cheap and keeps each pass top-to-bottom for
+      emulators that scan the beam. */
 extern u16 video_frame_writes;      /* AUX bytes written by the last render */
 
 void video_clear_playfield(void);   /* black the 256x200 box AND forget all

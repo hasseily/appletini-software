@@ -44,9 +44,10 @@ the round. The rules are in `docs/DESIGN.md` section 10.
   them from the text art (drawn, or converted from the ROM set).
 - The sprites (about 20 KB) do not fit next to the code, so most of them
   live in the auxiliary language card, which ProDOS never uses: `loader.s`
-  reads `BOSCO.SPR` from the disk before `main()` and the blitter switches
-  ALTZP on while it draws such a sprite. ProDOS's own language card is
-  untouched, so Esc still quits cleanly.
+  reads `BOSCO.SPR` from the disk before `main()` and the render keeps
+  ALTZP on for the whole frame, drawing each list in one pass per bank so
+  the card is switched a few times per frame, not per sprite. ProDOS's own
+  language card is untouched, so Esc still quits cleanly.
 - Each frame erases the previous frame's sprites and stars with zeros and
   draws the new ones. Nothing is cleared during play. A typical play frame
   writes about 1,400 bytes (a base on screen is seven sprites); 99 % of
@@ -60,12 +61,20 @@ the panel, the sound I/O) runs before the next line 0, so a published frame
 is always complete. This is the timing of the Bilestoad SHR port
 (`demos/bilestoad`, branch `bilestoad-shr-port`).
 
-Under the vTW at 33 MHz, every write to AUX `$2000-$9FFF` (and to main
-`$0400-$0BFF` and `$2000-$5FFF`) is a posted 1 MHz bus write; one frame
-holds about 16,000 of them and the 512-deep queue stalls the CPU when it is
-full. So the game keeps its variables out of those main ranges (`DATA` and
-`BSS` run at `$0C00-$1FFF`) and its framebuffer traffic small. The mailbox
-reports the bytes written by the last frame and the largest count seen.
+Under the vTW, every write to AUX `$2000-$9FFF` (and to main `$0400-$0BFF`
+and `$2000-$5FFF`) is also copied to the motherboard at 1 MHz; one frame
+holds about 16,000 such copies. At the 33 MHz preset the copy is a posted
+bus write behind a 512-deep queue that stalls the CPU when it is full and
+that a RAMWRT or PAGE2 switch drains first. In TURBO the CPU is not slowed
+by the write at all: the byte reaches the Appletini's display at once and a
+mirror copies it to the motherboard in the background, but the next
+soft-switch access waits until that mirror is empty. So the game keeps its
+variables out of those main ranges (`DATA` and `BSS` run at `$0C00-$1FFF`),
+its framebuffer traffic small, and its soft-switch accesses few: the render
+switches RAMWRT and ALTZP once per frame and selects a card bank at most
+once per pass, so the copy runs alongside the blitter instead of after
+every sprite. The mailbox reports the bytes written by the last frame and
+the largest count seen.
 
 ## Sound
 
@@ -149,24 +158,28 @@ Measured at a modelled 33 MHz (one frame = 561,990 CPU cycles and about
 
 | | median | 99 % | maximum |
 |---|---:|---:|---:|
-| CPU work for each frame (cycles) | 221,893 | 384,056 | 1,203,864 |
-| Bytes on the 1 MHz bus for each frame | 1,388 | 2,965 | 31,634 |
-| `$Cxxx` accesses for each frame | 82 | 237 | 243 |
+| CPU work for each frame (cycles) | 222,244 | 384,504 | 1,203,384 |
+| Bytes on the 1 MHz bus for each frame | 1,388 | 2,965 | 31,590 |
+| `$Cxxx` accesses for each frame | 14 | 145 | 168 |
 
 508 play frames of a 900-frame run that destroyed a base in each of rounds
 1 to 3 (with the arcade layouts and graphics) and reached round 4. Four
 frames went over the budget, all state changes: the three round starts
 (world layout plus the 25,600-byte playfield clear) and a round clear
 screen. They cost one or two extra video frames each. No play frame did.
-The `$Cxxx` count is mostly the blitter: two RAMWRT switches per sprite
-(its inputs are stored in main memory) and, for a sprite in the auxiliary
-card, the ALTZP switch and the bank select. The profile (`make profile`) charges the play frames mostly to
+The `$Cxxx` count is the render's switches (RAMWRT and ALTZP on and off, a
+card bank select per pass: eight at most), the radar and panel updates
+(two RAMWRT switches per call), the VBL poll and, on the frames that read
+the joystick or change a music step, the paddle timer and the sound
+register burst. The profile (`make profile`) charges the play frames mostly to
 the SHR blitter (about 58k cycles a frame with a base on screen: run
 set-up and clipping, the copy and erase loops), cc65's argument passing
 (`pushax` and friends, about 15 %), the joystick poll (`@wait`, 11k cycles
 per frame with one axis every fourth frame), the field-object pass, the
 stars, the display-list sort and the sound register flush. In TURBO the
-bus column is free and only the CPU column counts.
+CPU column shrinks but the bus column does not: the motherboard copy still
+runs at 1 MHz, overlapping the blitter's own work and then waited for at
+the first soft-switch access after the render.
 
 `make smoke` boots the disk in GSSquared through its debug protocol and
 checks the frame cadence, the state changes, keys, the write budget and

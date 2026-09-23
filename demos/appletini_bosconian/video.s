@@ -7,8 +7,16 @@
 ; RAMWRT off before it touches any main-memory variable. C arguments are
 ; popped from the cc65 stack (popa/popax) before RAMWRT is switched on.
 ;
-; Sprite data (build/assets.s) is read from main memory while RAMWRT is on,
-; which is allowed because RAMRD stays off.
+; video_render switches RAMWRT and ALTZP on once for the whole frame: the
+; auxiliary zero page, stack and language card (where most sprites live)
+; stay selected while every item is erased and drawn, and each list is run
+; in one pass per sprite home so the card bank changes at most once per
+; pass. A soft-switch access is a real 1 MHz bus cycle on the vTW and, in
+; TURBO, waits for the motherboard mirror of the video bytes written so
+; far, so the render keeps them to a handful per frame.
+;
+; Sprite tables and main-memory sprites (build/assets.s) are read from main
+; memory while RAMWRT is on, which is allowed because RAMRD stays off.
 
 .include "bosco.inc"
 
@@ -59,9 +67,16 @@ V_HH      = ZP_VIDEO+$29   ; fill height
 V_GW      = ZP_VIDEO+$2A   ; glyph width in bytes (4 or 8)
 V_PTR     = ZP_VIDEO+$2B   ; 2  generic pointer for clears/copies
 V_MORE    = ZP_VIDEO+$2D   ; bit 7: the current run record is not the row's last
-V_ACC     = ZP_VIDEO+$2E   ; 2  AUX bytes written by the sprite being blitted
-V_WR      = ZP_VIDEO+$15   ; 2  AUX bytes written this frame (main zero page only)
-; ($08-$0B, $13, $14 are free: the blit inputs moved to B_* in BSS)
+V_BANK    = ZP_VIDEO+$2E   ; _spr_bank code of the card bank selected in this render (0 = none yet)
+V_PASS    = ZP_VIDEO+$2F   ; _spr_bank code of the sprites the current blit_list pass draws
+V_WR      = ZP_VIDEO+$15   ; 2  AUX bytes written this frame
+; blit_sprite inputs. video_render runs with ALTZP on, so during a render
+; every cell here is in the auxiliary zero page; the inputs are stored and
+; read there, and RAMWRT does not affect the zero page.
+B_X       = ZP_VIDEO+$08   ; 2  sprite x (signed)
+B_Y       = ZP_VIDEO+$0A   ; 2  sprite y (signed)
+B_ID      = ZP_VIDEO+$13   ; sprite id
+B_MODE    = ZP_VIDEO+$14   ; 0 = draw, 1 = erase
 
 SCREEN_H  = 200
 FIELD_H   = 200
@@ -88,16 +103,6 @@ prev_star_x:        .res STAR_MAX
 prev_star_y:        .res STAR_MAX
 prev_star_count:    .res 1
 panel_color:        .res 1
-
-; blit_sprite inputs live in main memory, not in the zero page: the blitter
-; switches to the auxiliary zero page (ALTZP) for sprites that live in the
-; auxiliary language card, and the caller's values must stay readable there.
-; They are only ever stored with RAMWRT off (a store with RAMWRT on would
-; land in auxiliary memory).
-B_ID:               .res 1      ; sprite id
-B_X:                .res 2      ; sprite x (signed)
-B_Y:                .res 2      ; sprite y (signed)
-B_MODE:             .res 1      ; 0 = draw, 1 = erase
 
 ; ---------------------------------------------------------------------------
 ; read-only tables
@@ -156,15 +161,14 @@ erase_run:
 ; ---------------------------------------------------------------------------
 ; blit_sprite: draw (B_MODE = 0) or erase (B_MODE = 1) sprite B_ID at
 ; signed B_X / B_Y, clipped to x bytes 0..127 and rows 0..199. Adds the
-; number of AUX bytes written to V_WR (main zero page). RAMWRT must already
-; be on; the B_* inputs must have been stored with RAMWRT off.
+; number of AUX bytes written to V_WR. RAMWRT and ALTZP must already be on
+; (video_render switches them for the whole frame).
 ;
-; Sprites whose _spr_bank is not 0 live in the auxiliary language card:
-; ALTZP is switched on for the whole blit (aux zero page, stack and card),
-; so every input is read from the B_* variables in main memory, the
-; zero-page scratch below is the auxiliary one, and the byte count is kept
-; in V_ACC and added to V_WR in registers after switching back. Bit 1 of
-; the bank code selects bank 1 of $D000-$DFFF instead of bank 2. The card
+; Sprites whose _spr_bank is not 0 live in the auxiliary language card,
+; which ALTZP has made the readable one. V_BANK remembers which bank of
+; $D000-$DFFF is selected, so the select (one bus cycle) happens only when
+; a sprite from the other bank comes up; bit 1 of the bank code means bank
+; 1 instead of bank 2. Main-memory sprites need no select at all. The card
 ; is left readable (write protected); nothing in the game reads ROM.
 ;
 ; A row is one or more run records; bit 7 of run_off says another run of
@@ -173,16 +177,16 @@ erase_run:
 blit_sprite:
         ldx     B_ID
         lda     _spr_bank,x
-        beq     @mapped
-        sta     ALTZPON                 ; auxiliary zero page, stack, language card
+        beq     @mapped                 ; main memory: readable as things are
+        cmp     V_BANK
+        beq     @mapped                 ; that bank is already selected
+        sta     V_BANK
         and     #SPR_BANK_1
         beq     @bank2
         bit     LCBANK1RD               ; read bank 1 RAM, write protected
         bra     @mapped
 @bank2: bit     LCBANK2RD               ; read bank 2 RAM, write protected
 @mapped:
-        stz     V_ACC                   ; (in whichever zero page is active now)
-        stz     V_ACC+1
         lda     B_X
         lsr     a                       ; C = x & 1
         bcs     @odd
@@ -367,12 +371,12 @@ blit_sprite:
         adc     #0
         sta     V_DST+1
         ; count the bytes
-        lda     V_ACC
+        lda     V_WR
         clc
         adc     V_LEN
-        sta     V_ACC
+        sta     V_WR
         bcc     :+
-        inc     V_ACC+1
+        inc     V_WR+1
 :       lda     V_LEN
         asl     a
         tax
@@ -401,36 +405,23 @@ blit_sprite:
         dec     V_ROWS
         jne     @row
 @off:
-        ; the count travels in A/X across the switch back to the main zero page
-        ldy     B_ID
-        lda     _spr_bank,y
-        beq     @nosw
-        lda     V_ACC
-        ldx     V_ACC+1
-        sta     ALTZPOFF                ; back to the main zero page and stack
-        bra     @add
-@nosw:  lda     V_ACC
-        ldx     V_ACC+1
-@add:   clc
-        adc     V_WR
-        sta     V_WR
-        txa
-        adc     V_WR+1
-        sta     V_WR+1
         rts
 
 ; ---------------------------------------------------------------------------
-; blit_list: run blit_sprite over a display list. V_ITEM = list, V_CNT =
-; item count, B_MODE = draw/erase. RAMWRT must be on; it is turned off
-; while the item is copied into the B_* inputs (main memory).
+; blit_list: run blit_sprite over the items of a display list whose sprite
+; lives where V_PASS says (a _spr_bank code); the others are skipped.
+; V_ITEM = list, V_CNT = item count, B_MODE = draw/erase.
 ; ---------------------------------------------------------------------------
 blit_list:
         lda     V_CNT
         beq     @done
 @loop:
-        sta     RAMWRTOFF
         lda     (V_ITEM)
-        sta     B_ID
+        tax
+        lda     _spr_bank,x
+        cmp     V_PASS
+        bne     @skip
+        stx     B_ID
         ldy     #1
         lda     (V_ITEM),y
         sta     B_X
@@ -443,8 +434,8 @@ blit_list:
         iny
         lda     (V_ITEM),y
         sta     B_Y+1
-        sta     RAMWRTON
         jsr     blit_sprite
+@skip:
         lda     V_ITEM
         clc
         adc     #6
@@ -455,6 +446,39 @@ blit_list:
         bne     @loop
 @done:
         rts
+
+; ---------------------------------------------------------------------------
+; blit_passes: erase (B_MODE = 1, the previous frame's list) or draw
+; (B_MODE = 0, the current list) every item, in three passes by sprite
+; home: main memory, card bank 1, card bank 2. Items of one pass are in
+; list order (sorted by y); a later pass draws over an earlier one.
+; ---------------------------------------------------------------------------
+blit_passes:
+        stz     V_PASS                  ; main memory
+        jsr     @pass
+        lda     #SPR_BANK_AUX|SPR_BANK_1
+        sta     V_PASS
+        jsr     @pass
+        lda     #SPR_BANK_AUX
+        sta     V_PASS
+@pass:
+        lda     B_MODE
+        bne     @prev
+        lda     #<_dl_items
+        sta     V_ITEM
+        lda     #>_dl_items
+        sta     V_ITEM+1
+        lda     _dl_count
+        sta     V_CNT
+        jmp     blit_list
+@prev:
+        lda     #<prev_items
+        sta     V_ITEM
+        lda     #>prev_items
+        sta     V_ITEM+1
+        lda     prev_count
+        sta     V_CNT
+        jmp     blit_list
 
 ; ---------------------------------------------------------------------------
 ; stars: one byte each at row[y] + x/2. Even x = high nibble, odd x = low.
@@ -528,41 +552,24 @@ draw_stars:
 ;   never punch holes in each other. Then (RAMWRT off) remember the lists.
 ; ---------------------------------------------------------------------------
 _video_render:
+        sta     RAMWRTON                ; framebuffer stores go to AUX
+        sta     ALTZPON                 ; auxiliary zero page, stack and card for the whole frame
         stz     V_WR
         stz     V_WR+1
+        stz     V_BANK                  ; no card bank selected yet
         lda     #1
-        sta     B_MODE                  ; main memory: store before RAMWRT goes on
-        sta     RAMWRTON
-
-        lda     #<prev_items
-        sta     V_ITEM
-        lda     #>prev_items
-        sta     V_ITEM+1
-        lda     prev_count
-        sta     V_CNT
-        jsr     blit_list
-
+        sta     B_MODE                  ; erase the previous frame
+        jsr     blit_passes
         jsr     erase_stars
         jsr     draw_stars
-
+        stz     B_MODE                  ; draw this frame
+        jsr     blit_passes
+        lda     V_WR                    ; the count crosses back in A/X
+        ldx     V_WR+1
+        sta     ALTZPOFF                ; main zero page and stack again
         sta     RAMWRTOFF
-        stz     B_MODE
-        sta     RAMWRTON
-        lda     #<_dl_items
-        sta     V_ITEM
-        lda     #>_dl_items
-        sta     V_ITEM+1
-        lda     _dl_count
-        sta     V_CNT
-        jsr     blit_list
-
-        sta     RAMWRTOFF
-
-        ; main-memory bookkeeping (RAMWRT is off now)
-        lda     V_WR
-        sta     _video_frame_writes
-        lda     V_WR+1
-        sta     _video_frame_writes+1
+        sta     _video_frame_writes     ; main-memory bookkeeping
+        stx     _video_frame_writes+1
         jmp     remember_lists
 
 ; copy the current display list and star positions to the private copies
