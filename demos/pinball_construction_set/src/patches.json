@@ -1,0 +1,270 @@
+[
+ {
+  "module": "PPAK",
+  "line": 791,
+  "end": 794,
+  "expect": " LDA LO,Y",
+  "replace": []
+ },
+ {
+  "module": "RUN",
+  "line": 194,
+  "expect": "LAUNCHRUN BIT BTN0",
+  "replace": "LAUNCHRUN BIT LBTN"
+ },
+ {
+  "module": "RUN",
+  "line": 219,
+  "expect": "LAUNCHHIT LDA BTN0",
+  "replace": "LAUNCHHIT LDA LBTN"
+ },
+ {
+  "module": "RUN",
+  "line": 1332,
+  "expect": " LDA (B2),Y",
+  "replace": [
+   " LDA (B2),Y",
+   " AND #$70 ;port: noise nibble only"
+  ]
+ },
+ {
+  "module": "RUN",
+  "line": 2264,
+  "end": 2283,
+  "expect": " LDA PTM1",
+  "replace": " JSR PORT_TICK_INPUT"
+ },
+ {
+  "module": "RUN",
+  "line": 2287,
+  "expect": " JSR $FCA8",
+  "replace": []
+ },
+ {
+  "module": "RUN",
+  "line": 2343,
+  "expect": " LDA $C000",
+  "replace": " JSR PORT_TICK_END"
+ },
+ {
+  "module": "RUN",
+  "line": 2346,
+  "expect": " STA $C010",
+  "replace": []
+ },
+ {
+  "module": "RUN2",
+  "line": 121,
+  "end": 124,
+  "expect": " STA $C050",
+  "replace": []
+ },
+ {
+  "module": "RUN2",
+  "line": 133,
+  "expect": " LDA #14",
+  "replace": " LDA #60"
+ },
+ {
+  "module": "RUN2",
+  "line": 136,
+  "expect": " JSR $FCA8",
+  "replace": " JSR PORT_WAIT_FRAME"
+ },
+ {
+  "module": "RUN2",
+  "line": 173,
+  "expect": " STA $C010",
+  "replace": []
+ },
+ {
+  "module": "RUN2",
+  "line": 175,
+  "end": 176,
+  "expect": "GETPL3 LDA $C061",
+  "replace": "GETPL3 JSR PORT_POLL"
+ },
+ {
+  "module": "RUN2",
+  "line": 186,
+  "end": 187,
+  "expect": "WAIT3 LDA $C061",
+  "replace": "WAIT3 JSR PORT_POLL"
+ },
+ {
+  "module": "RUN2",
+  "line": 196,
+  "end": 197,
+  "expect": " LDA STACKTEMP",
+  "replace": " RTS"
+ },
+ {
+  "module": "RUN2",
+  "line": 199,
+  "expect": "GETPL5 LDA $C000",
+  "replace": "GETPL5 JSR PORT_KEY"
+ },
+ {
+  "module": "RUN2",
+  "line": 201,
+  "expect": " STA $C010",
+  "replace": []
+ },
+ {
+  "module": "RUN2",
+  "line": 817,
+  "expect": " LDA $C000",
+  "replace": " JSR PORT_TICK_END"
+ },
+ {
+  "module": "RUN2",
+  "line": 819,
+  "expect": " STA $C010",
+  "replace": []
+ },
+ {
+  "module": "RUN2",
+  "line": 831,
+  "end": 832,
+  "expect": " LDA STACKTEMP",
+  "replace": " RTS"
+ },
+ {
+  "module": "RUN2",
+  "line": 844,
+  "expect": "DOBALL3 JSR PLAY",
+  "replace": [
+   "DOBALL3 JSR PLAY",
+   " JSR PORT_TICK_END"
+  ]
+ },
+ {
+  "module": "RUN2",
+  "line": 859,
+  "end": 878,
+  "expect": " LDA PTIMER1",
+  "replace": " JSR PORT_TICK_INPUT"
+ },
+ {
+  "module": "RUN2",
+  "line": 882,
+  "expect": " JSR $FCA8",
+  "replace": []
+ },
+ {
+  "module": "RUN2",
+  "line": 918,
+  "expect": " CPY #255",
+  "replace": " CPY #8 ;port: sleeper slots"
+ },
+ {
+  "module": "EDIT",
+  "line": 225,
+  "expect": " LDA #6",
+  "replace": " LDA #4 ;port: white"
+ },
+ {
+  "module": "EDIT",
+  "line": 397,
+  "expect": "WHITE LDY #6",
+  "replace": "WHITE LDY #4"
+ },
+ {
+  "module": "EDIT",
+  "line": 401,
+  "expect": "GREEN LDY #2",
+  "replace": "GREEN LDY #10"
+ },
+ {
+  "module": "EDIT",
+  "line": 404,
+  "expect": "VIOLET LDY #4",
+  "replace": "VIOLET LDY #14"
+ },
+ {
+  "module": "EDIT",
+  "line": 407,
+  "expect": "RED LDY #10",
+  "replace": "RED LDY #6"
+ },
+ {
+  "module": "EDIT",
+  "line": 411,
+  "expect": " BNE SETCLR",
+  "replace": [
+   " BNE SETCLR",
+   "ORANGE LDY #7",
+   " BNE SETCLR",
+   "YELLOW LDY #8",
+   " BNE SETCLR",
+   "CYAN LDY #13",
+   " BNE SETCLR"
+  ]
+ },
+ {
+  "module": "EDIT",
+  "line": 581,
+  "end": 599,
+  "expect": " INY",
+  "replace": [
+   " INY",
+   " LDA (LB),Y",
+   " CLC",
+   " ADC DELX",
+   " STA (LB),Y"
+  ]
+ },
+ {
+  "module": "EDIT",
+  "line": 1157,
+  "end": 1174,
+  "expect": " LDA SCANMODE",
+  "replace": [
+   " LDA COLOR",
+   " CMP FILLCOLOR",
+   " BNE *+4",
+   " LDA #0 ;BLACK",
+   " LDY #1",
+   " STA (OBJ),Y",
+   " JSR OBJREPAINT"
+  ]
+ },
+ {
+  "module": "PPAK",
+  "line": 217,
+  "expect": " LDY #0",
+  "replace": [
+   "GETINFO LDY #0 ;port: label for EDIT's entry"
+  ]
+ },
+ {
+  "module": "EDIT",
+  "line": 463,
+  "end": 467,
+  "expect": " LDX PARAM+3",
+  "replace": [
+   " LDX PARAM+3",
+   " STX CXD7",
+   " LDA #0",
+   " STA CXM7"
+  ]
+ },
+ {
+  "module": "EDIT",
+  "line": 248,
+  "expect": " JSR GETINFO",
+  "replace": " JSR PPAK_GETINFO ;port: PPAK's entry label"
+ },
+ {
+  "module": "EDIT",
+  "line": 539,
+  "expect": " CMP #$10",
+  "replace": " CMP #$40 ;port: a mouse moves further per frame"
+ },
+ {
+  "module": "EDIT",
+  "line": 541,
+  "expect": " CMP #$F0",
+  "replace": " CMP #$C0"
+ }
+]

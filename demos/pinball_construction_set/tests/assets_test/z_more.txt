@@ -1,0 +1,12 @@
+# Second fixture file: read after sprites.txt (name order), so it may
+# derive from sprites defined there.
+derive dropy_0 = flipv dropx_0
+
+sprite caret 1 7
+W
+W
+W
+W
+W
+W
+W

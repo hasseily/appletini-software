@@ -1,0 +1,14 @@
+{
+ "_comment": "Fixture for tests/test_assets.py: a subset of build/parts.json (tools/parts.py) with only the keys tools/gen_assets.py reads. Kinds in kit order; polygon-only kinds have no bitmap.",
+ "parts": [
+  {"name": "POLY", "kind": 0, "objlen": 11},
+  {"name": "LAUNCHER", "kind": 1, "bitmap": "LAUNCHERB", "box": [7, 12], "hoty": 0, "frames": 6},
+  {"name": "LEFTFLIPPER", "kind": 2, "bitmap": "LFLIPB", "box": [20, 16], "hoty": 4, "frames": 8},
+  {"name": "RIGHTFLIPPER", "kind": 3, "bitmap": "RFLIPB", "box": [20, 16], "hoty": 4, "frames": 8},
+  {"name": "BALL", "kind": 4, "bitmap": "BALLB", "box": [7, 5], "hoty": 0, "frames": 1},
+  {"name": "KICK1", "kind": 5, "bitmap": "KNOCK1B", "box": [7, 16], "hoty": 0, "frames": 3},
+  {"name": "TARG1", "kind": 6, "bitmap": "ROLLB+30", "box": [7, 3], "hoty": 0, "frames": 2},
+  {"name": "POLY1", "kind": 7, "objlen": 11},
+  {"name": "CATCH2", "kind": 8, "bitmap": "CATCH2B", "box": [14, 9], "hoty": 0, "frames": 5}
+ ]
+}

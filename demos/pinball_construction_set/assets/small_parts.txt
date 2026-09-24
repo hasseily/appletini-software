@@ -1,0 +1,325 @@
+# Small parts for the PCS port: rollovers, stand-up targets, lane posts,
+# one-way gates, drop-target banks and the spinner.  Format: build/art_format.md.
+# Light from the top-left: bright edges top/left, `d` outline bottom/right.
+# Every opaque pixel lies inside the part's collision polygon from
+# build/parts_brief.txt; validate/preview with build/preview_small_parts.py.
+
+# ---- rollover buttons (7x5, collision columns 0..4 rows 0..4) -------------
+# frame 0 unlit: grey plastic button, light rim top-left, d rim bottom-right so
+# the shape reads on the d panel too; frame 1 lit: yellow, white hot-spot,
+# orange shadow.  roll1 round, roll2 square, roll3 diamond.
+
+sprite roll1_0 7 5
+.llg...
+lWggg..
+lgggd..
+gggnd..
+.gdd...
+
+sprite roll1_1 7 5
+.WYY...
+WWYYY..
+YYYYd..
+YYYOd..
+.Ydd...
+
+sprite roll2_0 7 5
+llllg..
+lWggd..
+lgggd..
+lggnd..
+gdddd..
+
+sprite roll2_1 7 5
+WWWYY..
+WWYYd..
+YYYYd..
+YYYOd..
+Ydddd..
+
+sprite roll3_0 7 5
+..l....
+.lWg...
+llggd..
+.gnd...
+..d....
+
+sprite roll3_1 7 5
+..W....
+.WWY...
+WYYYd..
+.YOd...
+..d....
+
+# ---- horizontal stand-up targets (7x3, collision columns 0..6 rows 0..2) --
+# red plastic face, lit edge on top, dark red lower half, d base.
+# targ1 plain pill, targ2 white centre band, targ3 two white pips.
+
+sprite targ1_0 7 3
+RRRRRRd
+Rrrrrrd
+ddddddd
+
+sprite targ1_1 7 3
+YYYYYYd
+YOOOOOd
+ddddddd
+
+sprite targ2_0 7 3
+RRWWRRd
+rrllrrd
+ddddddd
+
+sprite targ2_1 7 3
+YYWWYYd
+OOWWOOd
+ddddddd
+
+sprite targ3_0 7 3
+RWRRWRd
+rlrrlrd
+ddddddd
+
+sprite targ3_1 7 3
+YWYYWYd
+OWOOWOd
+ddddddd
+
+# ---- vertical stand-up targets (7x7, collision columns 0..2 rows 0..6) ----
+
+sprite targ4_0 7 7
+RRd....
+Rrd....
+Rrd....
+Rrd....
+Rrd....
+Rrd....
+ddd....
+
+sprite targ4_1 7 7
+YYd....
+YOd....
+YOd....
+YOd....
+YOd....
+YOd....
+ddd....
+
+sprite targ5_0 7 7
+RRd....
+Rrd....
+WWd....
+lld....
+Rrd....
+Rrd....
+ddd....
+
+sprite targ5_1 7 7
+YYd....
+YOd....
+WWd....
+WWd....
+YOd....
+YOd....
+ddd....
+
+sprite targ6_0 7 7
+RRd....
+Wld....
+Rrd....
+Rrd....
+Wld....
+Rrd....
+ddd....
+
+sprite targ6_1 7 7
+YYd....
+WWd....
+YOd....
+YOd....
+WWd....
+YOd....
+ddd....
+
+# ---- lane guide posts (chrome capsules, collision columns 0..4) -----------
+
+sprite lane1_0 7 10
+.ddd...
+dlWld..
+dWlgd..
+dWlgd..
+dWlgd..
+dllgd..
+dlggd..
+dlgnd..
+dggnd..
+.ddd...
+
+sprite lane2_0 7 8
+.ddd...
+dlWld..
+dWlgd..
+dWlgd..
+dllgd..
+dlggd..
+dggnd..
+.ddd...
+
+sprite lane3_0 7 5
+.ddd...
+dlWld..
+dWlgd..
+dlgnd..
+.ddd...
+
+# ---- one-way gates (7x9): chrome hinge pin (3x3 disc), chrome wire flap
+# drawn swung part-way open towards the direction the ball passes, and a
+# small red rubber stop post where the flap rests when closed (the ball
+# coming the wrong way pushes the flap against the stop).  The wire is two
+# pixels wide, W with an l shadow, so it stays readable on the black table.
+# gate1: hinge bottom-left, flap swung up, stop bottom-right: passes upward.
+# Collision (6,0)(6,8)(0,8)(0,5).
+
+sprite gate1_0 7 9
+.......
+......W
+.....Wl
+....Wl.
+...Wl..
+..Wl...
+dld....
+lWg..Rr
+dgd..rd
+
+# gate2: hinge bottom-right, flap swung up, stop bottom-left: passes upward.
+# Collision (6,5)(6,8)(0,8)(0,0).
+
+sprite gate2_0 7 9
+.......
+W......
+lW.....
+.lW....
+..lW...
+...lW..
+....dld
+Rr..lWg
+rd..dgd
+
+# gate3: hinge top-left, flap swung to the right, stop bottom-left: passes
+# rightward.  Collision: the full box.
+
+sprite gate3_0 7 9
+dld....
+lWg....
+dgd....
+..Wl...
+...Wl..
+....Wl.
+....Wl.
+Rr...Wl
+rd....l
+
+# gate4: hinge top-right, flap swung to the left, stop bottom-right: passes
+# leftward.  Collision: the full box.
+
+sprite gate4_0 7 9
+....dld
+....lWg
+....dgd
+...lW..
+..lW...
+.lW....
+.lW....
+lW...Rr
+l....rd
+
+# ---- drop targets --------------------------------------------------------
+# drop1: horizontal bank of four 6x4 targets at x = 0, 8, 16, 24: white
+# plastic target with a red band, lit top edge, d edge right and d base row
+# (the base row stays visible under the dropped mark).
+
+sprite drop1_0 35 4
+WWWWld..WWWWld..WWWWld..WWWWld.....
+RRRRrd..RRRRrd..RRRRrd..RRRRrd.....
+llllgd..llllgd..llllgd..llllgd.....
+dddddd..dddddd..dddddd..dddddd.....
+
+# dropx: the dropped mark drawn over rows 0..2 of a horizontal target:
+# dark grey slot, light rim on the lit sides, grey rim on the shadow sides.
+
+sprite dropx_0 7 3
+lllllg.
+lddddg.
+lggggg.
+
+# drop2: vertical bank of four 4x6 targets at y = 0, 8, 16, 24 in columns 1..4:
+# white lit edge on the left, red band, shaded white, d edge right and bottom.
+
+sprite drop2_0 7 32
+.WRld..
+.WRld..
+.WRld..
+.WRld..
+.WRgd..
+.dddd..
+.......
+.......
+.WRld..
+.WRld..
+.WRld..
+.WRld..
+.WRgd..
+.dddd..
+.......
+.......
+.WRld..
+.WRld..
+.WRld..
+.WRld..
+.WRgd..
+.dddd..
+.......
+.......
+.WRld..
+.WRld..
+.WRld..
+.WRld..
+.WRgd..
+.dddd..
+.......
+.......
+
+# dropy: the dropped mark for a vertical target (columns 1..4, rows 0..6).
+
+sprite dropy_0 7 7
+.llll..
+.lddg..
+.lddg..
+.lddg..
+.lddg..
+.gggg..
+.......
+
+# ---- spinner (7x5): blue plastic flap on a horizontal axle between two
+# chrome bracket wires.  frame 0 edge-on, frame 1 half-turned, frame 2 face-on.
+
+sprite spin1_0 7 5
+l.....g
+l.....g
+lWlllgg
+ldddddg
+d.....d
+
+sprite spin1_1 7 5
+l.....g
+lCBBBBg
+lBnnnng
+ldddddg
+d.....d
+
+sprite spin1_2 7 5
+lCCCCBg
+lCBBBBg
+lBBWBng
+lBnnnng
+ddddddd

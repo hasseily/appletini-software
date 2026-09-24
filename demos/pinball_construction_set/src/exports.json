@@ -1,0 +1,39 @@
+{
+  "EDIT": [
+    "START",
+    "DRAWKIT",
+    "REEDIT",
+    "SLDXDY",
+    "HAND"
+  ],
+  "PPAK": [
+    "DRAWDISPLAY",
+    "DRAWOBJ",
+    "REMOVEPOLY",
+    "GETOBJ",
+    "GETNEXTOBJ",
+    "MAKEHOLE",
+    "GETSCAN",
+    "GETBOUNDS",
+    "SCANPOLY",
+    "SELECTPOLY",
+    "ALIGNPOLY",
+    "GETINFO"
+  ],
+  "RUN": [
+    "PLAY",
+    "INITOBJS",
+    "SCORE",
+    "DOSND"
+  ],
+  "RUN2": [
+    "MAIN",
+    "DISKPLAY",
+    "SETUP2",
+    "DOSOUND"
+  ],
+  "WIRE": [
+    "START",
+    "TIMES15"
+  ]
+}

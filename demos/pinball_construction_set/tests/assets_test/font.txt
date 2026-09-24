@@ -1,0 +1,23 @@
+# Fixture glyph overrides for tests/test_assets.py.
+# glyph CODE NAME [ADVANCE]: CODE is 0..36, a digit, a letter or "space".
+# 7 rows of 7 (or 8) characters, '#' = pixel on; bit 7 = leftmost pixel.
+
+# the digit 0 becomes a hollow box
+glyph 0 ZERO
+#######
+#.....#
+#.....#
+#.....#
+#.....#
+#.....#
+#######
+
+# 'A' keeps the upstream shape (8-column rows) but gets a wider advance
+glyph A A 7
+.###....
+##.##...
+##.##...
+#####...
+##.##...
+##.##...
+##.##...
