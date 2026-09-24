@@ -208,6 +208,9 @@ title_show:
         beq     @skip                   ; the test machine's hook
         lda     #MB_ST_TITLE
         sta     MB_STATE
+        lda     #0                      ; the panel is black at start-up
+        ldx     #SCREEN_H-1
+        jsr     panel_rows
         jsr     DRAWLOGO
         textat  196, 72
         prints  s_budge
