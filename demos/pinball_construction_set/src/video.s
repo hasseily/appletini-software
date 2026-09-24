@@ -25,7 +25,7 @@
 .macpack longbranch
 
 .export video_init, video_shutdown, video_wait_vbl
-.export blit_sprite, sprite_bank, copy_arena, fill_arena, aux_fetch_rows
+.export blit_sprite, sprite_bank, copy_arena, fill_arena, aux_fetch_rows, aux_store_rows
 .export row_lo, row_hi, masktab
 .export bl_id, bl_x, bl_y, bl_cx0, bl_cx1, bl_cy0, bl_cy1
 .export arena_stride, cp_x0, cp_y0, cp_w, cp_rows, cp_count
@@ -131,10 +131,15 @@ video_init:
         stz     cp_count
         stz     cp_count+1
         stz     bank_sel
-        ; aux_fetch into the stack page
+        ; aux_fetch and aux_store into the stack page
         ldx     #aux_fetch_end-aux_fetch_image-1
 :       lda     aux_fetch_image,x
         sta     AUX_FETCH,x
+        dex
+        bpl     :-
+        ldx     #aux_store_end-aux_store_image-1
+:       lda     aux_store_image,x
+        sta     AUX_STORE,x
         dex
         bpl     :-
         rts
@@ -579,8 +584,48 @@ aux_fetch_rows:
         bne     @row
 @done:  rts
 
-; The stack-page routine: X = RamWorks bank, Y = byte count (1..255),
-; V_SRC = auxiliary address, V_DST = main address. Copied to AUX_FETCH.
+; ---------------------------------------------------------------------------
+; aux_store_rows: the reverse: af_rows rows of af_len bytes from main
+; memory at af_src (pitch af_sstride) to auxiliary memory (RamWorks bank
+; af_bank) at af_dst (pitch af_dstride). One RAMWRT on/off pair per row;
+; writes to bank 0's $2000-$9FFF are posted to the bus like any screen
+; write, other banks cost nothing there.
+; ---------------------------------------------------------------------------
+aux_store_rows:
+        lda     af_src
+        sta     V_SRC
+        lda     af_src+1
+        sta     V_SRC+1
+        lda     af_dst
+        sta     V_DST
+        lda     af_dst+1
+        sta     V_DST+1
+        lda     af_rows
+        beq     @done
+        sta     V_ROWS
+@row:   ldx     af_bank
+        ldy     af_len
+        jsr     AUX_STORE
+        lda     V_SRC
+        clc
+        adc     af_sstride
+        sta     V_SRC
+        lda     V_SRC+1
+        adc     af_sstride+1
+        sta     V_SRC+1
+        lda     V_DST
+        clc
+        adc     af_dstride
+        sta     V_DST
+        bcc     :+
+        inc     V_DST+1
+:       dec     V_ROWS
+        bne     @row
+@done:  rts
+
+; The stack-page routines: X = RamWorks bank, Y = byte count (1..255),
+; V_SRC/V_DST = source/destination. Copied to AUX_FETCH and AUX_STORE:
+; a fetch reads the auxiliary bank (RAMRD), a store writes it (RAMWRT).
 aux_fetch_image:
         stx     RAMWORKS
         sta     RAMRDON
@@ -593,4 +638,17 @@ aux_fetch_image:
         stz     RAMWORKS
         rts
 aux_fetch_end:
-.assert aux_fetch_end - aux_fetch_image <= $70, error, "aux_fetch too long for the stack page"
+aux_store_image:
+        stx     RAMWORKS
+        sta     RAMWRTON
+        dey
+:       lda     (V_SRC),y
+        sta     (V_DST),y
+        dey
+        bpl     :-
+        sta     RAMWRTOFF
+        stz     RAMWORKS
+        rts
+aux_store_end:
+.assert aux_fetch_end - aux_fetch_image <= AUX_STORE - AUX_FETCH, error, "aux_fetch too long for its slot"
+.assert aux_store_end - aux_store_image <= $0180 - AUX_STORE, error, "aux_store too long for the stack page"

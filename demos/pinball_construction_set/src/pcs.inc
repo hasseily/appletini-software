@@ -223,3 +223,4 @@ SLEEP_MAX   = 8
 
 ; --- stack page routine ---------------------------------------------------
 AUX_FETCH   = $0110             ; aux_fetch copied here at start-up
+AUX_STORE   = $0140             ; its write counterpart (aux_store_rows)

@@ -42,7 +42,9 @@ sys.path.insert(0, str(HERE))
 import a2sim  # noqa: E402
 import gen_assets  # noqa: E402
 
-DEFAULT_ROM = GAME.parents[2] / "appletini-one/docs/Apple2e_Enhanced.rom"
+import os
+DEFAULT_ROM = Path(os.environ.get("APPLETINI_ROOT", str(GAME.parents[2] / "appletini-one"))) \
+    / "docs/Apple2e_Enhanced.rom"
 MAILBOX = 0x0300
 STATES = {0: "boot", 1: "edit", 2: "wire", 3: "magnify", 4: "disk", 5: "play", 6: "game",
           7: "title", 8: "quit"}

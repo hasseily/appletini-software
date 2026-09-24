@@ -33,6 +33,7 @@
 .export rd_init, rd_mark, rd_mark_all, rd_mark_record, rd_render, rd_frame
 .export rd_ax0, rd_ay0, rd_ax1, rd_ay1, rd_flags, rd_color, rd_count
 .export cur_set, cur_move, cur_hide, cur_show, cur_x, cur_y, cur_id, cur_want
+.export ov_tiles, ov_enabled
 .export panel_sprite, panel_fill, panel_frame, ps_id, ps_x, ps_y
 .export pf_x0, pf_y0, pf_x1, pf_y1, pf_color
 .export float_clear, float_add, hl_toggle, wire_toggle, wire_clear
