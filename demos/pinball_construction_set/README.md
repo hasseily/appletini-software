@@ -13,12 +13,12 @@ joystick cursor, the speaker click sequencer, DOS 3.3 and the HGR pixel
 magnifier). `docs/DESIGN.md` is the contract; this file says what is there
 and how to build, run and test it.
 
-Status: builds, passes its unit tests (`make test`, 194 tests), and runs in
-the project's py65 test machine: the editor with its tools, the parts kit,
-the wiring kit, the world settings and test play. It is **not yet tested on
-hardware** or under ProDOS in an emulator. Still being written (see "In
-progress" below): the disk menu and the table files, the magnifier, the
-game shell and the disk image.
+Status: builds, passes its unit tests (`make test`, 222 tests), builds the
+disk image, and runs in the project's py65 test machine: the title, the
+editor with its tools, the parts kit, the wiring kit, the world settings,
+test play, the magnifier, the disk menu (load, save, catalog) under a
+modelled ProDOS, and the game shell. It is **not yet tested on hardware**
+or under ProDOS in an emulator (see "Not done" below).
 
 ## What the port keeps and what it replaces
 
@@ -28,10 +28,10 @@ game shell and the disk image.
 | `PPAK.S` (polygon database, scan converter) | kept; the span painter and the vertex dots are render hooks |
 | `WIRE.S` (the wiring kit) | kept; wires and the "hide polygons" flag are render items |
 | `RUN.S` (physics, part behaviours, test play) | kept; the tick loop is paced by the frame, draws become dirty marks |
-| `RUN2.S` (the game shell: players, balls, sleepers) | kept and linked; reached from the disk menu (in progress) |
+| `RUN2.S` (the game shell: players, balls, sleepers) | kept; reached from the disk menu's PLAY GAME, the player prompt is the port's |
 | `CDRAW.S` (HGR library, cursor, text, menus) | replaced by `src/cdraw.s` + `src/render.s` + `src/video.s` with the same entry points |
 | `BOOT2.S`, `SWAP.S`, `DISK.S` (DOS 3.3) | replaced by `src/crt0.s`, `src/loader.s`, `src/files.s` under ProDOS |
-| the magnifier in `EDIT.S` | dropped; `src/magnify.s` edits a 16-colour overlay layer (in progress) |
+| the magnifier in `EDIT.S` | dropped; `src/magnify.s` edits a 16-colour overlay layer |
 
 `tools/merlin2ca65.py` converts the nine modules. In its baseline layout
 the output assembles to the nine upstream binaries byte for byte
@@ -88,16 +88,23 @@ wood and plastics. Painting an object with its own colour makes it black
   (`WSET`) and QUIT. The speed slider sets the ticks per frame (section 8
   of the design: 1.5, 2, 2.5, 3, 4, 5, 6, 8 for positions 0 to 7, a new
   table starts at 4).
-- **Magnifier**: a 16-colour pixel editor of the overlay layer (4 bits per
-  pixel in RamWorks bank 1, drawn over the polygons and under the parts;
-  a tile map keeps untouched rows free). *In progress:* `src/magnify.s` in
-  this tree is a stub that returns to the editor at once.
-- **Disk**: LOAD, SAVE, PLAY GAME and QUIT under ProDOS. *In progress:*
-  `src/files.s` is a stub; the file format is fixed (see "Files") and
-  `tools/make_tables.py` already writes the seed tables in it.
-- **Game shell** (`RUN2.S`): one to four players, balls left, captured
-  balls (sleepers), speech. *In progress:* converted and linked, entered
-  from the disk menu once that exists.
+- **Magnifier** (`src/magnify.s`, design section 14): a 16-colour pixel
+  editor of the overlay layer (4 bits per pixel in RamWorks bank 1, drawn
+  over the polygons and under the parts; a tile map keeps untouched rows
+  free). Below the logo band: a 32x24-pixel window of the table at 4x, the
+  sixteen colours (0 erases), QUIT and a grid toggle. Press on the table to
+  centre the window there (a drag pans), press in the window to paint, on a
+  palette box to pick; `0`-`9`/`A`-`F` pick, `G` toggles the grid, Esc
+  leaves. The table shows every stroke in the same frame.
+- **Disk** (`src/files.s`): LOAD, SAVE, EDIT, QUIT and PLAY GAME under
+  ProDOS, with the catalog of the prefix directory's `.PCS` files (up to
+  11). SAVE asks for a name (letters, digits, periods; Return or Esc); a
+  corrupt file is refused with NOT A TABLE and the table kept; QUIT asks
+  twice, then exits to ProDOS. Keys `L`, `S`, `E`, `Q`, `P`, Esc.
+- **Game shell** (`RUN2.S`, PLAY GAME): one to four players (a prompt with
+  four digit boxes, or the keys `1`-`4`), five balls each, balls left in the
+  panel, captured balls (sleepers), the speech phrases; Esc ends the game
+  and returns to the disk menu.
 
 ## Controls
 
@@ -158,7 +165,7 @@ quiet frame costs none. Ctrl-S (`STGL`) mutes everything.
 | main `$0110-$017F` | `aux_fetch` and `aux_store` in the stack page (RAMRD/RAMWRT do not move pages 0 and 1) |
 | main `$0300-$0313` | debug mailbox (`PCS1`, state, frame, bytes written, cursor, input, ticks, mouse, RamWorks, sound) |
 | main `$0C00-$1FFF` | BSS: the original's fixed tables (`PBTBL`, `V`, `RCN`, `TIME`), player state, sleepers, dirty lists, cursor save-under |
-| main `$2000-$9BFF` | `PCS.SYSTEM`: entry code, read-only tables, code |
+| main `$2000-$9FFF` | `PCS.SYSTEM`: entry code, read-only tables, code |
 | main `$A000-$BAFF` | the object database: `LOGIC`, `WSET`, `PBDATA`, the span gap buffer, `PBDX` at `$BA40` |
 | main `$BB00-$BEFF` | the render arena; the ProDOS file buffer while a file is open |
 | aux `$2000-$9FFF` | SHR pixels, SCBs, palette |
@@ -172,9 +179,9 @@ reaches `$A000`.
 
 ```sh
 make            # build/PCS.SYSTEM and build/PCS.SPR (+ PCS.lbl, PCS.map, the seed tables)
-make test       # the unit tests in tests/ (py65; about 40 s)
+make test       # the unit tests in tests/ (py65; about two minutes)
 make baseline   # the upstream modules converted and assembled unchanged, in build/baseline
-make disk       # dist/Appletini-PCS.hdv, an 800 KB ProDOS image (in progress, see below)
+make disk       # dist/Appletini-PCS.hdv, an 800 KB ProDOS image
 ```
 
 Needs cc65 (`ca65`, `ld65`), Python 3 with py65 (the tests and the run
@@ -195,8 +202,10 @@ and tool layout patches (`tools/layout.py`), the kind table and template
 patches (`tools/kinds.py`), the seed tables (`tools/make_tables.py`),
 assembles everything with ca65 and links with ld65 (`src/pcs.cfg`).
 
-`make disk` is in progress: it needs `tools/title.py` (the title picture)
-and the disk builder's PCS rule, being written with the disk menu.
+`make disk` (`tools/build_disk.py`) writes an 800 KB ProDOS volume
+`A13PCS` with `PRODOS`, `PCS.SYSTEM`, `PCS.SPR` and the seed tables from
+`build/tables/`; `appletini-pcs.gs2` is a GSSquared configuration for it
+(mouse in slot 2, Mockingboard/Phasor in slot 4, the Appletini in slot 7).
 
 ## Test
 
@@ -219,11 +228,19 @@ python3 tests/test_render.py TestBlitSprite # one class
 | `test_input.py` | the mouse card detection and set-up, clamps, arrow keys, buttons, flippers, the plunger, paddles, the `$C0xx` budget |
 | `test_sound.py` | the Phasor driver: probe, effects, priorities, speech, mute |
 | `test_editor.py` | end to end through `tools/run_editor.py`: boot to the editor, a part dragged from the kit onto the table (and one dropped back deleted), the Play tool, the plunger launch, a flipper key, Esc back to the editor, the frame budget, the screenshots |
+| `test_magnify.py` | the magnifier: entry and exit, the window and its recentring, painting and erasing pixels in bank 1 and the tile map, the grid, edits surviving a part dragged over them |
+| `test_files.py` | the disk menu with the fake ProDOS: the table file format (RLE, overlay chunk), catalog, select and load, save with a typed name, an overlay round trip, corrupt files refused, PLAY GAME and Esc, QUIT's confirmation, the title |
+| `test_disk.py` | `tools/build_disk.py`: the volume, directory, bitmap and every file read back |
 
-`tools/run_editor.py` boots `build/PCS.SYSTEM` in the machine without
-ProDOS (it fills the auxiliary language card from `build/PCS.SPR` itself and
-skips the idle wait for line 0), drives it with the mouse and keyboard, and
-saves screenshots to `build/run/`:
+`tools/run_editor.py` boots `build/PCS.SYSTEM` in the machine, drives it
+with the mouse and keyboard, and saves screenshots to `build/run/`. Without
+`--prodos DIR` there is no ProDOS (the script fills the auxiliary language
+card from `build/PCS.SPR` itself and the disk menu reports NO PRODOS); with
+it, `tools/a2sim.py`'s fake ProDOS serves the files of `DIR` as the volume
+and the program loads `PCS.SPR` through the MLI as on the real disk. The
+title screen waits for a click or key; `--skip-title` (a mailbox hook,
+`MB_NOTITLE`) starts in the editor, as the tests and `tools/pcsdbg.py` do.
+The idle wait for line 0 is skipped, so a run costs the frames' work only:
 
 ```sh
 python3 tools/run_editor.py --frames 300 \
@@ -271,45 +288,47 @@ change a register. `tests/test_editor.py` checks the budget on every run.
 ## Files
 
 `PCS.SYSTEM` (the program), `PCS.SPR` (the sprites, loaded into the
-auxiliary language card by `src/loader.s` through the ProDOS MLI),
-`PCS.TITLE` (the title picture, in progress), and tables `*.PCS`.
+auxiliary language card and RamWorks bank 1 by `src/loader.s` through the
+ProDOS MLI), and tables `*.PCS` (BIN files).
 
-A table file is `"PCS1"`, then the database as in memory (`WSET`, `LOGIC`,
+A table file is `"PCS1"`, then the database as in memory (`LOGIC`, `WSET`,
 the object count, sizes and records), then `"OVL1"`, the 72-byte overlay
-tile map and the run-length coded edited tiles (`01 nn` = `nn` zero bytes,
-`01 01` = end, `nn` = `nn` literal bytes, the original's picture RLE). In a
-file and in the built-in table every library object's L-record holds
-`kind, frame` in its first two bytes; `table_normalise` (`src/main.s`)
-turns them into the sprite pointer and copies the box, stride and vectors
-from the kind's template on load, so files do not depend on the build.
-`tools/make_tables.py` writes the seed tables in this format; a converter
-for original `.PB` files (`tools/pb2pcs.py` in the design) is not written
-yet.
+tile map (24 rows x 3 bytes, one bit per 8x8 tile) and the set tiles' 32
+bytes each, in tile order, run-length coded: `nn` (1..127) = `nn` literal
+bytes, `$80|nn` = the next byte `nn` times, `00` = the end. In a file and
+in the built-in table every library object's L-record holds `kind, frame`
+in its first two bytes; `table_normalise` (`src/main.s`) turns them into
+the sprite pointer and copies the box, stride and vectors from the kind's
+template on load (SAVE does the reverse), so files do not depend on the
+build. `tools/make_tables.py` writes the seed tables in this format and
+holds the Python encoder and decoder the tests use; a converter for
+original `.PB` files (`tools/pb2pcs.py` in the design) is not written.
 
 ## Design pointers
 
 `docs/DESIGN.md`: 1 what is ported, 2 hardware facts, 3 screen and
 palette, 4 the rendering model, 5 what each module keeps and what is
 patched, 6 data structures (the L-record, `FILLCOLOR`, part kinds), 7 the
-memory map, 8 timing (ticks per frame), 9 input, 10 sound, 11 files, 12 the
-fidelity policy (what quirks of the original are kept), 13 build and test.
-The source headers say why: `src/render.s` (the renderer), `src/video.s`
-(the SHR primitives and the blitter), `src/cdraw.s` (the CDRAW.S entry
-points), `src/input.s`, `src/sound.s`, `src/play.s` (the tick pacing and the
-launcher), `src/main.s` (the kits, the logo, `table_normalise`),
+memory map, 8 timing (ticks per frame), 9 input, 10 sound, 11 files and
+the disk menu, 12 the fidelity policy (what quirks of the original are
+kept), 13 build and test, 14 the magnifier. The source headers say why:
+`src/render.s` (the renderer), `src/video.s` (the SHR primitives and the
+blitter), `src/cdraw.s` (the CDRAW.S entry points), `src/input.s`,
+`src/sound.s`, `src/play.s` (the tick pacing and the launcher),
+`src/main.s` (the kits, the logo, `table_normalise`), `src/files.s` (the
+title, the disk menu, the game shell entry), `src/magnify.s`,
 `src/loader.s`, `src/tables.s` (the relocated fixed tables).
 
-## In progress
+## Not done
 
-- The disk menu (`src/files.s`), the table files on the image, the title
-  picture, `make disk` and the run under ProDOS in GSSquared.
-- The magnifier (`src/magnify.s`).
-- The game shell entry (PLAY GAME) and its speech.
-- Hardware test on a //e with the Appletini: every number above comes from
-  the py65 model.
-- The debug mailbox's `MB_RECTS` byte is never written (the rectangle count
-  in `run_editor.py`'s output is always 0), and the disk menu's state code
-  in `src/main.s` is written as 7 (the title's) rather than `MB_ST_DISK`.
+- Hardware test on a //e with the Appletini, and a run of the disk image in
+  GSSquared: every number above comes from the py65 model, and the mouse
+  card, the Phasor and RamWorks bank 1 are the model's.
+- The disk catalog shows at most 11 files, in directory order.
+- The magnifier paints one pixel per frame while dragging (no line between
+  two frames' positions).
+- Speech is exercised by the sound driver's unit tests only.
+- A converter for original `.PB` table files.
 
 ## Credits
 
