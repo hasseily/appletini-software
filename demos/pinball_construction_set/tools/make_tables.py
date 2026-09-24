@@ -68,8 +68,9 @@ def table_one(parts):
     # lower guides toward the flippers
     objs.append(polygon([3, 45, 45, 3], [156, 180, 184, 164], 3))
     objs.append(polygon([138, 138, 96, 96], [156, 164, 184, 180], 3))
-    # a slanted wall at the lane's top, sending the ball left
-    objs.append(polygon([141, 150, 150, 141], [44, 30, 34, 50], 3))
+    # the deflector at the lane's top: a solid triangle against the border
+    # whose hypotenuse sends the ball left into the playfield
+    objs.append(polygon([141, 150, 150], [44, 30, 44], 3))
     # parts
     objs.append(part(parts, 'LEFTFLIPPER', 46, 168))
     objs.append(part(parts, 'RIGHTFLIPPER', 78, 168))
@@ -88,7 +89,6 @@ def table_one(parts):
     objs.append(part(parts, 'TARG5', 8, 104))
     objs.append(part(parts, 'TARG6', 8, 116))
     objs.append(part(parts, 'SPIN1', 60, 118))
-    objs.append(part(parts, 'GATE1', 132, 52))
     objs.append(part(parts, 'LAUNCHER', 144, 176))
     objs.append(part(parts, 'BALL', 144, 150))
     return objs

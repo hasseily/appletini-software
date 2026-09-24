@@ -43,6 +43,7 @@ tick_acc:   .res 1              ; 4.4 fixed point: ticks owed
 tick_due:   .res 1              ; whole ticks left in this frame
 ticks_run:  .res 1
 balls_shown: .res 1             ; RUN2 balls-left display: bit n = ball n shown
+last_plunger: .res 1            ; in_plunger of the previous tick
 play_ticks_per_frame: .res 1    ; 4.4
 
 .segment "RODATA"
@@ -118,6 +119,14 @@ new_frame_ticks:
         rts
 
 ; PORT_TICK_INPUT: runtime variables from the frame's input. Keeps X, Y.
+;
+; The launcher (RUN.S LAUNCHRUN/LAUNCHHIT) follows PDL1: with LBTN up the
+; plunger advances one step a tick towards PDL1/32 and, when it reaches
+; the ball, kicks it with PDL1/4; with LBTN down it retreats. So while
+; the key is held (in_plunger rising) LBTN stays down and the plunger
+; pulls back; on release (the driver's in_launch window, in_plunger kept)
+; LBTN goes up and the plunger springs forward at the charged strength;
+; afterwards the charge decays and the plunger settles back.
 PORT_TICK_INPUT:
         lda     in_flip
         and     #$80
@@ -128,8 +137,16 @@ PORT_TICK_INPUT:
         sta     BTN1
         lda     in_plunger
         sta     PDL1
-        lda     in_launch
-        sta     LBTN
+        ldx     #0
+        bit     in_launch
+        bmi     @set                    ; released: let it go
+        cmp     #0
+        beq     @set
+        cmp     last_plunger
+        bcc     @set                    ; decaying: let it settle
+        ldx     #$80                    ; charging: hold it back
+@set:   stx     LBTN
+        sta     last_plunger
         rts
 
 ; PORT_TICK_END: called at the end of a tick with the keyboard poll's

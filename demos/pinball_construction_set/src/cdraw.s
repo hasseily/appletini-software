@@ -486,20 +486,26 @@ PRCHAR:
         sta     TEMP
         cmp     #36
         bcs     @advance
-        ; x = column*7 + offset
+        ; x = column*7 + offset (16-bit: columns 37-45 lie beyond x 255)
+        stz     C_TMP+1
         lda     CHARBITS+3
         asl     a
+        rol     C_TMP+1
         asl     a
+        rol     C_TMP+1
         asl     a
+        rol     C_TMP+1                 ; column*8
         sec
         sbc     CHARBITS+3
-        clc
+        bcs     :+
+        dec     C_TMP+1
+:       clc
         adc     CHARBITS+4
         sta     C_TMP
-        lda     #0
-        adc     #0
-        sta     C_TMP+1
-        ; panel only
+        bcc     :+
+        inc     C_TMP+1
+:       ; panel only
+        lda     C_TMP+1
         bne     :+
         lda     C_TMP
         cmp     #PANEL_X

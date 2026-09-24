@@ -266,5 +266,26 @@
   "line": 541,
   "expect": " CMP #$F0",
   "replace": " CMP #$C0"
+ },
+ {
+  "module": "EDIT",
+  "line": 2570,
+  "expect": " STA SLNEW",
+  "replace": [
+   " STA SLNEW",
+   " JMP MOVESLIDE ;port: the original fell through into MOVESLIDE (dropped)"
+  ]
+ },
+ {
+  "module": "EDIT",
+  "line": 2531,
+  "expect": " HEX 00",
+  "replace": " HEX 0000 ;port: DOMENU ends the list at a zero word"
+ },
+ {
+  "module": "WIRE",
+  "line": 918,
+  "expect": " HEX 00",
+  "replace": " HEX 0000 ;port: DOMENU ends the list at a zero word"
  }
 ]

@@ -194,7 +194,11 @@ class Runner:
         limit = 4_000_000 * m.speed         # cycles of one frame's work before giving up
         traces = {self.labels[name]: name for name in self.args.trace}
         traced = 0
+        history = [0] * 64                  # the last PCs, for a crash report
+        hi = 0
         while self.frames < self.args.frames:
+            history[hi] = mpu.pc
+            hi = (hi + 1) & 63
             mpu.step()
             if mpu.pc in traces and traced < self.args.trace_limit:
                 traced += 1
@@ -212,6 +216,14 @@ class Runner:
             if (mpu.pc < 0x0C00 and not 0x0110 <= mpu.pc < 0x0180) or 0xBF00 <= mpu.pc < 0xC000:
                 self.say(f"frame {self.frames}: PC left the program at ${mpu.pc:04X} "
                          f"(quit or crash); sp ${mpu.sp:02X}")
+                trail = [history[(hi + i) & 63] for i in range(64)]
+                last = None
+                for pc in trail:
+                    name = self.nearest(pc)
+                    routine = name.split("+")[0]
+                    if routine != last:
+                        print(f"    {name}")
+                        last = routine
                 break
             if mpu.processorCycles - self.work_start > limit:
                 self.say(f"frame {self.frames}: no frame end after {limit} cycles, "

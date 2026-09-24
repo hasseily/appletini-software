@@ -129,11 +129,11 @@ copy_default:
 SWAP_SWAPWIRE:
         pla
         pla
-        lda     #4
+        lda     #MB_ST_WIRE
         sta     MB_STATE
         jsr     WIRE_START
         jsr     wire_clear
-        lda     #1
+        lda     #MB_ST_EDIT
         sta     MB_STATE
         jmp     EDIT_DRAWKIT
 
