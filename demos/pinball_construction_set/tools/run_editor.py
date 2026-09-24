@@ -4,7 +4,7 @@ keyboard, and save screenshots and per-frame statistics.
 
 Usage: python3 tools/run_editor.py [--rom ROM] [--speed 33] [--frames 300]
                                    [--out build/run] [--do ACTION ...]
-                                   [--shot FRAME ...] [--quiet]
+                                   [--shot FRAME ...] [--quiet] [--stats FILE]
 
 The machine (tools/a2sim.py) runs build/PCS.SYSTEM at the modelled vTW
 speed with the mouse card in slot 2 and the Phasor in slot 4. There is no
@@ -28,11 +28,19 @@ Every frame prints (unless --quiet): state, work cycles, bytes that would
 use the 1 MHz bus, $Cxxx accesses, rectangles rendered, the cursor. The
 last screen is always saved as OUT/final.png; a screen is also saved
 whenever the mailbox state changes.
+
+--stats FILE writes the same numbers as JSON: `frames` is a list of
+{frame, state, work, bus, io, writes, rects} (state as the mailbox names
+it, writes = MB_WRITES, rects = MB_RECTS), `summary` the median, 99th
+percentile and maximum of work and bus over the run with the budget and
+the count of frames over it, `transitions` the frames where the state
+changed, and `log` the action and state lines.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -231,6 +239,8 @@ class Runner:
                 break
         self.save("final")
         self.summary()
+        if getattr(self.args, "stats", None):
+            self.write_stats(Path(self.args.stats))
         return 0
 
     def return_pc(self) -> int:
@@ -247,17 +257,39 @@ class Runner:
                 best = (name, addr)
         return f"{best[0]}+{pc - best[1]}" if best[1] >= 0 else "?"
 
+    def summary_dict(self) -> dict:
+        """The run's numbers: per-frame rows, quantiles, state transitions."""
+        budget = self.machine.frame_cycles
+        rows = [dict(frame=i, state=STATES.get(s[0], s[0]), work=s[1], bus=s[2], io=s[3],
+                     writes=s[4], rects=s[5]) for i, s in enumerate(self.stats)]
+        works = sorted(s[1] for s in self.stats)
+        buses = sorted(s[2] for s in self.stats)
+        ios = sorted(s[3] for s in self.stats)
+        n = len(works)
+
+        def quantiles(values):
+            return dict(median=values[n // 2], p99=values[min(n - 1, n * 99 // 100)], max=values[-1])
+
+        summary = dict(frames=n, budget=budget, over_budget=sum(1 for w in works if w > budget))
+        if n:
+            summary.update(work=quantiles(works), bus=quantiles(buses), io=quantiles(ios))
+        transitions = [dict(frame=r["frame"], state=r["state"]) for i, r in enumerate(rows)
+                       if i == 0 or r["state"] != rows[i - 1]["state"]]
+        return dict(speed=self.machine.speed, frame_cycles=budget, frames=rows,
+                    summary=summary, transitions=transitions, log=self.log)
+
+    def write_stats(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.summary_dict(), indent=1) + "\n")
+        self.say(f"saved {path}")
+
     def summary(self) -> None:
         if not self.stats:
             return
-        works = sorted(s[1] for s in self.stats)
-        buses = sorted(s[2] for s in self.stats)
-        n = len(works)
-        budget = self.machine.frame_cycles
-        over = sum(1 for w in works if w > budget)
-        print(f"{n} frames: work median {works[n // 2]} p99 {works[min(n - 1, n * 99 // 100)]} "
-              f"max {works[-1]} cycles (budget {budget}); bus median {buses[n // 2]} "
-              f"max {buses[-1]} bytes; {over} frames over budget")
+        s = self.summary_dict()["summary"]
+        print(f"{s['frames']} frames: work median {s['work']['median']} p99 {s['work']['p99']} "
+              f"max {s['work']['max']} cycles (budget {s['budget']}); bus median {s['bus']['median']} "
+              f"max {s['bus']['max']} bytes; {s['over_budget']} frames over budget")
 
 
 def main() -> int:
@@ -272,6 +304,7 @@ def main() -> int:
     ap.add_argument("--trace", action="append", default=[], metavar="LABEL",
                     help="print the registers whenever this routine is entered")
     ap.add_argument("--trace-limit", type=int, default=200)
+    ap.add_argument("--stats", metavar="FILE", help="write the per-frame numbers and the summary as JSON")
     args = ap.parse_args()
     return Runner(args).run()
 
