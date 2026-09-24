@@ -52,6 +52,7 @@
 .import spr_dir, spr_w, spr_h, spr_hoty, spr_bank
 .import PBDATA, PBDX, PPAK_GETBOUNDS, PPAK_DRAWOBJ, PPAK_REMOVEPOLY, PPAK_DRAWDISPLAY
 .import SLEEPERS
+.import PBBASE
 
 RD_MAX    = 32                  ; dirty rectangles per frame
 FL_MAX    = 128                 ; floating spans
@@ -305,7 +306,14 @@ DOBAR:
         bit     SCANMODE
         bpl     @done                   ; merge mode: the database has it
         jmp     float_add
-@panel: ; a panel span: fill the row segment
+@panel: ; a panel span: fill the row segment. An object of the database
+        ; (one being dragged over the kit) draws nothing there: the panel
+        ; is immediate mode and the original's XOR erase has no equivalent
+        pha
+        lda     OBJ+1
+        cmp     #>PBBASE
+        bcs     @skip
+        pla
         pha
         cpx     #PANEL_X
         bcs     :+
@@ -337,6 +345,7 @@ DOBAR:
         bcs     @done                   ; inviso
         sta     pf_color
         jmp     panel_fill
+@skip:  pla
 @done:  rts
 
 ; float_add: A, X = span ends on row SCANLINE, colour rd_color.

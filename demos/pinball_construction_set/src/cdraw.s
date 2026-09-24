@@ -37,6 +37,8 @@
 .import rd_mark_all, rd_ax0, rd_ax1, rd_ay0, rd_ay1, rd_mark
 .import blit_sprite, copy_arena, fill_arena, bl_id, bl_x, bl_y, bl_cx0, bl_cx1, bl_cy0, bl_cy1
 .import arena_stride, cp_x0, cp_y0, cp_w, cp_rows, cp_count
+.import aux_fetch_rows, aux_store_rows, af_bank, af_src, af_dst, af_len, af_rows, af_sstride, af_dstride
+.import row_lo, row_hi, P1STATE, PBBASE
 .import input_frame, input_getkey, in_mx, in_my, in_btn
 .import snd_frame
 .import spr_dir, spr_w, spr_h, spr_hoty, font7, font_adv
@@ -177,8 +179,94 @@ XOFFDRAW:
         sec
         sbc     spr_hoty,x
         sta     ps_y
+        ; a record inside the database is an object being dragged over the
+        ; kit: the original XORed it (draw, erase, draw...); the port shows
+        ; it with save-under and hides it on the next call
+        lda     C_PTR+1
+        cmp     #>PBBASE
+        bcs     floater
         jmp     panel_sprite
 @done:  rts
+
+; floater: toggle the dragged object's image in the panel. The bytes
+; under its box (panel_sprite's box: even x, (w+2)/2 bytes, h rows) are
+; kept in P1STATE, unused outside a game.
+floater:
+        bit     fl_shown
+        bmi     @hide
+        jsr     cur_hide                ; the cursor is redrawn at frame end
+        lda     ps_x
+        and     #$FE
+        sta     fl_x
+        lda     ps_x+1
+        sta     fl_x+1
+        lda     ps_y
+        sta     fl_y
+        ldx     ps_id
+        lda     spr_w,x
+        clc
+        adc     #2
+        lsr     a
+        sta     fl_w
+        lda     spr_h,x
+        sta     fl_h
+        jsr     @setup                  ; af_dst = screen, af_src = buffer
+        ; save: screen -> buffer (swap the ends)
+        lda     af_src
+        ldx     af_dst
+        stx     af_src
+        sta     af_dst
+        lda     af_src+1
+        ldx     af_dst+1
+        stx     af_src+1
+        sta     af_dst+1
+        lda     #SHR_ROW
+        sta     af_sstride
+        lda     fl_w
+        sta     af_dstride
+        jsr     aux_fetch_rows
+        lda     #$80
+        sta     fl_shown
+        jmp     panel_sprite
+@hide:  stz     fl_shown
+        jsr     cur_hide                ; its save-under holds floater pixels
+        jsr     @setup
+        lda     fl_w
+        sta     af_sstride
+        lda     #SHR_ROW
+        sta     af_dstride
+        jmp     aux_store_rows          ; buffer -> screen
+; the box's screen address and the buffer, bank 0, fl_w bytes x fl_h rows
+@setup: ldy     fl_y
+        lda     fl_x+1
+        lsr     a
+        lda     fl_x
+        ror     a
+        clc
+        adc     row_lo,y
+        sta     af_dst
+        lda     row_hi,y
+        adc     #0
+        sta     af_dst+1
+        lda     #<P1STATE
+        sta     af_src
+        lda     #>P1STATE
+        sta     af_src+1
+        lda     fl_w
+        sta     af_len
+        lda     fl_h
+        sta     af_rows
+        stz     af_bank
+        stz     af_sstride+1
+        rts
+
+.segment "BSS"
+fl_shown: .res 1                ; bit 7: the floater is on the screen
+fl_x:    .res 2
+fl_y:    .res 1
+fl_w:    .res 1                 ; bytes per row
+fl_h:    .res 1
+.segment "CODE"
 
 ; record_id: C_PTR = record -> X = sprite id (from the directory pointer), $FF if none
 record_id:
