@@ -6,7 +6,9 @@
 ;       pixel(x, y) = x + y + 2 * ktics   (mod 256, a PLAYPAL index)
 ; and draws column stub_col in colour STUB_MARK: the mouse's running X
 ; (kmouse_x, input.s) followed modulo 160, at most 127 columns per frame.
-; It runs in RENDER space from main memory, like the renderer will.
+; It runs in RENDER space from main memory. Only the stand-in build
+; (make STANDIN=1: the platform tests) assembles it; the real build links
+; the renderer of src/render/*.s instead (the Makefile's RENDER_S).
 
 .include "kernel.inc"
 
@@ -14,6 +16,10 @@
 
 STUB_MARK   = 4                 ; PLAYPAL 4: white
 
+; RHICODE starts the writable RENDER memory at $6000 (src/doom.cfg), above
+; the mirrored $2000-$5FFF window; RBSS follows it
+.segment "RHICODE"
+        .res    1
 .segment "RBSS"
 stub_col:   .res 1              ; the marked column, 0..159
 stub_last:  .res 2              ; kmouse_x when last drawn

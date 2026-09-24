@@ -9,9 +9,15 @@
  * (DD_PROBE_*, chunked over several banks, tools/make_standin.py) when the
  * data has one, else one entry of the converter's PLAYPAL. tests/test_platform.py checks the counters and
  * the element read against the data.
+ *
+ * It is built only against the platform's stand-in data set (no MAPDIR):
+ * with the converter's data the real game (g_game.c and the p_*.c
+ * modules) provides game_init, game_tic and game_frame.
  */
 #include "kernel.h"
 #include "doomdata.h"
+
+#ifndef DD_MAPDIR
 
 unsigned long game_tics;
 unsigned char game_inits;
@@ -53,3 +59,10 @@ void game_tic(void)
     far_read(probe_addr, probe_value, PROBE_SIZE);
 #endif
 }
+
+/* the render packet hook (the stand-in renderer does not read one) */
+void game_frame(void)
+{
+}
+
+#endif

@@ -69,5 +69,6 @@ void __fastcall__ kernel_crash(unsigned char code);
 /* called by the kernel */
 void game_init(void);
 void game_tic(void);
+void game_frame(void);          /* once per rendered frame, after the tics */
 
 #endif

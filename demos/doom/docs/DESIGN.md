@@ -538,6 +538,188 @@ every limit; agreement with an independent floating-point raycaster
 the rest at edges and texel boundaries); the generated tables equal the
 reference's and assemble with ca65.
 
+### 7.1 The 6502 renderer (src/render/)
+
+Walls, planes and sky, byte for byte the reference's `Renderer(masked=
+False)` (the masked phase, sprites, two-sided middles and the weapon, is
+the next part; see the hooks below). Seven files:
+
+| File | Holds |
+|---|---|
+| `rdefs.inc` | shared equates (`ROWBIAS`, `RENDER_BANK`, the `RENDER_BANK` layout, queue size), the renderer's zero page and routine names |
+| `rmain.s` | `render_frame`, the packet, `map_load`, `frame_setup`, the far-array element address, record fetches and the per-frame caches, `point_on_side`, the BSP walk, `check_bbox`, `subsector`, `add_line`, the solid-seg list |
+| `rsegs.s` | `store_wall_range`: scales, pegging, silhouettes, marks, the seg loop, the texture column, the column pieces, the visplane marks and the drawseg |
+| `rplane.s` | visplanes (`find_plane` hashed, `check_plane`), texture/flat animation and records (cached), the sky column, `draw_planes`, `make_spans`, `map_plane` |
+| `rmath.s`, `rfmul.s`, `rmul.inc` | multiplies (quarter squares), divisions, sines, `point_to_angle`, the tangent; the byte tables of the seg loop |
+| `rlc.s` | everything that runs with RAMRD on (language card bank 1): bank reads, the column-piece queue and its drawer, the span drawer, the visplane check |
+| `rhooks.s` | `r_add_sprites` and `r_masked`, empty until the masked phase |
+
+**Interfaces.** `render_frame` (called by the frame loop, RENDER space)
+switches the language card's `$D000` to bank 1 for itself and back to bank
+2 (the blit) before it returns; interrupts may stay on (the VBL handler
+touches neither `$C073` nor RAMRD/RAMWRT). Three bytes in the language
+card, seen by both spaces:
+
+- `render_map` (C `extern unsigned char render_map;`): the MAPDIR slot to
+  draw, 9 x (episode - 1) + map - 1; `$FF` (the initial value) draws
+  nothing and leaves the view buffer alone. **The game sets it when a
+  level starts**; a change loads the MAP record (array descriptors, sky)
+  and the animation list on the next frame.
+- `render_shaded` (C `render_shaded`): 0 textured floors and ceilings, else
+  flat-shaded; its initial value is the build option `RENDER_SHADED`
+  (`make AFLAGS+=-DRENDER_SHADED=1`, default 0).
+- The packet: `render_frame` reads the 40-byte header of `_rview` (bank 1);
+  the things are **not copied** (2,560 bytes of main memory, and 42K cycles
+  a frame, for data only the masked phase reads): `rv_thing` (A = index)
+  reads one into `rv_tbuf` with one bank read. The game does not run while
+  the frame is drawn, so this is the packet as the game left it.
+
+Hooks for the masked phase (Doom's order is kept exactly): `r_add_sprites`
+is called with A/X = the sector at its first visit in the frame, before its
+segs (R_AddSprites), and the visit order is also listed in `vs_list_lo/hi`
+(`vs_count`, 256 kept); `r_masked` is called after the planes. The drawsegs
+(`ds_n`) and their openings are in `RENDER_BANK`:
+
+| Drawseg (26 bytes at `DS_BASE + 26n`) | |
+|---|---|
+| +0 x1, +1 x2 | columns |
+| +2 scale1, +5 scale2, +8 scalestep | 3 bytes each (16.16; the step signed) |
+| +11 silhouette | `SIL_BOTTOM` 1, `SIL_TOP` 2 |
+| +12 bsilheight, +15 tsilheight | 3 bytes signed sub-units; `$7FFFFF` = MAXINT, `$800000` = MININT |
+| +18 sprtopclip, +20 sprbottomclip | the `RENDER_BANK` address of column x1's byte in the openings, or 0 none, 1 "screenheight" (84), 2 "negone" (-1) |
+| +22 maskedtexturecol | the address of column x1's 2 bytes (texture column & 255, then 0: the masked phase's "drawn" mark), or 0 |
+| +24 seg | the seg's index |
+
+Clip values in the openings are rows + `ROWBIAS` (64), saturated to
+0..255 (see below; -2, Doom's sprite-clip sentinel, is exact). The
+openings are allocated exactly as the reference counts them (`MAXOPENINGS`
+bytes: 2 per masked column first, then 1 per clip column), so the same
+drawsegs lose their clips on overflow.
+
+**Memory** (the final map; section 4's table is the platform's):
+
+| Area | Use |
+|---|---|
+| zero page `$02-$D8` | the kernel's 41 bytes and the renderer's 174 (multiply/divide operands, the seg loop's accumulators, pointers, the eye); 7 bytes free |
+| main `$0200-$03FF` (`RLOWDATA`) | the visited-sector list (512) |
+| main `$0C00-$1DDB` (`RLOBSS`, rw in the file) | packet header, BSP node stack (64 x 11), MAP record, the vertex cache (128 slots: angle and coordinates), a visplane's columns copied back, span starts, the range's plane marks and masked columns, the texture-record cache (32), the per-column sines (161), the per-column sin/cos cache of the spans (160); 480 bytes free below the tables |
+| main `$1FBC-$52FF` (`RRODATA`) | the generated tables (13,124 bytes; the start puts the quarter-square tables on page boundaries, asserted at link time) |
+| main `$5300-$5D26` (`RCODE`, read-only window) | code that is never modified: math, planes (2,599 bytes; 729 free) |
+| main `$6000-$80E1` (`RHICODE`) | code with self-modified operands and the rest: BSP, segs, seg loop, spans (8,418) |
+| main `$80E2-$89E0` (`RBSS`) | frame state, caches (sectors 64 slots), clip arrays, solid segs (2,303); 415 bytes free |
+| LC bank 1 `$D000-$DB9E` (`RLC1`) | the RAMRD code, the span tables, the piece queue (64 x 12 bytes), `subsector`/`add_line`/clipping (2,975; 1,121 free) |
+| LC `$E6F4-$FEC4` (`RLCHI`, `RLCBSS`) | `render_frame` and the frame setup, the unrolled multiplies and divisions, the shift tables (shr4/shl4/sar4/bitlen), `render_map`, `render_shaded`; visplane headers (7 x 128) and the span row cache (84 rows); 309 bytes free |
+| LC bank 2 | not used by the renderer |
+| RamWorks `RENDER_BANK` = `DD_LAST_BANK` + 1 | visplane columns `$0200-$A4FF` (128 x 324: top and bottom rows of columns -1..160), drawsegs `$A500-$B53F`, openings `$B540-$BD3F` |
+
+**How it runs** (the decisions):
+
+- *Bank access.* Map records are read with `rb_read` (language card, RAMRD
+  on for the copy only): `elem_addr` turns an index into bank:address by
+  the MAP record's descriptors (chunk = index >> log2, offset by shift
+  tables). `$C073` is written only when the bank changes (`cur_bank`).
+  Sectors (64 slots) and vertexes (128 slots, with their angle from the
+  eye) are cached per frame, texture records until the map changes, a
+  seg's sidedef, flags, normal, distance, offset and light for all the
+  wall ranges of the seg. All `RENDER_BANK` writes of a wall range (new
+  visplane columns, the range's marks, the drawseg and its openings) go in
+  one RAMWRT session at the end of the range; code runs from main memory
+  meanwhile, so the session writes nothing but the bank and the zero page.
+  About 1,900 `$Cxxx` accesses a frame (140K cycles).
+- *Rows* are bytes, row + `ROWBIAS` saturated to 0..255: a row the
+  reference would carry past -64..191 only ever meets values in -2..85
+  (the clip arrays keep their extremes' order), so marks, pieces, clips and
+  the sprite clipper's comparisons are unchanged. The seg loop's 32-bit
+  accumulators are kept biased (+$40FFF ceil, +$40000 floor) so a row is
+  bits 12..19 of the sum by two table lookups; a sum the bias carried past
+  2^31 is recognised and saturates high (the reference's s32 wrap).
+- *The texture column*: (rw_offset - (tan(a) x rw_distance >> 12)) >> 5 is
+  computed as ((rw_offset << 12) + 4095 - tan x rw_distance) >> 17 (the
+  same floor, one subtraction), with |tan| x |rw_distance| mod 2^32 and the
+  sign applied by adding or subtracting; only the low 8 bits are kept
+  (every texture is at most 256 wide). It is computed only for columns that
+  draw a piece (or keep a masked column).
+- *Pieces*: every wall, sky and flat-shaded column piece goes into a
+  64-entry queue in the language card (bank, address, count, texture
+  column, 8.8 fraction, step, colormap page, hmask); `q_flush` draws a whole
+  wall range (or a plane's sky, or a full queue) in one RAMRD session,
+  `$C073` rewritten only between banks. The drawer is Doom's
+  R_DrawColumn (self-modified operands, texel through the colormap by a
+  patched `lda $cm00`): 40 cycles a pixel.
+- *Planes*: visplanes in `RENDER_BANK` (the recommendation), found through
+  a 64-bucket hash that keeps creation order (the reference returns the
+  first match). A plane's columns are initialised as its range grows (the
+  reference only ever reads within minx-1..maxx+1), and a plane's columns
+  are copied back to main memory once, before its spans; a column equal to
+  the previous one starts and ends no span and is skipped. `map_plane`
+  caches the row's distance and steps (per row and plane height, as the
+  reference) and each column's sine and cosine (per frame); the span loop
+  (language card, RAMRD on for the span) is about 100 cycles a pixel: two
+  16-bit fraction adds, the 5.11 texel address through two tables, the
+  colormap, the 84-byte stride.
+- *Arithmetic*: 8x8 products by quarter squares through four zero-page
+  pointers, unrolled per operand shape and result width (`MULU`/`MULUB`),
+  zero bytes skipped: about 50 cycles a product. R_ScaleFromGlobalAngle
+  divides 22 quotient bits (whole zero bytes skipped, a 16-bit remainder
+  when the denominator allows): about 1,000 cycles; its den <= 0 and
+  num <= 0 cases are decided from the signs before any product
+  (sin(anglea), a column constant, comes from a table). point_to_angle's
+  slope is a 10-bit division (16-bit when the denominator allows). The
+  sines are table loads with the interpolation product by quarter squares.
+- *Flat-shaded mode* has no visplanes: `find_plane` returns
+  `PL_OVERFLOW`, and every plane piece is queued at once as a fill (or a
+  sky column) by the seg loop, as the reference's overflow path.
+
+**Measured** (`tests/test_render_core.py -v`, the py65 test machine, TURBO
+accounting): 109 views (the 36 deliverables, the 6 golden eyes, 9
+flat-shaded, 40 random views of `--sweep`'s generator, 15 animation tics,
+3 fixed-colormap/extralight), every one byte-identical to the reference:
+
+| Set | mean | p90 | max |
+|---|---|---|---|
+| all 109 | 3.36M | 5.77M | 7.15M |
+| deliverables (36) | 3.29M | 5.86M | 7.15M |
+| random (40) | 2.86M | 5.03M | 5.55M |
+| flat-shaded (9, the starts) | 3.47M | 5.12M | 5.12M |
+
+**The target (mean 1.5M, p90 2.5M) is not met**: about 2.2x over. Where a
+frame goes (20 views, 3.48M on average; `--profile`):
+
+| Phase | per frame | work |
+|---|---|---|
+| wall ranges: setup | 748K (21%) | 51 ranges: two scale divisions, ~10 products, marks, drawseg: ~14K each |
+| wall columns: the seg loop | 592K (17%) | 600 columns: accumulators, rows, marks, clips (~250); texture column, iscale, colormap (~600, when a piece is drawn); pieces (~400 each) |
+| pixels: wall and sky columns | 433K (12%) | 9,400 pixels at 40, plus ~170 per piece |
+| pixels: spans | 432K (12%) | 4,000 pixels at ~100 |
+| planes: span setup | 346K (10%) | 160 spans: length and two trigonometric products (~2K each), row cache |
+| segs: add_line, clipping | 266K (8%) | 145 segs: fetch, vertex angles (divisions), clipping |
+| BSP: bbox checks / subsectors / walk | 199K / 173K / 124K | 70 nodes, 45 subsectors: record fetches (~500-850 each), two point_to_angle per box |
+| planes: visplanes, make_spans | 127K (4%) | copy-back, R_MakeSpans |
+
+By kind: bookkeeping code 41%, pixel loops 26%, multiplies 14%, divisions
+9%, bank access 7%, sines 2%. What would still help, roughly in order: a
+tighter store_wall_range and seg loop (hand scheduling; the bookkeeping
+share); reading a subsector's segs in one bank read and fixed-size
+unrolled record copies (~50K); a two-way row cache for spans (~50K);
+spans queued per plane (one RAMRD session per plane, ~25K). Beyond that the
+specification itself sets the floor: every wall range needs two
+22-bit divisions and ~10 wide products, every textured column a 24x24
+product, every span three; at ~50 cycles an 8x8 product the arithmetic
+alone is ~800K a frame. A cheaper specification (e.g. 16-bit accumulators
+where the ranges allow, texture columns stepped per range) or the
+flat-shaded mode on busy frames are the lead's call.
+
+**Tests** (`tests/test_render_core.py`): the 109 views above; the four
+limits forced low in both the program (its immediate operands patched in
+memory) and the reference (MAXVISPLANES 20, MAXDRAWSEGS 40, MAXOPENINGS
+200, MAXBSPDEPTH 8: the degraded views are identical); `sin_bam`,
+`point_to_angle`, `div_scale` and `div_step` against the reference's
+arithmetic on sampled and edge inputs. `--view MAP X Y Z ANGLE` renders
+one view (diff, cycles, PNGs), `--profile` gives the phase and routine
+breakdown above. The tests build `make BUILD=build/rtrack/` (with
+`RENDER_GAMESRC` naming a snapshot of the GAME sources when they are in
+flux) and use `build/data`.
+
 ## 8. The kernel (src/kernel/)
 
 Boot and load, bank check, video set-up (PAL256), space switching, far

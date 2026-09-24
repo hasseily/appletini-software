@@ -16,6 +16,7 @@
 ;                renders only after a tic; tools/a2sim.py skips this wait)
 ;                otherwise, per tic: game_tic() in GAME space (call_game);
 ;                after the first, input_consume
+;                game_frame() in GAME space: the render packet (rview)
 ;                render_frame (RENDER space: src/render/)
 ;                present: the line-0 policy and the blit (video.s)
 ;
@@ -24,7 +25,7 @@
 
 .include "kernel.inc"
 
-.import input_consume, _game_tic
+.import input_consume, _game_tic, _game_frame
 
 MAX_TICS    = 4
 
@@ -73,6 +74,11 @@ frame_run:
         jsr     input_consume
 :       dec     tic_left
         bne     @tic
+        lda     #<_game_frame
+        sta     kcall
+        lda     #>_game_frame
+        sta     kcall+1
+        jsr     call_game
         jsr     render_frame
         jsr     present
         inc     kframes
