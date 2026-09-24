@@ -22,9 +22,10 @@
  *
  * The level arena is the memory above the C BSS up to the C stack
  * ($B800), plus the bytes the far tables used at boot (segment GFAR,
- * copied to the game's far bank by game_farinit). It is reset at every
- * level start; the other parts allocate from it in their level set-up
- * (P_SpawnSpecials, P_MonstersSetupLevel).
+ * copied to the game's far bank by game_farinit) and, after the set-up,
+ * those of the set-up code itself (segment GOVL, below). It is reset at
+ * every level start; the other parts allocate from it in their level
+ * set-up (P_SpawnSpecials, P_MonstersSetupLevel), never later.
  */
 #include "p_local.h"
 
@@ -50,12 +51,23 @@ mobj_t **blocklinks;
 static uint16_t bmapcells;
 
 /* --- the arena ------------------------------------------------------------------ */
+/* On the 6502 the level set-up (the arena, P_SetupLevel, and p_spawn.c's
+ * map thing spawner) is an overlay, segment GOVL: linked right after the
+ * far tables (GFAR), copied with them to the game's far bank at boot, and
+ * read back into place before each level's set-up (P_LoadOverlay). After
+ * the set-up its bytes become actor slots (P_ExtendPool): the actor pool
+ * is placed at the top of the GFAR hole, right below the overlay. */
 #ifdef __CC65__
-extern uint16_t arena_bounds[4];    /* fixed.s: BSS end, stack bottom, GFAR start, GFAR end */
+#pragma code-name (push, "GOVL")
+#pragma rodata-name (push, "GOVL")
+extern uint16_t arena_bounds[5];    /* fixed.s: BSS end, stack bottom, GFAR start, GOVL start, GOVL end */
 #define ARENA_LO    arena_bounds[0]
 #define ARENA_HI    arena_bounds[1]
 #define HOLE_LO     arena_bounds[2]
-#define HOLE_HI     arena_bounds[3]
+#define HOLE_HI     hole_hi
+#define OVL_LO      arena_bounds[3]
+#define OVL_HI      arena_bounds[4]
+static uint16_t hole_hi;
 #else
 #define HOST_ARENA  (256u * 1024u)
 static uint8_t host_arena[HOST_ARENA];
@@ -70,20 +82,25 @@ static void P_ArenaReset(void)
 {
     arena_ptr = ARENA_LO;
     hole_ptr = HOLE_LO;
+#ifdef __CC65__
+    hole_hi = OVL_LO;
+#endif
 }
 
-/* Level memory, zeroed: from the GFAR hole when it fits, else the main
- * area. Pointers stay 2-byte aligned (the host likes it). */
+/* Level memory, zeroed: from the main area when it fits, else the GFAR
+ * hole (whose top the actor pool takes, P_ArenaPool). Pointers stay
+ * 2-byte aligned (the host likes it). */
 void *P_ArenaAlloc(uint16_t size)
 {
     void *p;
     size = (size + 1) & ~1u;
-    if (hole_ptr + size <= HOLE_HI) {
-        p = (void *)hole_ptr;
-        hole_ptr += size;
-    } else if (arena_ptr + size <= ARENA_HI) {
+    /* (the comparisons are written not to overflow 16-bit addresses) */
+    if (ARENA_HI >= arena_ptr && size <= ARENA_HI - arena_ptr) {
         p = (void *)arena_ptr;
         arena_ptr += size;
+    } else if (size <= HOLE_HI - hole_ptr) {
+        p = (void *)hole_ptr;
+        hole_ptr += size;
     } else {
         kernel_crash(CRASH_ARENA);
         return 0;
@@ -94,8 +111,36 @@ void *P_ArenaAlloc(uint16_t size)
 
 uint16_t P_ArenaFree(void)
 {
-    return (uint16_t)(ARENA_HI - arena_ptr);
+    return ARENA_HI > arena_ptr ? (uint16_t)(ARENA_HI - arena_ptr) : 0;
 }
+
+#ifdef __CC65__
+/* The actor pool (P_InitMobjs): the top of the GFAR hole, ending at the
+ * overlay, which P_ExtendPool adds after the set-up; ARENA_RESERVE bytes
+ * stay free for P_SpawnSpecials and P_MonstersSetupLevel, and the whole
+ * pool (with the overlay's slots) holds at most MAXACTORS. */
+void *P_ArenaPool(uint16_t *count)
+{
+    uint16_t avail = HOLE_HI - hole_ptr, spare, n, later;
+
+    spare = ARENA_HI > arena_ptr ? ARENA_HI - arena_ptr : 0;
+    if (spare < ARENA_RESERVE)
+        avail = avail > ARENA_RESERVE - spare ? avail - (ARENA_RESERVE - spare) : 0;
+    n = avail / sizeof(mobj_t);
+    later = (OVL_HI - OVL_LO) / sizeof(mobj_t);
+    if (n + later > MAXACTORS)
+        n = MAXACTORS > later ? MAXACTORS - later : 0;
+    *count = n;
+    hole_hi = OVL_LO - n * sizeof(mobj_t);
+    memset((void *)hole_hi, 0, n * sizeof(mobj_t));
+    return (void *)hole_hi;
+}
+#endif
+
+#ifdef __CC65__
+#pragma code-name (pop)
+#pragma rodata-name (pop)
+#endif
 
 /* --- sectors ----------------------------------------------------------------------- */
 static uint16_t sector_u16(uint16_t sector, uint8_t offset)
@@ -135,12 +180,16 @@ uint16_t P_SecLine(uint16_t secline)
 }
 
 /* The blockmap cells a sector's things can be in (vanilla's blockbox from
- * P_GroupLines): the box of its lines, MAXRADIUS around, clamped. A
- * four-entry cache: movers ask every tic while they move. */
-#define BBOXCACHE 4
+ * P_GroupLines): the box of its lines, MAXRADIUS around, clamped; and the
+ * box of its lines itself, in map units (sec_bbox: P_ChangeSector skips
+ * the things outside it). An eight-entry cache: movers ask every tic
+ * while they move, and several move at once. */
+#define BBOXCACHE 8
 static uint16_t bbox_key[BBOXCACHE];
 static uint8_t bbox_val[BBOXCACHE][4];
+static int16_t bbox_units[BBOXCACHE][4];
 static uint8_t bbox_next;
+int16_t sec_bbox[4];
 
 void P_ClearBlockBoxCache(void)
 {
@@ -160,6 +209,7 @@ void P_SectorBlockBox(uint16_t sector, uint8_t *box)
     for (i = 0; i < BBOXCACHE; ++i)
         if (bbox_key[i] == sector) {
             memcpy(box, bbox_val[i], 4);
+            memcpy(sec_bbox, bbox_units[i], sizeof sec_bbox);
             return;
         }
     count = P_SectorLines(sector, &first);
@@ -170,6 +220,10 @@ void P_SectorBlockBox(uint16_t sector, uint8_t *box)
         if (li->bbox[BOXLEFT] < left) left = li->bbox[BOXLEFT];
         if (li->bbox[BOXRIGHT] > right) right = li->bbox[BOXRIGHT];
     }
+    sec_bbox[BOXTOP] = top;
+    sec_bbox[BOXBOTTOM] = bottom;
+    sec_bbox[BOXLEFT] = left;
+    sec_bbox[BOXRIGHT] = right;
     b = (top - bmaporgy + MAXRADIUS) >> 7;
     box[BOXTOP] = b >= bmapheight ? bmapheight - 1 : (uint8_t)b;
     b = (bottom - bmaporgy - MAXRADIUS) >> 7;
@@ -182,6 +236,7 @@ void P_SectorBlockBox(uint16_t sector, uint8_t *box)
     bbox_next = (i + 1) & (BBOXCACHE - 1);
     bbox_key[i] = sector;
     memcpy(bbox_val[i], box, 4);
+    memcpy(bbox_units[i], sec_bbox, sizeof sec_bbox);
 }
 
 uint16_t P_LineSide(uint16_t line, uint8_t side)
@@ -192,6 +247,11 @@ uint16_t P_LineSide(uint16_t line, uint8_t side)
 }
 
 /* --- level set-up ------------------------------------------------------------------------------- */
+#ifdef __CC65__
+#pragma code-name (push, "GOVL")
+#pragma rodata-name (push, "GOVL")
+#endif
+
 /* thing types that drop an item when killed (vanilla P_KillMobj) */
 static boolean dropper(uint8_t type)
 {
@@ -320,5 +380,10 @@ void P_SetupLevel(uint8_t episode, uint8_t map, uint8_t skill)
     P_SpawnSpecials();
     P_MonstersSetupLevel();
 }
+
+#ifdef __CC65__
+#pragma code-name (pop)
+#pragma rodata-name (pop)
+#endif
 
 #endif

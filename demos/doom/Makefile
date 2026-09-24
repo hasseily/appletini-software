@@ -97,8 +97,8 @@ $(BUILD)/kernel/%.o: src/kernel/%.s src/kernel/kernel.inc $(DATA)/doomdata.inc $
 $(BUILD)/render/%.o: src/render/%.s $(wildcard src/render/*.inc) src/kernel/kernel.inc $(DATA)/doomdata.inc $(TABLES_STAMP) | $(BUILD)/render
 	$(CA65) $(AFLAGS) -o $@ $<
 
-$(BUILD)/game/%.o: $(GAMESRC)/%.s | $(BUILD)/game
-	$(CA65) $(AFLAGS) -o $@ $<
+$(BUILD)/game/%.o: $(GAMESRC)/%.s $(wildcard $(GAMESRC)/*.inc) src/kernel/rview.inc | $(BUILD)/game
+	$(CA65) $(AFLAGS) -I $(GAMESRC) -o $@ $<
 
 $(BUILD)/game/%.s: $(GAMESRC)/%.c $(wildcard $(GAMESRC)/*.h) $(DATA)/doomdata.h | $(BUILD)/game
 	$(CC65) $(CFLAGS) -o $@ $<

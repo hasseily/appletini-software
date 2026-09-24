@@ -5,7 +5,7 @@
  * P_MobjThinker, P_SpawnMobj, P_RemoveMobj, the map thing spawner, puffs,
  * blood, missiles) plus what the 6502's memory needs:
  *
- * Actors (mobj_t, 59 bytes on the 6502) live in a pool sized per level
+ * Actors (mobj_t, 63 bytes on the 6502) live in a pool sized per level
  * from the level arena; statics (sobj_t, 16 bytes) in another. Every
  * thing a map places is spawned as a static: a pickup, a decoration, a
  * barrel, and a monster ("dormant": it only runs its spawn state loop).
@@ -208,6 +208,7 @@ static void static_to_mobj(sobj_t *s, mobj_t *mo)
     mo->ceilingz = sec_ceilh[s->sector];
     if (gameskill != sk_nightmare)
         mo->reactiontime = mobjinfo[s->type].reactiontime;
+    mo->lastlook = (s->sflags & SF_LOOK1) ? 1 : 0;
 }
 
 mobj_t *P_StaticView(sobj_t *s)
@@ -549,7 +550,7 @@ mobj_t *P_SpawnMobj(fixed_t x, fixed_t y, fixed_t z, uint8_t type)
     mobj->health = info->spawnhealth;
     if (gameskill != sk_nightmare)
         mobj->reactiontime = info->reactiontime;
-    P_Random();                     /* vanilla's lastlook */
+    mobj->lastlook = P_Random() & 3;    /* vanilla's P_Random() % MAXPLAYERS */
     mobj->state = info->spawnstate;
     mobj->tics = st_tics[mobj->state];
     P_SetThingPosition(mobj);

@@ -30,6 +30,11 @@
 ; pieces of 16).
 
 .include "gmacros.inc"
+
+; (only with the converted data: the stand-in data set builds the
+; platform's GAME skeleton, src/game/game.c)
+.ifdef DD_MAPDIR
+
 .globalzp far_src, far_dst, far_ptr, far_len, ktmp
 .import kjt_far_read, kjt_far_write
 .import incsp2, incsp5, popax, popa
@@ -43,14 +48,27 @@
 .export _P_Line, _P_SetLineSpecial, _R_PointInSector, _P_RejectVisible, _P_ClearCaches
 .export lev_addr, lev_idx, lev_far, line_get, rpis, rp_x, rp_y
 .export blk_lines, blk_cell, blk_pos, blk_buf, far_rd, far_wr
+.export _sec_changes, node_get, nc_x_lo, nc_x_hi, nc_y_lo, nc_y_hi, nc_dx_lo, nc_dx_hi
+.export nc_dy_lo, nc_dy_hi, nc_c0_lo, nc_c0_hi, nc_c1_lo, nc_c1_hi
 
+; (the sizes are powers of two; a build may set smaller ones with ca65's
+; -D, as the py65 harness does to fit its 64 KB)
+.ifndef LINECACHE
 LINECACHE   = 64
+.endif
+.ifndef NODECACHE
 NODECACHE   = 128
+.endif
+.ifndef SSECCACHE
 SSECCACHE   = 64
+.endif
+.ifndef CELLCACHE
 CELLCACHE   = 16
+.endif
 CELL_LINES  = 27
 
 .segment "BSS"
+_sec_changes: .res 1                ; counts height changes (p_local.h)
 lev_idx:    .res 2
 lev_far:    .res 3
 la_tmp:     .res 2
@@ -82,6 +100,8 @@ rp_dy:      .res 4
 rp_left:    .res 4
 rp_node:    .res 2
 rp_slot:    .res 1
+ng_node:    .res 2
+ng_slot:    .res 1
 cc_key_lo:  .res CELLCACHE
 cc_key_hi:  .res CELLCACHE
 cc_count:   .res CELLCACHE
@@ -280,6 +300,7 @@ _P_SetSectorCeiling:
         lda     _sec_ceilh
         ldx     _sec_ceilh+1
 sec_set16:
+        inc     _sec_changes            ; (the monsters' sound flood, a_enemy.s)
         ; ptr2 = the near array; the sector from the C stack
         sta     ptr2
         stx     ptr2+1
@@ -722,6 +743,64 @@ cell_ptr:
 
 ; ---- BSP: point in sector ---------------------------------------------------------------------
 ; uint16_t R_PointInSector(fixed_t x, fixed_t y)
+; ---- node_get: A/X = a BSP node's number -> X = its cache slot ------------------
+; (fetched into the slot if another node had it: the byte planes nc_*)
+node_get:
+        sta     ng_node
+        stx     ng_node+1
+        and     #NODECACHE - 1
+        tax
+        lda     nc_key_lo,x
+        cmp     ng_node
+        bne     @miss
+        lda     nc_key_hi,x
+        cmp     ng_node+1
+        bne     @miss
+        rts
+@miss:  stx     ng_slot
+        lda     ng_node
+        sta     nc_key_lo,x
+        sta     lev_idx
+        lda     ng_node+1
+        sta     nc_key_hi,x
+        sta     lev_idx+1
+        lda     #MAPARR_NODES
+        jsr     lev_addr
+        lda     #<nodebuf
+        sta     far_ptr
+        lda     #>nodebuf
+        sta     far_ptr+1
+        lda     #NODE_CHILD1 + 2
+        sta     far_len
+        stz     far_len+1
+        jsr     far_rd
+        ldx     ng_slot
+        lda     nodebuf+NODE_X
+        sta     nc_x_lo,x
+        lda     nodebuf+NODE_X+1
+        sta     nc_x_hi,x
+        lda     nodebuf+NODE_Y
+        sta     nc_y_lo,x
+        lda     nodebuf+NODE_Y+1
+        sta     nc_y_hi,x
+        lda     nodebuf+NODE_DX
+        sta     nc_dx_lo,x
+        lda     nodebuf+NODE_DX+1
+        sta     nc_dx_hi,x
+        lda     nodebuf+NODE_DY
+        sta     nc_dy_lo,x
+        lda     nodebuf+NODE_DY+1
+        sta     nc_dy_hi,x
+        lda     nodebuf+NODE_CHILD0
+        sta     nc_c0_lo,x
+        lda     nodebuf+NODE_CHILD0+1
+        sta     nc_c0_hi,x
+        lda     nodebuf+NODE_CHILD1
+        sta     nc_c1_lo,x
+        lda     nodebuf+NODE_CHILD1+1
+        sta     nc_c1_hi,x
+        rts
+
 _R_PointInSector:
         sta     rp_y
         stx     rp_y+1
@@ -752,56 +831,9 @@ rpis:   lda     _numnodes
         bpl     :+
         jmp     @leaf
 :       lda     rp_node
-        and     #NODECACHE - 1
-        tax
+        ldx     rp_node+1
+        jsr     node_get
         stx     rp_slot
-        lda     nc_key_lo,x
-        cmp     rp_node
-        bne     @miss
-        lda     nc_key_hi,x
-        cmp     rp_node+1
-        beq     @have
-@miss:  lda     rp_node
-        sta     nc_key_lo,x
-        sta     lev_idx
-        lda     rp_node+1
-        sta     nc_key_hi,x
-        sta     lev_idx+1
-        lda     #MAPARR_NODES
-        jsr     lev_addr
-        lda     #<nodebuf
-        sta     far_ptr
-        lda     #>nodebuf
-        sta     far_ptr+1
-        lda     #NODE_CHILD1 + 2
-        sta     far_len
-        stz     far_len+1
-        jsr     far_rd
-        ldx     rp_slot
-        lda     nodebuf+NODE_X
-        sta     nc_x_lo,x
-        lda     nodebuf+NODE_X+1
-        sta     nc_x_hi,x
-        lda     nodebuf+NODE_Y
-        sta     nc_y_lo,x
-        lda     nodebuf+NODE_Y+1
-        sta     nc_y_hi,x
-        lda     nodebuf+NODE_DX
-        sta     nc_dx_lo,x
-        lda     nodebuf+NODE_DX+1
-        sta     nc_dx_hi,x
-        lda     nodebuf+NODE_DY
-        sta     nc_dy_lo,x
-        lda     nodebuf+NODE_DY+1
-        sta     nc_dy_hi,x
-        lda     nodebuf+NODE_CHILD0
-        sta     nc_c0_lo,x
-        lda     nodebuf+NODE_CHILD0+1
-        sta     nc_c0_hi,x
-        lda     nodebuf+NODE_CHILD1
-        sta     nc_c1_lo,x
-        lda     nodebuf+NODE_CHILD1+1
-        sta     nc_c1_hi,x
 @have:  jsr     point_on_side           ; X = slot -> A = side
         ldx     rp_slot
         cmp     #0
@@ -1273,3 +1305,5 @@ _P_ClearCaches:
         sta     rej_s2
         sta     rej_s2+1
         rts
+
+.endif ; DD_MAPDIR

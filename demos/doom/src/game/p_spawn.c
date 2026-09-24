@@ -11,6 +11,12 @@
 
 #ifdef GAME_REAL
 
+/* the level-start part: in the set-up overlay on the 6502 (p_setup.c) */
+#ifdef __CC65__
+#pragma code-name (push, "GOVL")
+#pragma rodata-name (push, "GOVL")
+#endif
+
 void P_SpawnPlayer(void)
 {
     extern int16_t playerstart[3];
@@ -65,7 +71,8 @@ void P_SpawnMapThing(int16_t x, int16_t y, int16_t angle, uint16_t type, uint16_
     s = P_AllocStatic();
     if (!s)
         kernel_crash(CRASH_MOBJS);
-    P_Random();                     /* P_SpawnMobj's lastlook */
+    if ((P_Random() & 3) == 1)      /* P_SpawnMobj's lastlook: only 1 matters */
+        s->sflags |= SF_LOOK1;
     s->type = t;
     s->x = x;
     s->y = y;
@@ -93,6 +100,11 @@ void P_SpawnMapThing(int16_t x, int16_t y, int16_t angle, uint16_t type, uint16_
     else
         P_LinkStatic(s);
 }
+
+#ifdef __CC65__
+#pragma code-name (pop)
+#pragma rodata-name (pop)
+#endif
 
 mobj_t *P_FindTeleportDest(uint16_t sector)
 {

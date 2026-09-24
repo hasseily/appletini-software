@@ -11,8 +11,8 @@ asks cc65 itself for offsetof() and sizeof() of each, and the answers
 become ca65 constants (MO_X = offsetof(mobj_t, x), MO_SIZE, ...). cc65
 lays structs out without padding, so these are the 6502's offsets.
 The enumerators and macros named in CONSTANTS (states, types, sounds of
-info.h, limits of p_local.h) are asked for the same way, under their own
-names.
+info.h, limits of p_local.h, the specials' enums of p_spec.h) are asked
+for the same way, under their own names.
 """
 
 from __future__ import annotations
@@ -43,6 +43,40 @@ CONSTANTS = [
     "S_PUFF3", "S_BLOOD2", "S_BLOOD3", "sfx_noway", "sfx_oof",
     "MAXACTORS", "THINKER_BLOCK", "THINKER_BLOCKS", "MT_IFOG", "AC_Look",
     "sk_nightmare", "CF_NOMOMENTUM", "CRASH_MOBJS", "CRASH_ARENA", "ARENA_RESERVE",
+    "AC_FIRST_WEAPON", "S_PLAY_ATK2", "S_SAW", "S_CHAIN1",
+    "sfx_sawup", "sfx_sawidl", "sfx_punch", "sfx_sawful", "sfx_sawhit", "sfx_pistol",
+    "sfx_shotgn", "MT_ROCKET", "MT_PLASMA",
+    "wp_fist", "wp_pistol", "wp_shotgun", "wp_chaingun", "wp_missile", "wp_plasma", "wp_bfg",
+    "wp_chainsaw", "NUMWEAPONS", "wp_nochange", "am_clip", "am_shell", "am_cell", "am_misl",
+    "am_noammo", "pw_invulnerability", "pw_strength", "pw_invisibility", "pw_ironfeet",
+    "pw_infrared", "PST_LIVE", "PST_DEAD", "PST_REBORN", "BT_ATTACK", "BT_USE", "BT_CHANGE",
+    "BT_WEAPONMASK", "BT_WEAPONSHIFT", "CF_NOCLIP", "ps_weapon", "ps_flash", "NUMPSPRITES",
+    # the monsters part (a_sight.s, a_enemy.s, a_inter.s)
+    "MT_POSSESSED", "MT_SHOTGUY", "MT_BRUISER", "MT_CLIP", "MT_SHOTGUN", "MT_TROOPSHOT",
+    "MT_HEADSHOT", "MT_BRUISERSHOT", "sfx_posit1", "sfx_posit2", "sfx_posit3", "sfx_bgsit1",
+    "sfx_bgsit2", "sfx_podth1", "sfx_podth2", "sfx_podth3", "sfx_bgdth1", "sfx_bgdth2",
+    "sfx_claw", "sfx_slop", "sfx_pldeth", "sfx_itemup", "sfx_getpow", "sfx_wpnup",
+    "sk_baby", "pw_allmap", "NUMAMMO", "BASETHRESHOLD", "MAXHEALTH", "CF_GODMODE",
+    "INVULNTICS", "INVISTICS", "INFRATICS", "IRONTICS", "DI_NODIR", "lowerFloorToLowest",
+    "it_bluecard", "it_yellowcard", "it_redcard", "it_blueskull", "it_yellowskull", "it_redskull",
+    "MSG_GOTARMOR", "MSG_GOTMEGA", "MSG_GOTHTHBONUS", "MSG_GOTARMBONUS", "MSG_GOTSUPER",
+    "MSG_GOTBLUECARD", "MSG_GOTYELWCARD", "MSG_GOTREDCARD", "MSG_GOTBLUESKUL",
+    "MSG_GOTYELWSKUL", "MSG_GOTREDSKULL", "MSG_GOTSTIM", "MSG_GOTMEDINEED", "MSG_GOTMEDIKIT",
+    "MSG_GOTINVUL", "MSG_GOTBERSERK", "MSG_GOTINVIS", "MSG_GOTSUIT", "MSG_GOTMAP",
+    "MSG_GOTVISOR", "MSG_GOTCLIP", "MSG_GOTCLIPBOX", "MSG_GOTROCKET", "MSG_GOTROCKBOX",
+    "MSG_GOTCELL", "MSG_GOTCELLBOX", "MSG_GOTSHELLS", "MSG_GOTSHELLBOX", "MSG_GOTBACKPACK",
+    "MSG_GOTCHAINGUN", "MSG_GOTCHAINSAW", "MSG_GOTLAUNCHER", "MSG_GOTPLASMA", "MSG_GOTSHOTGUN",
+    # the specials part (a_spec.s, a_movers.s)
+    "MSG_PD_BLUEO", "MSG_PD_REDO", "MSG_PD_YELLOWO", "MSG_PD_BLUEK", "MSG_PD_REDK",
+    "MSG_PD_YELLOWK", "sfx_doropn", "sfx_dorcls", "sfx_bdopn", "sfx_bdcls", "sfx_pstart",
+    "sfx_pstop", "sfx_stnmov", "sfx_swtchn", "sfx_telept",
+    "vld_normal", "vld_close30ThenOpen", "vld_close", "vld_open", "vld_raiseIn5Mins",
+    "vld_blazeRaise", "vld_blazeOpen", "vld_blazeClose", "lowerFloor", "turboLower",
+    "raiseFloor", "raiseFloorToNearest", "raiseToTexture", "lowerAndChange", "raiseFloor24",
+    "raiseFloor24AndChange", "raiseFloorCrush", "raiseFloorTurbo", "donutRaise", "raiseFloor512",
+    "perpetualRaise", "downWaitUpStay", "raiseAndChange", "raiseToNearestAndChange", "blazeDWUS",
+    "lowerToFloor", "raiseToHighest", "lowerAndCrush", "crushAndRaise", "fastCrushAndRaise",
+    "silentCrushAndRaise", "build8", "turbo16",
 ]
 
 
@@ -71,7 +105,7 @@ def fields(text: str, typedef: str) -> list[str]:
 
 def generate() -> str:
     text = (SRC / "p_local.h").read_text() + (SRC / "info.h").read_text()
-    probe = ["#include <stddef.h>", '#include "p_local.h"', "const unsigned int probe[] = {"]
+    probe = ["#include <stddef.h>", '#include "p_spec.h"', "const unsigned int probe[] = {"]
     names = []
     for typedef, prefix in STRUCTS.items():
         for f in fields(text, typedef):

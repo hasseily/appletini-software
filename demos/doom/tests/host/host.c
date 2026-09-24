@@ -207,8 +207,10 @@ int host_place_player(int x, int y, int angle)
 }
 
 /* --- things ------------------------------------------------------------------------------- */
-/* per thing 10 int32: kind (0 actor, 1 static), type, x, y, z (fixed),
- * state, health, flags, sector, sflags; returns the count */
+/* per thing HOST_THING int32: kind (0 actor, 1 static), type, x, y, z
+ * (fixed), state, health, flags, sector, sflags, tics, angle, momx, momy,
+ * momz, floorz << 16 | ceilingz (map units); returns the count */
+#define HOST_THING 16
 int host_things(int32_t *out, int max)
 {
     int n = 0;
@@ -220,8 +222,10 @@ int host_things(int32_t *out, int max)
             continue;
         out[0] = 0; out[1] = mo->type; out[2] = mo->x; out[3] = mo->y; out[4] = mo->z;
         out[5] = mo->state; out[6] = mo->health; out[7] = (int32_t)mo->flags;
-        out[8] = mo->sector; out[9] = 0;
-        out += 10;
+        out[8] = mo->sector; out[9] = 0; out[10] = mo->tics; out[11] = mo->angle;
+        out[12] = mo->momx; out[13] = mo->momy; out[14] = mo->momz;
+        out[15] = (int32_t)((uint32_t)(uint16_t)mo->floorz << 16 | (uint16_t)mo->ceilingz);
+        out += HOST_THING;
         ++n;
     }
     for (s = statics; s < statics_end && n < max; ++s) {
@@ -229,8 +233,9 @@ int host_things(int32_t *out, int max)
             continue;
         out[0] = 1; out[1] = s->type; out[2] = FIX(s->x); out[3] = FIX(s->y); out[4] = FIX(s->z);
         out[5] = s->state; out[6] = 0; out[7] = (int32_t)P_StaticFlags(s);
-        out[8] = s->sector; out[9] = s->sflags;
-        out += 10;
+        out[8] = s->sector; out[9] = s->sflags; out[10] = s->tics; out[11] = s->angle << 8;
+        out[12] = out[13] = out[14] = out[15] = 0;
+        out += HOST_THING;
         ++n;
     }
     return n;
@@ -348,4 +353,206 @@ uint8_t host_sounds(uint8_t *out)
 {
     memcpy(out, snd_last, 8);
     return snd_count;
+}
+
+/* --- the monsters part (tests/test_game_monsters.py) ----------------------------------------
+ * Things are handed to Python as pointers (ctypes c_void_p): an actor, a
+ * static or the static view. */
+mobj_t *host_mobj(int index) { return &mobjs[index]; }
+sobj_t *host_static(int index) { return &statics[index]; }
+int host_num_statics(void) { return numstatics; }
+mobj_t *host_player_mo(void) { return player.mo; }
+int host_is_actor(mobj_t *mo)
+{
+    return mo >= mobjs && mo < mobjs_end && mo->thinker.function == (think_t)P_MobjThinker;
+}
+
+/* HOST_MOBJ int32: type, x, y, z, state, tics, health, flags, movedir,
+ * movecount (signed), reactiontime, threshold, momx, momy, momz, angle,
+ * sector, height, lastlook, radius; the target pointer separately */
+#define HOST_MOBJ 20
+void *host_mobj_get(mobj_t *mo, int32_t *out)
+{
+    out[0] = mo->type; out[1] = mo->x; out[2] = mo->y; out[3] = mo->z;
+    out[4] = mo->state; out[5] = mo->tics; out[6] = mo->health; out[7] = (int32_t)mo->flags;
+    out[8] = mo->movedir; out[9] = (int8_t)mo->movecount; out[10] = mo->reactiontime;
+    out[11] = mo->threshold; out[12] = mo->momx; out[13] = mo->momy; out[14] = mo->momz;
+    out[15] = mo->angle; out[16] = mo->sector; out[17] = mo->height; out[18] = mo->lastlook;
+    out[19] = mo->radius;
+    return mo->target;
+}
+
+void host_mobj_set(mobj_t *mo, int field, int32_t value, mobj_t *ptr)
+{
+    switch (field) {
+    case 0: mo->target = ptr; break;
+    case 1: mo->angle = (angle_t)value; break;
+    case 2: mo->health = (int16_t)value; break;
+    case 3: mo->movedir = (uint8_t)value; break;
+    case 4: mo->movecount = (uint8_t)value; break;
+    case 5: mo->reactiontime = (uint8_t)value; break;
+    case 6: mo->threshold = (uint8_t)value; break;
+    case 7: mo->flags = (uint32_t)value; break;
+    case 8: mo->lastlook = (uint8_t)value; break;
+    case 9: mo->tics = (uint8_t)value; break;
+    }
+}
+
+static mobj_t *hc_mo, *hc_mo2, *hc_mo3, *hc_result;
+static int32_t hc_val;
+static int hc_ret;
+static sobj_t *hc_static;
+
+static void do_setstate(void) { P_SetMobjState(hc_mo, (uint16_t)hc_val); }
+int host_set_state(mobj_t *mo, int state)
+{
+    hc_mo = mo;
+    hc_val = state;
+    return guarded(do_setstate);
+}
+
+static void do_wake(void) { hc_result = P_WakeStatic(hc_static); }
+mobj_t *host_wake(sobj_t *s)
+{
+    hc_static = s;
+    hc_result = 0;
+    if (guarded(do_wake))
+        return 0;
+    return hc_result;
+}
+
+static void do_sight(void) { hc_ret = P_CheckSight(hc_mo, hc_mo2); }
+int host_sight(mobj_t *a, mobj_t *b)
+{
+    hc_mo = a;
+    hc_mo2 = b;
+    if (guarded(do_sight))
+        return -1;
+    return hc_ret;
+}
+
+static void do_damage(void) { P_DamageMobj(hc_mo, hc_mo2, hc_mo3, (int16_t)hc_val); }
+int host_damage(mobj_t *target, mobj_t *inflictor, mobj_t *source, int damage)
+{
+    hc_mo = target;
+    hc_mo2 = inflictor;
+    hc_mo3 = source;
+    hc_val = damage;
+    return guarded(do_damage);
+}
+
+static void do_touch(void) { P_TouchSpecialThing(hc_mo, player.mo); }
+int host_touch(mobj_t *special)
+{
+    hc_mo = special;
+    return guarded(do_touch);
+}
+
+static void do_noise(void) { P_NoiseAlert(player.mo, player.mo); }
+int host_noise(void) { return guarded(do_noise); }
+
+int host_soundtarget(int sector) { return sec_soundtarget[sector] != 0; }
+int host_reject_visible(int s1, int s2) { return P_RejectVisible(s1, s2); }
+int host_numsectors(void) { return numsectors; }
+
+/* spawn an actor at (x, y) map units, z fixed or ONFLOORZ (0x80000000) */
+static int32_t sp_z;
+static void do_spawn_z(void) { sp_result = P_SpawnMobj(FIX(sp_x), FIX(sp_y), sp_z, sp_type); }
+mobj_t *host_spawn_at(int type, int x, int y, int32_t z)
+{
+    sp_type = type;
+    sp_x = x;
+    sp_y = y;
+    sp_z = z;
+    if (guarded(do_spawn_z))
+        return 0;
+    return sp_result;
+}
+
+/* the player's inventory: HOST_INV int32 */
+#define HOST_INV 40
+void host_inventory(int32_t *out)
+{
+    int i;
+    out[0] = player.health; out[1] = player.armorpoints; out[2] = player.armortype;
+    for (i = 0; i < 4; ++i) {
+        out[3 + i] = player.ammo[i];
+        out[7 + i] = player.maxammo[i];
+    }
+    for (i = 0; i < 6; ++i) {
+        out[11 + i] = player.cards[i];
+        out[17 + i] = player.powers[i];
+    }
+    for (i = 0; i < 8; ++i)
+        out[23 + i] = player.weaponowned[i];
+    out[31] = player.pendingweapon; out[32] = player.readyweapon; out[33] = player.backpack;
+    out[34] = player.killcount; out[35] = player.itemcount; out[36] = player.bonuscount;
+    out[37] = player.damagecount; out[38] = player.message; out[39] = player.mo->health;
+}
+
+void host_inventory_set(int field, int value)
+{
+    switch (field) {
+    case 0: player.health = value; player.mo->health = value; break;
+    case 1: player.armorpoints = value; break;
+    case 2: player.armortype = value; break;
+    case 3: case 4: case 5: case 6: player.ammo[field - 3] = value; break;
+    case 31: player.pendingweapon = value; break;
+    case 32: player.readyweapon = value; break;
+    case 34: player.killcount = value; break;
+    case 35: player.itemcount = value; player.secretcount = value; break;
+    case 99: gameskill = value; break;
+    }
+}
+
+mobj_t *host_view(sobj_t *s) { return P_StaticView(s); }
+
+/* move an actor to (x, y) map units, on the floor there (a probe) */
+static void do_move(void)
+{
+    mobj_t *mo = hc_mo;
+    P_UnsetThingPosition(mo);
+    mo->x = FIX(sp_x);
+    mo->y = FIX(sp_y);
+    P_SetThingPosition(mo);
+    mo->floorz = sec_floorh[mo->sector];
+    mo->ceilingz = sec_ceilh[mo->sector];
+    mo->z = FIX(mo->floorz);
+}
+int host_move(mobj_t *mo, int x, int y)
+{
+    hc_mo = mo;
+    sp_x = x;
+    sp_y = y;
+    return guarded(do_move);
+}
+
+/* run one mobj action on an actor: 0 A_Chase, 1 A_Look, 2 A_FaceTarget */
+static void do_action(void)
+{
+    switch (hc_val) {
+    case 0: A_Chase(hc_mo); break;
+    case 1: A_Look(hc_mo); break;
+    case 2: A_FaceTarget(hc_mo); break;
+    }
+}
+int host_action(mobj_t *mo, int which)
+{
+    hc_mo = mo;
+    hc_val = which;
+    return guarded(do_action);
+}
+
+/* a static's fields: x, y, z, sector, state, type, tics, sflags, angle (BAM16) */
+void host_static_get(sobj_t *s, int32_t *out)
+{
+    out[0] = s->x; out[1] = s->y; out[2] = s->z; out[3] = s->sector; out[4] = s->state;
+    out[5] = s->type; out[6] = s->tics; out[7] = s->sflags; out[8] = s->angle << 8;
+}
+mobj_t *host_player_attacker(void) { return player.attacker; }
+static void do_remove(void) { P_RemoveMobj(hc_mo); }
+int host_remove(mobj_t *mo)
+{
+    hc_mo = mo;
+    return guarded(do_remove);
 }

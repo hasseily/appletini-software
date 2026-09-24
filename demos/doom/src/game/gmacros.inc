@@ -41,6 +41,7 @@ SF_CORPSE       = $08
 SF_GIBS         = $10
 SF_DORMANT      = $20
 SF_NOBLOCK      = $40
+SF_LOOK1        = $80
 ML_BLOCKING     = 1
 ML_BLOCKMONSTERS = 2
 ML_TWOSIDED     = 4
@@ -88,6 +89,19 @@ MF2_COUNTKILL   = $40
 MF2_COUNTITEM   = $80
 MF3_SKULLFLY    = $01
 MF3_NOTDMATCH   = $02
+
+; The monsters part's code segment (a_sight.s, a_enemy.s, a_inter.s): CODE,
+; or MCODE when the py65 harness runs it from a code-only window over the
+; far tables' bytes (tests/host/gamesim.py, -D MCODE_WINDOW). Code in it
+; keeps its tables in RODATA and reads no inline data (w_ldi) and no code
+; bytes as data: the window's data reads see other memory.
+.macro MONCODE
+.ifdef MCODE_WINDOW
+        .segment "MCODE"
+.else
+        .segment "CODE"
+.endif
+.endmacro
 
 ; ---------------------------------------------------------------------------
 ; 32-bit moves and arithmetic on absolute variables (a, b, dst may be the

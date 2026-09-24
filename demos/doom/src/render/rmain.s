@@ -15,9 +15,10 @@
 ;   5. the BSP walk, front to back, with an explicit node stack
 ;      (MAXBSPDEPTH frames); subsectors add their segs; the walls are
 ;      drawn by rsegs.s as they are found;
-;   6. the planes (rplane.s), then the masked hook r_masked (the next part:
-;      sprites and two-sided middles; an RTS for now);
-;   7. LC bank 2 back in (the kernel's blit).
+;   6. the planes (rplane.s); the vissprites (rthings.s r_things, from the
+;      sectors the walk listed); then LC bank 2 back in (the kernel's blit
+;      wants it) and the masked phase, which lives there (rmasked.s
+;      r_masked: sprites, two-sided middles, the weapon).
 ;
 ; Map records are read from their banks with rb_read (rlc.s) through
 ; elem_addr (a far array element's bank and address, from the MAP record's
@@ -28,8 +29,10 @@
 ;
 ; The per-frame list of sectors reached (the reference's sectors_done, in
 ; the order of first visit) is kept for the sprite projection: vs_list,
-; vs_count; a sector's first visit calls r_add_sprites (A/X = sector)
-; before its segs, as R_AddSprites.
+; vs_count (rthings.s replays it after the walk: R_AddSprites' order). The
+; first subsector the walk enters is the eye's (each node sends it to the
+; eye's side first), unless the node stack overflowed before it: eye_state
+; 1 and eye_sec, the weapon's light (rthings.s eye_light).
 
 .include "kernel.inc"
 .include "rdefs.inc"
@@ -37,13 +40,13 @@
 
 .import store_wall_range, draw_planes, find_plane, plane_frame
 .import flat_trans, tex_trans
-.import r_masked, r_add_sprites, mul_init, muls_3_2_5, segs_frame, sfa_init
+.import r_masked, r_things, mul_init, muls_3_2_5, segs_frame, sfa_init
 .import tex_cache_reset, shl4tab, shr4tab, sar4tab
 .import _rview
 
 VC_SLOTS    = 128               ; vertex cache slots
 SC_SLOTS    = 64                ; sector cache slots
-MAXSECTORS  = 2048              ; the visited bitmap
+MAXSECTORS  = 1024              ; the visited bitmap (E1's most: 699; beyond: not listed)
 VS_MAX      = 256               ; visited sectors listed per frame
 AN_FLATB    = (DD_NUM_FLATS + 7) / 8
 AN_BYTES    = AN_FLATB + (DD_NUM_TEXTURES + 7) / 8
@@ -118,7 +121,10 @@ _render_map := render_map
 rv_buf:     .res RV_HEADER      ; the render packet's header
 rv_tbuf:    .res RT_SIZE        ; a thing of the packet (rv_thing)
 bsp_stack:  .res MAXBSPDEPTH * BF_SIZE
-mapbuf:     .res MAP_SIZE       ; the MAP record at load time
+; the MAP record and the animation list at load time (map_load runs before
+; the walk: the node stack is free then)
+mapbuf      = bsp_stack
+.assert MAP_SIZE <= MAXBSPDEPTH * BF_SIZE && DD_NUM_ANIMS * ANIM_SIZE <= MAXBSPDEPTH * BF_SIZE, error, "mapbuf"
 .export rv_buf, vs_list_lo, vs_list_hi
 
 
@@ -172,6 +178,8 @@ sc_cpic_hi: .res SC_SLOTS
 sc_light:   .res SC_SLOTS
 vs_bits:    .res MAXSECTORS / 8 ; sectors visited this frame
 vs_count:   .res 2              ; entries of vs_list (VS_MAX at most)
+eye_state:  .res 1              ; 0 no subsector yet, 1 eye_sec is the eye's, 2 unknown
+eye_sec:    .res 2              ; the sector of the walk's first subsector
 ss_first:   .res MAXSOLIDSEGS   ; the solid-seg list, columns + 1
 ss_last:    .res MAXSOLIDSEGS
 ss_n:       .res 1
@@ -237,6 +245,8 @@ pos_l:      .res 5
 .export vs_count, fetch_side, fetch_line_flags, point_on_side
 .export pos_px, pos_py, pos_lx, pos_ly, pos_ldx, pos_ldy
 .export ss_first, ss_last, ss_n
+.export eye_state, eye_sec, fetch_node, fetch_sub, nodebuf, subbuf, map_root
+.export get_sector, sc_light, bsp_stack, vc_y_hi
 
 ; ---------------------------------------------------------------------------
 ; render_frame and the per-frame setup: in the language card's $E000 area
@@ -264,7 +274,10 @@ render_frame:
         jsr     q_flush
         jsr     draw_planes
         jsr     q_flush
-        jsr     r_masked
+        jsr     r_things                ; the vissprites (rthings.s, LC bank 1)
+        bit     LCBANK2WR               ; the masked phase runs in bank 2
+        bit     LCBANK2WR
+        jmp     r_masked                ; (rmasked.s)
 @done:  bit     LCBANK2WR               ; bank 2 again: the kernel's blit
         bit     LCBANK2WR
         rts
@@ -596,6 +609,7 @@ frame_setup:
         bne     :-
         stz     vs_count
         stz     vs_count+1
+        stz     eye_state
         ; the solid-seg list: [-inf, -1], [160, +inf] (columns + 1, clamped)
         stz     ss_first
         stz     ss_last
@@ -1070,7 +1084,13 @@ bsp_walk:
         jmp     @return
 @node:  lda     bsp_sp
         cmp     #MAXBSPDEPTH
-        jcs     @return                 ; too deep: not visited
+        bcc     @deep
+        lda     eye_state               ; too deep: not visited (and if no
+        bne     :+                      ; subsector came first, the eye's
+        lda     #2                      ; is unknown)
+        sta     eye_state
+:       jmp     @return
+@deep:
         lda     bn
         sta     ei
         lda     bn+1
@@ -1488,7 +1508,12 @@ subsector:
         ldx     subbuf+SSECTOR_SECTOR+1
         sta     fs_index
         stx     fs_index+1
-        jsr     get_sector
+        ldy     eye_state               ; the frame's first subsector: the eye's
+        bne     :+
+        sta     eye_sec
+        stx     eye_sec+1
+        inc     eye_state
+:       jsr     get_sector
         lda     sc_floor_lo,y
         sta     fs_floor
         lda     sc_floor_hi,y
@@ -1552,7 +1577,8 @@ subsector:
         jsr     find_plane
         sta     ceilplane
 @sprites:
-        ; the sector's first visit this frame: list it, project its things
+        ; the sector's first visit this frame: list it (rthings.s projects
+        ; its things from the list after the walk)
         lda     fs_index+1
         cmp     #>MAXSECTORS
         bcs     @segs                   ; (no map has that many)
@@ -1584,11 +1610,8 @@ subsector:
         lda     fs_index+1
         sta     vs_list_hi,x
 :       inc     vs_count
-        bne     :+
+        bne     @segs
         inc     vs_count+1
-:       lda     fs_index
-        ldx     fs_index+1
-        jsr     r_add_sprites
 @segs:  ; the segs
         lda     subbuf+SSECTOR_NUMSEGS
         sta     sub_n

@@ -57,14 +57,20 @@ void P_LevWrite(uint8_t array, uint16_t index, const void *src, uint16_t len)
 }
 
 /* --- sectors ------------------------------------------------------------------- */
+/* Every height change counts here: the monsters' sound flood (p_enemy.c)
+ * knows from it that the openings between sectors may have changed. */
+uint8_t sec_changes;
+
 void P_SetSectorFloor(uint16_t sector, int16_t height)
 {
+    ++sec_changes;
     sec_floorh[sector] = height;
     far_write(&sec_floorh[sector], P_LevAddr(MAPARR_SECTORS, sector) + SECTOR_FLOORHEIGHT, 2);
 }
 
 void P_SetSectorCeiling(uint16_t sector, int16_t height)
 {
+    ++sec_changes;
     sec_ceilh[sector] = height;
     far_write(&sec_ceilh[sector], P_LevAddr(MAPARR_SECTORS, sector) + SECTOR_CEILINGHEIGHT, 2);
 }
@@ -177,11 +183,7 @@ fetched:
 
 /* --- BSP: point in sector ------------------------------------------------------------------ */
 #define NODECACHE_SIZE  128
-typedef struct {
-    uint16_t node;
-    int16_t  x, y, dx, dy;
-    uint16_t child[2];
-} nodecache_t;
+typedef bspnode_t nodecache_t;
 static nodecache_t nodecache[NODECACHE_SIZE];
 
 #define SSECCACHE_SIZE  64
@@ -216,28 +218,38 @@ static uint8_t R_PointOnSide(fixed_t x, fixed_t y, nodecache_t *node)
     return right < left ? 0 : 1;
 }
 
+/* The node's partition and children, from the cache (direct mapped by
+ * number) or far memory. */
+bspnode_t *P_Node(uint16_t nodenum)
+{
+    nodecache_t *nc = &nodecache[nodenum & (NODECACHE_SIZE - 1)];
+    uint8_t b[NODE_CHILD1 + 2];
+
+    if (nc->node != nodenum) {
+        far_read(P_LevAddr(MAPARR_NODES, nodenum), b, sizeof b);
+        nc->node = nodenum;
+        nc->x = GET16(b, NODE_X);
+        nc->y = GET16(b, NODE_Y);
+        nc->dx = GET16(b, NODE_DX);
+        nc->dy = GET16(b, NODE_DY);
+        nc->child[0] = GETU16(b, NODE_CHILD0);
+        nc->child[1] = GETU16(b, NODE_CHILD1);
+    }
+    return nc;
+}
+
 uint16_t R_PointInSector(fixed_t x, fixed_t y)
 {
     uint16_t nodenum, ss;
     nodecache_t *nc;
-    uint8_t b[NODE_CHILD1 + 2], i;
+    uint8_t i;
 
     if (!numnodes) {
         ss = 0;
     } else {
         nodenum = numnodes - 1;
         while (!(nodenum & 0x8000)) {
-            nc = &nodecache[nodenum & (NODECACHE_SIZE - 1)];
-            if (nc->node != nodenum) {
-                far_read(P_LevAddr(MAPARR_NODES, nodenum), b, sizeof b);
-                nc->node = nodenum;
-                nc->x = GET16(b, NODE_X);
-                nc->y = GET16(b, NODE_Y);
-                nc->dx = GET16(b, NODE_DX);
-                nc->dy = GET16(b, NODE_DY);
-                nc->child[0] = GETU16(b, NODE_CHILD0);
-                nc->child[1] = GETU16(b, NODE_CHILD1);
-            }
+            nc = P_Node(nodenum);
             nodenum = nc->child[R_PointOnSide(x, y, nc)];
         }
         ss = nodenum & 0x7FFF;

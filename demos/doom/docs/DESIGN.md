@@ -540,9 +540,9 @@ reference's and assemble with ca65.
 
 ### 7.1 The 6502 renderer (src/render/)
 
-Walls, planes and sky, byte for byte the reference's `Renderer(masked=
-False)` (the masked phase, sprites, two-sided middles and the weapon, is
-the next part; see the hooks below). Seven files:
+The whole frame, byte for byte the reference's `Renderer.render`: walls,
+planes and sky here, the masked phase (sprites, two-sided middles, the
+weapon) in 7.2. Files:
 
 | File | Holds |
 |---|---|
@@ -552,7 +552,8 @@ the next part; see the hooks below). Seven files:
 | `rplane.s` | visplanes (`find_plane` hashed, `check_plane`), texture/flat animation and records (cached), the sky column, `draw_planes`, `make_spans`, `map_plane` |
 | `rmath.s`, `rfmul.s`, `rmul.inc` | multiplies (quarter squares), divisions, sines, `point_to_angle`, the tangent; the byte tables of the seg loop |
 | `rlc.s` | everything that runs with RAMRD on (language card bank 1): bank reads, the column-piece queue and its drawer, the span drawer, the visplane check |
-| `rhooks.s` | `r_add_sprites` and `r_masked`, empty until the masked phase |
+| `rthings.s` | the vissprites: `r_things` (R_AddSprites, R_ProjectSprite), the weapon's light (7.2) |
+| `rmasked.s`, `rmask.inc` | the masked phase `r_masked`: sprites, two-sided middles, the weapon (7.2) |
 
 **Interfaces.** `render_frame` (called by the frame loop, RENDER space)
 switches the language card's `$D000` to bank 1 for itself and back to bank
@@ -574,21 +575,24 @@ card, seen by both spaces:
   reads one into `rv_tbuf` with one bank read. The game does not run while
   the frame is drawn, so this is the packet as the game left it.
 
-Hooks for the masked phase (Doom's order is kept exactly): `r_add_sprites`
-is called with A/X = the sector at its first visit in the frame, before its
-segs (R_AddSprites), and the visit order is also listed in `vs_list_lo/hi`
-(`vs_count`, 256 kept); `r_masked` is called after the planes. The drawsegs
-(`ds_n`) and their openings are in `RENDER_BANK`:
+What the walk leaves for the masked phase (7.2): the sectors in the order
+of their first visit in `vs_list_lo/hi` (`vs_count`; 256 kept, and sectors
+from `MAXSECTORS` = 1,024 on are not listed: E1's largest map has 699),
+the sector of the first subsector it entered (`eye_sec`, valid when
+`eye_state` = 1: the eye's own, since every node sends the walk to the
+eye's side first, unless the node stack overflowed before), and the
+drawsegs (`ds_n`) with their openings in `RENDER_BANK`:
 
-| Drawseg (26 bytes at `DS_BASE + 26n`) | |
+| Drawseg (30 bytes at `DS_BASE + 30n`, `ds_addr`) | |
 |---|---|
 | +0 x1, +1 x2 | columns |
 | +2 scale1, +5 scale2, +8 scalestep | 3 bytes each (16.16; the step signed) |
 | +11 silhouette | `SIL_BOTTOM` 1, `SIL_TOP` 2 |
-| +12 bsilheight, +15 tsilheight | 3 bytes signed sub-units; `$7FFFFF` = MAXINT, `$800000` = MININT |
-| +18 sprtopclip, +20 sprbottomclip | the `RENDER_BANK` address of column x1's byte in the openings, or 0 none, 1 "screenheight" (84), 2 "negone" (-1) |
-| +22 maskedtexturecol | the address of column x1's 2 bytes (texture column & 255, then 0: the masked phase's "drawn" mark), or 0 |
-| +24 seg | the seg's index |
+| +12 bsilheight, +14 tsilheight | 2 bytes signed map units (the reference's are always a height << 4, so the comparisons are exact in map units); `$7FFF` = MAXINT, `$8000` = MININT |
+| +16 sprtopclip, +18 sprbottomclip | the `RENDER_BANK` address of column x1's byte in the openings, or 0 none, 1 "screenheight" (84), 2 "negone" (-1) |
+| +20 maskedtexturecol | the address of column x1's 2 bytes (texture column & 255, then the masked phase's "drawn" mark, 0 at first), or 0 |
+| +22 seg | the seg's index |
+| +24 texture, +26 texturemid, +29 light | a masked middle only: this frame's texture, texturemid (3 bytes, sub-units) and the light level index before clamping, which the wall range knows already (so the masked phase reads no seg, sector, sidedef or vertex for it) |
 
 Clip values in the openings are rows + `ROWBIAS` (64), saturated to
 0..255 (see below; -2, Doom's sprite-clip sentinel, is exact). The
@@ -600,17 +604,19 @@ drawsegs lose their clips on overflow.
 
 | Area | Use |
 |---|---|
-| zero page `$02-$D8` | the kernel's 41 bytes and the renderer's 174 (multiply/divide operands, the seg loop's accumulators, pointers, the eye); 7 bytes free |
+| zero page `$02-$D8` | the kernel's 41 bytes and the renderer's 174 (multiply/divide operands, the seg loop's accumulators, pointers, the eye); 7 bytes free. The masked phase reuses the seg loop's 41 |
 | main `$0200-$03FF` (`RLOWDATA`) | the visited-sector list (512) |
-| main `$0C00-$1DDB` (`RLOBSS`, rw in the file) | packet header, BSP node stack (64 x 11), MAP record, the vertex cache (128 slots: angle and coordinates), a visplane's columns copied back, span starts, the range's plane marks and masked columns, the texture-record cache (32), the per-column sines (161), the per-column sin/cos cache of the spans (160); 480 bytes free below the tables |
+| main `$0400-$0BCF` (`RTEXTDATA`, read-only) | the text-page tables of section 7, then 113 bytes of read-only code (`mul_row`); 48 free |
+| main `$0C00-$1D5B` (`RLOBSS`, rw in the file) | packet header, BSP node stack (64 x 11; at load time the MAP record and the animation list), the vertex cache (128 slots: angle and coordinates), a visplane's columns copied back, span starts, the range's plane marks and masked columns, the texture-record cache (32), the per-column sines (161), the per-column sin/cos cache of the spans (160). Most of it is dead in the masked phase, which keeps its data there (7.2) |
+| main `$1D5C-$1FBA` (`RLOCODE`) | masked-phase code (607 bytes) |
 | main `$1FBC-$52FF` (`RRODATA`) | the generated tables (13,124 bytes; the start puts the quarter-square tables on page boundaries, asserted at link time) |
-| main `$5300-$5D26` (`RCODE`, read-only window) | code that is never modified: math, planes (2,599 bytes; 729 free) |
-| main `$6000-$80E1` (`RHICODE`) | code with self-modified operands and the rest: BSP, segs, seg loop, spans (8,418) |
-| main `$80E2-$89E0` (`RBSS`) | frame state, caches (sectors 64 slots), clip arrays, solid segs (2,303); 415 bytes free |
-| LC bank 1 `$D000-$DB9E` (`RLC1`) | the RAMRD code, the span tables, the piece queue (64 x 12 bytes), `subsector`/`add_line`/clipping (2,975; 1,121 free) |
-| LC `$E6F4-$FEC4` (`RLCHI`, `RLCBSS`) | `render_frame` and the frame setup, the unrolled multiplies and divisions, the shift tables (shr4/shl4/sar4/bitlen), `render_map`, `render_shaded`; visplane headers (7 x 128) and the span row cache (84 rows); 309 bytes free |
-| LC bank 2 | not used by the renderer |
-| RamWorks `RENDER_BANK` = `DD_LAST_BANK` + 1 | visplane columns `$0200-$A4FF` (128 x 324: top and bottom rows of columns -1..160), drawsegs `$A500-$B53F`, openings `$B540-$BD3F` |
+| main `$5300-$5F2A` (`RCODE`, read-only window) | code that is never modified: math, planes, `r_iscale`, `sprite_lump` (3,115 bytes; 213 free) |
+| main `$6000-$82DA` (`RHICODE`) | code with self-modified operands and the rest: BSP, segs, seg loop, spans, part of the masked phase (8,923) |
+| main `$82DB-$8B64` (`RBSS`) | frame state, caches (sectors 64 slots), clip arrays (the masked phase's variables afterwards), solid segs (2,186); 27 bytes free |
+| LC bank 1 `$D000-$DF87` (`RLC1`) | the RAMRD code, the span tables, the piece queue (32 x 12 bytes), `subsector`/`add_line`/clipping, the projection (`rthings.s`) (3,976; 120 free) |
+| LC bank 2 `$D626-$DFAD` (`RLC2`, after the kernel's blit) | the masked phase: its RAMRD sessions and most of its code (2,440; 82 free) |
+| LC `$E6F4-$FFE3` (`RLCHI`, `RLCBSS`) | `render_frame` and the frame setup, the unrolled multiplies and divisions, the shift tables (shr4/shl4/sar4/bitlen), `render_map`, `render_shaded`, part of the masked phase; visplane headers (7 x 128) and the span row cache (84 rows), the masked phase's tables afterwards; 22 bytes free |
+| RamWorks `RENDER_BANK` = `DD_LAST_BANK` + 1 | visplane columns `$0200-$A3FF` (128 x 324: top and bottom rows of columns -1..160), drawsegs `$A400-$B6BF` (160 x 30), openings `$B6C0-$BEBF` |
 
 **How it runs** (the decisions):
 
@@ -640,7 +646,7 @@ drawsegs lose their clips on overflow.
   (every texture is at most 256 wide). It is computed only for columns that
   draw a piece (or keep a masked column).
 - *Pieces*: every wall, sky and flat-shaded column piece goes into a
-  64-entry queue in the language card (bank, address, count, texture
+  32-entry queue in the language card (bank, address, count, texture
   column, 8.8 fraction, step, colormap page, hmask); `q_flush` draws a whole
   wall range (or a plane's sky, or a full queue) in one RAMRD session,
   `$C073` rewritten only between banks. The drawer is Doom's
@@ -673,14 +679,17 @@ drawsegs lose their clips on overflow.
 **Measured** (`tests/test_render_core.py -v`, the py65 test machine, TURBO
 accounting): 109 views (the 36 deliverables, the 6 golden eyes, 9
 flat-shaded, 40 random views of `--sweep`'s generator, 15 animation tics,
-3 fixed-colormap/extralight), every one byte-identical to the reference:
+3 fixed-colormap/extralight), every one byte-identical to the reference.
+No things and no weapon here, but the two-sided middles are drawn (so these
+are a little above the first version's, which left them out: all 3.36M,
+deliverables 3.29M, random 2.86M); 7.2 has the frames with things:
 
 | Set | mean | p90 | max |
 |---|---|---|---|
-| all 109 | 3.36M | 5.77M | 7.15M |
-| deliverables (36) | 3.29M | 5.86M | 7.15M |
-| random (40) | 2.86M | 5.03M | 5.55M |
-| flat-shaded (9, the starts) | 3.47M | 5.12M | 5.12M |
+| all 109 | 3.42M | 6.04M | 7.15M |
+| deliverables (36) | 3.35M | 6.12M | 7.15M |
+| random (40) | 2.93M | 5.29M | 5.55M |
+| flat-shaded (9, the starts) | 3.54M | 5.39M | 5.39M |
 
 **The target (mean 1.5M, p90 2.5M) is not met**: about 2.2x over. Where a
 frame goes (20 views, 3.48M on average; `--profile`):
@@ -709,7 +718,8 @@ alone is ~800K a frame. A cheaper specification (e.g. 16-bit accumulators
 where the ranges allow, texture columns stepped per range) or the
 flat-shaded mode on busy frames are the lead's call.
 
-**Tests** (`tests/test_render_core.py`): the 109 views above; the four
+**Tests** (`tests/test_render_core.py`): the 109 views above (against
+`Renderer.render` with no things: walls, planes, sky, two-sided middles); the four
 limits forced low in both the program (its immediate operands patched in
 memory) and the reference (MAXVISPLANES 20, MAXDRAWSEGS 40, MAXOPENINGS
 200, MAXBSPDEPTH 8: the degraded views are identical); `sin_bam`,
@@ -719,6 +729,166 @@ one view (diff, cycles, PNGs), `--profile` gives the phase and routine
 breakdown above. The tests build `make BUILD=build/rtrack/` (with
 `RENDER_GAMESRC` naming a snapshot of the GAME sources when they are in
 flux) and use `build/data`.
+
+### 7.2 The masked phase (src/render/rthings.s, rmasked.s)
+
+Sprites, two-sided middle textures and the weapon, byte for byte the
+reference's `draw_masked` and `draw_psprite` (Doom's R_AddSprites,
+R_ProjectSprite, R_DrawMasked, R_DrawSprite, R_DrawVisSprite,
+R_DrawMaskedColumn, R_RenderMaskedSegRange, R_DrawPSprite). After the
+planes, `render_frame` calls `r_things` (LC bank 1 in), switches the
+`$D000` bank to 2 and ends in `r_masked` (the bank the blit wants anyway).
+
+**The vissprites** (`rthings.s`). The reference projects a sector's things
+when the walk first enters the sector, in packet order. Nothing the walls
+draw depends on them, so the 6502 projects after the walk: `th_gather`
+reads the sector of each packet thing (one RAMRD session on bank 1, a byte
+pair every 20), the things are hashed by sector (64 buckets, each chain in
+packet order), and the walk's list of sectors (7.1) is replayed: the same
+vissprites in the same order. A thing is read (`rv_thing`, 20 bytes) only
+if its sector was reached. R_ProjectSprite as the reference: tr = thing -
+eye (24 bits), the four `>> 14` products (24x16), `tz < MINZ` out, xscale
+= (80 << 20) / tz by a dedicated 21-step division (the dividend's top six
+bits, 40, are below any tz: 1,000 cycles rather than udiv's 1,800), `|tx| >
+4 tz` out, the rotation by `point_to_angle`, the frame's lump and flip
+(`sprite_lump`: SPRDEF, SPRFRAME, SPRLUMP records), x1 and x2 from 40-bit
+products, the colormap (shadow, fixed, full bright, else the sector's
+`scalelight` row at `min(xscale >> 11, 47)`), iscale by the reciprocal
+table (`r_iscale`), texturemid. A vissprite keeps (structure of arrays,
+17 bytes each): its thing, scale, clipped columns, the columns clipped off
+the left (startfrac is made from them when drawn), iscale, lump and flip,
+colormap, texturemid. `cpx #MAXVISSPRITES` in `project` is the limit.
+
+The weapon's light: the eye's sector is the walk's first subsector's
+(7.1); if the node stack overflowed first (`eye_state` 2), `eye_light`
+descends the nodes as R_PointInSubsector.
+
+**Drawing** (`rmasked.s`). Everything that runs with RAMRD on is in LC bank
+2 (there is no room in bank 1); it never calls bank-1 code: bank reads go
+through `rb2_read`, bank 2's copy of `rb_read`, records through
+`elem_addr`.
+
+1. *Sort*: an insertion sort by scale, stable (the reference's key: scale,
+   then the order made).
+2. *R_DrawSprite*: the clip rows (`mc_top`, `mc_bot`, one byte a column,
+   biased rows) start at -2 (62); `ds_scan`, one RAMRD session on
+   RENDER_BANK, walks the drawsegs last first and lists those overlapping
+   the sprite with a silhouette or a masked middle, flagging those entirely
+   behind it (both scales below the sprite's): for these only the masked
+   middle matters and no record is read. For the others the record is read
+   (30 bytes): behind by R_PointOnSegSide (the seg's vertexes, the thing's
+   x, y read again from the packet, `point_on_side` exact), the masked
+   middle is drawn over the overlap; in front, the silhouette less what the
+   thing's z is clear of (`gz >> 4 >= bsil`, `(gzt + 15) >> 4 <= tsil`, in
+   map units: exact) fills the clip rows still at -2 (`clip_fill`: a
+   session reading the openings, or a constant row). Rows left at -2 become
+   84 and -1.
+3. *R_DrawVisSprite* (`draw_vis`, also the weapon's): two tables per
+   sprite make the column loop product-free: `rowt[k]` = ceil((sprtopscreen
+   + k * spryscale) / 65536) biased and saturated to 1..255 for the post
+   offsets k = 0..height (additions from a 48-bit sprtopscreen, clamped to
+   32 bits where the rows saturate alike), and `yf[y]` = the 8.8 fraction of
+   screen row y (texturemid + (y - 42) * iscale), for the rows the patch can
+   cover. A post then is rows `max(rowt[top], cliptop + 1) ..
+   min(rowt[top + length], clipbot) - 1`, its fraction `yf[yl] - (top <<
+   8)`. `dv_cols` draws all the sprite's columns in one RAMRD session on
+   the patch's bank (posts, texels and colormaps all there; clip rows and
+   tables in the language card's $E000 area): the column fraction steps by
+   xiscale, the posts are walked, each drawn by an 8.8 loop through the
+   colormap: 40 cycles a pixel, about 90 a post and 90 a column. A post
+   whose pixels start in page `$BF` goes through a slower loop: Doom's
+   unmasked index can reach 255 bytes on, past `$BFFF`, which the 6502
+   would read from the I/O space, and the reference's bank image reads 0
+   there.
+4. *The shadow* (fuzz): the session lists the posts' rows (in main memory:
+   RAMRD does not move writes, 128 entries, flushed between columns when
+   half full); `fz_flush` then draws them with RAMRD off, since the fuzz
+   reads the view buffer: colormap 3 (copied once a frame) of the pixel one
+   row off, rows 1..82, `fuzzpos` from 0 each frame.
+5. *R_RenderMaskedSegRange* (`msr_setup`, `msr_range`): the wall phase
+   stored the texture, texturemid and light level in the drawseg (7.1), so
+   the setup reads only the drawseg and the texture's record (kept for the
+   last drawseg set up). Per call a session on RENDER_BANK with RAMRD and
+   RAMWRT on (`ms_gather`) reads each column's texture column, drawn mark
+   and clip rows into the language card and marks it drawn; then per
+   column, RAMRD off: sprtopscreen = (42 << 16) - (texturemid * scale >>
+   4) and bottomscreen = that + scale * height, with texturemid * scale
+   and scale * height exact in 48 bits and stepped by additions across the
+   range (no product per column but the fraction's 8x24), the rows, iscale,
+   colormap; then one session on the texture's bank (`ms_draw`) draws
+   them, texel 247 a hole. The drawsegs' masked middles left are drawn last
+   first after the sprites.
+6. *R_DrawPSprite*: x1 = 80 + ((sx - (160 << 16)) >> 17) - left, one texel
+   per pixel (spryscale = iscale = 1.0), texturemid = ((100 << 16) + $8000
+   - sy) / 2 + (top << 16), clip rows -1 and 84; colormap: fixed, else 0 if
+   full bright, else the eye's (`ps_cm`). Both layers, in order.
+
+**Memory**: none of its own besides code. It takes over what is dead by
+then (`rmask.inc` has the layout; `rmasked.s` asserts the regions at link
+time): the vissprites in the BSP node stack and the vertex cache (1,632 of
+1,728 bytes); the thing hash, the sort order, a drawseg record in the wall
+range's marks (798 of 800); the fuzz list in the plane copy-back; the
+candidate list, its flags and the fuzz colormap in the span column cache;
+the variables in the clip arrays (`cclip`, `fclip`); the clip rows, the
+sprite tables and a masked middle's columns in the visplane headers and the
+span row cache ($E000 area, readable in a session); the seg loop's zero
+page. Code: LC bank 2 2,440 bytes, `RLOCODE` 607, `RHICODE` 625, `RLCHI`
+275, `RCODE` 101 + 417, `RTEXTDATA` 113, LC bank 1 1,332. To find that
+room: the piece queue went from 64 to 32 entries, the MAP record buffer
+lives in the node stack, the drawseg address table became `ds_addr` (30n
+computed), the visited-sector bitmap covers 1,024 sectors, `rb_read` copies
+four bytes a loop.
+
+**Decisions and limits** (beyond the reference's): things farther than
+20,480 units (a scale under 1/256, whose reciprocal would not fit 24 bits)
+are not drawn, E1's largest map is 7,642 units corner to corner; a thing
+whose sector is not in the walk's list (more than 256 sectors reached, the
+sweep's most is 181 subsectors, or a sector index from 1,024) is not drawn;
+the patch height is at most 255 and posts lie within it (the converter's).
+
+**Measured** (`tests/test_render_masked.py -v`): with the map's things
+(`spawn_things`, the 128 nearest in the packet) and the pistol, every view
+byte-identical to the reference:
+
+| Set | mean | p90 | max |
+|---|---|---|---|
+| deliverables (36) | 3.73M | 6.88M | 7.71M |
+| random (40, `--sweep`'s generator) | 3.32M | 6.27M | 6.81M |
+
+The same views without things cost 3.35M and 2.93M (7.1): the masked
+phase adds about 0.38M a frame (some 19 things projected, 10 vissprites,
+1,000 sprite pixels, the weapon's 447). Where it goes (12 views,
+`--profile`): the sprites' clipping 155K (the drawseg scan 55K, record
+reads 37K), the projection 134K (the division 27K, record reads 28K,
+products), the sprite columns 76K, the sprite tables 31K, setup and fuzz
+20K, the hash and replay 18K, two-sided middles 23K, sort 5K, the weapon's
+setup 3K.
+
+**The target (a whole frame at 1.8M on average) is not met**: 3.5M with
+things. The masked phase is 11% of it; the rest is the core of 7.1
+(walls 1.25M, planes and spans 0.9M, wall pixels 0.43M, the walk 0.66M).
+For the masked phase itself, what would still help: the drawseg scan from
+a per-frame compact copy in main memory (~30K), a cache of SPRFRAME records
+by sprite and frame (~10K). Memory, not cycles, limits the next steps: the
+renderer now has 241 bytes of main memory, 120 in LC bank 1, 82 in LC bank
+2 and 22 in the $E000 area left.
+
+**Tests** (`tests/test_render_masked.py`, through `tools/doomdbg.py`): the
+36 deliverables and the 40 random views with things and the pistol;
+things under the fixed colormap, extralight and flat-shaded mode;
+animation tics; synthetic scenes (a thing seen from the eight rotations and
+flipped, very close including inside MINZ, very far, at the screen edges,
+floating above and below the eye, full bright, the spectre alone and in
+front of a lit thing, things behind and straddling two-sided middles in
+five maps, the weapon at nine sx/sy and with its flash on the second layer
+under extralight and the fixed colormap, the shotgun, a crowd of 120
+things); limits forced low in both the program and the reference
+(MAXVISSPRITES 1 and 20, MAXBSPDEPTH 2 and 8 with the weapon's light from
+the node descent, MAXDRAWSEGS 40, MAXOPENINGS at a quarter and three
+quarters of the openings used). `--view MAP X Y Z ANGLE` renders one view,
+`--profile` gives the breakdown above. `tools/show_view.py` renders a view
+in the simulator and writes a side-by-side PNG (6502, reference, the
+differing pixels).
 
 ## 8. The kernel (src/kernel/)
 
@@ -841,18 +1011,570 @@ tics, copies `kin`, reads one far array element through `far_elem` and
 a `PLAYPAL` entry of the converter's data). A tic of it costs about
 7,200 cycles (mostly cc65's 32-bit arithmetic).
 
-## 9. The game (src/game/, C)
+## 9. The game (src/game/)
 
-Doom's play simulation, trimmed to episode 1: `p_tick`, `p_mobj`,
-`p_map`/`p_maputl` (blockmap, line opening, try-move, slide, line attack
-and aim, use, radius attack), `p_sight` (reject then BSP), `p_enemy`
-(look, chase, the attacks of section 1), `p_inter`, `p_pspr`, `p_user`,
-`p_spec` with doors, floors, plats, ceilings, lights, switches, exits,
-teleporters; `g_game` level flow; `st_stuff` values for the status bar.
-States and mobj info: Doom's tables for the kept types, in a far bank
-(checked against ZDoom's DECORATE in the reference sources). The game is
-compiled with cc65 for the GAME space and calls the kernel through a jump
-table in the language card.
+Doom's play simulation for episode 1, in three parts: the **core**
+(this section: things, movement and collision, the blockmap, hitscan and
+use, the player and his weapons, the thinkers, level loading and flow,
+the render packet), the **monsters** (`p_enemy`, `p_inter`, `p_sight`)
+and the **specials** (`p_spec` and doors, floors, plats, ceilings,
+lights, switches, teleporters; "Interfaces" below). The monsters part is
+described in "The monsters" below, the specials part and the level flow
+in "The specials". The kernel calls three
+entry points in GAME space (`g_game.c`): `game_init` once at boot (the
+far tables, E1M1 at "hurt me plenty"), `game_tic` per 35 Hz tic (a
+pending level change, the tic command from `kin`, `P_Ticker`) and
+`game_frame` once per rendered frame after the tics (`frame.s`, before
+`render_frame`: the render packet `rview`, `rview.h`).
+
+**Two builds of one source.** Every module exists as vanilla-shaped C
+(`p_*.c`, `g_game.c`, `m_misc.c`), which is the reference: gcc compiles
+all of it for the host (`tests/host/`: far memory served from the
+converter's banks, the kernel stubbed), where the logic is tested in
+microseconds. On the 6502 the hot modules are 65C02 assembly instead
+(`a_*.s`, cc65 compiles their C twins to nothing:
+`#if defined(GAME_REAL) && !defined(__CC65__)`), because cc65's code for
+the core was 52-58 KB, more than the GAME space, and slow (16-bit int,
+32-bit fixed_t through runtime calls). The assembly is checked against
+the C: module by module (`tests/test_game_asm.py`) and as a whole game,
+tic by tic (`tests/test_game_sim.py`: identical random index, player,
+every thing, sounds and render packet over a 290-tic scripted session).
+
+| Module | C reference | 6502 |
+|---|---|---|
+| fixed point, trig | `m_misc.c` (host: `tests/host`) | `fixed.s`: FixedMul (quarter squares, unrolled), FixedDiv (32 steps), fine sine/cosine and tantoangle from the far bank |
+| level data | `p_levdata.c` | `a_levdata.s`: level arrays, line/node/subsector/blockmap-cell caches, R_PointInSector, REJECT |
+| map utilities | `p_maputl.c` | `a_maputl.s` |
+| movement, attacks | `p_map.c` | `a_map.s` |
+| things, thinkers | `p_mobj.c`, `p_tick.c` | `a_mobj.s` |
+| player, weapons | `p_user.c`, `p_pspr.c` | `a_user.s` (the weapon tables stay in `p_pspr.c`) |
+| tic command, packet | `g_game.c` | `a_view.s` (level flow and entry points stay C) |
+| level set-up | `p_setup.c`, `p_spawn.c` | C, an overlay (below) |
+| sight | `p_sight.c` | `a_sight.s` |
+| monsters' minds, attacks | `p_enemy.c` | `a_enemy.s` |
+| damage, death, pickups | `p_inter.c` | `a_inter.s` |
+| line and sector specials, lights, switches, level set-up and undo | `p_spec.c`, `p_lights.c`, `p_switch.c` | `a_spec.s` (the set-up and undo in the overlay) |
+| doors, floors, stairs, plats, ceilings, teleporters | `p_doors.c`, `p_floor.c`, `p_plats.c`, `p_ceilng.c`, `p_telept.c` | `a_movers.s` |
+
+**Things.** Actors (`mobj_t`, 64 bytes: everything that moves, fights or
+thinks) and statics (`sobj_t`, 16 bytes: pickups, decorations, corpses,
+barrels and dormant monsters) share the blockmap chains (`IS_STATIC` by
+pool address). Every map thing is spawned as a static (E1M7 on
+ultra-violence places 730 things: as actors 46 KB); a static becomes an
+actor when something acts on it (`P_WakeStatic`: damage, telefrag,
+crushing, a dormant monster's look that may succeed) and an actor that
+has settled into a static's life goes back (`P_MobjThinker` →
+`try_sleep`: not shootable, no missile, no momentum, on its floor or
+hanging, in a quiet state: `gen_info.py` marks a state whose chain has no
+action with bit 7 of `st_action`). A dormant monster's `A_Look` runs only
+when it can succeed (its sector heard a noise, or REJECT lets it see the
+living player's sector). Read-only looks at a static (aim, pickup,
+collision) use `P_StaticView`, a scratch actor. When the actor pool is
+full, a spawn takes the slot of a puff, blood or fog.
+
+**Level data.** The map arrays stay in the converter's far banks
+(section 6). Near: the sector heights and specials (written through to
+far memory for the renderer: `P_SetSector*`), the blockmap chains, the
+line-mark bitset (vanilla's validcount: one bit per line and the list of
+bytes set), the REJECT row cache. Caches (`a_levdata.s`, direct mapped):
+64 lines (27-byte `line_t` copies), 128 BSP nodes, 64 subsectors, 16
+blockmap cells. A `line_t *` is valid until the next `P_Line`; code that
+calls out keeps line indices (spechit, intercepts, the specials' API).
+
+**Level memory** (the arena, `p_setup.c`) is reset at each level start:
+the space from the end of BSS to the C stack, the bytes of the far
+tables (`GFAR`, copied to the game's far bank, the machine's last, at
+boot) and those of the set-up overlay (`GOVL`). The set-up code
+(`P_SetupLevel`, the arena, the map thing spawner: 4 KB) is linked right
+after `GFAR`, copied to the far bank with it at boot and read back before
+each level's set-up (`P_LoadOverlay`); the actor pool is placed at the top
+of the `GFAR` hole, right below the overlay, and grows over the overlay
+once the set-up is done (`P_ExtendPool`). `ARENA_RESERVE` (2 KB) is kept
+for the other parts' set-up (`P_SpawnSpecials`, `P_MonstersSetupLevel`);
+the pool holds at most `MAXACTORS` (160).
+
+**Render packet** (`rview.h`, built by `game_frame`): the eye (the
+player's position, `viewz` with the bob, sub-units), angle, extralight,
+colormap, tic, the weapon layers, and up to 128 things with a sprite (not
+the player), nearest first: all actors and statics are filed in 32
+distance bands of 128 units (vanilla's `P_AproxDistance`); past 255
+candidates a second pass keeps the nearest bands; past 128, things more
+than 64 units behind the eye are left out.
+
+**Input** (`G_BuildTiccmd`): vanilla's for one player: forward/side
+moves 0x19/0x32 and 0x18/0x28 (walk/run, Tab), turns 640/1280 with 320
+for the first 6 tics of a turn, the mouse turns `-dx * 8` (sensitivity
+5), fire, use, weapon keys 1-7 as `BT_CHANGE`.
+
+**Level flow** (`g_game.c`, "The specials" below): an exit ends the
+level at the next tic with its tally (`wminfo`) and the intermission
+(`gamestate` `GS_INTERMISSION`), a new press of fire or use loads the next
+map: E1M1..E1M8 in order, E1M3's secret exit to E1M9, E1M9 back to E1M4
+(maps the converter did not keep are skipped); E1M8's exit ends the
+episode (`GS_FINALE`), and a press there starts a new game at E1M1. The
+dead player's use key restarts the level with a new player (vanilla's
+single player `G_DoReborn`). Every load first puts the far map records
+back as the converter made them (`P_ResetLevelData`).
+
+### The assembly's conventions
+
+- C entry points use cc65's `__fastcall__` (last argument in A/X/sreg,
+  the others on the C stack, popped by the callee) and keep the names of
+  `p_local.h`; internal entries take their arguments in the game's zero
+  page and in variables, documented at each.
+- The game's zero page (segment `GZP`, 8 bytes): `gmo` (the current
+  actor), `gth` (a thing in a callback), `gli` (the current line, as
+  `line_get` leaves it), `gpt` (another pointer). Caller-saved, like
+  cc65's `ptr1-4`/`tmp1-4`: whatever calls out reloads them.
+- 32-bit values live in `W` (`gwork.inc`/`gwork.s`): 64 four-byte slots
+  named by owner (the trace, the line opening, the tm* state of
+  P_CheckPosition, the attack slopes, ...: the C globals of those names
+  are these slots) and operated on by subroutines taking slot offsets in
+  X and Y (`w_mov`, `w_add`, `w_cmp`, `w_mul`, ...: 7 bytes a call). T0-T4
+  are scratch for leaf routines.
+- Reentrancy is vanilla's: the tm*, trace and attack state is global,
+  and a callback that calls out (a missile's `P_DamageMobj` waking a
+  monster whose `A_Chase` runs `P_TryMove`) may run the same code again,
+  after which the outer call sees what the inner one left, as in
+  vanilla. What must survive such calls is on the 6502 stack: the moving
+  thing, the blockmap cell loop, the thing chain being walked,
+  `P_SetMobjState`'s thing and next state.
+- Differences from vanilla, all deliberate: statics (above); no sector
+  thing lists (the renderer gets the things in the packet); a singly
+  linked blockmap chain; at most 128 intercepts per trace (vanilla
+  overran its array); a static's angle is kept to 8 bits;
+  `P_ChangeSector` skips the things whose box lies outside the box of
+  the moving sector's lines (`sec_bbox`, kept by `P_SectorBlockBox`):
+  their heights cannot depend on that sector, and vanilla's height clip
+  of every thing of the block box is a whole `P_CheckPosition` here
+  (35 K cycles a static; the one case that differs is a thing already
+  crushed by another sector, which vanilla would crush again). The tests
+  compare against the C, which has the same differences.
+- cc65 2.18 drops a member's offset from `((uint8_t *)&p->member)[n]`
+  (it reads `p + n`): `FLAG()` (`doomtype.h`) is written `*(p + n)`, and
+  `tests/test_game_core.py` checks the code cc65 makes of it.
+
+### Interfaces for the monsters and specials parts
+
+Their functions are declared in `p_local.h` and `p_spec.h`: `P_DamageMobj`, `P_KillMobj`,
+`P_TouchSpecialThing`, `P_CheckSight`, `P_NoiseAlert`,
+`P_MonstersSetupLevel` and the monster `A_*` actions (`info.h`);
+`P_CrossSpecialLine(line, side, thing)`, `P_ShootSpecialLine(thing,
+line)`, `P_UseSpecialLine(thing, line, side)`, `P_PlayerInSpecialSector`,
+`P_SpawnSpecials`, `P_UpdateSpecials` and the `EV_*` (lines are indices).
+The rules the core relies on:
+
+- `P_DamageMobj`/`P_KillMobj` get actors only (the core wakes a static
+  first); `P_TouchSpecialThing` may get a static's view: read it and
+  remove it with `P_RemoveMobj(special)`, never keep the pointer.
+- vanilla's `mobj->player` is `MO_PLAYER(mo)`, `mobj->info` is
+  `&mobjinfo[mo->type]`, `mobj->subsector->sector` is `mo->sector`,
+  `sector->soundtarget` is `sec_soundtarget[sector]`, floorz/ceilingz
+  are map units, a monster's `A_Look` on a dormant static is called only
+  when it can succeed and must do nothing otherwise, as vanilla's.
+- Sectors: `sec_floorh/sec_ceilh/sec_special` (read), the setters
+  `P_SetSectorFloor/Ceiling/Special`, `P_SectorTag`, `P_SectorLight`,
+  `P_SetSectorLight`, `P_SectorFloorPic/CeilingPic`, `P_SectorLines` +
+  `P_SecLine`, `P_ChangeSector`; lines: `P_Line`, `P_SetLineSpecial`,
+  `P_LineSide`, `P_LevRead/P_LevWrite` for sidedefs; thinkers:
+  `P_AllocThinker(size <= 32)` + `P_AddThinker`, freed after
+  `P_RemoveThinker`; teleports: `P_FindTeleportDest`, `P_TeleportMove`;
+  level memory: `P_ArenaAlloc` during set-up only.
+- Assembly in those parts follows the conventions above; the W slots
+  belong to their owners (a part adds its own slots only when it has
+  room, there are 64).
+
+### The monsters (p_sight, p_enemy, p_inter)
+
+Vanilla's code for episode 1 (zombieman, sergeant, imp, demon and
+spectre, lost soul, baron, the barrel; the player's pickups), in C for
+the host and in assembly for the 6502 like the core: `P_CheckSight`,
+`P_NoiseAlert`, `A_Look`/`A_Chase` with `P_Move`, `P_TryWalk`,
+`P_NewChaseDir`, the range checks, `A_FaceTarget`, the attacks
+(`A_PosAttack`, `A_SPosAttack`, `A_TroopAttack`, `A_SargAttack`,
+`A_HeadAttack`, `A_SkullAttack`, `A_BruisAttack`), `A_Pain`, `A_Scream`,
+`A_XScream`, `A_Fall`, `A_Explode`, `A_BossDeath` (E1M8: the last baron
+lowers the tag 666 floors, `EV_DoFloorTag(666, lowerFloorToLowest)`, the
+specials part's), `P_DamageMobj` (armour, thrust, pain chance,
+infighting and its threshold, the sector 11 rule, god mode),
+`P_KillMobj` (the drops, the kill count, the gibs), and
+`P_TouchSpecialThing` for every E1 pickup with vanilla's limits (a
+dropped clip or weapon is half, skill 1 doubles ammo). Results are
+vanilla's at every tic: the random numbers are drawn in vanilla's order
+(also when the answer is already known, as in `P_CheckMissileRange`).
+Monsters open doors only through `P_UseSpecialLine` from `P_Move`, as
+vanilla (the specials part's doors do the rest).
+
+Decisions:
+
+- **lastlook** (`mobj_t` byte 63): vanilla's `P_LookForPlayers` starts at
+  player `lastlook` (a random 0-3 at spawn) and gives up when it comes
+  round to it again: with one player a monster whose lastlook is 1 fails
+  its first look and then always looks. A static keeps the bit
+  (`SF_LOOK1`, drawn in the spawner, vanilla's order of random numbers)
+  and passes it to the actor it becomes.
+- **The behind-the-back question first.** Vanilla walks the sight line
+  and then asks whether the player is more than 90 degrees off the
+  monster's angle and farther than melee range; the answer is the same
+  the other way round, and the angle is ~2 K cycles where the sight walk
+  is ~100 K.
+- **player.message is a number** (`MSG_*`, vanilla's d_englsh.h order),
+  the status bar has the strings; `g_game.c` queues it after each tic.
+- **The sound flood** is `P_RecursiveSound` as a queue (64 entries and a
+  pending bit per sector; the recursion would not fit the 6502 stack),
+  with the same result. Each sector's two-sided neighbours (sector,
+  sound-blocking bit) are gathered once per level into a table in the
+  game's far bank after GFAR and GOVL (so a flood reads one short far
+  block per sector, not its lines), and an alert from a sector already
+  flooded since the last height change (`sec_changes`, counted by
+  `P_SetSectorFloor/Ceiling`) is skipped: the flood depends only on the
+  start and the openings. `P_MonstersSetupLevel` takes the per-sector
+  arrays (numsectors + 3 bitsets) from the arena and stops the game with
+  `CRASH_ARENA` if the table does not fit the bank.
+- **Sight** is vanilla's BSP walk (REJECT first) with an explicit stack
+  (64 nodes; the deepest E1 tree needs 43). Side tests are done in whole
+  map units where vanilla's are fixed (the node and line coordinates are
+  whole units; 16x16 products by the 8x8 multiply) and give the same
+  sides; a subsector's line list is cached (32 subsectors of up to 8
+  lines). The sight slopes are the attack slopes' W slots
+  (`W_TOPSLOPE`/`W_BOTTOMSLOPE`), as vanilla shares its globals. The
+  C (`p_sight.c`) agrees with a floating-point ray caster on 400 random
+  E1M1 pairs.
+- **The node cache** is shared with `R_PointInSector` (`node_get`,
+  exported from `a_levdata.s`).
+- `movecount` is a signed byte that saturates (vanilla's int only goes
+  below zero while a monster waits).
+
+Assembly: `a_sight.s` 3,002 bytes of code + 856 BSS, `a_enemy.s` 4,568 +
+37 RODATA + 319 BSS, `a_inter.s` 2,563 + 172 RODATA + 24 BSS: 10.1 KB of
+code, 1.4 KB of data (cc65 made 16.5 KB of the C). Level memory
+(arena): numsectors bytes and three bitsets of numsectors bits (E1M1:
+about 130 bytes); the neighbour table is in far memory.
+
+The py65 harness no longer fits the whole game in 64 KB with full
+caches: it gives the monsters' assembly (segment `MCODE`, macro
+`MONCODE` in `gmacros.inc`, with `-D MCODE_WINDOW`) and the C modules
+(`--code-name MCODE2`) code-only windows at `$0300` and `$D000` that
+overlay data (`tests/host/flat.cfg`; `gamesim.py`'s `HarvardMPU` fetches
+instructions from the window images). This is a harness device, not the
+Apple's memory map; code in a window reads no inline data. The specials
+part's assembly shares the C modules' window (`SPECCODE` in
+`aspec.inc`), which now runs from `$BE00` (just above CODE, which ends
+at `$BBD6`) to the C stack, and its set-up code, in `GOVL` on the Apple,
+goes to that window too: the harness has no room left to grow `GOVL` (it
+holds E1M1's and E1M8's level memory with GAME.BIN's caches only).
+
+Measured in the harness (full caches, E1M1, skill 2; `SimMonstersTest`:
+four pistol volleys from four places wake 29 monsters, then 300 tics):
+
+| | cycles |
+|---|---|
+| tic with 29 monsters awake | mean 716,847, p90 1,422,841, max 2,808,878 |
+| of which per tic: `P_CheckSight` | 2.8 calls (1.4 walk the BSP), ~280 K |
+| `P_TryMove` from `P_Move` (core) | 7.6 calls, ~48 K each, ~370 K |
+| `A_Look` of the dormant | ~130 K |
+
+A sight walk visits about 33 nodes, 15 subsectors, 37 segs and 21 lines
+(E1M1 means). The budget (1.25 M cycles a frame) is not met at the
+worst tics with many monsters awake: the cost is `P_TryMove` (its two
+`R_PointInSector` and the blockmap) and the sight walks. Next steps:
+a monster's `P_TryMove` in the core faster (the sector from the
+subsector of the start, a cell cache per mover) and a monster's
+last sight result kept until it, its target or a sector height changes
+(exact: sight depends on nothing else).
+
+### The specials (p_spec, p_doors, p_floor, p_plats, p_ceilng, p_lights, p_switch, p_telept)
+
+Vanilla's line and sector specials, in C for the host and in assembly
+for the 6502 like the core: `a_spec.s` (the table and the three entry
+points, the sector tools, `T_MovePlane`, the player's special sectors,
+lights, switches, the tic's part, the level set-up and its undoing) and
+`a_movers.s` (doors, floors, stairs, the donut, plats, ceilings,
+teleporters); `aspec.inc` has their records. Every vanilla line special
+(1-141) is there, not only those E1 uses. Freedoom's E1 uses lines 1, 2,
+7, 11, 19, 20, 22, 23, 26-28, 31-33, 36, 38, 46, 48, 51-53, 58, 61-63,
+71, 75, 88, 97, 102, 103, 105, 107, 109, 112, 114, 117, 120, 123, 125,
+126, 133 and 138, and sectors 1, 2, 3, 5, 7, 8, 9, 12, 16 and 17.
+
+Decisions:
+
+- **One table instead of vanilla's three switch statements**
+  (`spec_tab`, 142 x 3 bytes): per special the trigger (walk over,
+  switch, gun, manual door), once or repeatable, whether monsters trigger
+  it, whether the switch texture changes whatever the action did (the
+  exits, the lights, the gun lines), the action and its argument.
+  `P_CrossSpecialLine`, `P_UseSpecialLine` and `P_ShootSpecialLine` check
+  the trigger and run the action as vanilla's switches do (the texture
+  changes only if the action started something, as `if (EV_...)`).
+  Projectiles trigger nothing (vanilla's list of types is E1's
+  `MF_MISSILE` things). A once-only line is cleared after its action,
+  exits excepted (vanilla leaves them).
+- **Heights are whole map units** (the far records are). A mover's speed
+  is in eighths of a unit per tic, every vanilla speed being a multiple
+  of `FRACUNIT/8` (stairs 1/4, the change-texture plats and the donut
+  1/2, a blocked crusher 1/8); the eighths not yet moved are carried, so
+  a slow plane moves a unit every 2, 4 or 8 tics and is where vanilla's
+  is at every whole unit, and reaches its destination at vanilla's tic.
+  A tic that moves nothing asks `P_ChangeSector` only for a crusher (its
+  things still take damage every fourth tic).
+- **`sector->specialdata` is a bit** per sector (`sec_busy`); the places
+  that need the mover (a manual door turned around) find it in the
+  thinker list, and never take a lift for a door (vanilla's bug).
+  `activeplats`/`activeceilings` are the thinker list searched by tag; a
+  plat or ceiling in stasis stays a thinker that does nothing.
+- **Lights are not thinkers**: 8-byte records in level memory (the
+  sector, kind, count, min, max, the level now, darktime or direction)
+  run by `P_UpdateSpecials`, which writes a sector's far record only when
+  its level changes; `SPARE_LIGHTS` (8) more for `EV_StartLightStrobing`.
+  vanilla's quirks are kept: the flicker's `& 64` (bright 1 or 65 tics),
+  the fire flicker's minimum above its maximum when its neighbour is
+  brighter, `EV_LightTurnOn`'s level found once for all its sectors.
+- **Switches**: the converter gives each `TEX` record its SW1/SW2 partner
+  (`TEX_SWITCHTEX`); the front sidedef's top, middle, then bottom texture
+  is swapped in its far record (vanilla searches its switch list: the
+  same unless a sidedef has two switch textures). A repeatable switch is
+  a button (16 slots) that comes back after `BUTTONTIME` (35) tics,
+  counting the tic of the press. vanilla's exit switch sound
+  (`sfx_swtchx`) never plays, as in vanilla (the special is cleared
+  first).
+- **Scrolling walls** (48): the front sidedef's x offset is its first
+  value + `leveltime` + 1, written every tic.
+- **Messages**: "you need a ... key" are `MSG_PD_*` in `player.message`
+  (vanilla's `PD_BLUEK` etc.); `game_tic` clears `player.message` before
+  the tic and queues what the tic left (`G_Message`, 4 entries, the
+  oldest dropped) for the status bar (`G_NextMessage`), as vanilla's
+  `HU_Ticker` takes and clears it.
+- **Sounds of sectors have no origin** (`S_StartSound(NULL, ...)`) until
+  the sound part wants sector positions.
+- Guards where vanilla would crash: a door line without a back sector, a
+  donut without a neighbour. `raiseToTexture` does not count texture 0
+  ("-"; vanilla took texture 0's height).
+
+**Undoing a level.** The renderer reads sectors and sidedefs from the
+converter's far records, and the game has no WAD to reload them from, so
+what the specials change stays changed; a restarted level (the player's
+death) or a revisited one must look as the converter made it.
+`P_ResetLevelData`, called by every level load after `P_LoadOverlay`:
+
+- sectors change all the time (heights, light, special, floor flat):
+  each map's `SECTORS` array is copied whole to a snapshot the first time
+  the map is loaded, and back at every later load (E1's nine: 45,888
+  bytes);
+- lines and sidedefs change a few times a level (a once-only line's
+  special, a once-only switch's texture): the bytes are journalled before
+  the change (far address, length, old bytes: 6-byte entries, at most
+  `JOURNAL_MAX` 341) and the journal is played back, newest first;
+- pressed buttons are put back up and scrolled walls back to their first
+  offsets from the part's near lists, which a level end leaves intact.
+
+Both live in the specials' bank, `kbanks - 2` (below the game's far
+bank; `CRASH_BANKS` if it is not above the renderer's): the journal at
+`$0200-$09FF`, the snapshots from `$0A00`, continuing in the bank below
+if a map's array does not fit.
+
+**Level flow** (`g_game.c`): an exit sets `gameaction`; the next tic
+makes the tally (`wminfo`, vanilla's `wbstartstruct_t` for one player:
+episode, the map left and the next, secret exit, kills, items and
+secrets of the level against its totals, the time in tics (`leveltics`,
+32 bits: `leveltime` wraps after 31 minutes), Doom's par time) and goes
+to `GS_INTERMISSION`, where the tic builds only the tic command and a new
+press of fire or use (vanilla's `WI_checkForAccelerate`: the press on the
+exit switch is still held) loads the next map (`ga_worlddone`). E1M8's
+exit goes to `GS_FINALE` instead (vanilla's `ga_victory`: Doom 1 has no
+tally after E1M8), where a press starts a new game at E1M1 with a new
+player (`ga_newgame`). The player's counts are reset at every load
+(vanilla's `P_SetupLevel`). The intermission and finale screens (the
+status bar part) read `gamestate`, `wminfo` and `wi_tics`; meanwhile
+`game_frame` goes on building the last view.
+
+Memory: `a_spec.s` 3,697 bytes of code, 471 RODATA (the table 426), 309
+BSS (the buttons 128), and 1,245 bytes of set-up and undo code in the
+overlay (`GOVL`; in the py65 harness, with `-D MCODE_WINDOW`, in the code
+window instead); `a_movers.s` 4,720 bytes of code, 74 BSS. Resident
+9.3 KB (cc65 made 18.7 KB of the C). Level memory: the busy bits
+(numsectors / 8), the tagged-sector list (4 bytes a tagged sector: 57 in
+E1M7), the lights (8 bytes each, 9 in E1M1, 27 in E1M3, plus 8), the
+scrolling walls (128 bytes): E1M1 about 330 bytes, E1M7 about 550; the
+movers take thinker blocks.
+
+Measured in the py65 harness (full caches, E1M1, skill 2;
+`tests/test_game_specials.py`, `--profile` for the routines): with six
+sectors moving at once (a door, three floors, the lift, a blazing door)
+a tic costs 235 K on average against 42 K standing still, the rest being
+the monsters' looks every tenth tic (1.1 M). Per moving sector and tic
+about 9.7 K: `P_ChangeSector` 8.3 K (of which `P_SectorBlockBox` 1.4 K
+and the `sec_bbox` test of each thing of the block box 0.4 K), the height
+written near and far 1.0 K. Before the `sec_bbox` filter
+`P_ChangeSector` cost 153 K (a whole `P_CheckPosition` for each static
+of the block box) and the same six movers 848 K a tic. Lights: 1.2 K a
+tic for E1M1's nine, 5.6 K for E1M2's eighteen (a level change costs
+1.2 K, a far write); E1M2's two scrolling walls 2.1 K. Level loads: boot
+and E1M1 8.78 M (the set-up scans every line's special for the
+scrolling walls, one far byte each, and the snapshot is made), E1M8
+loaded by `game_tic` 3.09 M (E1M1's journal played back, E1M8's
+snapshot), a new game back on E1M1 7.98 M.
+
+### Memory
+
+The core does not fit the GAME space (RamWorks bank 1 `$0200-$B7FF`,
+46,592 bytes, section 4). Measured (`tests/test_game_core.py`,
+`GameSpaceBudgetTest`, the GAME segments linked alone):
+
+| | bytes |
+|---|---|
+| CODE (assembly 25,946; C 5,681; cc65 runtime 1,961) | 33,588 |
+| RODATA (states 2.5 K, mobjinfo 3.1 K, rndtable, tables) | 6,230 |
+| BSS (level-data caches 4,820; rview 2,600; intercepts 1,152; square tables 1,024; candidates 845; W 256; ...) | 11,598 |
+| resident total (+ DATA, STARTUP) | 51,429 |
+| GFAR (far tables, becomes level memory after boot) | 8,194 |
+| GOVL (set-up overlay, becomes actor slots) | 4,070 |
+
+With the monsters part (the specials' stand-in): CODE 42,765, RODATA
+6,448, BSS 12,846 (the sight caches 856), resident 62,072, GOVL 4,102.
+With the specials part too (the GAME objects of `make`, `od65
+--dump-segsize`): CODE 49,134, RODATA 6,919, BSS 13,322, resident
+69,391, GFAR 8,194, GOVL 5,347; `GameSpaceBudgetTest` can no longer even
+link it in its 64 KB measuring map.
+
+Level memory per map, without actors, computed from each map's sizes
+(blockmap chains, sector arrays, line marks, thinker blocks, statics,
+`ARENA_RESERVE`; each actor 63 more):
+
+| map | E1M1 | E1M2 | E1M3 | E1M4 | E1M5 | E1M6 | E1M7 | E1M8 | E1M9 |
+|---|---|---|---|---|---|---|---|---|---|
+| skill 2 | 9,963 | 13,155 | 13,434 | 14,914 | 13,148 | 17,010 | 22,368 | 6,534 | 13,421 |
+| skill 4 | 10,331 | 13,891 | 14,666 | 15,922 | 13,740 | 18,914 | 23,936 | 6,550 | 13,741 |
+
+So the core needs about 51 KB resident plus 10-24 KB of level memory
+plus actors (40 actors: 2.5 KB), of which 12 KB can reuse the GFAR and
+GOVL bytes: 50-66 KB against 46.5 KB, before the monsters and specials
+parts (their vanilla C is about the size of `p_map.c` + `p_mobj.c`; as
+assembly perhaps 10-14 KB). The zero page is short too: `GZP` (8 bytes)
+overflows the kernel's and renderer's `KZP` area by 1 byte in the full
+link. This needs a platform decision (the lead's); the candidates, by
+yield:
+
+1. GAME space with ALTZP on: bank 1's own language card, 16 KB at
+   `$D000-$FFFF` (two `$D000` banks), would hold the level memory or the
+   assembly. Costs: the kernel's entries and far access are in the main
+   card, so GAME calls them through a trampoline in bank 1 RAM that
+   switches ALTZP off and on (its own zero page and stack page also
+   switch), and the VBL interrupt needs a vector and handler copy in
+   bank 1's card (or interrupts off in GAME space).
+2. The render packet in the main language card (both spaces see it: the
+   renderer would read it without its far copy): -2.6 KB.
+3. The free parts of the main card (`KLC1` `$D000` bank 1: 4 KB, about
+   6 KB of `$E000-$FFF9`): the hot assembly there, if the kernel and the
+   renderer can spare them.
+4. The info tables (6 KB) in far memory with a small cache of the types
+   and states in use; the level-data caches smaller (4.8 KB now; they
+   trade speed).
+
+Nothing short of (1) or a second bank for game data covers E1M7 on
+ultra-violence with the monsters and specials. Meanwhile
+`GameSpaceTest.test_links_in_bank1` is an expected failure, the
+budget test fails if the sizes grow, and the 6502 build is run and
+measured in the py65 harness, which gives it 62 KB.
+
+### Measurements
+
+The whole game in the py65 harness (`tests/test_game_sim.py`; far
+accesses charged what the kernel's cost in GAME space, 360 + 37 cycles
+a byte; GAME.BIN's cache sizes, the code in the harness's windows, "The
+monsters" above), E1M1 at "hurt me plenty", with the monsters (the
+session's shots wake them: the standing tics include their thinking):
+
+| | cycles |
+|---|---|
+| boot and E1M1 set-up (`game_init`) | 6,933,838 |
+| tic, standing | mean 301,166, max 1,466,604 |
+| tic, walking | mean 69,597, max 152,731 |
+| tic, firing the pistol | mean 365,139, max 2,340,748 |
+| `game_frame` (the render packet, 231 statics) | mean 370,670, max 410,905 |
+
+(Before the monsters, with the harness's half-size caches: standing
+57,392, walking 64,031, firing 163,583.)
+
+A pistol shot with no target in front costs four traces (three autoaim
+tries of 1,024 units, the shot of 2,048): about 2.2 M cycles, two
+frames. Most of it is `P_PointOnDivlineSide` on every line of every
+blockmap cell crossed (two FixedMuls per end point), the intercept
+vector (four FixedMuls and a FixedDiv per crossed line) and line-cache
+misses. The target is 150 K a tic; the next steps are a vertex side cache
+per trace, traversing the intercepts cell by cell (the first one-sided
+wall ends an aim), and a faster FixedDiv. The render packet is the other
+cost: every thing is visited each frame; it should keep its candidates
+between frames.
+
+Primitives (`tests/test_game_asm.py`, GAME.BIN's cache sizes): FixedMul
+877 mean / 1,649 max (random 32-bit operands), FixedDiv 4,491 / 4,982,
+`fine_sine` 618 (a far read), `R_PointInSector` 15,952 at random points /
+3,431 again at the same one, `P_Line` 212 cached / 2,275 fetched,
+`P_BoxOnLineSide` about 415, `P_InterceptVector` about 9,800,
+`P_PathTraverse` (lines only, random traces of 64-2,048 units) 154,625
+mean / 887,983 max.
+
+### Tests
+
+- `tests/test_game_info.py`: `gen_info.py` and `gen_offsets.py` are
+  current; every kept state and type equals vanilla's info.c
+  (chocolate-doom, `DOOM_VANILLA_SRC`); the E1 monsters', projectiles',
+  barrel's and weapons' frame sequences and properties equal ZDoom's
+  actor definitions (`DOOM_ZDOOM_ACTORS`, its `zscript/doom`; ZDoom's own
+  additions and the three places it changed vanilla are listed).
+- `tests/test_game_core.py` (host): spawn counts per type and skill,
+  every map loads, walking into walls, sliding, steps up and not too
+  high, falling, the pistol's puff and a barrel woken and hurt, the
+  render packet; cc65's code for `FLAG()`; the GAME-space link and its
+  budget.
+- `tests/test_game_asm.py` (py65, module by module against the host C):
+  FixedMul/FixedDiv against vanilla's 64-bit definitions, the sine
+  tables, the level arrays, every E1M1 line and blockmap cell,
+  R_PointInSector, REJECT, the sector setters, line/box/divline sides,
+  intercept vectors, line openings, block coordinates, path traversal,
+  thing links and iterators, line marks.
+- `tests/test_game_sim.py` (py65, the whole game against the host tic by
+  tic: a 290-tic session on E1M1, a barrel shot until it explodes, E1M8
+  loaded by `game_tic` and played; with the measurements above; the
+  monsters: 29 awake over 300 tics, E1M8's barons, the pickups of 14
+  kinds, all against the host tic by tic).
+- `tests/test_game_monsters.py` (host): sight against a ray caster and
+  REJECT, the BSP depth; a zombieman wakes, sees, sounds, shoots and
+  hits; the pistol kills one (death states, corpse, kill count, the
+  clip dropped and picked up for half); an imp's fireball; a monster
+  uses a door line; every pickup with its limits and messages; armour,
+  thrust, pain and infighting; a barrel chain; the sound flood against a
+  Python transcription of vanilla's recursion and a shot waking the
+  map; a lost soul's charge; E1M8's boss death.
+- `tests/test_game_specials.py`: on the host, through `game_init` and
+  `game_tic` (its own library, with `tests/host/host_spec.c`): E1M1's
+  first door opens with use (2 a tic, 4 below the lowest neighbouring
+  ceiling), waits `VDOORWAIT`, closes, is free again, the far record
+  following the near heights every tic; a door turned around; a lift by
+  its switch and by walking over its line (down, 3 s, up); a button
+  (E1M3's switch 928: the other texture for a second); a once-only
+  switch (its texture for good, its special cleared, its three floors
+  lowered); the exit switch, the intermission and its tally, E1M2
+  loaded on a new press and E1M1's lines and sidedefs back as they were;
+  E1M3's secret exit to E1M9; E1M8's exit, the finale and a new game;
+  a restart after the player's death with every bank as the converter
+  made it (but for the new level's lights); the blue door refused (the
+  message queued, "oof") and opened with the blue skull key; nukage (5
+  every 32 tics, none with the suit); a secret counted once; strobes,
+  flickers, glows and fire flickers; scrolling walls; E1M4's teleporter;
+  E1M3's stairs. On the 6502 against the host, tic by tic (the sectors,
+  the specials' lines and sidedefs, the level flow, and all of
+  `test_game_sim.py`'s comparisons): E1M1's door, switch, floors, lift,
+  blazing door, blue door, nukage and secret, then E1M8's exit, the
+  finale and a new game on E1M1 (whose banks must then equal the
+  host's); E1M1's exit to E1M2 and E1M2's glows, fire flickers,
+  scrolling walls, lifts, floors, doors and teleporter (the half-size
+  caches: E1M2 does not fit the harness with GAME.BIN's); and 23 rounds
+  that rewrite two E1M1 lines' specials to cover the EV_ routines E1
+  does not use (stairs, donut, crushers, every plat and floor type,
+  lights, locked blazing doors, teleport search), plus sector specials
+  10, 14 and lights spawned at run time. `--profile` gives the routine
+  costs above.
 
 ## 10. Input
 

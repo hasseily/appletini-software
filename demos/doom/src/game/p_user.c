@@ -6,7 +6,8 @@
  */
 #include "p_local.h"
 
-#ifdef GAME_REAL
+/* on the 6502 this is a_user.s */
+#if defined(GAME_REAL) && !defined(__CC65__)
 
 #define MAXBOB          0x100000L
 #define INVERSECOLORMAP 32

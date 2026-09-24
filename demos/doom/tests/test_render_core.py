@@ -5,9 +5,9 @@ The linked program (the renderer track's build, BUILD below) runs in the
 py65 test machine through tools/doomdbg.py: a view goes into the render
 packet (_rview in bank 1, nthings = npsprites = 0), render_map selects the
 map, render_frame runs, and the view buffer must equal, byte for byte,
-tools/refrender.py's Renderer(masked=False).render of the same view (the
-masked phase, sprites and two-sided middles, is the next part's; with no
-things only the two-sided middles would differ). Covered:
+tools/refrender.py's Renderer.render of the same view with no things and no
+weapon (walls, planes, sky and the two-sided middle textures;
+tests/test_render_masked.py has the things and the weapon). Covered:
 
   - the 36 deliverable views (every map: player start + pick_views)
   - the 6 golden views of tests/test_refrender.py (eye, tic, extralight,
@@ -104,7 +104,7 @@ def game_data(mapname):
 
 
 def reference(mapname, view, tic=0, extralight=0, fixedcolormap=None, shaded=False):
-    r = R.Renderer(game_data(mapname), shaded=shaded, masked=False)
+    r = R.Renderer(game_data(mapname), shaded=shaded)
     buf, st = r.render(view, (), (), tic=tic, extralight=extralight,
                        fixedcolormap=fixedcolormap)
     return bytes(buf), st
@@ -417,18 +417,43 @@ PHASES = [
 ]
 
 
-def profile(views, top=40):
-    """Cycles by routine (self) and by phase (inclusive) over the views."""
-    sim = RenderSim()
+def profile(views, top=40, sim=None, setup=None, phases=None):
+    """Cycles by routine (self) and by phase (inclusive) over the views
+    (setup(sim, view) loads one: tests/test_render_masked.py's scenes)."""
+    sim = sim or RenderSim()
     m, mpu, L = sim.m, sim.m.mpu, sim.L
-    names = sorted((a, n) for n, a in L.items()
-                   if not n.startswith("__") and not n.startswith("@") and a >= 0x0200)
-    addrs = [a for a, _ in names]
-    phase_of = {L[r]: p for p, r in PHASES}
+    # the language card's $D000 banks share addresses: the labels of each,
+    # from the debug file's segments (KLC2/RLC2 bank 2, the others bank 1)
+    lc2 = set()
+    dbg = Path(sim.dbg.d.build if hasattr(sim.dbg.d, "build") else BUILD) / "doom.dbg"
+    if not dbg.exists():
+        dbg = BUILD / "doom.dbg"
+    segs = {}
+    for line in dbg.read_text().splitlines():
+        f = dict(kv.split("=", 1) for kv in line.split("\t", 1)[-1].split(",") if "=" in kv)
+        if line.startswith("seg\t"):
+            segs[f["id"]] = f["name"].strip('"')
+        elif line.startswith("sym\t") and f.get("type") == "lab" and "seg" in f:
+            if segs.get(f["seg"]) in ("KLC2", "RLC2"):
+                lc2.add(f["name"].strip('"'))
+    names1 = sorted((a, n) for n, a in L.items()
+                    if not n.startswith("__") and not n.startswith("@") and a >= 0x0200
+                    and n not in lc2)
+    names2 = sorted((a, n) for n, a in L.items()
+                    if not n.startswith("__") and not n.startswith("@") and a >= 0x0200
+                    and (n in lc2 or not 0xD000 <= a < 0xE000))
+    addrs1 = [a for a, _ in names1]
+    addrs2 = [a for a, _ in names2]
+    names, addrs = names1, addrs1
+    phase_by_name = {r: p for p, r in (phases or PHASES) if r in L}
     selfc, phasec, incl, phase_rt = {}, {}, {}, {}
     total = 0
-    for name, mapname, view, tic, ex, fx, sh in views:
-        sim.set_view(mapname, view, tic, ex, fx, sh)
+    for item in views:
+        if setup:
+            setup(sim, item)
+        else:
+            name, mapname, view, tic, ex, fx, sh = item
+            sim.set_view(mapname, view, tic, ex, fx, sh)
         driver = doomdbg.DRIVER
         code = bytes((0x20,)) + L["render_frame"].to_bytes(2, "little") + bytes((0xEA,))
         m.main[driver:driver + len(code)] = code
@@ -445,10 +470,12 @@ def profile(views, top=40):
             m.step()
             dc = mpu.processorCycles - c0
             total += dc
-            r = cache.get(pc)
+            b2 = 0xD000 <= pc < 0xE000 and m.lc_bank2
+            names, addrs = (names2, addrs2) if b2 else (names1, addrs1)
+            r = cache.get((pc, b2))
             if r is None:
                 i = bisect.bisect_right(addrs, pc) - 1
-                r = cache[pc] = names[i][1] if i >= 0 else "?"
+                r = cache[(pc, b2)] = names[i][1] if i >= 0 else "?"
             selfc[r] = selfc.get(r, 0) + dc
             ph = next((p for _, p, _ in reversed(stack) if p), "frame: render_frame")
             phasec[ph] = phasec.get(ph, 0) + dc
@@ -457,12 +484,19 @@ def profile(views, top=40):
             for callee in {e[2] for e in stack}:
                 incl[callee] = incl.get(callee, 0) + dc
             if op == 0x20:                          # JSR: the callee's phase, if one
+                b2 = 0xD000 <= mpu.pc < 0xE000 and m.lc_bank2
+                names, addrs = (names2, addrs2) if b2 else (names1, addrs1)
                 i = bisect.bisect_right(addrs, mpu.pc) - 1
-                stack.append((mpu.sp, phase_of.get(mpu.pc), names[i][1] if i >= 0 else "?"))
+                callee = names[i][1] if i >= 0 else "?"
+                stack.append((mpu.sp, phase_by_name.get(callee), callee))
             elif op == 0x60 and stack and mpu.sp > stack[-1][0]:
                 stack.pop()
-            elif mpu.pc in phase_of and stack:      # a phase entered by a jump
-                stack[-1] = (stack[-1][0], phase_of[mpu.pc], stack[-1][2])
+            elif stack and op == 0x4C:              # a phase entered by a jump
+                b2 = 0xD000 <= mpu.pc < 0xE000 and m.lc_bank2
+                names, addrs = (names2, addrs2) if b2 else (names1, addrs1)
+                i = bisect.bisect_right(addrs, mpu.pc) - 1
+                if i >= 0 and names[i][0] == mpu.pc and names[i][1] in phase_by_name:
+                    stack[-1] = (stack[-1][0], phase_by_name[names[i][1]], stack[-1][2])
             while stack and mpu.sp > stack[-1][0] + 2:      # left by a jump
                 stack.pop()
         mpu.pc, mpu.sp, mpu.p = pc0, sp0, p0
@@ -471,7 +505,7 @@ def profile(views, top=40):
     print("by phase (inclusive, per view):")
     for k, v in sorted(phasec.items(), key=lambda kv: -kv[1]):
         print(f"  {v / n:>12,.0f}  {100 * v / total:5.1f}%  {k}")
-    for ph, v in sorted(phasec.items(), key=lambda kv: -kv[1])[:6]:
+    for ph, v in sorted(phasec.items(), key=lambda kv: -kv[1])[:int(os.environ.get("PROFILE_PHASES", "6"))]:
         print(f"  {ph}: " + ", ".join(f"{k} {c / n:,.0f}" for k, c in
                                       sorted(phase_rt[ph].items(), key=lambda kv: -kv[1])[:int(os.environ.get("PROFILE_TOP", "10"))]))
     print("by routine (self, per view):")

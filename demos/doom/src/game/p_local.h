@@ -123,6 +123,7 @@ typedef struct mobj_s {
     uint8_t   type, tics;           /* tics: ST_FOREVER = vanilla -1 */
     uint8_t   radius;               /* map units; 0 when gibbed */
     uint8_t   movedir, movecount, reactiontime, threshold;
+    uint8_t   lastlook;             /* vanilla's P_Random() % MAXPLAYERS at spawn */
 } mobj_t;
 
 typedef struct sobj_s {
@@ -142,6 +143,7 @@ typedef struct sobj_s {
 #define SF_GIBS     0x10            /* crushed: radius and height 0 */
 #define SF_DORMANT  0x20            /* a monster that has not woken yet */
 #define SF_NOBLOCK  0x40            /* not linked in the blockmap (MF_NOBLOCKMAP) */
+#define SF_LOOK1    0x80            /* its lastlook is 1 (p_enemy.c: the first look fails) */
 
 extern sobj_t *statics, *statics_end;
 #define IS_STATIC(p)    ((void *)(p) >= (void *)statics && (void *)(p) < (void *)statics_end)
@@ -213,7 +215,7 @@ typedef struct player_s {
     uint8_t  fixedcolormap;         /* 0 none, 1 infrared, 32 invulnerable (vanilla) */
     pspdef_t psprites[NUMPSPRITES];
     boolean  didsecret;
-    const char *message;
+    uint8_t  message;               /* MSG_* of the last pickup (the HUD shows it), 0 none */
 } player_t;
 #define CF_NOCLIP       1
 #define CF_GODMODE      2
@@ -231,7 +233,26 @@ extern uint16_t leveltime;
 extern uint16_t totalkills, totalitems, totalsecret;
 extern uint8_t  gameaction;         /* ga_* */
 enum { sk_baby, sk_easy, sk_medium, sk_hard, sk_nightmare };
-enum { ga_nothing, ga_loadlevel, ga_completed, ga_secretcompleted, ga_died };
+enum { ga_nothing, ga_loadlevel, ga_completed, ga_secretcompleted, ga_died, ga_worlddone,
+       ga_newgame };
+/* the level flow (g_game.c): playing, the tally after a level, the end of
+ * the episode (vanilla gamestate_t, and its finale) */
+extern uint8_t  gamestate;
+enum { GS_LEVEL, GS_INTERMISSION, GS_FINALE };
+typedef struct {                    /* vanilla wbstartstruct_t for one player */
+    uint8_t  epsd, last, next;      /* episode, the map left, the map to come (1-9) */
+    boolean  didsecret;             /* left by a secret exit */
+    int16_t  maxkills, maxitems, maxsecret;
+    int16_t  kills, items, secret;
+    uint32_t time;                  /* tics spent in the level */
+    uint16_t partime;               /* seconds */
+} wbstartstruct_t;
+extern wbstartstruct_t wminfo;      /* valid in GS_INTERMISSION and GS_FINALE */
+extern uint16_t wi_tics;            /* tics in the intermission or finale */
+extern uint32_t leveltics;          /* tics in the level (leveltime wraps at 65536) */
+/* messages for the status bar (MSG_*: pickups, keys), oldest first */
+void    G_Message(uint8_t msg);
+uint8_t G_NextMessage(void);        /* 0: none waiting */
 
 /* the level's far arrays (p_setup.c fills levarr from MAPDIR) */
 typedef struct {  /* 10 bytes */
@@ -276,9 +297,17 @@ uint16_t P_SectorCeilingPic(uint16_t sector);
 uint16_t P_SectorLines(uint16_t sector, uint16_t *first);  /* count; *first = SECLINES index */
 uint16_t P_SecLine(uint16_t secline);               /* SECLINES[secline] */
 void     P_SectorBlockBox(uint16_t sector, uint8_t *box);  /* cells: top, bottom, left, right */
+extern int16_t sec_bbox[4];         /* ... and its lines' box in map units (the same order) */
 boolean  P_RejectVisible(uint16_t s1, uint16_t s2);  /* false: REJECT says they cannot see */
 uint16_t R_PointInSector(fixed_t x, fixed_t y);
 void     P_ClearCaches(void);                       /* p_levdata.c, level start */
+extern uint8_t sec_changes;         /* counts P_SetSectorFloor/Ceiling calls (mod 256) */
+typedef struct {                    /* a cached BSP node (p_levdata.c) */
+    uint16_t node;                  /* its number; NO_INDEX = empty slot */
+    int16_t  x, y, dx, dy;          /* the partition line, map units */
+    uint16_t child[2];              /* right (front), left (back); bit 15 = subsector */
+} bspnode_t;
+bspnode_t *P_Node(uint16_t nodenum);  /* valid until the next P_Node or R_PointInSector */
 void     P_ClearBlockBoxCache(void);
 void    *P_ArenaAlloc(uint16_t size);               /* level memory, zeroed; crash when full */
 uint16_t P_ArenaFree(void);
@@ -306,7 +335,11 @@ void P_RemoveThinker(thinker_t *thinker);
 void P_RunThinkers(void);
 void P_UnlinkThinker(thinker_t *thinker);   /* out of the list now (not while it runs) */
 thinker_t *P_AllocThinker(uint8_t size);     /* a zeroed block of <= THINKER_BLOCK bytes */
+#ifdef __CC65__
 #define THINKER_BLOCK   32
+#else
+#define THINKER_BLOCK   64          /* the host's thinker_t alone is 24 bytes */
+#endif
 #define THINKER_BLOCKS  32
 void P_FreeActor(mobj_t *mo);
 void P_Ticker(void);
@@ -333,6 +366,9 @@ mobj_t *P_StaticView(sobj_t *s);    /* read-only mobj image of a static */
 mobj_t *P_Actor(mobj_t *thing);     /* thing itself, or its static woken (may be NULL) */
 void    P_RunStatics(void);
 void    P_InitMobjs(uint16_t statics);  /* the pools; the actors get the arena less ARENA_RESERVE */
+void   *P_ArenaPool(uint16_t *count);   /* 6502: the actor pool's place and size (p_setup.c) */
+void    P_ExtendPool(void);             /* 6502: the set-up overlay's bytes become actor slots */
+void    P_LoadOverlay(void);            /* 6502: the set-up overlay back into place (fixed.s) */
 #define ARENA_RESERVE   2048        /* level memory left for P_SpawnSpecials, P_MonstersSetupLevel */
 #define MAXACTORS       160
 fixed_t P_ThingHeight(mobj_t *thing);   /* height of an actor or a static */
@@ -419,7 +455,7 @@ void S_StartSound(mobj_t *origin, uint8_t sfx);
 extern uint8_t  snd_last[8];        /* the last sounds started (the sound part takes them) */
 extern uint8_t  snd_count;
 
-/* --- the MONSTERS part (game_monsters_stub.c until p_enemy/p_inter/p_sight) ------- */
+/* --- the MONSTERS part (p_enemy.c, p_inter.c, p_sight.c) ----------------------------- */
 void    P_DamageMobj(mobj_t *target, mobj_t *inflictor, mobj_t *source, int16_t damage);
 void    P_KillMobj(mobj_t *source, mobj_t *target);
 void    P_TouchSpecialThing(mobj_t *special, mobj_t *toucher);
@@ -427,6 +463,20 @@ boolean P_CheckSight(mobj_t *t1, mobj_t *t2);
 void    P_NoiseAlert(mobj_t *target, mobj_t *emitter);
 void    P_MonstersSetupLevel(void);
 /* A_* mobj actions: info.h */
+/* vanilla's movement directions (p_enemy.c) */
+enum { DI_EAST, DI_NORTHEAST, DI_NORTH, DI_NORTHWEST, DI_WEST, DI_SOUTHWEST, DI_SOUTH,
+       DI_SOUTHEAST, DI_NODIR };
+/* player.message: vanilla's pickup messages (d_englsh.h), by number */
+enum { MSG_NONE, MSG_GOTARMOR, MSG_GOTMEGA, MSG_GOTHTHBONUS, MSG_GOTARMBONUS, MSG_GOTSUPER,
+       MSG_GOTBLUECARD, MSG_GOTYELWCARD, MSG_GOTREDCARD, MSG_GOTBLUESKUL, MSG_GOTYELWSKUL,
+       MSG_GOTREDSKULL, MSG_GOTSTIM, MSG_GOTMEDINEED, MSG_GOTMEDIKIT, MSG_GOTINVUL,
+       MSG_GOTBERSERK, MSG_GOTINVIS, MSG_GOTSUIT, MSG_GOTMAP, MSG_GOTVISOR, MSG_GOTCLIP,
+       MSG_GOTCLIPBOX, MSG_GOTROCKET, MSG_GOTROCKBOX, MSG_GOTCELL, MSG_GOTCELLBOX,
+       MSG_GOTSHELLS, MSG_GOTSHELLBOX, MSG_GOTBACKPACK, MSG_GOTCHAINGUN, MSG_GOTCHAINSAW,
+       MSG_GOTLAUNCHER, MSG_GOTPLASMA, MSG_GOTSHOTGUN,
+       /* the specials part's (vanilla PD_*: "You need a blue key to activate
+        * this object" (a locked switch), "... to open this door") */
+       MSG_PD_BLUEO, MSG_PD_REDO, MSG_PD_YELLOWO, MSG_PD_BLUEK, MSG_PD_REDK, MSG_PD_YELLOWK };
 
 /* --- the SPECIALS part (game_specials_stub.c until p_spec & co) ------------------------ */
 void    P_CrossSpecialLine(uint16_t linenum, uint8_t side, mobj_t *thing);

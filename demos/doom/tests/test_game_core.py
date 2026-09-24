@@ -20,9 +20,19 @@ a tic costs microseconds:
     eye at the player's view height, the weapon, and the things nearest
     first without the player.
 
-Then the 6502 build (make BUILD=build/gtrack/, the game in the GAME
-space) must link, and a short boot in the simulator with the real data
-must load E1M1 and run tics with the player moving under scripted input.
+The 6502 build is tested by tests/test_game_asm.py (the assembly
+modules against this C, one by one) and tests/test_game_sim.py (the
+whole cc65 build on py65 against this build, tic by tic, E1M1 under
+scripted input). Here, for cc65's side:
+
+  - the code cc65 makes of FLAG() (doomtype.h) reads the flags word's
+    own byte: cc65 2.18 drops a member's offset from
+    ((uint8_t *)&p->member)[n], which the macro avoids;
+  - the game links in the GAME space as src/doom.cfg defines it
+    (tests/host/gamespace.cfg: bank 1 $0200-$B7FF), with room left for
+    E1M1's level memory. This does not hold yet (DESIGN.md section 9,
+    "Memory"): the test is an expected failure, and GameSpaceBudgetTest
+    records the sizes and fails if they grow.
 
 The data: build/data (tools/wad2a2.py); without it the tests are skipped.
 Run:  python3 tests/test_game_core.py [-v]
@@ -45,8 +55,11 @@ import gen_info  # noqa: E402
 import wad2a2  # noqa: E402
 
 DATA = PROJECT / "build/data"
+# the game's sources: DOOM_GAMESRC may name a snapshot of src/game (as the
+# Makefile's GAMESRC) while another part is being written in the tree
+GAMESRC = Path(os.environ.get("DOOM_GAMESRC", PROJECT / "src/game"))
 HOSTDIR = PROJECT / "build/host"
-LIB = HOSTDIR / "libgame.so"
+LIB = HOSTDIR / ("libgame.so" if "DOOM_GAMESRC" not in os.environ else "libgame-snap.so")
 GAMEBUILD = "build/gtrack/"
 MEASURE = {}
 
@@ -65,17 +78,22 @@ def have_data() -> bool:
 def build_host() -> Path:
     """gcc the game with the host kernel into build/host/libgame.so."""
     HOSTDIR.mkdir(parents=True, exist_ok=True)
-    sources = sorted((PROJECT / "src/game").glob("*.c")) + [PROJECT / "tests/host/host.c"]
-    headers = sorted((PROJECT / "src/game").glob("*.h")) + sorted((PROJECT / "tests/host").glob("*.h"))
+    sources = sorted(GAMESRC.glob("*.c")) + [PROJECT / "tests/host/host.c"]
+    headers = sorted(GAMESRC.glob("*.h")) + sorted((PROJECT / "tests/host").glob("*.h"))
     newest = max(p.stat().st_mtime for p in sources + headers + [DATA / "doomdata.h"])
     if LIB.is_file() and LIB.stat().st_mtime >= newest:
         return LIB
     cmd = ["gcc", "-shared", "-fPIC", "-O1", "-g", "-Wall", "-Werror", "-Wno-unused-function",
            "-include", str(PROJECT / "tests/host/kernel.h"),
-           "-I", str(PROJECT / "tests/host"), "-I", str(PROJECT / "src/game"), "-I", str(DATA),
+           "-I", str(PROJECT / "tests/host"), "-I", str(GAMESRC), "-I", str(DATA),
            "-o", str(LIB)] + [str(s) for s in sources] + ["-lm"]
     subprocess.run(cmd, check=True)
     return LIB
+
+
+HOST_THING = 16
+THING_KEYS = ("static", "type", "x", "y", "z", "state", "health", "flags", "sector", "sflags",
+              "tics", "angle", "momx", "momy", "momz", "floorceil")
 
 
 class Game:
@@ -119,10 +137,9 @@ class Game:
         assert self.lib.host_place_player(int(x), int(y), int(angle) & 0xFFFF) == 0
 
     def things(self) -> list[dict]:
-        buf = (ctypes.c_int32 * (10 * 2000))()
+        buf = (ctypes.c_int32 * (HOST_THING * 2000))()
         n = self.lib.host_things(buf, 2000)
-        keys = ("static", "type", "x", "y", "z", "state", "health", "flags", "sector", "sflags")
-        return [dict(zip(keys, buf[10 * i:10 * i + 10])) for i in range(n)]
+        return [dict(zip(THING_KEYS, buf[HOST_THING * i:HOST_THING * (i + 1)])) for i in range(n)]
 
     def counts(self) -> dict:
         v = (ctypes.c_int32 * 12)()
@@ -518,6 +535,101 @@ class RenderPacketTest(unittest.TestCase):
             self.assertNotEqual((x, y), (rv["x"], rv["y"]))
         self.assertEqual(bands, sorted(bands))
         MEASURE["E1M1 start: things in the packet"] = len(things)
+
+
+# --- cc65's side --------------------------------------------------------------------------
+class CodegenTest(unittest.TestCase):
+    """FLAG() as cc65 compiles it: the byte at the member's offset."""
+
+    def test_flag_macro(self):
+        HOSTDIR.mkdir(parents=True, exist_ok=True)
+        c = HOSTDIR / "flagprobe.c"
+        c.write_text('#include "p_local.h"\n'
+                     "uint8_t probe(const mobjinfo_t *info) { return FLAG(info->flags, MF_COUNTKILL); }\n")
+        s = HOSTDIR / "flagprobe.s"
+        subprocess.run(["cc65", "-t", "none", "--cpu", "65c02", "--standard", "c99", "-Oirs",
+                        "-I", str(PROJECT / "src/game"), "-I", str(DATA), "-o", str(s), str(c)],
+                       check=True)
+        code = s.read_text()
+        # offsetof(mobjinfo_t, flags) is 20: the address computation adds it
+        self.assertRegex(code, r"adc\s+#\$14", "FLAG() lost the member's offset")
+
+
+def gamespace_link():
+    """The game linked by tests/host/gamespace.cfg: (ok, ld65's messages,
+    {segment: (start, size)})."""
+    sys.path.insert(0, str(PROJECT / "tests/host"))
+    import gamesim
+    out = HOSTDIR / "gamespace"
+    try:
+        gamesim.build(out, cfg=PROJECT / "tests/host/gamespace.cfg", asmdefs=[])
+        ok, msg = True, ""
+    except subprocess.CalledProcessError as e:
+        ok, msg = False, e.stderr or ""
+    segs = {}
+    mapfile = out / "flat.map"
+    if ok and mapfile.is_file():
+        import re
+        for m in re.finditer(r"^(\w+)\s+([0-9A-F]{6})\s+([0-9A-F]{6})\s+([0-9A-F]{6})",
+                             mapfile.read_text(), re.M):
+            segs[m.group(1)] = (int(m.group(2), 16), int(m.group(4), 16))
+    return ok, msg, segs
+
+
+def gamespace_sizes():
+    """The GAME space's contents by segment, from the objects themselves
+    (the link may fail): {segment: bytes}, the cc65 library's included."""
+    sys.path.insert(0, str(PROJECT / "tests/host"))
+    import gamesim
+    import re
+    out = HOSTDIR / "gamespace_sizes"
+    cfg = HOSTDIR / "gamespace_big.cfg"
+    cfg.write_text((PROJECT / "tests/host/gamespace.cfg").read_text()
+                   .replace("size = $B600", "size = $FD00").replace("start = $E000;", "start = $FF00;")
+                   .replace("$E000, size = $1F00", "$FF00, size = $00FA")
+                   # the BSS on its own (the sum passes 64 KB with the monsters)
+                   .replace("    KERN:", "    GBSS: file = \"\", start = $0200, size = $FD00, type = rw;\n    KERN:")
+                   .replace("INIT:     load = GAME", "INIT:     load = GBSS")
+                   .replace("BSS:      load = GAME", "BSS:      load = GBSS"))
+    # everything in GAME.BIN's segments: no code windows (those are the
+    # py65 harness's)
+    gamesim.build(out, cfg=cfg, asmdefs=[], cwindow=[])
+    segs = {}
+    for m in re.finditer(r"^(\w+)\s+([0-9A-F]{6})\s+([0-9A-F]{6})\s+([0-9A-F]{6})",
+                         (out / "flat.map").read_text(), re.M):
+        segs[m.group(1)] = int(m.group(4), 16)
+    return segs
+
+
+@unittest.skipUnless(have_data(), "no converted data (build/data)")
+class GameSpaceTest(unittest.TestCase):
+    @unittest.expectedFailure
+    def test_links_in_bank1(self):
+        """The whole core in RamWorks bank 1 $0200-$B7FF (46,592 bytes)
+        with E1M1's level memory: not yet (DESIGN.md section 9, Memory)."""
+        ok, msg, segs = gamespace_link()
+        self.assertTrue(ok, msg)
+
+
+@unittest.skipUnless(have_data(), "no converted data (build/data)")
+class GameSpaceBudgetTest(unittest.TestCase):
+    """The sizes behind DESIGN.md section 9's memory budget, measured."""
+
+    # resident: the core 51,429, with the monsters part 62,072 (specials
+    # stand-in); the monsters' assembly is 10.1 KB of code
+    CEILING = {"resident": 62500, "GOVL": 4300, "GFAR": 8194}
+
+    def test_budget(self):
+        segs = gamespace_sizes()
+        resident = sum(segs.get(k, 0) for k in ("STARTUP", "LOWCODE", "ONCE", "CODE", "RODATA",
+                                                 "DATA", "INIT", "BSS"))
+        MEASURE["GAME: code + rodata + data + bss (resident)"] = resident
+        for k in ("CODE", "RODATA", "DATA", "BSS", "GFAR", "GOVL"):
+            MEASURE[f"GAME: {k}"] = segs.get(k, 0)
+        MEASURE["GAME: bank 1 space, $0200-$B7FF"] = 0xB600
+        self.assertLessEqual(resident, self.CEILING["resident"])
+        self.assertLessEqual(segs.get("GOVL", 0), self.CEILING["GOVL"])
+        self.assertEqual(segs.get("GFAR", 0), self.CEILING["GFAR"])
 
 
 def approx(dx, dy):

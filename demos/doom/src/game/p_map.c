@@ -708,7 +708,24 @@ static boolean PIT_ChangeSector(mobj_t *thing)
 {
     mobj_t *mo;
     sobj_t *s;
+    int16_t x, y, r;
 
+    /* A thing whose box is outside the box of the sector's lines touches
+     * none of them and is not in the sector: its heights do not depend on
+     * this one (vanilla clips it anyway; on the 6502 that is a whole
+     * P_CheckPosition). The test is in map units, conservative on the
+     * fraction of an actor's position. */
+    if (IS_STATIC(thing)) {
+        x = AS_STATIC(thing)->x;
+        y = AS_STATIC(thing)->y;
+    } else {
+        x = UNITS(thing->x);
+        y = UNITS(thing->y);
+    }
+    r = P_ThingRadius(thing);
+    if (x + r < sec_bbox[BOXLEFT] || x - r > sec_bbox[BOXRIGHT]
+        || y + r < sec_bbox[BOXBOTTOM] || y - r > sec_bbox[BOXTOP])
+        return true;
     if (IS_STATIC(thing)) {
         s = AS_STATIC(thing);
         if (static_height_clip(s))

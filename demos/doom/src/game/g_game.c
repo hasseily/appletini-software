@@ -9,11 +9,27 @@
  *               packet (rview) for render_frame
  *
  * Level flow (vanilla g_game.c for one player, no menus yet): the start
- * map is E1M1 at "hurt me plenty"; an exit loads the next converted map
- * (E1M3's secret exit E1M9, E1M9 back to E1M4, after E1M8 E1M1 again
- * until the intermission and finale exist); the dead player's use key
- * restarts the level with a new player (G_PlayerReborn), as vanilla's
- * single-player G_DoReborn does.
+ * map is E1M1 at "hurt me plenty". An exit (G_ExitLevel,
+ * G_SecretExitLevel) ends the level at the next tic: the tally of the
+ * level (wminfo: kills, items, secrets, time, par) is made and the game
+ * waits in GS_INTERMISSION for a new press of fire or use (vanilla
+ * WI_checkForAccelerate; the intermission screens will show wminfo),
+ * then loads the next converted map: E1M1..E1M8 in order, E1M3's secret
+ * exit to E1M9, E1M9 back to E1M4. E1M8's exit ends the episode
+ * (GS_FINALE, vanilla's ga_victory: no tally, the end text), and a press
+ * there starts a new game at E1M1. The dead player's use key restarts the
+ * level with a new player (G_PlayerReborn), as vanilla's single-player
+ * G_DoReborn does. Every load first undoes what the specials changed in
+ * the far map records (P_ResetLevelData, p_spec.c), since the game has no
+ * WAD to reload them from.
+ *
+ * Messages: player.message (MSG_*: pickups, "you need a key") is taken
+ * after every tic into a queue of MSGQ_SIZE for the status bar, which
+ * reads them with G_NextMessage (vanilla's HU_Ticker takes and clears
+ * plr->message the same way; the oldest is dropped when the queue is
+ * full).
+ *
+ * S_StartSound, G_BuildTiccmd and R_BuildView are a_view.s on the 6502.
  *
  * The render packet (rview.h) is the eye (player.viewz with the bob), the
  * angle, the weapon layers, extralight, the tic, and the things nearest
@@ -23,7 +39,7 @@
  * things behind the eye (more than 64 units behind its plane) are left
  * out, since the renderer would not draw them.
  */
-#include "p_local.h"
+#include "p_spec.h"          /* P_ResetLevelData */
 #include "rview.h"
 
 #ifdef GAME_REAL
@@ -31,7 +47,10 @@
 #include <string.h>
 
 player_t player;
-uint8_t gameskill, gameepisode, gamemap, gameaction;
+uint8_t gameskill, gameepisode, gamemap, gameaction, gamestate;
+wbstartstruct_t wminfo;
+uint16_t wi_tics;
+uint32_t leveltics;
 uint16_t leveltime, totalkills, totalitems, totalsecret;
 rview_t rview;
 uint8_t snd_last[8], snd_count;
@@ -39,6 +58,7 @@ unsigned long game_tics;
 
 void game_farinit(void);            /* fixed.s */
 
+#if !defined(__CC65__)             /* on the 6502: a_view.s */
 /* --- sound hook ------------------------------------------------------------ */
 /* The sound part (DESIGN.md section 11) will play these; for now the last
  * eight are kept for it and the tests. */
@@ -48,6 +68,8 @@ void S_StartSound(mobj_t *origin, uint8_t sfx)
     snd_last[snd_count & 7] = sfx;
     ++snd_count;
 }
+
+#endif
 
 /* --- the player -------------------------------------------------------------- */
 void G_PlayerReborn(void)
@@ -91,6 +113,36 @@ void G_SecretExitLevel(void)
     gameaction = ga_secretcompleted;
 }
 
+/* --- messages for the status bar ------------------------------------------------ */
+#define MSGQ_SIZE   4
+static uint8_t msgq[MSGQ_SIZE], msgq_head, msgq_count;
+
+void G_Message(uint8_t msg)
+{
+    if (msgq_count == MSGQ_SIZE) {
+        msgq_head = (msgq_head + 1) & (MSGQ_SIZE - 1);
+        --msgq_count;
+    }
+    msgq[(msgq_head + msgq_count) & (MSGQ_SIZE - 1)] = msg;
+    ++msgq_count;
+}
+
+uint8_t G_NextMessage(void)
+{
+    uint8_t msg;
+
+    if (!msgq_count)
+        return 0;
+    msg = msgq[msgq_head];
+    msgq_head = (msgq_head + 1) & (MSGQ_SIZE - 1);
+    --msgq_count;
+    return msg;
+}
+
+/* --- level flow ---------------------------------------------------------------------- */
+/* Doom's par times of episode 1, seconds */
+static const uint8_t pars[9] = { 30, 75, 120, 90, 165, 180, 180, 30, 165 };
+
 static boolean map_exists(uint8_t map)
 {
     return far_peek(FAR(DD_DIR_BANK, DD_MAPDIR + MAP_SIZE * (map - 1) + MAP_NAME)) != 0;
@@ -98,10 +150,22 @@ static boolean map_exists(uint8_t map)
 
 static void G_DoLoadLevel(uint8_t map)
 {
+#ifdef __CC65__
+    P_LoadOverlay();                /* the set-up code (p_setup.c, p_spec.c's end) */
+#endif
+    P_ResetLevelData(map);          /* the far records as the converter made them */
+    /* (vanilla P_SetupLevel) */
+    player.killcount = player.itemcount = player.secretcount = 0;
     P_SetupLevel(1, map, gameskill);
+#ifdef __CC65__
+    P_ExtendPool();                 /* its bytes become actor slots */
+#endif
     gameaction = ga_nothing;
+    gamestate = GS_LEVEL;
+    leveltics = 0;
 }
 
+/* the level is over: its tally, then the intermission (or the episode's end) */
 static void G_DoCompleted(boolean secret)
 {
     uint8_t next;
@@ -117,9 +181,47 @@ static void G_DoCompleted(boolean secret)
         next = gamemap + 1;
     while (!map_exists(next))
         next = next >= 9 ? 1 : next + 1;
-    G_DoLoadLevel(next);
+    wminfo.epsd = gameepisode;
+    wminfo.last = gamemap;
+    wminfo.next = next;
+    wminfo.didsecret = secret;
+    wminfo.maxkills = totalkills;
+    wminfo.maxitems = totalitems;
+    wminfo.maxsecret = totalsecret;
+    wminfo.kills = player.killcount;
+    wminfo.items = player.itemcount;
+    wminfo.secret = player.secretcount;
+    wminfo.time = leveltics;
+    wminfo.partime = gamemap <= 9 ? pars[gamemap - 1] : 0;
+    wi_tics = 0;
+    gamestate = gamemap == 8 ? GS_FINALE : GS_INTERMISSION;
+    gameaction = ga_nothing;
 }
 
+/* vanilla WI_checkForAccelerate: a new press of fire or use */
+static boolean G_Accelerate(void)
+{
+    uint8_t b = player.cmd.buttons;
+    boolean hit = false;
+
+    if (b & BT_ATTACK) {
+        if (!player.attackdown)
+            hit = true;
+        player.attackdown = true;
+    } else {
+        player.attackdown = false;
+    }
+    if (b & BT_USE) {
+        if (!player.usedown)
+            hit = true;
+        player.usedown = true;
+    } else {
+        player.usedown = false;
+    }
+    return hit;
+}
+
+#if !defined(__CC65__)             /* on the 6502: a_view.s */
 /* --- tic commands (vanilla G_BuildTiccmd for the Apple's input) ----------------- */
 #define SLOWTURNTICS    6
 #define MAXPLMOVE       0x32
@@ -339,6 +441,8 @@ void R_BuildView(void)
     rview.nthings = n;
 }
 
+#endif
+
 /* --- entry points ------------------------------------------------------------------------- */
 void game_init(void)
 {
@@ -360,12 +464,31 @@ void game_tic(void)
     case ga_secretcompleted:
         G_DoCompleted(true);
         break;
+    case ga_worlddone:
+        G_DoLoadLevel(wminfo.next);
+        break;
+    case ga_newgame:                /* after the episode: a new game */
+        player.playerstate = PST_REBORN;
+        G_DoLoadLevel(1);
+        break;
     case ga_loadlevel:
         G_DoLoadLevel(gamemap);
         break;
     }
     G_BuildTiccmd(&player.cmd);
+    if (gamestate != GS_LEVEL) {
+        /* the intermission, the episode's end: wait for a press */
+        if (wi_tics < 0xFFFF)
+            ++wi_tics;
+        if (G_Accelerate())
+            gameaction = gamestate == GS_FINALE ? ga_newgame : ga_worlddone;
+        return;
+    }
+    player.message = 0;
     P_Ticker();
+    ++leveltics;
+    if (player.message)
+        G_Message(player.message);
     if (player.playerstate == PST_REBORN)
         gameaction = ga_loadlevel;  /* vanilla single player: restart the level */
 }

@@ -30,6 +30,11 @@
 
 .include "gmacros.inc"
 .include "gwork.inc"
+
+; (only with the converted data: the stand-in data set builds the
+; platform's GAME skeleton, src/game/game.c)
+.ifdef DD_MAPDIR
+
 .import fx_mul, fx_div
 
 .export w_mov, w_add, w_sub, w_neg, w_abs, w_zero, w_cmp, w_sign, w_ldi, w_fix
@@ -344,3 +349,5 @@ w_operands:
         lda     W+3,y
         sta     W+W_FB+3
         rts
+
+.endif ; DD_MAPDIR

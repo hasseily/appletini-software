@@ -6,6 +6,11 @@
 ; Offsets from the start of the segment (GT_* in fixed.s):
 ;   +0      finesine[0..2047], u16 (vanilla finesine, first quarter)
 ;   +4096   tantoangle[0..2048], u16 (vanilla tantoangle >> 16)
+;   (only with the converted data: the stand-in data set builds the
+;   platform's GAME skeleton, src/game/game.c)
+
+.include "doomdata.inc"
+.ifdef DD_MAPDIR
 
 .export gtables_start, gtables_end
 
@@ -269,3 +274,5 @@ gtables_start:
         .word   8151,8153,8156,8158,8161,8163,8166,8169,8171,8174,8176,8179,8181,8184,8186,8189
         .word   8192
 gtables_end:
+
+.endif ; DD_MAPDIR

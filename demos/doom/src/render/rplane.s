@@ -41,6 +41,7 @@
 .export tex_fetch, texbuf, flat_fetch, flatbuf, sky_piece, render_shaded
 .export pl_start, pl_stop, plane_fill, rc_xs0, rc_xs1, rc_ys0, rc_ys1
 .export vp_n, ds_n, op_used
+.export pt_top, spanstart, xc_ok, xc_shi, pl_hlo, pl_maxx, rc_ok, rc_ys1
 
 ; ---------------------------------------------------------------------------
 ; render_shaded: 0 textured floors and ceilings, else flat-shaded (a byte

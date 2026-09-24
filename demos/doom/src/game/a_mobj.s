@@ -22,9 +22,14 @@
 .include "gmacros.inc"
 .include "gwork.inc"
 
+; (only with the converted data: the stand-in data set builds the
+; platform's GAME skeleton, src/game/game.c)
+.ifdef DD_MAPDIR
+
+
 .import set_pos, unset_pos, is_static, info_ptr, ret_w, call_ax, cf_ptr
 .import actor_cell, static_cell, find_link, line_get
-.import _P_UnlinkStatic, _P_ArenaAlloc, _P_ArenaFree, _P_RejectVisible
+.import _P_UnlinkStatic, _P_ArenaAlloc, _P_ArenaPool, _P_RejectVisible, _arena_bounds
 .import try_move, thing_zh, _P_SlideMove, _ceilingline
 .import w_mov, w_add, w_sub, w_neg, w_abs, w_zero, w_cmp, w_sign, w_ldi, w_fix
 .import w_sext, w_ldo, w_sto, w_ldp, w_fixp, w_mul, w_tst, w_add3, w_sub3
@@ -38,7 +43,7 @@
 
 .export _mobjs, _mobjs_end, _statics, _statics_end, _nummobjs, _numstatics
 .export _mobjs_used, _statics_used, _sview, _sview_src, _thinkercap
-.export _P_InitMobjs, _P_FreeActor, _P_AllocStatic, _P_StaticFlags, _P_ThingHeight
+.export _P_InitMobjs, _P_ExtendPool, _P_FreeActor, _P_AllocStatic, _P_StaticFlags, _P_ThingHeight
 .export _P_StaticView, _P_WakeStatic, _P_Actor, _P_ForgetMobj, _P_SetMobjState
 .export _P_ExplodeMissile, _P_MobjThinker, _P_SpawnMobj, _P_RemoveMobj, _P_RunStatics
 .export _P_SpawnPuff, _P_SpawnBlood, _P_CheckMissileSpawn
@@ -297,49 +302,28 @@ _P_InitMobjs:
         inc     ptr1+1
         bra     @st
 @actors:
-        ; as many actors as the arena less ARENA_RESERVE holds, at most MAXACTORS
-        jsr     _P_ArenaFree
-        sec
-        sbc     #<ARENA_RESERVE
-        sta     tmp1
-        txa
-        sbc     #>ARENA_RESERVE
-        sta     tmp2
-        stz     _nummobjs
-        stz     _nummobjs+1
-        stz     im_n
-        stz     im_n+1
-        bcc     @alloc                  ; not even the reserve
-@count: lda     _nummobjs
-        cmp     #MAXACTORS
-        beq     @alloc
-        sec
-        lda     tmp1
-        sbc     #MO_SIZE
-        sta     tmp1
-        lda     tmp2
-        sbc     #0
-        sta     tmp2
-        bcc     @alloc
-        inc     _nummobjs
-        clc
-        lda     im_n
-        adc     #MO_SIZE
-        sta     im_n
-        bcc     @count
-        inc     im_n+1
-        bra     @count
-@alloc: lda     im_n
-        ldx     im_n+1
-        jsr     _P_ArenaAlloc
+        ; the pool: its place and size from P_ArenaPool (p_setup.c)
+        lda     #<im_n
+        ldx     #>im_n
+        jsr     _P_ArenaPool
         sta     _mobjs
-        stx     _mobjs+1
-        clc
-        adc     im_n
         sta     _mobjs_end
-        txa
-        adc     im_n+1
-        sta     _mobjs_end+1
+        stx     _mobjs+1
+        stx     _mobjs_end+1
+        lda     im_n
+        sta     _nummobjs
+        stz     _nummobjs+1
+        tax
+        beq     @nopool
+@size:  clc                             ; mobjs_end = mobjs + n * MO_SIZE
+        lda     _mobjs_end
+        adc     #MO_SIZE
+        sta     _mobjs_end
+        bcc     :+
+        inc     _mobjs_end+1
+:       dex
+        bne     @size
+@nopool:
         ; the free list in pool order: each slot's thinker.next is the next
         stz     mobj_free
         stz     mobj_free+1
@@ -375,6 +359,52 @@ _P_InitMobjs:
         stz     _player+PL_MO
         stz     _player+PL_MO+1
         rts
+
+; void P_ExtendPool(void): the set-up overlay's bytes (up to arena_bounds[4])
+; become free actor slots, up to MAXACTORS in all
+_P_ExtendPool:
+        lda     _nummobjs
+        cmp     #MAXACTORS
+        bcs     @rts
+        clc                             ; ptr2 = the slot's end: within the overlay?
+        lda     _mobjs_end
+        adc     #MO_SIZE
+        sta     ptr2
+        lda     _mobjs_end+1
+        adc     #0
+        sta     ptr2+1
+        cmp     _arena_bounds+9
+        bne     :+
+        lda     ptr2
+        cmp     _arena_bounds+8
+:       beq     :+
+        bcs     @rts
+:       lda     _mobjs_end
+        sta     ptr1
+        lda     _mobjs_end+1
+        sta     ptr1+1
+        ldy     #TH_FUNCTION
+        lda     #0
+        sta     (ptr1),y
+        iny
+        sta     (ptr1),y
+        ldy     #TH_NEXT
+        lda     mobj_free
+        sta     (ptr1),y
+        iny
+        lda     mobj_free+1
+        sta     (ptr1),y
+        lda     ptr1
+        sta     mobj_free
+        lda     ptr1+1
+        sta     mobj_free+1
+        lda     ptr2
+        sta     _mobjs_end
+        lda     ptr2+1
+        sta     _mobjs_end+1
+        inc     _nummobjs
+        bra     _P_ExtendPool
+@rts:   rts
 
 ; alloc_actor: an actor slot, zeroed -> A/X (0: none); C set: one must
 ; exist (else kernel_crash CRASH_MOBJS). When the free list is empty a
@@ -736,7 +766,13 @@ static_to_mobj:
         lda     (ptr1),y
         ldy     #MO_REACTIONTIME
         sta     (gmo),y
-:       jmp     mo_floor_ceiling
+:       lda     tmp3                    ; lastlook: 1 if SF_LOOK1, else 0
+        asl     a
+        lda     #0
+        rol     a
+        ldy     #MO_LASTLOOK
+        sta     (gmo),y
+        jmp     mo_floor_ceiling
 
 ; mobj_t *P_StaticView(sobj_t *s): the scratch actor sview as s
 _P_StaticView:
@@ -1933,12 +1969,12 @@ z_movement:
         ldx     #W_T4
         jsr     w_ldi
         .dword  $FFFE0000               ; -GRAVITY * 2
-        bra     :++
+        bra     @fall
 :       lda     W+W_T4+2
         bne     :+
         dec     W+W_T4+3
 :       dec     W+W_T4+2
-:       ldx     #W_T4
+@fall:  ldx     #W_T4
         ldy     #MO_MOMZ
         jsr     w_sto
 @ceiling:
@@ -2188,11 +2224,16 @@ _P_SpawnMobj:
         pha
         lda     gmo+1
         pha
-        jsr     _P_Random               ; vanilla's lastlook
+        jsr     _P_Random               ; vanilla's lastlook: P_Random() % MAXPLAYERS
+        and     #3
+        tax
         pla
         sta     gmo+1
         pla
         sta     gmo
+        txa
+        ldy     #MO_LASTLOOK
+        sta     (gmo),y
         jsr     mo_info
         ldy     #MI_SPAWNSTATE
         lda     (ptr1),y
@@ -2539,15 +2580,14 @@ _P_SpawnBlood:
         ; z (on the C stack) += P_SubRandom() << 10
         ldx     #W_T3
         jsr     subrandom10
-        clc
+        clc                             ; (X counts $FC..$FF: inx keeps the carry)
         ldy     #0
-        ldx     #0
+        ldx     #<-4
 :       lda     (sp),y
-        adc     W+W_T3,x
+        adc     W+W_T3+4-256,x
         sta     (sp),y
         iny
         inx
-        cpx     #4
         bne     :-
         lda     #MT_BLOOD
         jsr     _P_SpawnMobj
@@ -2849,3 +2889,5 @@ _P_Ticker:
         bne     :+
         inc     _leveltime+1
 :       rts
+
+.endif ; DD_MAPDIR

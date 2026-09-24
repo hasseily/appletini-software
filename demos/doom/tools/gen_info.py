@@ -879,13 +879,16 @@ extern const weaponaction_t weapon_actions[NUMACTIONS - AC_FIRST_WEAPON];
          "; Offsets from the start of the segment (GT_* in fixed.s):",
          ";   +0      finesine[0..2047], u16 (vanilla finesine, first quarter)",
          ";   +4096   tantoangle[0..2048], u16 (vanilla tantoangle >> 16)",
-         "", ".export gtables_start, gtables_end", "", '.segment "GFAR"', "gtables_start:"]
+         ";   (only with the converted data: the stand-in data set builds the",
+         ";   platform's GAME skeleton, src/game/game.c)",
+         "", '.include "doomdata.inc"', ".ifdef DD_MAPDIR", "",
+         ".export gtables_start, gtables_end", "", '.segment "GFAR"', "gtables_start:"]
     for i in range(0, 2048, 16):
         s.append("        .word   " + ",".join(str(v) for v in q[i:i + 16]))
     for i in range(0, 2049, 16):
         s.append("        .word   " + ",".join(str(v) for v in t[i:i + 16]))
     s.append("gtables_end:")
-    s.append("")
+    s += ["", ".endif ; DD_MAPDIR", ""]
 
     # --- the same tables for the host build (tests/host/host.c)
     g = [HEADER, "/* The far tables of src/game/gtables.s for the host build. */",

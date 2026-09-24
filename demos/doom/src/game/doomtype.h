@@ -77,8 +77,11 @@ fixed_t FASTCALL int2fix(int16_t v);
 /* Test, set or clear one MF_ flag of a 32-bit flags word by its byte:
  * FLAG(mo->flags, MF_SOLID). info.h gives every flag's byte (MF_x_B) and
  * mask in it (MF_x_M); cc65 would otherwise do 32-bit arithmetic. Little
- * endian on both targets. */
-#define FB_(v, n)       (((uint8_t *)&(v))[n])
+ * endian on both targets. The byte is *(p + n), not p[n]: cc65 2.18 drops
+ * the member's offset from ((uint8_t *)&ptr->member)[n] (it reads ptr + n;
+ * tests/test_game_sim.py found it, tests/test_game_core.py checks the
+ * code cc65 makes of this macro). */
+#define FB_(v, n)       (*((uint8_t *)&(v) + (n)))
 #define FLAG(v, f)      (FB_(v, f##_B) & f##_M)
 #define FLAGS_SET(v, f) (FB_(v, f##_B) |= f##_M)
 #define FLAGS_CLR(v, f) (FB_(v, f##_B) &= (uint8_t)~f##_M)

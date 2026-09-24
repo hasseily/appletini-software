@@ -29,6 +29,10 @@ const weaponinfo_t weaponinfo[NUMWEAPONS] = {
 
 const int16_t maxammo[NUMAMMO] = { 200, 50, 300, 50 };
 const int16_t clipammo[NUMAMMO] = { 10, 4, 20, 1 };
+
+/* the functions: on the 6502 they are a_user.s */
+#if !defined(__CC65__)
+
 fixed_t bulletslope;
 
 void P_SetPsprite(player_t *p, uint8_t position, uint16_t stnum)
@@ -350,5 +354,7 @@ void P_MovePsprites(player_t *p)
     p->psprites[ps_flash].sx = p->psprites[ps_weapon].sx;
     p->psprites[ps_flash].sy = p->psprites[ps_weapon].sy;
 }
+
+#endif
 
 #endif

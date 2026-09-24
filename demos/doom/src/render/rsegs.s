@@ -31,12 +31,15 @@
 ; order), so every comparison, every mark and every pixel is the same;
 ; -2 (Doom's sprite-clip sentinel) is exact.
 ;
-; The drawseg (DS_SIZE bytes in RENDER_BANK at DS_BASE + 26 * n), for the
+; The drawseg (DS_SIZE bytes in RENDER_BANK at DS_BASE + 30 * n), for the
 ; masked phase:
 ;   +0 x1, +1 x2, +2 scale1 (3), +5 scale2 (3), +8 scalestep (3, signed),
-;   +11 silhouette, +12 bsilheight (3, signed sub-units; $7FFFFF MAXINT),
-;   +15 tsilheight (3; $800000 MININT), +18 sprtopclip (2), +20
-;   sprbottomclip (2), +22 maskedtexturecol (2), +24 seg (2)
+;   +11 silhouette, +12 bsilheight (2, map units: the reference's value is
+;   always a height << 4; $7FFF MAXINT), +14 tsilheight (2; $8000 MININT),
+;   +16 sprtopclip (2), +18 sprbottomclip (2), +20 maskedtexturecol (2),
+;   +22 seg (2); for a masked middle, what R_RenderMaskedSegRange needs of
+;   the seg, known here already: +24 the texture of this frame (2), +26
+;   texturemid (3, sub-units), +29 the light level index (before clamping)
 ; The clip pointers are the RENDER_BANK address of column x1's byte in the
 ; openings (biased rows), or DS_NONE, DS_SCREENHEIGHT (all 84), DS_NEGONE
 ; (all -1); maskedtexturecol is the address of column x1's two bytes
@@ -63,28 +66,9 @@
 .import shr4tab, shl4tab, bitlen
 .import q_bank, q_dlo, q_dhi, q_cnt, q_slo, q_shi, q_flo, q_fhi, q_stl, q_sth, q_cm, q_hm
 
-.export store_wall_range
+.export store_wall_range, light_row, ds_addr, ct, mtcbuf
 .assert finetangent_mid = finetangent_lo + 1024 && finetangent_hi = finetangent_mid + 1024, lderror, "column_tex: the tangent planes must be 1024 apart"
 
-DS_SIZE     = 26
-DS_NONE     = 0
-DS_SCREENHEIGHT = 1
-DS_NEGONE   = 2
-
-; drawseg fields
-DS_X1       = 0
-DS_X2       = 1
-DS_SCALE1   = 2
-DS_SCALE2   = 5
-DS_STEP     = 8
-DS_SIL      = 11
-DS_BSIL     = 12
-DS_TSIL     = 15
-DS_TOPCLIP  = 18
-DS_BOTCLIP  = 20
-DS_MTC      = 22
-DS_SEG      = 24
-.exportzp DS_SIZE
 
 .segment "KZP": zeropage
 sg_texcol:  .res 1              ; the column's texture column (& 255)
@@ -144,6 +128,7 @@ wt_sh:      .res 3              ; 8 - log2h per slot
 sc_seg:     .res 2              ; the seg whose values are below ($FFFF none)
 sc_offok:   .res 1              ; its rw_offset, rw_centerangle, walllights are set
 sg_sinna:   .res 2              ; sin_bam(rw_normalangle)
+sw_lnum:    .res 1              ; its light level index (walllights' row)
 .segment "RLOBSS"
 sinea_lo:   .res VIEW_W + 1     ; sin_bam(ANG90 + xtoviewangle[x]) per column
 sinea_hi:   .res VIEW_W + 1
@@ -153,6 +138,8 @@ dsw_top:    .res 2              ; ds_prepare -> ds_write
 dsw_bot:    .res 2
 dsw_mtc:    .res 2
 dsw_rec:    .res 2
+dsa_t:      .res 2              ; ds_addr
+dsa_u:      .res 1
 .export sw_start, sw_stop
 
 .segment "RLOBSS"
@@ -446,7 +433,7 @@ store_wall_range:
         ; ---- two-sided
 @twosided:
         stz     ds_rec+DS_SIL
-        ldx     #5
+        ldx     #3
 :       stz     ds_rec+DS_BSIL,x
         dex
         bpl     :-
@@ -461,14 +448,9 @@ store_wall_range:
         lda     #SIL_BOTTOM
         sta     ds_rec+DS_SIL
         lda     fs_floor
-        ldx     fs_floor+1
-        jsr     shl4
-        lda     t4
         sta     ds_rec+DS_BSIL
-        lda     t5
+        lda     fs_floor+1
         sta     ds_rec+DS_BSIL+1
-        lda     t6
-        sta     ds_rec+DS_BSIL+2
         bra     @t1
 @b2:    ; (bs_floor << 4) > vz: SIL_BOTTOM, bsil MAXINT
         lda     bs_floor
@@ -497,14 +479,9 @@ store_wall_range:
         ora     #SIL_TOP
         sta     ds_rec+DS_SIL
         lda     fs_ceil
-        ldx     fs_ceil+1
-        jsr     shl4
-        lda     t4
         sta     ds_rec+DS_TSIL
-        lda     t5
+        lda     fs_ceil+1
         sta     ds_rec+DS_TSIL+1
-        lda     t6
-        sta     ds_rec+DS_TSIL+2
         bra     @cl
 @t2:    ; (bs_ceil << 4) < vz: SIL_TOP, tsil MININT
         lda     bs_ceil
@@ -697,9 +674,9 @@ store_wall_range:
 @mid:   ; a two-sided middle texture: masked, if the openings allow
         lda     sidebuf+SIDEDEF_MIDTEXTURE
         ora     sidebuf+SIDEDEF_MIDTEXTURE+1
-        beq     @textured
+        jeq     @textured
         lda     sw_record
-        beq     @textured
+        jeq     @textured
         ; need = 2 * n
         lda     sw_n
         asl     a
@@ -719,7 +696,7 @@ store_wall_range:
         cmp     t2
         lda     #>MAXOPENINGS
         sbc     t3
-        bcc     @textured               ; overflow: no masked middle
+        jcc     @textured               ; overflow: no masked middle
         lda     #1
         sta     masked
         clc
@@ -733,6 +710,67 @@ store_wall_range:
         sta     op_used
         lda     t3
         sta     op_used+1
+        ; for the masked phase: the texture, texturemid = ((DONTPEGBOTTOM ?
+        ; max(floors) + height : min(ceilings)) + yoffset) << 4 - vz
+        lda     sidebuf+SIDEDEF_MIDTEXTURE
+        ldx     sidebuf+SIDEDEF_MIDTEXTURE+1
+        jsr     tex_trans
+        sta     ds_rec+DS_TEX
+        stx     ds_rec+DS_TEX+1
+        lda     sw_flags
+        and     #ML_DONTPEGBOTTOM
+        beq     @mceil
+        lda     ds_rec+DS_TEX
+        ldx     ds_rec+DS_TEX+1
+        jsr     tex_get
+        lda     fs_floor                ; the higher floor
+        cmp     bs_floor
+        lda     fs_floor+1
+        sbc     bs_floor+1
+        bvc     :+
+        eor     #$80
+:       bmi     :+
+        lda     fs_floor
+        ldx     fs_floor+1
+        bra     :++
+:       lda     bs_floor
+        ldx     bs_floor+1
+:       clc
+        adc     tc_hlo,y
+        sta     t2
+        txa
+        adc     tc_hhi,y
+        bra     @mmid
+@mceil: lda     bs_ceil                 ; the lower ceiling
+        cmp     fs_ceil
+        lda     bs_ceil+1
+        sbc     fs_ceil+1
+        bvc     :+
+        eor     #$80
+:       bmi     :+
+        lda     fs_ceil
+        sta     t2
+        lda     fs_ceil+1
+        bra     @mmid
+:       lda     bs_ceil
+        sta     t2
+        lda     bs_ceil+1
+@mmid:  tax
+        clc
+        lda     t2
+        adc     sidebuf+SIDEDEF_YOFFSET
+        pha
+        txa
+        adc     sidebuf+SIDEDEF_YOFFSET+1
+        tax
+        pla
+        jsr     world_tm
+        lda     sw_tm
+        sta     ds_rec+DS_TMID
+        lda     sw_tm+1
+        sta     ds_rec+DS_TMID+1
+        lda     sw_tm+2
+        sta     ds_rec+DS_TMID+2
 
         ; ---- segtextured: rw_offset, rw_centerangle, the wall's light
 @textured:
@@ -843,6 +881,7 @@ store_wall_range:
         bne     @lclamp
         iny
 @lclamp:
+        sty     sw_lnum
         tya
         jsr     light_row
         sta     walllights
@@ -1104,15 +1143,13 @@ slot_setup:
 bsil_max:
         lda     #$FF
         sta     ds_rec+DS_BSIL
-        sta     ds_rec+DS_BSIL+1
         lda     #$7F
-        sta     ds_rec+DS_BSIL+2
+        sta     ds_rec+DS_BSIL+1
         rts
 tsil_min:
         stz     ds_rec+DS_TSIL
-        stz     ds_rec+DS_TSIL+1
         lda     #$80
-        sta     ds_rec+DS_TSIL+2
+        sta     ds_rec+DS_TSIL+1
         rts
 
 ; light_row: A = light level (signed, clamped to 0..15) -> A/X = scalelight row
@@ -2405,6 +2442,8 @@ ds_prepare:
         sta     dsw_mtc
         lda     ds_rec+DS_MTC+1
         sta     dsw_mtc+1
+        lda     sw_lnum
+        sta     ds_rec+DS_LIGHT
         lda     ds_rec+DS_SIL
         and     #SIL_TOP
         bne     :+
@@ -2419,12 +2458,11 @@ ds_prepare:
         ora     #SIL_BOTTOM
         sta     ds_rec+DS_SIL
         jsr     bsil_max
-@rec:   ; the record at DS_BASE + 26 * n
-        ldx     ds_n
-        lda     ds_alo,x
+@rec:   ; the record at DS_BASE + 30 * n
+        lda     ds_n
+        jsr     ds_addr
         sta     dsw_rec
-        lda     ds_ahi,x
-        sta     dsw_rec+1
+        stx     dsw_rec+1
         inc     ds_n
         rts
 
@@ -2504,10 +2542,12 @@ ds_write:
         lda     #0
         sta     (p0),y
         iny
-        inx
+        bne     :+
+        inc     p0+1                    ; (more than 128 columns: 2 bytes each)
+:       inx
         cpx     sw_stop
-        beq     :-
-        bcc     :-
+        beq     :--
+        bcc     :--
 @rec:   lda     dsw_rec+1
         beq     @done
         lda     dsw_rec
@@ -2521,12 +2561,36 @@ ds_write:
         bpl     :-
 @done:  rts
 
-; the RENDER_BANK address of each drawseg
-ds_alo:
-        .repeat MAXDRAWSEGS, i
-        .byte   <(DS_BASE + i * DS_SIZE)
-        .endrepeat
-ds_ahi:
-        .repeat MAXDRAWSEGS, i
-        .byte   >(DS_BASE + i * DS_SIZE)
-        .endrepeat
+; ds_addr: A = drawseg (0 .. MAXDRAWSEGS - 1) -> A/X = its RENDER_BANK
+; address, DS_BASE + 30n = DS_BASE + 32n - 2n (also rmasked.s)
+.assert DS_SIZE = 30, error, "ds_addr: DS_SIZE"
+ds_addr:
+        stz     dsa_t+1
+        asl     a
+        rol     dsa_t+1
+        sta     dsa_t                   ; 2n
+        ldx     dsa_t+1
+        stx     dsa_u
+        asl     a
+        rol     dsa_t+1
+        asl     a
+        rol     dsa_t+1
+        asl     a
+        rol     dsa_t+1
+        asl     a
+        rol     dsa_t+1                 ; 32n
+        sec
+        sbc     dsa_t
+        tay
+        lda     dsa_t+1
+        sbc     dsa_u
+        tax                             ; 30n
+        tya
+        clc
+        adc     #<DS_BASE
+        tay
+        txa
+        adc     #>DS_BASE
+        tax
+        tya
+        rts

@@ -86,7 +86,7 @@ class FixedTest(unittest.TestCase):
     def test_mul_div(self):
         rnd = random.Random(1)
         edges = [0, 1, -1, 0x10000, -0x10000, 0x7FFFFFFF, -0x80000000, 0xE800, 12345678, -987654]
-        cyc = []
+        cyc, dcyc = [], []
         for i in range(600):
             a = rnd.choice(edges) if i < 150 else rnd.randint(-2 ** 31, 2 ** 31 - 1) >> rnd.randint(0, 24)
             b = rnd.choice(edges) if i % 3 == 0 else rnd.randint(-2 ** 31, 2 ** 31 - 1) >> rnd.randint(0, 24)
@@ -95,7 +95,9 @@ class FixedTest(unittest.TestCase):
             cyc.append(self.g.call("fx_mul"))
             self.assertEqual(self.get32("fxr"), vanilla_mul(a, b), f"FixedMul({a}, {b})")
             if b:
-                self.g.call("fx_div")
+                c = self.g.call("fx_div")
+                if abs(a) >> 14 < abs(b):       # (not the overflow shortcut)
+                    dcyc.append(c)
                 self.assertEqual(self.get32("fxr"), vanilla_div(a, b), f"FixedDiv({a}, {b})")
             # the C entry points agree with the assembly ones
             if i % 50 == 0:
@@ -103,6 +105,7 @@ class FixedTest(unittest.TestCase):
                 self.assertEqual(s32(r), vanilla_mul(a, b))
         MEASURE["FixedMul cycles (random 32-bit operands): mean / max"] = \
             f"{sum(cyc) // len(cyc)} / {max(cyc)}"
+        MEASURE["FixedDiv cycles (no overflow): mean / max"] = f"{sum(dcyc) // len(dcyc)} / {max(dcyc)}"
 
     def test_sine(self):
         host = core.Game()

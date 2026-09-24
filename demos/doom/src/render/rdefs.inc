@@ -37,7 +37,7 @@ NF_SUBSECTOR = $80              ; bit 15 of a child (high byte)
 NONE        = $FF               ; "no plane" / "no sector" handles
 PL_OVERFLOW = $80               ; plane handle: a piece drawn at once (no visplane)
 TC_SLOTS    = 32                ; the texture-record cache (rplane.s)
-QN          = 64                ; the column-piece queue (rlc.s)
+QN          = 32                ; the column-piece queue (rlc.s)
 
 ; the map arrays the renderer reads (MAPARR_* index of the MAP record)
 NARRAYS     = 7                 ; VERTEXES .. SECTORS
@@ -55,12 +55,33 @@ SIL_TOP     = 2
 ; RENDER_BANK layout: visplane p's column arrays (index x + 1, columns
 ; -1..160): top at PL_TOP + p*PL_SIZE, bottom 162 bytes further. Then the
 ; drawsegs (DS_SIZE each) and the openings.
+; the drawseg record (rsegs.s has the layout)
+DS_SIZE     = 30
+DS_NONE     = 0                 ; clip pointers: none, all 84, all -1
+DS_SCREENHEIGHT = 1
+DS_NEGONE   = 2
+DS_X1       = 0
+DS_X2       = 1
+DS_SCALE1   = 2
+DS_SCALE2   = 5
+DS_STEP     = 8
+DS_SIL      = 11
+DS_BSIL     = 12                ; map units (2 bytes)
+DS_TSIL     = 14
+DS_TOPCLIP  = 16
+DS_BOTCLIP  = 18
+DS_MTC      = 20
+DS_SEG      = 22
+DS_TEX      = 24                ; masked middles only: the texture (this frame's)
+DS_TMID     = 26                ; texturemid (s24 sub-units)
+DS_LIGHT    = 29                ; light level index (before clamping)
+
 PL_COLS     = VIEW_W + 2        ; 162
 PL_SIZE     = 2 * PL_COLS       ; 324
 PL_TOP      = $0200
 PL_END      = PL_TOP + MAXVISPLANES * PL_SIZE      ; $A500
 DS_BASE     = PL_END
-DS_END      = DS_BASE + MAXDRAWSEGS * 26
+DS_END      = DS_BASE + MAXDRAWSEGS * DS_SIZE
 OPENINGS    = DS_END            ; MAXOPENINGS bytes
 .assert OPENINGS + MAXOPENINGS <= $C000, error, "RENDER_BANK overflows"
 

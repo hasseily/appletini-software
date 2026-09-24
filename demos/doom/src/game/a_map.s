@@ -18,6 +18,11 @@
 .include "gmacros.inc"
 .include "gwork.inc"
 
+; (only with the converted data: the stand-in data set builds the
+; platform's GAME skeleton, src/game/game.c)
+.ifdef DD_MAPDIR
+
+
 .import pols, bols, line_opening, set_pos, unset_pos, blockx, blocky
 .import thing_xy, thing_radius, is_static, info_ptr, mul8, ret_w
 .import lines_iter, things_iter, bl_func, bxl, bxh, byl, byh
@@ -28,7 +33,7 @@
 .import _P_Random, _P_SubRandom, _P_DamageMobj, _P_TouchSpecialThing, _P_StaticView
 .import _P_Actor, _P_SetMobjState, _P_SpawnPuff, _P_SpawnBlood, _P_SpawnMobj
 .import _P_RemoveMobj, _P_CrossSpecialLine, _P_ShootSpecialLine, _P_UseSpecialLine
-.import _S_StartSound, _P_CheckSight, _P_SectorCeilingPic, _P_SectorBlockBox
+.import _S_StartSound, _P_CheckSight, _P_SectorCeilingPic, _P_SectorBlockBox, _sec_bbox
 .import _R_PointToAngle2, _P_StaticFlags
 .import _skyflatnum, _leveltime, _player, _sec_floorh, _sec_ceilh, _mobjinfo, _st_tics
 .import pushax, pusha, pusheax, incsp6, addysp
@@ -68,6 +73,10 @@ ct_side:        .res 1
 hs_la:          .res 2              ; P_HitSlideLine's angles
 hs_da:          .res 2
 cs_box:         .res 4
+os_x:           .res 2                  ; outside_sector
+os_y:           .res 2
+os_t:           .res 2
+os_r:           .res 1
 ; iter_cells: the inputs, then the state it keeps on the stack around a cell
 cp_xl:          .res 2
 cp_xh:          .res 2
@@ -2588,6 +2597,98 @@ pit_radius:
 @true:  jmp     ret_true
 
 ; ---- sector height change -----------------------------------------------------------------------------
+; C set iff the thing gth's box (map units, the position's floor) is
+; strictly outside sec_bbox (top, bottom, left, right)
+outside_sector:
+        lda     gth
+        ldx     gth+1
+        jsr     thing_radius
+        sta     os_r
+        lda     gth
+        ldx     gth+1
+        jsr     is_static
+        ldy     #SO_X
+        lda     #SO_Y
+        bcs     :+
+        ldy     #MO_X+2
+        lda     #MO_Y+2
+:       pha
+        lda     (gth),y
+        sta     os_x
+        iny
+        lda     (gth),y
+        sta     os_x+1
+        ply
+        lda     (gth),y
+        sta     os_y
+        iny
+        lda     (gth),y
+        sta     os_y+1
+        ; x + r < left
+        clc
+        lda     os_x
+        adc     os_r
+        sta     os_t
+        lda     os_x+1
+        adc     #0
+        sta     os_t+1
+        lda     os_t
+        cmp     _sec_bbox + 2 * BOXLEFT
+        lda     os_t+1
+        sbc     _sec_bbox + 2 * BOXLEFT + 1
+        bvc     :+
+        eor     #$80
+:       bmi     @out
+        ; right < x - r
+        sec
+        lda     os_x
+        sbc     os_r
+        sta     os_t
+        lda     os_x+1
+        sbc     #0
+        sta     os_t+1
+        lda     _sec_bbox + 2 * BOXRIGHT
+        cmp     os_t
+        lda     _sec_bbox + 2 * BOXRIGHT + 1
+        sbc     os_t+1
+        bvc     :+
+        eor     #$80
+:       bmi     @out
+        ; y + r < bottom
+        clc
+        lda     os_y
+        adc     os_r
+        sta     os_t
+        lda     os_y+1
+        adc     #0
+        sta     os_t+1
+        lda     os_t
+        cmp     _sec_bbox + 2 * BOXBOTTOM
+        lda     os_t+1
+        sbc     _sec_bbox + 2 * BOXBOTTOM + 1
+        bvc     :+
+        eor     #$80
+:       bmi     @out
+        ; top < y - r
+        sec
+        lda     os_y
+        sbc     os_r
+        sta     os_t
+        lda     os_y+1
+        sbc     #0
+        sta     os_t+1
+        lda     _sec_bbox + 2 * BOXTOP
+        cmp     os_t
+        lda     _sec_bbox + 2 * BOXTOP + 1
+        sbc     os_t+1
+        bvc     :+
+        eor     #$80
+:       bmi     @out
+        clc
+        rts
+@out:   sec
+        rts
+
 ; boolean P_ChangeSector(uint16_t sector, boolean crunch)
 _P_ChangeSector:
         sta     crushchange
@@ -2622,6 +2723,13 @@ _P_ChangeSector:
 pit_change:
         sta     gth
         stx     gth+1
+        ; outside the box of the sector's lines (sec_bbox, P_SectorBlockBox):
+        ; its heights do not depend on this sector (p_map.c)
+        jsr     outside_sector
+        bcc     :+
+        jmp     ret_true
+:       lda     gth
+        ldx     gth+1
         jsr     is_static
         jcc     @actor
         jsr     static_height_clip
@@ -2841,3 +2949,5 @@ sub_random12:
         iny
         sta     (gmo),y
         rts
+
+.endif ; DD_MAPDIR

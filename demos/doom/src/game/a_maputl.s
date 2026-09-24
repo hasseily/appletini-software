@@ -37,6 +37,11 @@
 
 .include "gmacros.inc"
 .include "gwork.inc"
+
+; (only with the converted data: the stand-in data set builds the
+; platform's GAME skeleton, src/game/game.c)
+.ifdef DD_MAPDIR
+
 .import _P_ArenaAlloc, _numlines, _bmaporgx, _bmaporgy, _bmapwidth, _bmapheight
 .import _blocklinks, _statics, _statics_end, _sec_floorh, _sec_ceilh, _mobjinfo
 .import rpis, rp_x, rp_y, line_get, blk_lines, blk_cell, blk_pos, blk_buf, sqrlo, sqrhi
@@ -2176,3 +2181,5 @@ cmp16:  cpx     ptr1+1
         rts
 @eq:    lda     #0
         rts
+
+.endif ; DD_MAPDIR

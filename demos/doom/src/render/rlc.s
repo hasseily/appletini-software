@@ -83,7 +83,9 @@ q_in_hm:    .res 1
 .export q_in_bank, q_in_dst, q_in_cnt, q_in_src, q_in_f, q_in_step, q_in_cm, q_in_hm
 
 ; ---------------------------------------------------------------------------
-; rb_read: X bytes (0 = 256) from rb_bank:(rb_src) to (rb_dst)
+; rb_read: X bytes (0 = 256) from rb_bank:(rb_src) to (rb_dst): the odd
+; bytes, then four per loop (14 cycles a byte rather than 18: the renderer
+; reads some 16 KB of records a frame this way)
 rb_read:
         lda     rb_bank
         cmp     cur_bank
@@ -91,14 +93,35 @@ rb_read:
         sta     cur_bank
         sta     RAMWORKS
 :       sta     RAMRDON
+        stx     rb_cnt
         ldy     #0
-@l:     lda     (rb_src),y
+        txa
+        and     #3
+        tax
+        beq     @q
+@r:     lda     (rb_src),y
         sta     (rb_dst),y
         iny
         dex
+        bne     @r
+@q:     lda     rb_cnt
+        lsr     a
+        lsr     a
+        tax
         bne     @l
-        sta     RAMRDOFF
+        lda     rb_cnt
+        bne     @done
+        ldx     #64                     ; X = 0: 256 bytes
+@l:     .repeat 4
+        lda     (rb_src),y
+        sta     (rb_dst),y
+        iny
+        .endrepeat
+        dex
+        bne     @l
+@done:  sta     RAMRDOFF
         rts
+rb_cnt: .res    1
 
 ; rb_read1: A = the byte at rb_bank:(rb_src)
 rb_read1:
