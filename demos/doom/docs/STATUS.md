@@ -234,3 +234,17 @@ The renderer's speed (3.5 M cycles a frame against 1.25 M) and the
 firing and monster tic peaks are recorded but not worked on: the
 gameplay is to be validated first. The memory problem above is not a
 speed matter: it stops the program from linking at all.
+
+## Test run at the pause (commit 37075e4)
+
+| Suite | Result |
+|---|---|
+| tests/test_platform.py | 27 OK |
+| tests/test_game_core.py | 13: OK but 1 expected failure (the bank-1 link) and 1 error (`GameSpaceBudgetTest` cannot link the combined game in its 64 KB measuring map) |
+| tests/test_game_asm.py | 13 OK |
+| tests/test_game_info.py | 5 OK (4 skipped without the vanilla/ZDoom sources) |
+| tests/test_game_sim.py | 5 OK (lockstep) |
+| tests/test_game_monsters.py | 20 OK |
+| tests/test_game_specials.py | 21 OK (18 host, 3 lockstep) |
+| tests/test_render_core.py (`RENDER_GAMESRC=build/rtrack/gamesnap`) | 10 OK |
+| tests/test_render_masked.py (same) | 8 OK |
