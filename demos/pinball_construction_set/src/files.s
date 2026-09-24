@@ -37,12 +37,13 @@
 .include "assets.inc"
 
 .export files_menu, title_show, GETPLAYERCNT
-.export fm_err, fm_count, fm_sel, fm_name, fm_names, fm_flags
+.export fm_err, fm_count, fm_sel, fm_name, fm_names, fm_flags, fm_page
 .import frame_step, input_getkey, in_btn
 .import DOMENU, XDRAWCRSR, CHARTO, PRINT, PRCHAR, CHARBITS
 .import set_text_color, text_color
 .import panel_fill, panel_frame, panel_sprite, ps_id, ps_x, ps_y
 .import pf_x0, pf_y0, pf_x1, pf_y1, pf_color
+.import cur_want
 .import DRAWLOGO, PORT_DRAWDISPLAY, table_normalise
 .import ov_tiles, ov_enabled
 .import aux_fetch_rows, aux_store_rows
@@ -51,6 +52,7 @@
 .import P1STATE, PBBASE, PBDATA, spr_dir, kind_spr0, kind_frames
 
 ; MLI calls pcs.inc does not name
+MLI_SETMARK = $CE
 MLI_GETMARK = $CF
 MLI_SETEOF  = $D0
 MLI_GETEOF  = $D1
@@ -66,7 +68,8 @@ ROW_A_Y     = 66                ; LOAD SAVE EDIT QUIT
 ROW_B_Y     = 78                ; PLAY GAME
 CAT_Y0      = 90                ; the catalog
 CAT_PITCH   = 9
-CAT_MAX     = 11                ; entries shown (90..180)
+CAT_MAX     = 11                ; entries per page (90..180)
+CAT_STORE_MAX = 64              ; names occupy the two spare player pages
 CAT_TX      = 166               ; the names
 MSG_Y       = 192               ; the message line
 MENU_TOP    = 62                ; the panel below the logo
@@ -81,12 +84,14 @@ PB_Y1       = 199
 PB_TY       = 190
 PP_TOP      = 176
 PP_BOT      = 199
+RELEASE_FRAMES = 12            ; wait briefly for a normal click release
 ; a table's records may use this much of the database
 REC_MAX     = $1000
+RECORD_STAGE = fm_stage+156        ; 29-byte header + at most 127 sizes precede it
 
 ; --- variables in the player state pages ----------------------------------
 fm_stage    = P1STATE           ; 512: directory blocks, RLE chunks, output
-fm_names    = P1STATE+512       ; CAT_MAX names: length, 15 characters
+fm_names    = P1STATE+1024      ; 64 names x 16 bytes; unused outside game
 fm_path     = P1STATE+688       ; a pathname (length byte first), 65 bytes
 fm_name     = P1STATE+756       ; the typed name, 16 bytes
 fm_parms    = P1STATE+772       ; MLI parameter blocks (parms_tmpl)
@@ -111,6 +116,7 @@ fm_tpos     = P1STATE+863       ; bytes in fm_tile
 fm_trow     = P1STATE+864       ; the current tile
 fm_tcol     = P1STATE+865
 fm_have     = P1STATE+866       ; bit 7: fm_trow/fm_tcol is a set tile
+fm_page     = P1STATE+867       ; first catalog index on the visible page
 
 ; --- text ------------------------------------------------------------------
 ; the font codes: 0..9 digits, 10..35 letters, 36 space; bit 7 ends a string
@@ -151,6 +157,8 @@ s_save:     text "SAVE"
 s_edit:     text "EDIT"
 s_quit:     text "QUIT"
 s_play:     text "PLAY GAME"
+s_prev:     text "PREV"
+s_next:     text "NEXT"
 s_select:   text "PICK A TABLE"
 s_saved:    text "SAVED"
 s_name:     text "NAME "
@@ -173,14 +181,19 @@ r_save:     .byte ROW_A_Y-2, <204, >204, 10, 27, 0
 r_edit:     .byte ROW_A_Y-2, <246, >246, 10, 27, 0
 r_quit:     .byte ROW_A_Y-2, <288, >288, 10, 27, 0
 r_play:     .byte ROW_B_Y-2, <162, >162, 10, 59, 0
+r_prev:     .byte CAT_Y0-1, <258, >258, 8, 27, 0
+r_next:     .byte CAT_Y0-1, <289, >289, 8, 30, 0
 r_cat:      .byte CAT_Y0-1, <162, >162, CAT_MAX*CAT_PITCH-1, 155, 0
 menu_list:  .word r_load, do_load, r_save, do_save, r_edit, do_edit
-            .word r_quit, do_quit, r_play, do_play, r_cat, do_pick, 0
+            .word r_quit, do_quit, r_play, do_play
+            .word r_prev, do_prev, r_next, do_next, r_cat, do_pick, 0
 ; the keys and their handlers (less one for the RTS dispatch)
-KEYS = 6
-key_tab:    .byte 'L', 'S', 'E', 'Q', 'P', $1B
-key_lo:     .byte <(do_load-1), <(do_save-1), <(do_edit-1), <(do_quit-1), <(do_play-1), <(do_edit-1)
-key_hi:     .byte >(do_load-1), >(do_save-1), >(do_edit-1), >(do_quit-1), >(do_play-1), >(do_edit-1)
+KEYS = 8
+key_tab:    .byte 'L', 'S', 'E', 'Q', 'P', 'B', 'N', $1B
+key_lo:     .byte <(do_load-1), <(do_save-1), <(do_edit-1), <(do_quit-1)
+            .byte <(do_play-1), <(do_prev-1), <(do_next-1), <(do_edit-1)
+key_hi:     .byte >(do_load-1), >(do_save-1), >(do_edit-1), >(do_quit-1)
+            .byte >(do_play-1), >(do_prev-1), >(do_next-1), >(do_edit-1)
 ; the player-count digits: CHARTO offset and column of x = 174 + 30k
 pb_off:     .byte 174 .mod 7, 204 .mod 7, 234 .mod 7, 264 .mod 7
 pb_col:     .byte 174 / 7, 204 / 7, 234 / 7, 264 / 7
@@ -225,13 +238,29 @@ title_show:
         bne     @done
         bit     in_btn
         bpl     @wait
-@done:  jsr     frame_step              ; the release
-        bit     in_btn
-        bmi     @done
+@done:  jsr     wait_click_release
         lda     #0
         ldx     #SCREEN_H-1
         jmp     panel_rows
 @skip:  rts
+
+; Mouse-card state can remain pressed if a release event is lost. Let normal
+; clicks finish, then continue instead of trapping either the title screen
+; or the player-count prompt in an unbounded wait.
+wait_click_release:
+        lda     #RELEASE_FRAMES
+        pha
+@wait:  jsr     frame_step
+        bit     in_btn
+        bpl     @released
+        pla
+        dec     a
+        beq     @done
+        pha
+        bra     @wait
+@released:
+        pla
+@done:  rts
 
 ; ---------------------------------------------------------------------------
 ; files_menu: the disk tool. The logo band is already drawn (EDIT's DISKIO).
@@ -240,6 +269,8 @@ files_menu:
         lda     #MB_ST_DISK
         sta     MB_STATE
         jsr     menu_enter
+        lda     #$80                    ; EDIT's DISKIO hid the hand cursor
+        sta     cur_want
 @loop:  jsr     frame_step
         jsr     input_getkey
         bne     @key
@@ -283,6 +314,7 @@ menu_enter:
         stz     fm_flags
         lda     #$FF
         sta     fm_sel
+        stz     fm_page
         jsr     cat_read
 menu_draw:
         jsr     menu_clear
@@ -296,8 +328,24 @@ menu_draw:
         prints  s_quit
         textat  164, ROW_B_Y
         prints  s_play
-        ldx     #0
+        lda     fm_page
+        beq     :+
+        textat  260, CAT_Y0
+        prints  s_prev
+:       lda     fm_page
+        clc
+        adc     #CAT_MAX
+        cmp     fm_count
+        bcs     :+
+        textat  291, CAT_Y0
+        prints  s_next
+:       ldx     fm_page
 @cat:   cpx     fm_count
+        bcs     @msg
+        txa
+        sec
+        sbc     fm_page
+        cmp     #CAT_MAX
         bcs     @msg
         phx
         jsr     cat_item
@@ -318,6 +366,8 @@ cat_item:
         lda     #COL_WHITE
 :       jsr     set_text_color
         txa
+        sec
+        sbc     fm_page
         asl     a
         asl     a
         asl     a
@@ -343,6 +393,14 @@ cat_item:
 ; sel_name: BASE2 = the catalog name X. Keeps X.
 sel_name:
         txa
+        lsr     a
+        lsr     a
+        lsr     a
+        lsr     a
+        clc
+        adc     #>fm_names
+        sta     BASE2+1
+        txa
         asl     a
         asl     a
         asl     a
@@ -350,9 +408,9 @@ sel_name:
         clc
         adc     #<fm_names
         sta     BASE2
-        lda     #>fm_names
-        adc     #0
-        sta     BASE2+1
+        bcc     :+
+        inc     BASE2+1
+:
         rts
 
 ; print_name: A characters of the name at BASE2 (length byte first) at the
@@ -522,6 +580,33 @@ do_quit:
         jmp     msg_print
 @go:    jmp     exit_to_prodos
 
+; Catalog pages retain the full directory in fm_names. A page change
+; clears selection so a later click cannot redraw an off-page row.
+do_prev:
+        jsr     disarm
+        lda     fm_page
+        beq     @done
+        sec
+        sbc     #CAT_MAX
+        sta     fm_page
+        lda     #$FF
+        sta     fm_sel
+        jmp     menu_draw
+@done:  rts
+
+do_next:
+        jsr     disarm
+        lda     fm_page
+        clc
+        adc     #CAT_MAX
+        cmp     fm_count
+        bcs     @done
+        sta     fm_page
+        lda     #$FF
+        sta     fm_sel
+        jmp     menu_draw
+@done:  rts
+
 ; do_pick: the entry under the cursor (CAT_PITCH rows each from CAT_Y0-1)
 do_pick:
         jsr     disarm
@@ -535,6 +620,12 @@ do_pick:
         inx
         bra     :-
 :       cpx     fm_count
+        bcs     @none
+        txa
+        clc
+        adc     fm_page
+        tax
+        cpx     fm_count
         bcs     @none
         cpx     fm_sel
         beq     do_load                 ; the selected entry again: load it
@@ -773,10 +864,10 @@ GETPLAYERCNT:
         pla
         jmp     RUN2_CLOSE2
 
-; pp_end: wait for the button's release, erase the prompt, hide the cursor
-pp_end: jsr     frame_step
-        bit     in_btn
-        bmi     pp_end
+; pp_end: give a click time to release, but never strand the game shell if
+; the mouse card misses its release event. A held button will simply act as
+; a flipper input once the ball starts.
+pp_end: jsr     wait_click_release
         lda     #PP_TOP
         ldx     #PP_BOT
         jsr     panel_rows
@@ -875,7 +966,7 @@ mark_call:
 
 ; ---------------------------------------------------------------------------
 ; cat_read: the catalog: the *.PCS files (BIN) of the prefix directory,
-; up to CAT_MAX, into fm_names. Without a prefix the last used device's
+; up to CAT_STORE_MAX, into fm_names. Without a prefix the last used device's
 ; volume becomes the prefix (ON_LINE). Errors go to fm_err.
 ; ---------------------------------------------------------------------------
 cat_read:
@@ -982,7 +1073,7 @@ cat_entry:
         cpx     #4
         bne     :-
         ldx     fm_count
-        cpx     #CAT_MAX
+        cpx     #CAT_STORE_MAX
         bcs     @no
         jsr     sel_name
         ldy     TEMP
@@ -1060,7 +1151,9 @@ load_file:
         lda     p_mark+3
         sbc     TEMP+1
         bcc     @format
-@long:  ; commit: LOGIC, WSET, count, sizes, then the records
+@long:  jsr     validate_records       ; inspect each record before changing PBBASE
+        jcs     @err
+        ; commit: LOGIC, WSET, count, sizes, then the records
         lda     fm_stage+28
         clc
         adc     #29
@@ -1171,6 +1264,76 @@ db_length:
         adc     #0
         sta     fm_dblen+1
         rts
+
+; validate_records: stream each object into the unused end of fm_stage.
+; A record has an ID, colour, vertex count, then X and Y bytes for every
+; vertex; a library object also needs its 16-byte L-record. Rewind to the
+; first record after validation so the normal load can commit the table.
+validate_records:
+        ldx     #0
+@obj:   lda     fm_stage+29,x
+        cmp     #9                      ; three vertices are the minimum
+        bcc     @format
+        phx
+        ldx     #<RECORD_STAGE
+        ldy     #>RECORD_STAGE
+        jsr     read_to
+        plx
+        bcs     @done
+        lda     RECORD_STAGE
+        cmp     #OBJ_POLYGON
+        beq     @vertices
+        cmp     #OBJ_BPOLYGON
+        beq     @vertices
+        cmp     #OBJ_LIBOBJ
+        bne     @format
+@vertices:
+        lda     RECORD_STAGE+2
+        cmp     #3
+        bcc     @format
+        asl     a                       ; 3 + 2 * vertex count
+        bcs     @format
+        clc
+        adc     #3
+        bcs     @format
+        sta     TEMP
+        lda     RECORD_STAGE
+        cmp     #OBJ_LIBOBJ
+        bne     @size
+        lda     TEMP
+        clc
+        adc     #16                     ; the L-record the renderer reads
+        bcs     @format
+        sta     TEMP
+@size:  lda     fm_stage+29,x
+        cmp     TEMP
+        bcc     @format
+        lda     RECORD_STAGE
+        cmp     #OBJ_LIBOBJ
+        bne     @next
+        lda     TEMP
+        sec
+        sbc     #16                     ; L-record starts after both vertex arrays
+        tay
+        lda     RECORD_STAGE,y
+        cmp     #KIND_COUNT             ; otherwise its raw bytes become a pointer
+        bcs     @format
+@next:
+        inx
+        cpx     fm_stage+28
+        bcc     @obj
+        lda     fm_stage+28
+        clc
+        adc     #33                     ; magic + header + size bytes
+        sta     p_mark+2
+        stz     p_mark+3
+        stz     p_mark+4
+        lda     #MLI_SETMARK
+        jmp     mark_call
+@format:
+        lda     #ERR_FORMAT
+        sec
+@done:  rts
 
 ; ---------------------------------------------------------------------------
 ; save_file: the database and the overlay as fm_name + ".PCS" (created if

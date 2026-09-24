@@ -27,6 +27,7 @@ Needs a build (make) and the enhanced //e ROM (APPLETINI_ROOT or the
 default next to this tree). Run:  python3 tests/test_files.py
 """
 
+import json
 import os
 import sys
 import unittest
@@ -232,6 +233,10 @@ class Sim:
         a = self.L[name]
         return self.mem[a] if width == 1 else self.mem[a] | (self.mem[a + 1] << 8)
 
+    def pixel(self, x, y):
+        value = self.m.aux_banks[0][0x2000 + 160 * y + x // 2]
+        return value >> 4 if x % 2 == 0 else value & 15
+
     def db_image(self):
         """The database in memory (LOGIC, WSET, PBDATA), L-records with
         their sprite pointers."""
@@ -342,6 +347,15 @@ def table_files(**extra):
 
 @unittest.skipUnless(HAVE_BUILD, "needs build/PCS.SYSTEM, build/tables and the ROM")
 class TestDiskMenu(unittest.TestCase):
+    def test_cursor_is_visible_in_the_disk_menu(self):
+        sim = Sim(table_files())
+        sim.boot_to_editor()
+        self.assertEqual((sim.var("cur_want"), sim.var("cur_vis")), (0x80, 0x80))
+        sim.open_menu()
+        self.assertEqual((sim.var("cur_want"), sim.var("cur_vis")), (0x80, 0x80))
+        sim.frames(3)
+        self.assertEqual((sim.var("cur_want"), sim.var("cur_vis")), (0x80, 0x80))
+
     def test_catalog_select_load_save(self):
         # a second table: TABLE1 with its speed changed and an overlay
         image, _ = mt.split_pcs_file(TABLE1.read_bytes())
@@ -414,6 +428,86 @@ class TestDiskMenu(unittest.TestCase):
         self.assertEqual(sim.var("ov_enabled"), 0)
         self.assertEqual(sim.bank1_tile(5, 7), bytes(32))        # cleared
 
+    def test_catalog_pages_mouse_and_keys_reach_entries_after_11(self):
+        original, _ = mt.split_pcs_file(TABLE1.read_bytes())
+        special = bytearray(original)
+        special[25] = 6                 # a loaded final entry is observable
+        files = {}
+        for index in range(25):
+            db = bytes(special) if index == 24 else original
+            files[f"T{index:02d}.PCS"] = mt.pcs_file(db)
+        sim = Sim(files)
+        sim.boot_to_editor()
+        sim.open_menu()
+        self.assertEqual(sim.var("fm_count"), 25)
+        self.assertEqual(sim.catalog(), [f"T{i:02d}.PCS" for i in range(25)])
+        self.assertEqual(sim.var("fm_page"), 0)
+        # NEXT is clickable beside the first catalog row. The selected
+        # absolute index, not its on-screen row, is retained for LOAD.
+        sim.click(304, CAT_Y0 + 3)
+        self.assertEqual(sim.var("fm_page"), 11)
+        sim.click(*sim.entry_pos(0))
+        self.assertEqual(sim.var("fm_sel"), 11)
+        sim.key(ord("N"))
+        self.assertEqual(sim.var("fm_page"), 22)
+        self.assertEqual(sim.var("fm_sel"), 0xFF)
+        sim.click(*sim.entry_pos(2))
+        self.assertEqual(sim.var("fm_sel"), 24)
+        sim.click(*LOAD_ITEM, settle=8)
+        self.assertEqual(sim.state(), ST_EDIT)
+        self.assertEqual(sim.mem[PBBASE + 25], 6)
+        sim.open_menu()
+        self.assertEqual(sim.var("fm_page"), 0)
+        sim.key(ord("n"))             # lower-case shortcuts also work
+        self.assertEqual(sim.var("fm_page"), 11)
+        sim.click(270, CAT_Y0 + 3)     # PREV is clickable
+        self.assertEqual(sim.var("fm_page"), 0)
+        sim.key(ord("B"))              # no wrap before page one
+        self.assertEqual(sim.var("fm_page"), 0)
+
+    @unittest.skipUnless((ROOT / "assets" / "original_pb").is_dir(),
+                         "original .PB tables are not staged")
+    def test_every_converted_original_table_loads_from_paged_catalog(self):
+        paths = sorted((BUILD / "tables").glob("*.PCS"))
+        files = {path.name: path.read_bytes() for path in paths}
+        expected = sorted(["TABLE1.PCS"] + [p.stem + ".PCS" for p in
+                                           (ROOT / "assets" / "original_pb").glob("*.PB")])
+        self.assertEqual(list(files), expected)
+        sim = Sim(files)
+        sim.boot_to_editor()
+        for index, name in enumerate(expected):
+            sim.open_menu()
+            self.assertEqual(sim.catalog(), expected)
+            if index >= 11:
+                sim.key(ord("N"))
+                self.assertEqual(sim.var("fm_page"), 11)
+            sim.click(*sim.entry_pos(index % 11))
+            self.assertEqual(sim.var("fm_sel"), index)
+            sim.click(*LOAD_ITEM, settle=8)
+            self.assertEqual(sim.state(), ST_EDIT, name)
+            db, overlay = mt.split_pcs_file(files[name])
+            self.assertEqual(sim.db_file_image(), db, name)
+            tiles, artwork = mt.decode_overlay(overlay)
+            self.assertEqual(sim.ov_tiles(), tiles, name)
+            for (row, col), tile in artwork.items():
+                self.assertEqual(sim.bank1_tile(row, col), tile,
+                                 f"{name} artwork tile ({row}, {col})")
+            sim.open_menu()
+            sim.click(*PLAY_ITEM, settle=2)
+            self.assertEqual(sim.state(), ST_PLAY, name)
+            sim.frames(66)               # the original shell's title delay
+            sim.key(ord("1"), settle=6) # the user's number-key start path
+            self.assertEqual(sim.state(), ST_PLAY, name)
+            sim.frames(6)
+            ball_addr, ball = sim.l_record(4)
+            x, y = ball[17], ball[18]
+            self.assertIn(4, (sim.pixel(x + dx, y + dy)
+                              for dy in range(5) for dx in range(5)), name)
+            sim.key(KEY_ESC, settle=6)
+            self.assertEqual(sim.state(), ST_DISK, name)
+            sim.key(ord("E"), settle=6)
+            self.assertEqual(sim.state(), ST_EDIT, name)
+
     def test_overlay_round_trip_from_memory(self):
         """An overlay poked into bank 1 (as the magnifier leaves it) is
         saved with the program's encoder and read back by the reference
@@ -449,16 +543,22 @@ class TestDiskMenu(unittest.TestCase):
 
     def test_corrupt_files_keep_the_table(self):
         good = TABLE1.read_bytes()
+        good_image, _ = mt.split_pcs_file(good)
+        last_size = 29 + good_image[28] - 1
+        last_record = last_size + 1 + sum(good_image[29:last_size])
+        tiny_record = bytearray(good_image[:last_record + 1])
+        tiny_record[last_size] = 1                  # the last library object is one byte
         sim = Sim(table_files(**{
             "BAD.PCS": b"\x00" * 300,                           # not a table
             "SHORT.PCS": good[:120],                            # cut inside the records
             "NOMAP.PCS": good[:len(good) - 40],                 # cut inside the overlay map
+            "TINY.PCS": mt.pcs_file(bytes(tiny_record)),       # complete file, invalid record
         }))
         sim.boot_to_editor()
         before = sim.db_image()
         sim.open_menu()
-        self.assertEqual(sim.catalog(), ["TABLE1.PCS", "BAD.PCS", "SHORT.PCS", "NOMAP.PCS"])
-        for index in (1, 2, 3):
+        self.assertEqual(sim.catalog(), ["TABLE1.PCS", "BAD.PCS", "SHORT.PCS", "NOMAP.PCS", "TINY.PCS"])
+        for index in (1, 2, 3, 4):
             sim.click(*sim.entry_pos(index))
             sim.click(*LOAD_ITEM, settle=8)
             self.assertEqual(sim.state(), ST_DISK, index)
@@ -471,19 +571,89 @@ class TestDiskMenu(unittest.TestCase):
         sim.click(*LOAD_ITEM, settle=8)
         self.assertEqual(sim.state(), ST_EDIT)                   # TABLE1 itself loads
 
+    def test_unknown_library_kind_keeps_the_table(self):
+        good = TABLE1.read_bytes()
+        image, _ = mt.split_pcs_file(good)
+        last_size = 29 + image[28] - 1
+        last_record = last_size + 1 + sum(image[29:last_size])
+        self.assertEqual(image[last_record], 3)                 # library object
+        bad = bytearray(good)
+        l_record = last_record + 3 + 2 * image[last_record + 2]
+        bad[4 + l_record] = 43                                  # first unknown kind
+        sim = Sim(table_files(**{"BADKIND.PCS": bytes(bad)}))
+        sim.boot_to_editor()
+        before = sim.db_image()
+        sim.open_menu()
+        sim.click(*sim.entry_pos(1))
+        sim.click(*LOAD_ITEM, settle=8)
+        self.assertEqual(sim.state(), ST_DISK)
+        self.assertEqual(sim.var("fm_err"), ERR_FORMAT)
+        self.assertEqual(sim.db_image(), before)
+        self.assertEqual(sim.prodos.open_files, {})
+
     def test_play_game_and_esc(self):
         sim = Sim(table_files())
         sim.boot_to_editor()
+        # Add a bumper before leaving the editor: the game must initialize
+        # from the edited object table, not just the built-in seed table.
+        count = sim.mem[PBBASE + 28]
+        sim.m.mouse_move(176, 55)                         # BMP1 in the kit
+        sim.frames(2)
+        sim.m.mouse_buttons(True, False)
+        sim.frames(3)
+        sim.m.mouse_move(120, 50)
+        sim.frames(3)
+        sim.m.mouse_move(70, 45)
+        sim.frames(3)
+        sim.m.mouse_buttons(False, False)
+        sim.frames(6)
+        self.assertEqual(sim.mem[PBBASE + 28], count + 1)
+        sim.m.mouse_move(173, 35)                        # POLY in the kit
+        sim.frames(2)
+        sim.m.mouse_buttons(True, False)
+        sim.frames(3)
+        sim.m.mouse_move(125, 55)
+        sim.frames(3)
+        sim.m.mouse_move(80, 37)
+        sim.frames(3)
+        sim.m.mouse_buttons(False, False)
+        sim.frames(6)
+        self.assertEqual(sim.mem[PBBASE + 28], count + 2)
         sim.open_menu()
         sim.click(*PLAY_ITEM, settle=2)
         self.assertEqual(sim.state(), ST_PLAY)
         sim.frames(66)                                           # the shell's one-second wait
-        # the prompt: click the "2" box
-        sim.click(*PLAYER_BOX, settle=6)
+        # Editing leaves the span rows split at MIDY. Game setup must map
+        # rows above it to MIDTOP, not continue through the unused gap.
+        self.assertEqual(sim.mem[0xA5], 44)
+        upper = sim.mem[0xA3] | sim.mem[0xA4] << 8
+        lengths = sim.L["PBDX"]
+        def span_row(y):
+            return (sim.mem[sim.L["PBTBLO"] + y] |
+                    sim.mem[sim.L["PBTBHI"] + y] << 8)
+        self.assertEqual(span_row(45), upper)
+        self.assertEqual(span_row(55),
+                         upper + sum(sim.mem[lengths + y] for y in range(45, 55)))
+        # the prompt: choose two players with the number key
+        sim.key(ord("2"), settle=6)
         self.assertEqual(sim.mem[PLAYERCNT_ZP], 2)
         self.assertEqual(sim.state(), ST_PLAY)
+        # RUN2's PBASES forms four 128-byte slices. Their pointers must
+        # use the relocated P1STATE's actual low byte; assuming $00/$80
+        # overwrites the editor's polygon scan tables.
+        state_base = sim.L["P1STATE"]
+        for zp, offset in ((0x2B, 0), (0x2D, 0x80),
+                           (0x2F, 0x100), (0x31, 0x180)):
+            self.assertEqual(sim.mem[zp] | sim.mem[zp + 1] << 8,
+                             state_base + offset)
         ball_addr, ball = sim.l_record(4)
         x0, y0 = ball[17], ball[18]
+        self.assertIn(4, (sim.pixel(x0 + dx, y0 + dy)
+                          for dy in range(5) for dx in range(5)),
+                      "the first ball did not appear after selecting players")
+        sim.frames(10)
+        self.assertNotEqual(sim.mem[ball_addr + 18], y0,
+                            "the first ball did not begin moving")
         flip_addr, flip = sim.l_record(2)                        # the left flipper
         rest_ptr = flip[0] | (flip[1] << 8)
         # pull the plunger and release it: the ball moves
@@ -515,6 +685,95 @@ class TestDiskMenu(unittest.TestCase):
         # and the editor is still there
         sim.key(ord("E"), settle=6)
         self.assertEqual(sim.state(), ST_EDIT)
+
+    def test_player_click_with_held_mouse_button_starts_first_ball(self):
+        sim = Sim(table_files())
+        sim.boot_to_editor()
+        sim.open_menu()
+        sim.click(*PLAY_ITEM, settle=2)
+        sim.frames(66)
+        sim.m.mouse_move(*PLAYER_BOX)
+        sim.frames(1)
+        sim.m.mouse_buttons(True, False)
+        sim.frames(24)                 # the card still reports the button down
+        self.assertEqual(sim.mem[PLAYERCNT_ZP], 2)
+        self.assertGreater(sim.mem[0xC5], 0, "the game is stuck waiting for button release")
+        ball_addr, ball = sim.l_record(4)
+        x, y = sim.mem[ball_addr + 17], sim.mem[ball_addr + 18]
+        self.assertIn(4, (sim.pixel(x + dx, y + dy)
+                          for dy in range(5) for dx in range(5)))
+        sim.m.mouse_buttons(False, False)
+        sim.key(KEY_ESC, settle=6)
+        self.assertEqual(sim.state(), ST_DISK)
+
+    def test_crowded_edited_table_starts_with_number_key(self):
+        # This arrangement used to turn a scan-row gap byte into object ID
+        # $8D, then call its bogus $0303 hit vector on the first game tick.
+        sim = Sim(table_files())
+        sim.boot_to_editor()
+        parts = json.loads((BUILD / "parts.json").read_text())["parts"]
+        selected = [p for p in parts if p["name"] not in
+                    ("POLY1", "POLY2", "POLY3", "POLY4")]
+        for i, p in enumerate(selected[:36]):
+            if "box" in p:
+                w, h = p["box"]
+                x = p["x0"] + w // 2
+                y = p["y0"] - p.get("hoty", 0) + h // 2
+            else:
+                x = sum(p["x"]) // len(p["x"])
+                y = sum(p["y"]) // len(p["y"])
+            tx, ty = 70 + (i % 4) * 16, 35 + (i // 4 % 8) * 17
+            sim.m.mouse_move(x, y)
+            sim.frames(2)
+            sim.m.mouse_buttons(True, False)
+            sim.frames(3)
+            sim.m.mouse_move(128, max(20, min(170, y)))
+            sim.frames(3)
+            sim.m.mouse_move(tx, ty)
+            sim.frames(3)
+            sim.m.mouse_buttons(False, False)
+            sim.frames(6)
+        self.assertEqual(sim.mem[PBBASE + 28], 57)
+        self.assertEqual(sim.mem[0xA5], 44)
+        sim.open_menu()
+        sim.click(*PLAY_ITEM, settle=2)
+        sim.frames(66)
+        upper = sim.mem[0xA3] | sim.mem[0xA4] << 8
+        self.assertEqual(sim.mem[sim.L["PBTBLO"] + 45] |
+                         sim.mem[sim.L["PBTBHI"] + 45] << 8, upper)
+        sim.key(ord("1"), settle=8)
+        self.assertFalse(sim.left, "play jumped out of the game after the number key")
+        ball_addr, ball = sim.l_record(4)
+        x, y = ball[17], ball[18]
+        self.assertIn(4, (sim.pixel(x + dx, y + dy)
+                          for dy in range(5) for dx in range(5)))
+        self.assertTrue(sim.frames(6), "play left the game during the first ball")
+        self.assertNotEqual(sim.mem[ball_addr + 18], y)
+        sim.key(KEY_ESC, settle=6)
+        self.assertEqual(sim.state(), ST_DISK)
+
+    def test_horizontal_scan_skips_empty_row(self):
+        sim = Sim(table_files())
+        sim.boot_to_editor()
+        # Call RUN's CHECKHORIZ as a subroutine on an empty row. Without
+        # the guard, the zero byte count wraps and scans 256 phantom bytes.
+        row = 0
+        sim.mem[sim.L["PBDX"] + row] = 0
+        sim.mem[sim.L["PBTBLO"] + row] = 0
+        sim.mem[sim.L["PBTBHI"] + row] = 0x1F
+        sim.mem[0x1F00:0x2000] = bytes(256)
+        cpu = sim.mpu
+        cpu.pc = sim.L["CHECKHORIZ"]
+        cpu.y, cpu.a, cpu.sp = row, 127, 0xFB
+        cpu.p |= 1                                      # caller enters with carry set
+        sim.mem[0x1FC] = 0x33                           # RTS destination $1234
+        sim.mem[0x1FD] = 0x12
+        for _ in range(12):
+            if cpu.pc == 0x1234:
+                break
+            cpu.step()
+        self.assertEqual(cpu.pc, 0x1234)
+        self.assertEqual(cpu.p & 1, 0)                   # no hit: carry clear
 
     def test_quit_needs_confirmation(self):
         sim = Sim(table_files())
@@ -548,6 +807,17 @@ class TestDiskMenu(unittest.TestCase):
         self.assertEqual(sim.var("fm_count"), 0)
         sim.key(KEY_ESC, settle=6)
         self.assertEqual(sim.state(), ST_EDIT)
+
+    def test_title_click_with_held_mouse_button_enters_editor(self):
+        sim = Sim(table_files())
+        sim.frames(3)
+        self.assertEqual(sim.state(), ST_TITLE)
+        sim.m.mouse_move(100, 100)
+        sim.frames(1)
+        sim.m.mouse_buttons(True, False)
+        sim.frames(18)
+        self.assertEqual(sim.state(), ST_EDIT)
+        sim.m.mouse_buttons(False, False)
 
 
 if __name__ == "__main__":

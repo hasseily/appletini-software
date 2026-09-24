@@ -20,6 +20,7 @@ zero page or BSS, the way the port's own code does:
   cur_show/hide    the save-under round trip restores the screen bytes
   panel_fill       whole-byte fills at odd edges, bands taller than the arena
   record_id / record_sprite_id   ids above 63, the first bad pointers
+  vertex dots      points tools and black polygons finish a bounded redraw
   DOMENU           the item under the cursor is selected, none otherwise
   CHARTO/PRINT     glyph placement and advance, text only in the panel
 
@@ -150,6 +151,30 @@ class RenderCase(unittest.TestCase):
 
     def row_bytes(self, y, c0, c1):
         return bytes(self.d.aux[SHR_BASE + SHR_ROW * y + c0:SHR_BASE + SHR_ROW * y + c1 + 1])
+
+
+class TestVertexDots(RenderCase):
+    def test_points_tools_and_black_polygon_redraw(self):
+        d = self.d
+        # Pointer, Scissor and Hammer all enable RD_POINTS. Before the fix,
+        # the first visible vertex sent dot's row counter through a loop.
+        limit = 800_000
+        self.assertNotEqual(self.pixel(3, 30), 4)
+        d.set("rd_flags", d.get("rd_flags") | 0x40)
+        d.set("dr_all", 0x80)
+        steps = d.call("rd_frame", limit=limit)
+        self.assertLess(steps, limit, "points-mode redraw did not finish")
+        self.assertEqual(self.pixel(3, 30), 4)
+
+        # A black polygon draws its vertices even with the Hand tool.
+        pbd = d.L["PBDATA"]
+        wall = pbd + 1 + d.mem[pbd]
+        d.mem[wall + 1] = 0
+        d.set("rd_flags", 0)
+        d.set("dr_all", 0x80)
+        steps = d.call("rd_frame", limit=limit)
+        self.assertLess(steps, limit, "black-polygon redraw did not finish")
+        self.assertEqual(self.pixel(3, 30), 4)
 
 
 class TestFillSpan(RenderCase):
@@ -771,11 +796,10 @@ class TestText(RenderCase):
         expected = {}
         for code in codes:
             if code < FONT_SPACE and x >= PANEL_X:
-                box = x & ~1
                 for r, byte in enumerate(self.font(code)):
                     self.assertEqual(byte & 1, 0, "font bit 0 must be clear (7-pixel glyphs)")
-                    for k in range(8):
-                        expected[(box + k, row + r)] = COL_PANEL
+                    for k in range(7):
+                        expected[(x + k, row + r)] = COL_PANEL
                     for k in range(7):
                         if byte >> (7 - k) & 1:
                             expected[(x + k, row + r)] = colour
@@ -801,6 +825,29 @@ class TestText(RenderCase):
 
     def test_columns_beyond_255(self):
         self.check_text(40, 5, 150, [11, 12])          # x 285: 16-bit text x
+
+    def test_score_digits_keep_their_first_columns(self):
+        """Score digits are drawn right-to-left in seven-pixel cells."""
+        d = self.d
+        row = 120
+        starts = (273, 266, 259, 252)
+        cb = d.L["CHARBITS"]
+        for y in range(row, row + 7):
+            first = SHR_BASE + SHR_ROW * y + 252 // 2
+            d.aux[first:first + 14] = bytes([COL_PANEL * 0x11]) * 14
+        d.call("CHARTO", a=0, x=39, y=row)
+        for _ in starts:
+            d.call("PRCHAR", a=0)
+            d.mem[cb + 3] -= 1          # RUN/RUN2 PRSCORE2 resets each digit's column
+            d.mem[cb + 4] = 0
+        glyph = self.font(0)
+        for x in range(252, 280):
+            for r, bits in enumerate(glyph):
+                ink = any(x0 <= x < x0 + 7 and bits & (0x80 >> (x - x0))
+                          for x0 in starts)
+                expected = COL_TEXT if ink else COL_PANEL
+                self.assertEqual(self.pixel(x, row + r), expected,
+                                 f"score pixel ({x},{row + r})")
 
     def test_table_region_prints_nothing(self):
         d = self.d

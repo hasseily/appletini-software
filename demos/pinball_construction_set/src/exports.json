@@ -24,14 +24,25 @@
     "PLAY",
     "INITOBJS",
     "SCORE",
-    "DOSND"
+    "DOSND",
+    "C84375",
+    "C7875",
+    "C675",
+    "C45",
+    "C225",
+    "C1125",
+    "C05625",
+    "ELASTLO",
+    "ELASTHI"
   ],
   "RUN2": [
     "MAIN",
     "DISKPLAY",
     "SETUP2",
     "DOSOUND",
-    "CLOSE2"
+    "CLOSE2",
+    "ELASTLO",
+    "ELASTHI"
   ],
   "WIRE": [
     "START",

@@ -432,6 +432,27 @@ mark_object:
         sta     rd_ay0
         lda     PARAM+1
         sta     rd_ay1
+        lda     OBJID
+        cmp     #OBJ_LIBOBJ
+        bcs     @mark
+        ; A polygon's vertex dots cover one pixel outside each edge of
+        ; GETBOUNDS. Include that fringe when placing or moving it so the
+        ; first dot row appears and the old one is erased on the next drag.
+        lda     rd_ax0
+        beq     :+
+        dec     rd_ax0
+:       lda     rd_ax1
+        cmp     #TABLE_W-1
+        bcs     :+
+        inc     rd_ax1
+:       lda     rd_ay0
+        beq     :+
+        dec     rd_ay0
+:       lda     rd_ay1
+        cmp     #TABLE_H-1
+        bcs     @mark
+        inc     rd_ay1
+@mark:
         jsr     rd_mark
         lda     OBJID
         cmp     #OBJ_LIBOBJ
@@ -1445,7 +1466,9 @@ dot:
 :       ; arena row
         sec
         sbc     band_y0
+        phx                             ; arena_row_ptr uses X as its row offset
         jsr     arena_row_ptr
+        plx                             ; keep the three-row dot counter
         lda     R_B
         beq     :+                      ; x = 0: pixels 0..2
         dec     a

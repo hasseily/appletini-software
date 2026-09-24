@@ -34,7 +34,7 @@ TESTS = PROJECT / "tests"
 FIXTURE = TESTS / "assets_test"
 GEN = TOOLS / "gen_assets.py"
 BASELINE_CDRAW = PROJECT / "build" / "baseline" / "CDRAW.s"
-UPSTREAM_CDRAW = Path("/home/user/billbudge/pcs_appleii/source_disc1/CDRAW.S")
+UPSTREAM_CDRAW = PROJECT / "upstream" / "source_disc1" / "CDRAW.S"
 REAL_PARTS = PROJECT / "build" / "parts.json"
 REAL_ASSETS = PROJECT / "assets"
 

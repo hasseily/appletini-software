@@ -615,8 +615,9 @@ PRCHAR:
         rts
 
 ; draw_glyph: glyph TEMP at (C_TMP, CHARBITS+2) in the text colour on the
-; panel colour: 7 rows of 4 bytes in the arena, then copied. An odd x
-; shifts the glyph one pixel (nibble) to the right.
+; panel colour: 7 rows of 4 bytes in the arena, then copied. The 7-pixel
+; cell leaves one edge pixel outside it in this 8-pixel copy. Preserve that
+; pixel so a later score digit drawn to the left cannot erase its neighbour.
 draw_glyph:
         jsr     cur_hide
         lda     #4
@@ -627,6 +628,51 @@ draw_glyph:
         clc
         adc     #6
         sta     bl_cy1
+        ; Fetch the byte containing the pixel just outside the glyph cell
+        ; from each screen row. Even x preserves the last low nibble; odd x
+        ; preserves the first high nibble.
+        lda     C_TMP
+        and     #$FE
+        sta     cp_x0
+        lda     C_TMP+1
+        sta     cp_x0+1
+        ldy     CHARBITS+2
+        lda     row_lo,y
+        sta     af_src
+        lda     row_hi,y
+        sta     af_src+1
+        lda     cp_x0+1
+        lsr     a
+        lda     cp_x0
+        ror     a
+        clc
+        adc     af_src
+        sta     af_src
+        bcc     :+
+        inc     af_src+1
+:       lda     C_TMP
+        and     #1
+        bne     :+
+        lda     af_src
+        clc
+        adc     #3
+        sta     af_src
+        bcc     :+
+        inc     af_src+1
+:       stz     af_bank
+        lda     #<glyph_buf
+        sta     af_dst
+        lda     #>glyph_buf
+        sta     af_dst+1
+        lda     #1
+        sta     af_len
+        sta     af_dstride
+        lda     #SHR_ROW
+        sta     af_sstride
+        stz     af_sstride+1
+        lda     #7
+        sta     af_rows
+        jsr     aux_fetch_rows
         lda     #COL_PANEL*$11
         jsr     fill_arena
         ; glyph pointer = font7 + code*7
@@ -651,6 +697,22 @@ draw_glyph:
         tay
         lda     (C_PTR),y               ; bit 7 = leftmost pixel
         sta     TEMP2
+        lda     C_TMP
+        and     #1
+        beq     @edge_even
+        lda     glyph_buf,x
+        and     #$F0
+        ora     #COL_PANEL
+        ldy     #0
+        sta     (V_PTR),y
+        bra     @edge_done
+@edge_even:
+        lda     glyph_buf,x
+        and     #$0F
+        ora     #(COL_PANEL*$10)
+        ldy     #3
+        sta     (V_PTR),y
+@edge_done:
         lda     C_TMP
         and     #1
         sta     glyph_idx               ; pixel index in the arena row
@@ -687,11 +749,6 @@ draw_glyph:
         cpx     #7
         bcc     @row
         ; copy: 4 bytes x 7 rows at x & ~1
-        lda     C_TMP
-        and     #$FE
-        sta     cp_x0
-        lda     C_TMP+1
-        sta     cp_x0+1
         lda     CHARBITS+2
         sta     cp_y0
         lda     #7

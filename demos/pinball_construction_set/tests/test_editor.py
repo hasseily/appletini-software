@@ -76,7 +76,7 @@ SPR_BALL_FIRST, SPR_BMP1_FIRST, SPR_BMP2_FIRST = 22, 23, 25
 # tools/layout.py: the Play tool's box (y 34..51, x 292..319)
 PLAY_TOOL = (306, 43)
 KEY_ESC, KEY_SPACE, KEY_Z = 27, 32, ord("Z")
-MAX_DRAG_STEP = 63          # EDIT's DRAGO6 accepts moves of up to 63 pixels per frame
+MAX_DRAG_STEP = 63          # step size of the staged drag fixture below
 GRACE_BEFORE, GRACE_AFTER = 1, 3    # frames around a mode switch that may run long
 
 
@@ -98,16 +98,21 @@ def rom_path() -> Path:
 class Probe(run_editor.Runner):
     """A Runner that samples memory words after every frame."""
 
-    def __init__(self, args, watch=()):
+    def __init__(self, args, watch=(), screen_watch=()):
         super().__init__(args)
         self.watch = list(watch)            # (name, address, width)
+        self.screen_watch = list(screen_watch)  # (name, x, y)
         self.samples = []
 
     def frame_done(self) -> None:
         super().frame_done()
         m = self.machine.main
-        self.samples.append({name: (m[a] | (m[a + 1] << 8)) if w == 2 else m[a]
-                             for name, a, w in self.watch})
+        sample = {name: (m[a] | (m[a + 1] << 8)) if w == 2 else m[a]
+                  for name, a, w in self.watch}
+        for name, x, y in self.screen_watch:
+            b = self.machine.aux_banks[0][SHR_BASE + SHR_ROW * y + x // 2]
+            sample[name] = b >> 4 if x % 2 == 0 else b & 15
+        self.samples.append(sample)
 
 
 def make_args(out: Path, frames: int, do=(), stats=True):
@@ -116,9 +121,9 @@ def make_args(out: Path, frames: int, do=(), stats=True):
                               stats=str(out / "stats.json") if stats else None)
 
 
-def run(out: Path, frames: int, do=(), watch=()) -> Probe:
+def run(out: Path, frames: int, do=(), watch=(), screen_watch=()) -> Probe:
     ensure_build()
-    runner = Probe(make_args(out, frames, do), watch)
+    runner = Probe(make_args(out, frames, do), watch, screen_watch)
     with contextlib.redirect_stdout(io.StringIO()):
         runner.run()
     return runner
@@ -258,6 +263,90 @@ class TestDrag(EditorCase):
         actions.append(f"{t + 1}:up")
         return actions, t + 1
 
+    def test_add_object_keeps_scan_gap_at_capacity_boundary(self):
+        r = run(self.out, 4)
+        main, cpu = r.machine.main, r.machine.mpu
+        word = lambda a: main[a] | main[a + 1] << 8
+        midbtm = word(0xA1)
+        count = main[PBDATA]
+        # BMP1 has OBJLEN=$23, so ADDOBJ moves 36 bytes including its size
+        # byte. The remaining gap must still hold the converter's 32 bytes.
+        self.assertEqual(main[r.labels["OBJLEN"] + 5], 35)
+
+        def enter_with_gap(gap):
+            top = midbtm + gap
+            main[0xA3], main[0xA4] = top & 0xFF, top >> 8
+            main[top:top + 4] = b"GUAR"   # first bytes of the upper span region
+            cpu.pc = r.labels["ADDOBJ"]
+            cpu.a, cpu.x, cpu.y, cpu.sp = 35, 0, 0, 0xFB
+            main[0x1FC], main[0x1FD] = 0x33, 0x12  # RTS destination $1234
+            return top
+
+        for gap in (32, 67):
+            top = enter_with_gap(gap)
+            for _ in range(32):
+                if cpu.pc == 0x1234:
+                    break
+                cpu.step()
+            self.assertEqual(cpu.pc, 0x1234, f"gap {gap} accepted a 36-byte object")
+            self.assertEqual(word(0xA1), midbtm)
+            self.assertEqual(main[PBDATA], count)
+            self.assertEqual(bytes(main[top:top + 4]), b"GUAR")
+
+        top = enter_with_gap(68)
+        for _ in range(20_000):
+            if cpu.pc == r.labels["ADDOBJ2"]:
+                break
+            cpu.step()
+        self.assertEqual(cpu.pc, r.labels["ADDOBJ2"], "the exact-fit case was rejected")
+        self.assertEqual(word(0xA1), midbtm + 36)
+        self.assertEqual(top - word(0xA1), 32)
+        self.assertEqual(bytes(main[top:top + 4]), b"GUAR")
+
+    def test_scanline_rejects_insufficient_gap_before_writing(self):
+        r = run(self.out, 4)
+        main, cpu = r.machine.main, r.machine.mpu
+        word = lambda a: main[a] | main[a + 1] << 8
+        midbtm = word(0xA1)
+        row = 40
+        pbdx = r.labels["PBDX"] + row
+        abort = r.labels["ABORTSCN2"]
+        abort_overflow = r.labels["ABORTSCN3"]
+        write = r.labels["DOSCN5"]
+
+        def enter_with_gap(gap, row_bytes=0):
+            top = midbtm + gap
+            main[0xA3], main[0xA4] = top & 0xFF, top >> 8
+            main[top:top + 4] = b"GUAR"
+            main[0x9E] = 0                 # SCANMODE: normal scan
+            main[0x1F] = row               # SCANLINE
+            main[0x25] = 4                 # HCNT: one four-byte span
+            main[pbdx] = row_bytes
+            cpu.pc = r.labels["DOSCN4"]
+            cpu.sp = 0xFB
+            for _ in range(64):
+                if cpu.pc in (abort, abort_overflow, write):
+                    break
+                cpu.step()
+            return top
+
+        for gap in (2, 35):
+            top = enter_with_gap(gap)
+            self.assertEqual(cpu.pc, abort, f"gap {gap} wrote before rejecting the row")
+            self.assertEqual(word(0xA1), midbtm)
+            self.assertEqual(main[pbdx], 0)
+            self.assertEqual(bytes(main[top:top + 4]), b"GUAR")
+
+        top = enter_with_gap(36)           # four bytes of span plus 32 spare
+        self.assertEqual(cpu.pc, write, "a row that exactly fits was rejected")
+        self.assertEqual(main[pbdx], 4)
+        self.assertEqual(bytes(main[top:top + 4]), b"GUAR")
+
+        top = enter_with_gap(36, row_bytes=252)
+        self.assertEqual(cpu.pc, abort_overflow, "an overflowing row reached the span write")
+        self.assertEqual(main[pbdx], 252)
+        self.assertEqual(bytes(main[top:top + 4]), b"GUAR")
+
     def test_part_from_the_kit_lands_on_the_table(self):
         press = kit_press_point("BMP1")
         self.assertGreaterEqual(press[0], PANEL_X)
@@ -285,6 +374,21 @@ class TestDrag(EditorCase):
         self.assertGreater(colours_in(self.out / "final.png"), 8)
         check_budget(self, self.stats())
 
+    def test_direct_mouse_jump_from_kit_to_table(self):
+        """A mouse may cross the panel/table boundary in one frame."""
+        press = kit_press_point("BMP1")
+        target = (60, 40)
+        self.assertGreater(abs(press[0] - target[0]), MAX_DRAG_STEP)
+        actions = [f"3:move {press[0]} {press[1]}", "5:down",
+                   f"8:drag {target[0]} {target[1]}", "11:up"]
+        r = run(self.out, 20, do=actions, watch=[("count", PBDATA, 1)])
+        counts = [s["count"] for s in r.samples]
+        self.assertEqual(counts[-1], counts[0] + 1, f"object count per frame: {counts}")
+        _addr, rec = objects(r.machine.main)[-1]
+        self.assertEqual(rec[0], OBJ_LIBOBJ)
+        xs = rec[3:3 + rec[2]]
+        self.assertTrue(all(x < TABLE_W for x in xs), f"vertices {list(xs)}")
+
     def test_part_dropped_on_the_panel_is_deleted(self):
         press = kit_press_point("BMP2")
         actions, released = self.drag_actions(press, [(130, 60), (100, 70), (150, 70), (200, 70)])
@@ -293,9 +397,50 @@ class TestDrag(EditorCase):
         self.assertEqual(max(counts), counts[0] + 1, "the part was never picked up")
         self.assertEqual(counts[-1], counts[0], f"object count per frame: {counts}")
 
+    def test_polygon_drag_refreshes_vertex_fringe_and_brush_fills_it(self):
+        # POLY is deliberately black in the kit. It must still show its
+        # complete 3x3 vertex dots, and a second drag must erase the old
+        # ones. The red swatch chooses a colour; the Brush applies it.
+        actions = ["3:move 173 35", "5:down", "8:drag 125 55", "11:drag 80 80", "14:up",
+                   "20:move 80 80", "22:down", "25:drag 110 100", "28:up",
+                   "34:click 300 94", "40:click 278 43", "46:click 110 100",
+                   "50:move 300 150"]
+        r = run(self.out, 55, do=actions,
+                screen_watch=[("old_dot", 72, 71), ("new_dot", 102, 91),
+                              ("interior", 110, 100)])
+        self.assertEqual(r.samples[18]["old_dot"], 4, "placed polygon lost the dot's top row")
+        self.assertEqual(r.samples[32]["old_dot"], 0, "drag left the old dot behind")
+        self.assertEqual(r.samples[32]["new_dot"], 4, "drag clipped the new dot's top row")
+        _addr, rec = objects(r.machine.main)[-1]
+        self.assertEqual(rec[0:3], bytes([1, 6, 4]), "Brush did not paint the new polygon red")
+        self.assertEqual(r.samples[-1]["interior"], 6, "polygon's red fill is missing")
+
+    def test_pointer_moves_a_polygon_vertex(self):
+        actions = ["3:move 173 35", "5:down", "8:drag 125 55", "11:drag 80 80", "14:up",
+                   "20:click 306 9", "27:move 73 72", "29:down", "32:drag 65 64", "35:up"]
+        r = run(self.out, 43, do=actions)
+        _addr, rec = objects(r.machine.main)[-1]
+        self.assertEqual(rec[0:3], bytes([1, 0, 4]))
+        self.assertEqual((rec[6], rec[10]), (65, 64), "Pointer did not move the selected vertex")
+
 
 class TestPlay(EditorCase):
     ESC_AT = 230
+
+    def test_elasticity_tables_point_to_relocated_coefficients(self):
+        r = run(self.out, 15, do=[f"3:click {PLAY_TOOL[0]} {PLAY_TOOL[1]}"])
+        self.assertEqual(r.machine.main[MB_STATE], ST_PLAY)
+        main, labels = r.machine.main, r.labels
+        expected = ["C84375", "C7875", "C675", "C675",
+                    "C45", "C225", "C1125", "C05625"]
+        for module in ("RUN", "RUN2"):
+            low = labels[f"{module}_ELASTLO"]
+            high = labels[f"{module}_ELASTHI"]
+            actual = [main[low + i] | main[high + i] << 8 for i in range(8)]
+            self.assertEqual(actual, [labels[name] for name in expected], module)
+        # Default elasticity is 4, and INITWORLD patches BOUNCE's lookup.
+        wmod2 = labels["RUN_WMOD2"]
+        self.assertEqual(main[wmod2] | main[wmod2 + 1] << 8, labels["C45"])
 
     def play_run(self):
         actions = [f"3:click {PLAY_TOOL[0]} {PLAY_TOOL[1]}",
@@ -326,6 +471,10 @@ class TestPlay(EditorCase):
         rest = (r.samples[first_play + 4]["bx"], r.samples[first_play + 4]["by"])
         seen = {(s["bx"], s["by"]) for s in r.samples[60:self.ESC_AT]}
         self.assertGreater(len(seen), 8, f"the ball did not move: {seen}")
+        held = [s["by"] for s in r.samples[42:55]]
+        self.assertEqual(len(set(held)), 1, "the ball left the launcher before Space was released")
+        self.assertLess(r.samples[60]["by"], held[0] - 8,
+                        "releasing Space did not launch the charged ball")
         top = min(s["by"] for s in r.samples[55:120])
         self.assertLess(top, rest[1] - 8, "the plunger did not launch the ball upwards")
         # the flipper key reaches the runtime's input

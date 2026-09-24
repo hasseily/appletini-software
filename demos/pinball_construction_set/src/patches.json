@@ -7,6 +7,44 @@
   "replace": []
  },
  {
+  "module": "PPAK",
+  "line": 836,
+  "end": 848,
+  "expect": " STA PBDX,X",
+  "replace": [
+   " LDA MIDTOP",
+   " SEC",
+   " SBC MIDBTM",
+   " TAX",
+   " LDA MIDTOP+1",
+   " SBC MIDBTM+1",
+   " BCC ABORTSCN2 ;port: the gap cannot be negative",
+   " BEQ *+4",
+   " LDX #$80 ;128-32 > 32",
+   " TXA",
+   " SBC HCNT",
+   " BCC ABORTSCN2 ;port: the row must fit before it is written",
+   " CMP #32",
+   " PHP",
+   " PLP ;port: reject before writing spans across MIDTOP",
+   " BCC ABORTSCN2",
+   " PLP ;port: reject an overflowing row before updating PBDX",
+   " BCS ABORTSCN3",
+   " LDX SCANLINE",
+   " LDA PBDX,X",
+   " CLC",
+   " ADC HCNT",
+   " STA PBDX,X"
+  ]
+ },
+ {
+  "module": "PPAK",
+  "line": 870,
+  "end": 873,
+  "expect": " PLP",
+  "replace": []
+ },
+ {
   "module": "RUN",
   "line": 194,
   "expect": "LAUNCHRUN BIT BTN0",
@@ -15,8 +53,31 @@
  {
   "module": "RUN",
   "line": 219,
+  "end": 221,
   "expect": "LAUNCHHIT LDA BTN0",
-  "replace": "LAUNCHHIT LDA LBTN"
+  "replace": [
+   "LAUNCHHIT LDA in_launch",
+   " BMI LNCHREADY ;port: fire only after releasing the charge key",
+   " LDA in_plunger",
+   " BEQ LNCHHIT2 ;an idle launcher retains the original rebound",
+   " LDA #0",
+   " STA BDY ;hold the ball on the launcher while charging",
+   " SEC",
+   " RTS",
+   "LNCHREADY LDA Y2"
+  ]
+ },
+ {
+  "module": "RUN",
+  "line": 2192,
+  "expect": "ELASTLO HEX 80400000C0804000",
+  "replace": "ELASTLO .byte <C84375,<C7875,<C675,<C675,<C45,<C225,<C1125,<C05625"
+ },
+ {
+  "module": "RUN",
+  "line": 2193,
+  "expect": "ELASTHI HEX 7878787877777777",
+  "replace": "ELASTHI .byte >C84375,>C7875,>C675,>C675,>C45,>C225,>C1125,>C05625"
  },
  {
   "module": "RUN",
@@ -53,10 +114,120 @@
   "replace": []
  },
  {
+  "module": "RUN",
+  "line": 1577,
+  "end": 1579,
+  "expect": " LDA PBDX,Y",
+  "replace": [
+   " LDA PBDX,Y",
+   " BEQ CHECKHZEMPTY ;port: an empty row has no four-byte span records",
+   " STA HCNT",
+   " LDA HVAL"
+  ]
+ },
+ {
+  "module": "RUN",
+  "line": 1607,
+  "expect": " CLC",
+  "replace": "CHECKHZEMPTY CLC"
+ },
+ {
   "module": "RUN2",
   "line": 24,
   "expect": "PLAYER EQU $80",
   "replace": "PLAYER EQU $27 ;port: clear of the cursor record ($80-$86), which every frame updates"
+ },
+ {
+  "module": "EDIT",
+  "line": 724,
+  "end": 733,
+  "expect": " LDA MIDTOP",
+  "replace": [
+   " LDA MIDTOP",
+   " SEC",
+   " SBC MIDBTM",
+   " TAX",
+   " LDA MIDTOP+1",
+   " SBC MIDBTM+1",
+   " BMI ABORTAO ;port: reject a wrapped/negative gap",
+   " BNE ADDOBJ1 ;at least 256 bytes, enough for any kit record",
+   " TXA",
+   " SEC",
+   " SBC YTEMP",
+   " BCC ABORTAO",
+   " CMP #33 ;record plus size byte, then 32 bytes for the scan converter",
+   " BCS ADDOBJ1"
+  ]
+ },
+ {
+  "module": "RUN2",
+  "line": 478,
+  "end": 488,
+  "expect": "SETUP6 CLC",
+  "replace": [
+   "MIDTOP EQU $A3 ;port: editor's split span buffer",
+   "MIDY EQU $A5",
+   "SETUP6 DEY",
+   " CPY MIDY",
+   " BNE SETUP6NEXT",
+   " INY",
+   " LDA MIDTOP",
+   " LDX MIDTOP+1",
+   " JMP SETUP6STORE",
+   "SETUP6NEXT INY",
+   " CLC",
+   " ADC PBDX-1,Y",
+   " BCC SETUP6STORE",
+   " INX",
+   "SETUP6STORE STA PBTBLO,Y",
+   " TXA",
+   " STA PBTBHI,Y",
+   " LDA PBTBLO,Y",
+   " INY",
+   " CPY #192",
+   " BCC SETUP6"
+  ]
+ },
+ {
+  "module": "RUN2",
+  "line": 1261,
+  "expect": "ELASTLO HEX 80400000C0804000",
+  "replace": "ELASTLO .byte <RUN_C84375,<RUN_C7875,<RUN_C675,<RUN_C675,<RUN_C45,<RUN_C225,<RUN_C1125,<RUN_C05625"
+ },
+ {
+  "module": "RUN2",
+  "line": 1262,
+  "expect": "ELASTHI HEX 7878787877777777",
+  "replace": "ELASTHI .byte >RUN_C84375,>RUN_C7875,>RUN_C675,>RUN_C675,>RUN_C45,>RUN_C225,>RUN_C1125,>RUN_C05625"
+ },
+ {
+  "module": "RUN2",
+  "line": 1222,
+  "end": 1240,
+  "expect": "PBASES LDA #0",
+  "replace": [
+   "PBASES LDA PLTBLO,X ;port: player pages need not be page-aligned",
+   " STA PBASE1",
+   " STA PBASE3",
+   " LDA PLTB80,X",
+   " STA PBASE2",
+   " STA PBASE4",
+   " LDA PLTBHI,X",
+   " STA PBASE1+1",
+   " CLC",
+   " ADC #1",
+   " STA PBASE3+1",
+   " LDA PLTB80HI,X",
+   " STA PBASE2+1",
+   " CLC",
+   " ADC #1",
+   " STA PBASE4+1",
+   " RTS",
+   "PLTBLO .byte <P1STATE,<P2STATE,<P3STATE,<P4STATE",
+   "PLTBHI .byte >P1STATE,>P2STATE,>P3STATE,>P4STATE",
+   "PLTB80 .byte <(P1STATE+$80),<(P2STATE+$80),<(P3STATE+$80),<(P4STATE+$80)",
+   "PLTB80HI .byte >(P1STATE+$80),>(P2STATE+$80),>(P3STATE+$80),>(P4STATE+$80)"
+  ]
  },
  {
   "module": "RUN2",
@@ -213,14 +384,9 @@
  {
   "module": "EDIT",
   "line": 539,
+  "end": 542,
   "expect": " CMP #$10",
-  "replace": " CMP #$40 ;port: a mouse moves further per frame"
- },
- {
-  "module": "EDIT",
-  "line": 541,
-  "expect": " CMP #$F0",
-  "replace": " CMP #$C0"
+  "replace": []
  },
  {
   "module": "EDIT",
@@ -240,6 +406,24 @@
  {
   "module": "WIRE",
   "line": 918,
+  "expect": " HEX 00",
+  "replace": " HEX 0000 ;port: DOMENU ends the list at a zero word"
+ },
+ {
+  "module": "WIRE",
+  "line": 392,
+  "expect": " HEX 00",
+  "replace": " HEX 0000 ;port: DOMENU ends the list at a zero word"
+ },
+ {
+  "module": "WIRE",
+  "line": 431,
+  "expect": " HEX 00",
+  "replace": " HEX 0000 ;port: DOMENU ends the list at a zero word"
+ },
+ {
+  "module": "WIRE",
+  "line": 467,
   "expect": " HEX 00",
   "replace": " HEX 0000 ;port: DOMENU ends the list at a zero word"
  },

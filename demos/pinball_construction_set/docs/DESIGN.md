@@ -183,9 +183,9 @@ object's paint list); `POLYPOINTS` marks the object dirty (dots are a
 render-time overlay); `SETCOLOR` records the colour index.
 
 EDIT.S: kept. Patches: L-record x is one byte (`+3`) and `+4` is unused;
-`DRAGOBJ2`'s cursor snap uses the pixel x; `DRAGO6` accepts a move of up to
-63 pixels per frame (the original's 15 suited a joystick, a mouse at 60 Hz
-moves further); `PAINTOBJ` sets the new colour and calls `OBJREPAINT`
+`DRAGOBJ2`'s cursor snap uses the pixel x; `DRAGO6` accepts the full clamped
+mouse delta even across the kit and table in one frame; `PAINTOBJ` sets the
+new colour and calls `OBJREPAINT`
 instead of XOR-drawing the pattern difference; `POINTSON`/`POINTSOFF` set
 the points flag; `SAVELOGO`/`DRAWLOGO` show and hide the logo; `CLEARKIT`
 fills the panel; `PLAYSTART` is the port's `PORT_PLAY` (`play_begin`, RUN's
@@ -210,11 +210,17 @@ tick body (`tick_body`, the loop without WAIT and paddle reads), render,
 sound. `PUTSP` masks the noise nibble with `$70`. The launcher keeps its
 paddle logic: `PDL1` is the plunger charge and `LBTN` the pull; the port
 holds `LBTN` down while the key charges (the plunger retreats), releases it
-with the charge held for a moment (the plunger springs forward and kicks the
-ball with `PDL1/4`), then lets the charge decay (section 9).
+with the charge held for a moment (the plunger springs forward), then lets
+the charge decay (section 9). The keyboard control holds a ball that lands
+on the launcher during charging and gives the original `PDL1/4` kick only
+after release. Both RUN and RUN2 elasticity tables use linked addresses
+for the original coefficient arrays; the upstream hard-coded addresses
+would point outside those arrays after relocation.
 
 RUN2.S: kept. Player state pages and sleepers move to BSS (sleeper pitch
-23, at most 8 sleepers); the frame loop is the port's; `RELOAD` becomes a
+23, at most 8 sleepers); `PBASES` uses the linked low and high bytes of
+each player page because those pages are no longer page-aligned. The frame
+loop is the port's; `RELOAD` becomes a
 return; `MBALL`/`MAKEBALL` draw the balls-left icons through the panel
 primitives; the player prompt uses the port's text.
 
@@ -322,7 +328,8 @@ The disk (`dist/Appletini-PCS.hdv`, 800 KB ProDOS, volume `A13PCS`,
 `tools/build_disk.py`): `PRODOS`, `PCS.SYSTEM` (the program, SYS),
 `PCS.SPR` (sprites, BIN aux `$D000`, loaded into the aux language card
 by `src/loader.s`), tables `*.PCS` (BIN aux 0, from `build/tables`; the
-seed `TABLE1.PCS` is `tools/make_tables.py`'s built-in table). The title
+seed `TABLE1.PCS` is `tools/make_tables.py`'s built-in table and the other
+tables are converted from `assets/original_pb/*.PB`). The title
 screen is drawn by the program (the logo band, three lines of text and
 the default table), so there is no picture file.
 
@@ -345,11 +352,12 @@ The disk menu (`files_menu`, the editor's disk tool; `MB_STATE` =
 `MB_ST_DISK`) keeps the logo band and draws in the panel below it: LOAD,
 SAVE, EDIT, QUIT on one row, PLAY GAME on the next, then the catalog
 (the BIN files named `*.PCS` of the ProDOS prefix directory, read as raw
-directory blocks through OPEN/READ, up to 11 entries, in directory
-order) and a message line at the bottom. Mouse: DOMENU items with the
+directory blocks through OPEN/READ, up to 64 entries in directory
+order, 11 per page) and a message line at the bottom. Mouse: DOMENU items with the
 usual press/highlight/release protocol; a click on an entry selects it
-(white), a second click on the selected entry loads it. Keys: L, S, E,
-Q, P and Esc. LOAD, EDIT and Esc return to the editor (`EDIT_REEDIT`);
+(white), a second click on the selected entry loads it. PREV/NEXT or
+keys B/N change page. Keys L, S, E, Q, P and Esc select the actions.
+LOAD, EDIT and Esc return to the editor (`EDIT_REEDIT`);
 SAVE prompts for a name on the message line (letters, digits, periods,
 up to 11 characters, the selected entry's name as the default; left
 arrow deletes, Return saves as `NAME.PCS`, Esc cancels), creating the
@@ -369,18 +377,34 @@ PLAY GAME runs RUN2's shell (`RUN2_DISKPLAY`) between `play_begin`
 shell's player prompt `GETPLAYERCNT` (upstream: XOR text, Space cycles,
 button confirms) is the port's (`src/files.s`): "HOW MANY PLAYERS" and
 four digit boxes under the logo, a digit key or a click sets `PLAYERCNT`;
+the click-release wait is capped at 12 frames so a stale mouse-button state
+cannot prevent the first ball from starting;
 Esc there leaves the shell the way the upstream's QUIT did (its callers'
 returns dropped, `CLOSE2` restores the objects' rest state). During a
 ball, Esc ends the game (RUN2's DOBALL); the menu is redrawn afterwards.
+RUN2 builds its collision row pointers across the editor's split span
+buffer: rows with index greater than `MIDY` start at `MIDTOP`, not at the
+end of the lower rows. Treating the gap as collision data can turn its
+bytes into an invalid object ID and jump through an invalid hit vector as
+soon as a ball moves.
+
+The editor's ADDOBJ capacity check reserves the new record, its size byte,
+and 32 bytes of free span space. The polygon scanner checks both that a
+row fits in the remaining gap and that its byte count does not overflow
+before it updates PBDX or writes the row. These guards keep a rejected row
+from overwriting the upper span data.
 
 `tools/a2sim.py`'s `FakeProDOS` services the MLI in the test machine
 (OPEN, READ, WRITE, CLOSE, CREATE, DESTROY, GET/SET_FILE_INFO,
 GET/SET_PREFIX, ON_LINE, SET/GET_MARK, SET/GET_EOF, QUIT) over a dict of
 files; the volume directory reads as the blocks `build_disk.py` writes.
 `tools/run_editor.py --prodos DIR` mounts a directory's files (saved
-tables land there). `tools/pb2pcs.py` (planned) converts an original
-`.PB` file (DOS 3.3 binary) into this format: kinds from the original
-vectors, colours translated, the HGR picture ignored.
+tables land there). `tools/pb2pcs.py` converts original DOS 3.3 `.PB`
+files into this format. It maps each saved bitmap pointer to its original
+part and frame, translates polygon colours, and decompresses the saved
+Hi-Res page into the playfield overlay. `tools/pb_art.py` accepts the
+earlier BudgeCo zero-run stream and the later `DISK.S` stream; only the
+left 154 pixels become overlay pixels, matching the port's playfield.
 
 ## 12. Fidelity policy
 

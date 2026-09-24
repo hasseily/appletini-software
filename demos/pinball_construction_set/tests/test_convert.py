@@ -255,6 +255,17 @@ class TestPortLayout(unittest.TestCase):
             self.assertIn('.segment "CODE"', text)
             self.assertNotIn(".org", text, f"{module}: a port module must be relocatable")
 
+    def test_wire_menus_end_in_zero_words(self):
+        """DOMENU reads a two-byte record pointer, including at list end."""
+        wire = (self.out / "WIRE.s").read_text()
+        for name, entries in (("NOTEMENU", 7), ("BMULTMENU", 1),
+                              ("SCOREMENU", 15), ("CMDMENU", 4)):
+            block = wire.split(f"{name}:", 1)[1].split("\n;", 1)[0]
+            lines = [line.strip() for line in block.splitlines() if line.strip()]
+            self.assertEqual(len(lines), 2 * entries + 1, name)
+            self.assertTrue(all(line.startswith(".word ") for line in lines[:-1]), name)
+            self.assertTrue(lines[-1].startswith(".byte $00,$00"), name)
+
     def test_exports_are_emitted(self):
         exports = json.loads((SRC / "exports.json").read_text())
         for module, names in exports.items():

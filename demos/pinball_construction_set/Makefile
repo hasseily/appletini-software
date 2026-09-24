@@ -20,6 +20,9 @@ BUILD := build
 DIST := dist
 SRC := src
 TOOLS := tools
+PB_DIR := assets/original_pb
+PB_FILES := $(wildcard $(PB_DIR)/*.PB $(PB_DIR)/*.pb)
+PB_INPUTS := $(wildcard $(PB_DIR)) $(PB_FILES)
 
 MODULES := CDRAW EDIT PPAK RUN RUN2 WIRE
 GEN_S := $(addprefix $(BUILD)/port/,$(addsuffix .s,$(MODULES)))
@@ -83,13 +86,14 @@ $(DIST)/Appletini-PCS.hdv: $(BUILD)/PCS.SYSTEM $(BUILD)/PCS.SPR $(BUILD)/tables 
 	$(PYTHON) $(TOOLS)/build_disk.py --system $(BUILD)/PCS.SYSTEM --sprites $(BUILD)/PCS.SPR \
 		--tables $(BUILD)/tables --output $@
 
-$(BUILD)/default_table.s $(BUILD)/tables: $(TOOLS)/make_tables.py $(BUILD)/parts.json | $(BUILD)
-	$(PYTHON) $(TOOLS)/make_tables.py --parts $(BUILD)/parts.json --out $(BUILD)/tables --default $(BUILD)/default_table.s
+$(BUILD)/default_table.s $(BUILD)/tables: $(TOOLS)/make_tables.py $(TOOLS)/pb2pcs.py $(TOOLS)/pb_art.py $(TOOLS)/kinds.py $(PB_INPUTS) $(BUILD)/parts.json | $(BUILD)
+	$(PYTHON) $(TOOLS)/make_tables.py --parts $(BUILD)/parts.json --out $(BUILD)/tables --default $(BUILD)/default_table.s --pb-dir $(PB_DIR)
+	touch $(BUILD)/tables
 
 baseline: | $(BUILD)/baseline
 	$(PYTHON) $(TOOLS)/merlin2ca65.py $(UPSTREAM) --layout baseline --output $(BUILD)/baseline
 
-test:
+test: all
 	@status=0; for t in $(sort $(wildcard tests/test_*.py)); do echo "== $$t"; $(PYTHON) $$t || status=1; done; exit $$status
 
 $(BUILD) $(BUILD)/port $(BUILD)/baseline $(DIST):

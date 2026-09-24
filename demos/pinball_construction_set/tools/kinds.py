@@ -50,9 +50,18 @@ FLIPPER_TABLES = {
 }
 
 
-# The upstream's HGR colour codes -> the port's palette indices (pcs.inc):
-# 0/4 black, 1 green, 2 violet, 3/7 white, 5 orange, 6 blue.
+# The upstream's FILLCOLOR is an even byte offset into PPAK.S CLRPATCH.
+# Dividing it by two yields the HGR colour code below: 0/4 black, 1 green,
+# 2 violet, 3/7 white, 5 orange, 6 blue. $10 is the invisible fill.
 HGR_TO_PALETTE = {0: 0, 1: 10, 2: 14, 3: 4, 4: 0, 5: 7, 6: 12, 7: 4}
+
+
+def hgr_fill_to_palette(fill):
+    if fill == 0x10:
+        return fill
+    if fill & 1 or fill > 14:
+        raise ValueError('unknown original HGR fill colour $%02X' % fill)
+    return HGR_TO_PALETTE[fill // 2]
 
 
 def read_assets_inc(path):
@@ -110,7 +119,7 @@ def main():
             # port's FILLCOLOR is a palette index
             assert run[line - 1].startswith(name + ' HEX '), (name, run[line - 1])
             data = bytes.fromhex(run[line - 1].split('HEX', 1)[1].split(';')[0].replace(',', '').strip())
-            data = bytes([data[0], HGR_TO_PALETTE[data[1] & 7]]) + data[2:]
+            data = bytes([data[0], hgr_fill_to_palette(data[1])]) + data[2:]
             patch('RUN', line, hexline(name, data))
             kind_rows.append((name, p['objlen'], 3 + 2 * len(p['x']), 0, 0))
             continue

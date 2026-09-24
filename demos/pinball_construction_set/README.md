@@ -13,12 +13,12 @@ joystick cursor, the speaker click sequencer, DOS 3.3 and the HGR pixel
 magnifier). `docs/DESIGN.md` is the contract; this file says what is there
 and how to build, run and test it.
 
-Status: builds, passes its unit tests (`make test`, 222 tests), builds the
+Status: builds, passes its unit tests (`make test`, 237 tests), builds the
 disk image, and runs in the project's py65 test machine: the title, the
 editor with its tools, the parts kit, the wiring kit, the world settings,
 test play, the magnifier, the disk menu (load, save, catalog) under a
-modelled ProDOS, and the game shell. It is **not yet tested on hardware**
-or under ProDOS in an emulator (see "Not done" below).
+modelled ProDOS, and the game shell. The current image awaits a hardware
+retest and has not run under ProDOS in an emulator (see "Not done" below).
 
 ## What the port keeps and what it replaces
 
@@ -42,9 +42,11 @@ lines, each of which names the upstream line it expects so drift is caught.
 `build/port/*.s` after a build is exactly the code the port runs.
 
 The database keeps the original's units (table x 0..153, y 0..191, one
-polygon unit = one SHR pixel), so the physics and every table are
-unchanged, and what is drawn is exactly what the ball hits: the renderer
-paints the span records the collision code uses.
+polygon unit = one SHR pixel). The ball's per-tick collision coefficients
+and tables are retained, with their addresses linked for the relocated
+program. The keyboard launcher holds the ball while Space charges and
+kicks on release. What is drawn is what the ball hits: the renderer paints
+the span records the collision code uses.
 
 ## Hardware
 
@@ -75,9 +77,14 @@ wood and plastics. Painting an object with its own colour makes it black
 - **Editor** (`EDIT.S`): the hand drags a part out of the kit onto the
   table or moves one that is there (a part dropped back on the panel is
   deleted); the pointer drags a polygon vertex; the scissors cut a vertex
-  and the hammer pastes one; the brush paints an object with the selected
-  can. Drags accept up to 63 pixels of cursor movement per frame (the
-  original's 15 suited a joystick).
+  and the hammer pastes one. To recolour a polygon, click one of the eight
+  swatches below Disk, select the Brush, then click the polygon. The Brush
+  does not recolour mechanical parts such as bumpers or flippers. Clicking
+  a polygon with its current colour again makes it black (its vertices
+  remain visible). Mouse drags may cross the kit and table in one frame.
+  The POLY icon creates a black polygon with visible vertex dots: drag it
+  onto the table with Hand, use a swatch and Brush for its fill, then use
+  Pointer to drag a dot when you want to change its outline.
 - **Test play** (the Play tool, `RUN.S` `PLAY`): the logo band replaces the
   kit and the score lines print in the panel; Esc returns to the editor
   with the table as it was.
@@ -98,9 +105,11 @@ wood and plastics. Painting an object with its own colour makes it black
   leaves. The table shows every stroke in the same frame.
 - **Disk** (`src/files.s`): LOAD, SAVE, EDIT, QUIT and PLAY GAME under
   ProDOS, with the catalog of the prefix directory's `.PCS` files (up to
-  11). SAVE asks for a name (letters, digits, periods; Return or Esc); a
-  corrupt file is refused with NOT A TABLE and the table kept; QUIT asks
-  twice, then exits to ProDOS. Keys `L`, `S`, `E`, `Q`, `P`, Esc.
+  64, shown 11 per page). SAVE asks for a name (letters, digits, periods;
+  Return or Esc); a corrupt file is refused with NOT A TABLE and the
+  table kept; QUIT asks
+  twice, then exits to ProDOS. Keys `L`, `S`, `E`, `Q`, `P`, `B`/`N` for
+  previous/next page, and Esc.
 - **Game shell** (`RUN2.S`, PLAY GAME): one to four players (a prompt with
   four digit boxes, or the keys `1`-`4`), five balls each, balls left in the
   panel, captured balls (sleepers), the speech phrases; Esc ends the game
@@ -178,7 +187,7 @@ reaches `$A000`.
 ## Build
 
 ```sh
-make            # build/PCS.SYSTEM and build/PCS.SPR (+ PCS.lbl, PCS.map, the seed tables)
+make            # build/PCS.SYSTEM and build/PCS.SPR (+ PCS.lbl, PCS.map, all tables)
 make test       # the unit tests in tests/ (py65; about two minutes)
 make baseline   # the upstream modules converted and assembled unchanged, in build/baseline
 make disk       # dist/Appletini-PCS.hdv, an 800 KB ProDOS image
@@ -199,13 +208,20 @@ The build converts the upstream sources (`build/port/*.s`), generates the
 sprites from the text art in `assets/` (`tools/gen_assets.py`, with the
 part shapes read from the upstream `RUN.S` by `tools/parts.py`), the kit
 and tool layout patches (`tools/layout.py`), the kind table and template
-patches (`tools/kinds.py`), the seed tables (`tools/make_tables.py`),
+patches (`tools/kinds.py`), the built-in table (`tools/make_tables.py`),
+and the original `.PB` samples in `assets/original_pb/` (`tools/pb2pcs.py`),
 assembles everything with ca65 and links with ld65 (`src/pcs.cfg`).
 
 `make disk` (`tools/build_disk.py`) writes an 800 KB ProDOS volume
-`A13PCS` with `PRODOS`, `PCS.SYSTEM`, `PCS.SPR` and the seed tables from
+`A13PCS` with `PRODOS`, `PCS.SYSTEM`, `PCS.SPR` and the tables from
 `build/tables/`; `appletini-pcs.gs2` is a GSSquared configuration for it
 (mouse in slot 2, Mockingboard/Phasor in slot 4, the Appletini in slot 7).
+
+The disk includes `TABLE1` and 11 original Apple II `.PB` samples:
+`DEMO1`–`DEMO5`, `BCDEMO1`, `MINUTEMAGIC`, `MASTERBLAST`, `FIREBALL`,
+`THESAW`, and `METAPIN`. The disk menu shows 11 names per page; click
+`NEXT`/`PREV` or press `N`/`B` to change page. The original filenames and
+archive sources are listed in [assets/original_pb/README.md](assets/original_pb/README.md).
 
 ## Test
 
@@ -300,9 +316,12 @@ in the built-in table every library object's L-record holds `kind, frame`
 in its first two bytes; `table_normalise` (`src/main.s`) turns them into
 the sprite pointer and copies the box, stride and vectors from the kind's
 template on load (SAVE does the reverse), so files do not depend on the
-build. `tools/make_tables.py` writes the seed tables in this format and
-holds the Python encoder and decoder the tests use; a converter for
-original `.PB` files (`tools/pb2pcs.py` in the design) is not written.
+build. `tools/make_tables.py` writes the seed table in this format and
+holds the Python encoder and decoder the tests use. `tools/pb2pcs.py`
+converts original DOS 3.3 `.PB` tables, including their compressed Hi-Res
+picture, into `PCS1` and `OVL1` data.
+For a separate table, run `python3 tools/pb2pcs.py ORIGINAL.PB NAME.PCS`
+and copy the result to the ProDOS volume.
 
 ## Design pointers
 
@@ -321,14 +340,12 @@ title, the disk menu, the game shell entry), `src/magnify.s`,
 
 ## Not done
 
-- Hardware test on a //e with the Appletini, and a run of the disk image in
-  GSSquared: every number above comes from the py65 model, and the mouse
-  card, the Phasor and RamWorks bank 1 are the model's.
-- The disk catalog shows at most 11 files, in directory order.
+- Hardware retest of the current image on a //e with the Appletini, and a
+  run of the disk image in GSSquared: the passing checks above use the py65
+  model of the mouse card, Phasor and RamWorks bank 1.
 - The magnifier paints one pixel per frame while dragging (no line between
   two frames' positions).
 - Speech is exercised by the sound driver's unit tests only.
-- A converter for original `.PB` table files.
 
 ## Credits
 

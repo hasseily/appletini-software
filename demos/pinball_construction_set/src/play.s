@@ -121,13 +121,12 @@ new_frame_ticks:
 
 ; PORT_TICK_INPUT: runtime variables from the frame's input. Keeps X, Y.
 ;
-; The launcher (RUN.S LAUNCHRUN/LAUNCHHIT) follows PDL1: with LBTN up the
-; plunger advances one step a tick towards PDL1/32 and, when it reaches
-; the ball, kicks it with PDL1/4; with LBTN down it retreats. So while
-; the key is held (in_plunger rising) LBTN stays down and the plunger
-; pulls back; on release (the driver's in_launch window, in_plunger kept)
-; LBTN goes up and the plunger springs forward at the charged strength;
-; afterwards the charge decays and the plunger settles back.
+; The launcher (RUN.S LAUNCHRUN) follows PDL1: LBTN down pulls the plunger
+; back; LBTN up advances it towards PDL1/32. While the key is held, the
+; plunger retreats. On release, the driver's in_launch window holds the
+; charge as the plunger advances. RUN.S LAUNCHHIT uses in_launch to give
+; the charged kick only after release, holding the ball on the launcher
+; while charging; the original rebound and kick calculations are retained.
 PORT_TICK_INPUT:
         phx
         lda     in_flip
