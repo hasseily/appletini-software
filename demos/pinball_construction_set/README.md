@@ -136,7 +136,7 @@ toggles the sound, `1`-`4` choose the players in the game shell.
 - Under the vTW every write to AUX `$2000-$9FFF` (and to main
   `$0400-$0BFF`, `$2000-$5FFF`) is posted to the 1 MHz bus, about 16,000
   per frame; a soft-switch access drains the queue first. So the variables
-  live in `$0C00-$1FFF`, the database at `$9C00`, the code is never
+  live in `$0C00-$1FFF`, the database at `$A000`, the code is never
   written, and RAMWRT is switched once per copy.
 
 ## Sound
@@ -159,14 +159,14 @@ quiet frame costs none. Ctrl-S (`STGL`) mutes everything.
 | main `$0300-$0313` | debug mailbox (`PCS1`, state, frame, bytes written, cursor, input, ticks, mouse, RamWorks, sound) |
 | main `$0C00-$1FFF` | BSS: the original's fixed tables (`PBTBL`, `V`, `RCN`, `TIME`), player state, sleepers, dirty lists, cursor save-under |
 | main `$2000-$9BFF` | `PCS.SYSTEM`: entry code, read-only tables, code |
-| main `$9C00-$BAFF` | the object database: `LOGIC`, `WSET`, `PBDATA`, the span gap buffer, `PBDX` at `$BA40` |
+| main `$A000-$BAFF` | the object database: `LOGIC`, `WSET`, `PBDATA`, the span gap buffer, `PBDX` at `$BA40` |
 | main `$BB00-$BEFF` | the render arena; the ProDOS file buffer while a file is open |
 | aux `$2000-$9FFF` | SHR pixels, SCBs, palette |
 | aux language card | sprites and icons (`PCS.SPR`) |
 | RamWorks bank 1 | `$2000-$9FFF` the overlay layer, `$A000-$BFFF` the logo rows |
 
 `build/PCS.map` has the sizes; `tools/build_system.py` refuses an image that
-reaches `$9C00`.
+reaches `$A000`.
 
 ## Build
 

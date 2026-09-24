@@ -58,7 +58,6 @@ RD_MAX    = 32                  ; dirty rectangles per frame
 FL_MAX    = 128                 ; floating spans
 WR_MAX    = 18                  ; wires
 HL_MAX    = 8                   ; highlighted rectangles
-PF_ROWS   = ARENA_BYTES / 83    ; panel_fill band: 12 rows of up to 83 bytes
 OV_ROW_BYTES = TABLE_BYTES
 OV_BANK   = 1
 RD_HIDEPOLYS = $80              ; rd_flags
@@ -1966,7 +1965,7 @@ panel_fill:
         sbc     pf_y0
         inc     a
         sta     cp_rows
-        ; rows may exceed the arena: do it in bands (PF_ROWS: a fill of
+        ; rows may exceed the arena: do it in bands (pf_band: a fill of
         ; the whole panel width, 83 bytes, must fit the 1001-byte arena)
 @band:  lda     cp_rows
         cmp     pf_band

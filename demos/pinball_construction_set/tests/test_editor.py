@@ -53,7 +53,19 @@ except ImportError:      # pragma: no cover
 MAILBOX = 0x0300
 MB_STATE, MB_INPUT, MB_HAVEMOUSE = 0x0304, 0x030F, 0x0311
 ST_EDIT, ST_PLAY = 1, 5
-PBBASE = 0x9C00
+def _pbbase():
+    """PBBASE from the linked labels (src/pcs.cfg places the database)."""
+    try:
+        for line in (BUILD / "PCS.lbl").read_text().splitlines():
+            parts = line.split()
+            if len(parts) == 3 and parts[2] == ".PBBASE":
+                return int(parts[1], 16)
+    except OSError:
+        pass
+    return 0xA000
+
+
+PBBASE = _pbbase()
 PBDATA = PBBASE + 0x1C
 OBJ_LIBOBJ = 3
 L_Y, L_X, L_X1, L_Y1 = 2, 3, 17, 18
@@ -99,7 +111,7 @@ class Probe(run_editor.Runner):
 
 
 def make_args(out: Path, frames: int, do=(), stats=True):
-    return argparse.Namespace(rom=rom_path(), speed=33, frames=frames, out=str(out), do=list(do),
+    return argparse.Namespace(rom=rom_path(), speed=33, frames=frames, out=str(out), do=list(do), skip_title=True,
                               shot=[], quiet=True, trace=[], trace_limit=0,
                               stats=str(out / "stats.json") if stats else None)
 

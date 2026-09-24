@@ -5,7 +5,7 @@ keyboard, and save screenshots and per-frame statistics.
 Usage: python3 tools/run_editor.py [--rom ROM] [--speed 33] [--frames 300]
                                    [--out build/run] [--do ACTION ...]
                                    [--shot FRAME ...] [--quiet] [--stats FILE]
-                                   [--prodos DIR]
+                                   [--prodos DIR] [--skip-title]
 
 The machine (tools/a2sim.py) runs build/PCS.SYSTEM at the modelled vTW
 speed with the mouse card in slot 2 and the Phasor in slot 4. There is no
@@ -120,6 +120,8 @@ class Runner:
         self.mpu.pc = 0x2000
         self.mpu.sp = 0xFF
         self.wait = self.labels["video_wait_vbl"]
+        if getattr(args, "skip_title", False):
+            self.machine.main[MAILBOX + 20] = 0xA5      # MB_NOTITLE: no title screen
         # the rts that ends the wait loop
         pc = self.wait
         while self.machine.main[pc] != 0x60:
@@ -317,6 +319,8 @@ def main() -> int:
                     help="print the registers whenever this routine is entered")
     ap.add_argument("--trace-limit", type=int, default=200)
     ap.add_argument("--stats", metavar="FILE", help="write the per-frame numbers and the summary as JSON")
+    ap.add_argument("--skip-title", dest="skip_title", action="store_true",
+                    help="start in the editor (the mailbox hook the tests use)")
     ap.add_argument("--prodos", default=None, metavar="DIR",
                     help="a fake ProDOS with the files of DIR as the volume A13PCS")
     args = ap.parse_args()

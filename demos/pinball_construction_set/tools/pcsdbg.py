@@ -18,10 +18,11 @@ sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parent))
 import run_editor
 
 class Dbg:
-    def __init__(self, frames=2, do=(), quiet=True):
+    def __init__(self, frames=2, do=(), quiet=True, skip_title=True):
         class A: pass
         a = A(); a.rom = run_editor.DEFAULT_ROM; a.speed = 33; a.frames = frames
         a.out = 'build/run'; a.do = list(do); a.shot = []; a.quiet = quiet; a.trace = []; a.trace_limit = 0
+        a.skip_title = skip_title
         self.r = run_editor.Runner(a)
         self.r.work_start = self.r.mpu.processorCycles
         if frames:

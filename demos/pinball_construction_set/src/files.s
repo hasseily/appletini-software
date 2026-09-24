@@ -203,6 +203,9 @@ PARMS_LEN = 48
 ; click or a key. The panel is cleared on the way out.
 ; ---------------------------------------------------------------------------
 title_show:
+        lda     MB_NOTITLE
+        cmp     #$A5
+        beq     @skip                   ; the test machine's hook
         lda     #MB_ST_TITLE
         sta     MB_STATE
         jsr     DRAWLOGO
@@ -225,6 +228,7 @@ title_show:
         lda     #0
         ldx     #SCREEN_H-1
         jmp     panel_rows
+@skip:  rts
 
 ; ---------------------------------------------------------------------------
 ; files_menu: the disk tool. The logo band is already drawn (EDIT's DISKIO).

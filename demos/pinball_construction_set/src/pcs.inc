@@ -220,6 +220,8 @@ MB_HAVEMOUSE = MAILBOX+17
 MB_RAMWORKS = MAILBOX+18        ; RamWorks banks found
 MB_SOUND    = MAILBOX+19        ; sound chips
 MB_SIZE     = 20
+MB_NOTITLE  = MAILBOX+MB_SIZE   ; $A5 here at start-up skips the title screen (a test
+                                ; hook: mailbox_init clears MB_SIZE bytes, not this one)
 
 ; multiball sleepers kept by the port (the original had 255 slots)
 SLEEP_MAX   = 8

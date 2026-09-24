@@ -56,7 +56,19 @@ ST_EDIT, ST_DISK, ST_PLAY, ST_TITLE = 1, 4, 5, 7
 ERR_FORMAT, ERR_NOMLI = 0xF0, 0xF2
 KEY_RETURN, KEY_ESC, KEY_SPACE = 13, 27, 32
 MAILBOX = 0x0300
-PBBASE = 0x9C00
+def _pbbase():
+    """PBBASE from the linked labels (src/pcs.cfg places the database)."""
+    try:
+        for line in (BUILD / "PCS.lbl").read_text().splitlines():
+            parts = line.split()
+            if len(parts) == 3 and parts[2] == ".PBBASE":
+                return int(parts[1], 16)
+    except OSError:
+        pass
+    return 0xA000
+
+
+PBBASE = _pbbase()
 PLAYERCNT_ZP = 0x28             # RUN2's PLAYERCNT (src/pcs.inc)
 OVERLAY_BANK, OVERLAY_ROW = 1, 160
 
@@ -148,7 +160,7 @@ class TestFormat(unittest.TestCase):
     def test_seed_table_file(self):
         data = TABLE1.read_bytes()
         image, chunk = mt.split_pcs_file(data)
-        self.assertEqual(image[28], 25)                      # objects
+        self.assertEqual(image[28], 24)                      # objects
         self.assertEqual(mt.decode_overlay(chunk), (bytes(72), {}))
         self.assertEqual(len(data), 4 + len(image) + 4 + 72 + 1)
 

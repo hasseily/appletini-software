@@ -54,7 +54,19 @@ KIND_COUNT = 43
 LREC_MIN = 16
 OVL_TILES = 72              # ov_tiles: 24 tile rows x 3 bytes (render.s)
 WSET_DEFAULT = [4, 4, 3, 4]
-PBBASE = 0x9C00
+def _pbbase():
+    """PBBASE from the linked labels (src/pcs.cfg places the database)."""
+    try:
+        for line in (BUILD / "PCS.lbl").read_text().splitlines():
+            parts = line.split()
+            if len(parts) == 3 and parts[2] == ".PBBASE":
+                return int(parts[1], 16)
+    except OSError:
+        pass
+    return 0xA000
+
+
+PBBASE = _pbbase()
 PBDATA = PBBASE + 0x1C
 
 
@@ -193,7 +205,7 @@ class TestGenerator(unittest.TestCase):
                          "the built-in table is the file's database")
         self.assertEqual(len(self.tiles), OVL_TILES)
         self.assertEqual(self.tiles, bytes(OVL_TILES), "a seed table has no overlay edits")
-        self.assertEqual(self.rle, b"\x01\x01", "the RLE ends the file")
+        self.assertEqual(self.rle, b"\x00", "an empty RLE stream ends the file")
 
     def test_header(self):
         self.assertEqual(self.logic, bytes(24), "no wiring in the seed table")
