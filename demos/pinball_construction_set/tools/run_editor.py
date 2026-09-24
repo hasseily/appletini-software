@@ -5,13 +5,17 @@ keyboard, and save screenshots and per-frame statistics.
 Usage: python3 tools/run_editor.py [--rom ROM] [--speed 33] [--frames 300]
                                    [--out build/run] [--do ACTION ...]
                                    [--shot FRAME ...] [--quiet] [--stats FILE]
+                                   [--prodos DIR]
 
 The machine (tools/a2sim.py) runs build/PCS.SYSTEM at the modelled vTW
 speed with the mouse card in slot 2 and the Phasor in slot 4. There is no
 ProDOS: the file is placed at $2000, the CPU starts there and the test
 fills the auxiliary language card and RamWorks bank 1 from build/PCS.SPR
-itself (the loader sees no MLI and does nothing). The idle wait for line 0
-(video_wait_vbl) is skipped, so a run costs the frames' work only.
+itself (the loader sees no MLI and does nothing). With --prodos DIR the
+machine gets a2sim's fake ProDOS with the files of DIR as the volume
+A13PCS (the disk menu's catalog lists its *.PCS files; tables saved by the
+program land in DIR). The idle wait for line 0 (video_wait_vbl) is
+skipped, so a run costs the frames' work only.
 
 Actions (`--do`, applied when the frame counter reaches FRAME):
   FRAME:move X Y      the mouse is published at (X, Y)
@@ -101,7 +105,15 @@ class Runner:
     def __init__(self, args):
         self.args = args
         self.labels = labels_from(GAME / "build/PCS.lbl")
-        self.machine = a2sim.Machine(args.rom, speed=args.speed)
+        prodos = getattr(args, "prodos", None)
+        if isinstance(prodos, str):
+            prodos = a2sim.FakeProDOS.from_directory(prodos)
+        if prodos is not None:
+            # the program's own files, as on the disk image: the loader
+            # then reads PCS.SPR through the MLI like on the real machine
+            prodos.add("PCS.SYSTEM", (0xFF, 0x2000, (GAME / "build/PCS.SYSTEM").read_bytes()))
+            prodos.add("PCS.SPR", (0x06, 0xD000, (GAME / "build/PCS.SPR").read_bytes()))
+        self.machine = a2sim.Machine(args.rom, speed=args.speed, prodos=prodos)
         self.machine.load(0x2000, (GAME / "build/PCS.SYSTEM").read_bytes())
         load_sprite_file(self.machine, GAME / "build/PCS.SPR")
         self.mpu = self.machine.mpu
@@ -305,6 +317,8 @@ def main() -> int:
                     help="print the registers whenever this routine is entered")
     ap.add_argument("--trace-limit", type=int, default=200)
     ap.add_argument("--stats", metavar="FILE", help="write the per-frame numbers and the summary as JSON")
+    ap.add_argument("--prodos", default=None, metavar="DIR",
+                    help="a fake ProDOS with the files of DIR as the volume A13PCS")
     args = ap.parse_args()
     return Runner(args).run()
 

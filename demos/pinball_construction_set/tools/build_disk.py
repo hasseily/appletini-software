@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
-"""Build the bootable 800 KB ProDOS SmartPort image for Appletini Bosconian.
+"""Build the bootable 800 KB ProDOS SmartPort image of the Pinball Construction Set port.
 
 Pure Python, no Java or AppleCommander. The image is a plain block image
 (1600 blocks of 512 bytes, ProDOS order):
 
   blocks 0-1   boot code copied from the master ProDOS_2_4_3.po
-  blocks 2-5   volume directory A13BOSCO (4 blocks, linked)
+  blocks 2-5   volume directory A13PCS (4 blocks, linked)
   block  6     volume bitmap
-  blocks 7..   PRODOS (SYS, aux $0000, extracted from the master image)
-               and BOSCO.SYSTEM (SYS, aux $2000)
+  blocks 7..   PRODOS (SYS, aux $0000, extracted from the master image),
+               PCS.SYSTEM (SYS, aux $2000), PCS.SPR (BIN, aux $D000: the
+               sprites the program loads into the auxiliary language
+               card) and the tables *.PCS (BIN, aux 0) of --tables
 
 ProDOS boots, loads the PRODOS file, and runs the first *.SYSTEM file in
-the volume directory, which is BOSCO.SYSTEM.
+the volume directory, which is PCS.SYSTEM. The program's disk menu reads
+the volume directory blocks back (src/files.s), which is why
+tools/a2sim.py's fake ProDOS serves a directory built by this writer.
+Adapted from the Bosconian port's builder.
 
 The master image comes from $APPLETINI_ROOT/software/ProDOS_2_4_3.po
 (default ../../../appletini-one). After writing, the script re-reads its
@@ -30,7 +35,7 @@ from pathlib import Path
 
 BLOCK = 512
 TOTAL_BLOCKS = 1600                 # 800 KB SmartPort volume
-VOLUME_NAME = "A13BOSCO"
+VOLUME_NAME = "A13PCS"
 DIRECTORY_BLOCKS = (2, 3, 4, 5)
 BITMAP_BLOCK = 6
 FIRST_DATA_BLOCK = 7
@@ -436,10 +441,10 @@ def verify_image(data: bytes, expected: dict[str, tuple[int, int, bytes]]) -> li
 
 # ---------------------------------------------------------------------------
 def build(system: bytes, master: Path, output: Path,
-          system_name: str = "BOSCO.SYSTEM", sprites: bytes | None = None,
-          sprites_name: str = "BOSCO.SPR") -> list[str]:
-    """Write the image: PRODOS, the system program and, when given, the
-    sprite file (BIN, aux $D000: the game reads it through the MLI)."""
+          system_name: str = "PCS.SYSTEM", sprites: bytes | None = None,
+          sprites_name: str = "PCS.SPR", tables: dict[str, bytes] | None = None) -> list[str]:
+    """Write the image: PRODOS, the system program, the sprite file (BIN,
+    aux $D000) when given and the tables (name -> contents, BIN aux 0)."""
     boot, prodos = extract_prodos(master)
     writer = VolumeWriter()
     writer.set_boot_blocks(boot)
@@ -452,6 +457,9 @@ def build(system: bytes, master: Path, output: Path,
     if sprites is not None:
         writer.add_file(sprites_name, sprites, FILE_TYPE_BIN, 0xD000)
         expected[sprites_name.upper()] = (FILE_TYPE_BIN, 0xD000, sprites)
+    for name, contents in (tables or {}).items():
+        writer.add_file(name, contents, FILE_TYPE_BIN, 0x0000)
+        expected[name.upper()] = (FILE_TYPE_BIN, 0x0000, contents)
     data = writer.finish()
     notes = verify_image(data, expected)
     if data[:2 * BLOCK] != boot:
@@ -463,16 +471,27 @@ def build(system: bytes, master: Path, output: Path,
     return notes
 
 
+def read_tables(directory: Path) -> dict[str, bytes]:
+    """The *.PCS files of a directory, by their upper-case names."""
+    tables = {}
+    for path in sorted(directory.iterdir()):
+        if path.is_file() and path.name.upper().endswith(".PCS"):
+            tables[path.name.upper()] = path.read_bytes()
+    return tables
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--system", type=Path, required=True,
-                        help="linked $2000 SYS program (build/BOSCO.SYSTEM)")
+                        help="linked $2000 SYS program (build/PCS.SYSTEM)")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--master", type=Path, default=DEFAULT_MASTER,
                         help="ProDOS master image (boot blocks and PRODOS file)")
-    parser.add_argument("--name", default="BOSCO.SYSTEM")
+    parser.add_argument("--name", default="PCS.SYSTEM")
     parser.add_argument("--sprites", type=Path, default=None,
-                        help="sprite file to add as BOSCO.SPR (build/BOSCO.SPR)")
+                        help="sprite file to add as PCS.SPR (build/PCS.SPR)")
+    parser.add_argument("--tables", type=Path, default=None,
+                        help="directory whose *.PCS files are added as BIN aux 0 (build/tables)")
     args = parser.parse_args()
 
     for path, what in ((args.system, "system program"), (args.master, "ProDOS master")):
@@ -486,8 +505,13 @@ def main() -> None:
         if not args.sprites.is_file():
             raise SystemExit(f"missing sprite file: {args.sprites}")
         sprites = args.sprites.read_bytes()
+    tables = None
+    if args.tables is not None:
+        if not args.tables.is_dir():
+            raise SystemExit(f"missing tables directory: {args.tables}")
+        tables = read_tables(args.tables)
     try:
-        notes = build(system, args.master, args.output, args.name, sprites)
+        notes = build(system, args.master, args.output, args.name, sprites, tables=tables)
     except DiskError as error:
         raise SystemExit(f"disk build failed: {error}")
     for note in notes:

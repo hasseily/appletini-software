@@ -22,8 +22,19 @@ position and sets its "moved" status.
 
 Time is counted in CPU cycles. `speed` is the accelerator factor: one video
 frame lasts 17030 * speed CPU cycles, as under the Appletini vTW.
+
+ProDOS: `Machine(..., prodos=FakeProDOS(files))` puts a JMP at $BF00 (so a
+program sees the MLI) and services `JSR $BF00` calls itself, with the
+MLI convention (the call number and the parameter block address follow
+the JSR; the CPU continues after them with A = the error and the carry
+set on failure). The files are a dict of name -> bytes (BIN, aux 0) or
+(file type, aux type, bytes) on one volume; the volume directory reads
+as real ProDOS directory blocks (tools/build_disk.py's layout), so a
+catalog reader sees the same bytes as on the disk image. QUIT stops the
+machine (`prodos.quit`). Without `prodos` nothing changes.
 """
 
+import re
 from pathlib import Path
 
 from py65.devices.mpu65c02 import MPU
@@ -349,10 +360,304 @@ class Phasor:
                 self.log.append((chip, reg, via.ora))
 
 
+class ProDOSError(Exception):
+    def __init__(self, code):
+        super().__init__(f"ProDOS error ${code:02X}")
+        self.code = code
+
+
+class FakeProDOS:
+    """A ProDOS 8 MLI stand-in for the test machine (see the module doc).
+
+    `files`: name -> bytes or (file_type, aux_type, bytes); every file
+    lives in the volume directory, the prefix is "/VOLUME/". `directory`
+    (a Path) mirrors the files of a directory on the host and receives
+    the files a program writes (on CLOSE). `calls` logs every MLI call
+    as (number, error).
+    """
+
+    NAME = re.compile(r"^[A-Z][A-Z0-9.]{0,14}$")
+    E_BADCALL, E_BADPATH, E_TOOMANY, E_BADREF, E_NOPATH = 0x01, 0x40, 0x42, 0x43, 0x44
+    E_NOVOL, E_NOFILE, E_DUP, E_EOF, E_POSITION = 0x45, 0x46, 0x47, 0x4C, 0x4D
+    MAX_OPEN = 8
+
+    def __init__(self, files=None, volume="A13PCS", directory=None, launched="PCS.SYSTEM"):
+        self.volume = volume.upper()
+        self.prefix = f"/{self.volume}/"
+        self.launched = launched        # the system program's name, put at $0280
+        self.files = {}                 # NAME -> [file_type, aux_type, bytearray]
+        for name, value in (files or {}).items():
+            self.add(name, value)
+        self.directory = Path(directory) if directory is not None else None
+        self.open_files = {}            # ref -> dict(name, pos, data, dirty)
+        self.quit = False
+        self.calls = []
+        self.machine = None
+
+    def add(self, name, value):
+        if isinstance(value, (bytes, bytearray)):
+            value = (0x06, 0x0000, value)
+        file_type, aux, data = value
+        name = name.upper()
+        if not self.NAME.match(name):
+            raise ValueError(f"not a ProDOS file name: {name!r}")
+        self.files[name] = [file_type, aux, bytearray(data)]
+
+    @classmethod
+    def from_directory(cls, path, volume="A13PCS"):
+        """The files of a host directory (those with ProDOS names, as BIN
+        aux 0); files written by the program are stored back there."""
+        path = Path(path)
+        path.mkdir(parents=True, exist_ok=True)
+        fake = cls(volume=volume, directory=path)
+        for entry in sorted(path.iterdir()):
+            if entry.is_file() and cls.NAME.match(entry.name.upper()):
+                fake.add(entry.name, entry.read_bytes())
+        return fake
+
+    # -- the machine side --------------------------------------------------
+    def attach(self, machine):
+        self.machine = machine
+        machine.main[0xBF00:0xBF03] = b"\x4C\x00\xBF"     # JMP $BF00: QUIT spins here
+        path = (self.prefix + self.launched).encode("ascii")  # as ProDOS's loader does
+        machine.main[0x0280] = len(path)
+        machine.main[0x0281:0x0281 + len(path)] = path
+
+    def intercept(self, machine, operand):
+        """Called from the operand fetch of `JSR $BF00` at operand-1: the
+        return address is already pushed. Services the call, drops the
+        pushed return address and returns the low byte of the address the
+        CPU continues at (the high byte is handed back on the next read),
+        or None to let the JSR land at $BF00 (QUIT)."""
+        mpu = machine.mpu
+        mem = machine.main
+        jsr = operand - 1
+        number = mem[jsr + 3]
+        parms = mem[jsr + 4] | (mem[jsr + 5] << 8)
+        if number == 0x65:
+            self.calls.append((number, 0))
+            self.quit = True
+            return None
+        error = self.service(machine, number, parms)
+        self.calls.append((number, error))
+        mpu.a = error
+        if error:
+            mpu.p |= mpu.CARRY
+        else:
+            mpu.p &= ~mpu.CARRY & 0xFF
+        mpu.sp = (mpu.sp + 2) & 0xFF
+        target = jsr + 6
+        machine._mli_hi = (operand + 1, target >> 8)
+        return target & 0xFF
+
+    # -- the calls -------------------------------------------------------
+    def service(self, machine, number, parms):
+        mem = machine.main
+        handler = {0xC8: self.mli_open, 0xCA: self.mli_read, 0xCB: self.mli_write,
+                   0xCC: self.mli_close, 0xC0: self.mli_create, 0xC1: self.mli_destroy,
+                   0xC4: self.mli_get_file_info, 0xC3: self.mli_set_file_info,
+                   0xC7: self.mli_get_prefix, 0xC6: self.mli_set_prefix,
+                   0xC5: self.mli_on_line, 0xCE: self.mli_set_mark, 0xCF: self.mli_get_mark,
+                   0xD0: self.mli_set_eof, 0xD1: self.mli_get_eof}.get(number)
+        if handler is None:
+            return self.E_BADCALL
+        try:
+            handler(mem, parms)
+        except ProDOSError as error:
+            return error.code
+        return 0
+
+    @staticmethod
+    def _u16(mem, address):
+        return mem[address] | (mem[address + 1] << 8)
+
+    @staticmethod
+    def _put16(mem, address, value):
+        mem[address] = value & 0xFF
+        mem[address + 1] = (value >> 8) & 0xFF
+
+    @staticmethod
+    def _put24(mem, address, value):
+        mem[address] = value & 0xFF
+        mem[address + 1] = (value >> 8) & 0xFF
+        mem[address + 2] = (value >> 16) & 0xFF
+
+    def _pathname(self, mem, address):
+        length = mem[address]
+        return bytes(b & 0x7F for b in mem[address + 1:address + 1 + length]).decode("ascii")
+
+    def resolve(self, path):
+        """The file name a pathname refers to, None for the volume directory."""
+        text = path.upper()
+        if not text:
+            raise ProDOSError(self.E_BADPATH)
+        if text.startswith("/"):
+            parts = [p for p in text.split("/") if p]
+            if not parts or parts[0] != self.volume:
+                raise ProDOSError(self.E_NOVOL if parts else self.E_BADPATH)
+            parts = parts[1:]
+        else:
+            parts = [p for p in self.prefix.upper().split("/") if p][1:]
+            parts += [p for p in text.split("/") if p]
+        for part in parts:
+            if not self.NAME.match(part):
+                raise ProDOSError(self.E_BADPATH)
+        if not parts:
+            return None
+        if len(parts) > 1:
+            raise ProDOSError(self.E_NOPATH)
+        return parts[0]
+
+    def _file(self, mem, parms):
+        name = self.resolve(self._pathname(mem, self._u16(mem, parms + 1)))
+        if name is None or name not in self.files:
+            raise ProDOSError(self.E_NOFILE)
+        return name, self.files[name]
+
+    def directory_blocks(self):
+        """The volume directory as ProDOS blocks 2-5 (build_disk's writer)."""
+        import build_disk
+        writer = build_disk.VolumeWriter(self.volume)
+        for name, (file_type, aux, data) in self.files.items():
+            writer.add_file(name, bytes(data) or b"\0", file_type, aux)
+        image = writer.finish()
+        return image[2 * build_disk.BLOCK:6 * build_disk.BLOCK]
+
+    def _open(self, mem, ref):
+        entry = self.open_files.get(ref)
+        if entry is None:
+            raise ProDOSError(self.E_BADREF)
+        return entry
+
+    def mli_open(self, mem, parms):
+        name = self.resolve(self._pathname(mem, self._u16(mem, parms + 1)))
+        if len(self.open_files) >= self.MAX_OPEN:
+            raise ProDOSError(self.E_TOOMANY)
+        if name is None:
+            entry = dict(name=None, pos=0, data=bytearray(self.directory_blocks()), dirty=False)
+        else:
+            if name not in self.files:
+                raise ProDOSError(self.E_NOFILE)
+            entry = dict(name=name, pos=0, data=self.files[name][2], dirty=False)
+        ref = next(r for r in range(1, self.MAX_OPEN + 1) if r not in self.open_files)
+        self.open_files[ref] = entry
+        mem[parms + 5] = ref
+
+    def mli_read(self, mem, parms):
+        entry = self._open(mem, mem[parms + 1])
+        buffer = self._u16(mem, parms + 2)
+        request = self._u16(mem, parms + 4)
+        data, pos = entry["data"], entry["pos"]
+        chunk = bytes(data[pos:pos + request])
+        self._put16(mem, parms + 6, len(chunk))
+        if request and not chunk:
+            raise ProDOSError(self.E_EOF)
+        mem[buffer:buffer + len(chunk)] = chunk
+        entry["pos"] = pos + len(chunk)
+
+    def mli_write(self, mem, parms):
+        entry = self._open(mem, mem[parms + 1])
+        if entry["name"] is None:
+            raise ProDOSError(0x4E)                 # a directory: access error
+        buffer = self._u16(mem, parms + 2)
+        request = self._u16(mem, parms + 4)
+        data, pos = entry["data"], entry["pos"]
+        if len(data) < pos:
+            data.extend(bytes(pos - len(data)))
+        data[pos:pos + request] = bytes(mem[buffer:buffer + request])
+        entry["pos"] = pos + request
+        entry["dirty"] = True
+        self._put16(mem, parms + 6, request)
+
+    def mli_close(self, mem, parms):
+        ref = mem[parms + 1]
+        refs = list(self.open_files) if ref == 0 else [ref]
+        for r in refs:
+            entry = self._open(mem, r)
+            del self.open_files[r]
+            if entry["dirty"] and self.directory is not None:
+                (self.directory / entry["name"]).write_bytes(bytes(entry["data"]))
+
+    def mli_create(self, mem, parms):
+        name = self.resolve(self._pathname(mem, self._u16(mem, parms + 1)))
+        if name is None or name in self.files:
+            raise ProDOSError(self.E_DUP)
+        self.files[name] = [mem[parms + 4], self._u16(mem, parms + 5), bytearray()]
+
+    def mli_destroy(self, mem, parms):
+        name, _ = self._file(mem, parms)
+        del self.files[name]
+
+    def mli_get_file_info(self, mem, parms):
+        _, (file_type, aux, data) = self._file(mem, parms)
+        mem[parms + 3] = 0xC3
+        mem[parms + 4] = file_type
+        self._put16(mem, parms + 5, aux)
+        mem[parms + 7] = 1 if len(data) <= 512 else 2
+        self._put16(mem, parms + 8, max(1, (len(data) + 511) // 512))
+        for offset in range(10, 18):
+            mem[parms + offset] = 0
+
+    def mli_set_file_info(self, mem, parms):
+        _, info = self._file(mem, parms)
+        info[0] = mem[parms + 4]
+        info[1] = self._u16(mem, parms + 5)
+
+    def mli_get_prefix(self, mem, parms):
+        buffer = self._u16(mem, parms + 1)
+        text = self.prefix.encode("ascii")
+        mem[buffer] = len(text)
+        mem[buffer + 1:buffer + 1 + len(text)] = text
+
+    def mli_set_prefix(self, mem, parms):
+        path = self._pathname(mem, self._u16(mem, parms + 1))
+        if self.resolve(path) is not None:
+            raise ProDOSError(self.E_NOPATH)         # only the volume directory exists
+        self.prefix = f"/{self.volume}/"
+
+    def mli_on_line(self, mem, parms):
+        unit = mem[parms + 1]
+        buffer = self._u16(mem, parms + 2)
+        name = self.volume.encode("ascii")
+        entries = 1 if unit else 14
+        mem[buffer:buffer + 16 * entries] = bytes(16 * entries)
+        mem[buffer] = 0x70 | len(name)              # slot 7, drive 1
+        mem[buffer + 1:buffer + 1 + len(name)] = name
+
+    def mli_set_mark(self, mem, parms):
+        entry = self._open(mem, mem[parms + 1])
+        position = mem[parms + 2] | (mem[parms + 3] << 8) | (mem[parms + 4] << 16)
+        if position > len(entry["data"]):
+            raise ProDOSError(self.E_POSITION)
+        entry["pos"] = position
+
+    def mli_get_mark(self, mem, parms):
+        entry = self._open(mem, mem[parms + 1])
+        self._put24(mem, parms + 2, entry["pos"])
+
+    def mli_set_eof(self, mem, parms):
+        entry = self._open(mem, mem[parms + 1])
+        eof = mem[parms + 2] | (mem[parms + 3] << 8) | (mem[parms + 4] << 16)
+        data = entry["data"]
+        if eof < len(data):
+            del data[eof:]
+        else:
+            data.extend(bytes(eof - len(data)))
+        entry["pos"] = min(entry["pos"], eof)
+        entry["dirty"] = True
+
+    def mli_get_eof(self, mem, parms):
+        entry = self._open(mem, mem[parms + 1])
+        self._put24(mem, parms + 2, len(entry["data"]))
+
+
 class Machine:
-    def __init__(self, rom_path, speed=1, phasor_slot=4, mouse_slot=2, mouse=True):
+    def __init__(self, rom_path, speed=1, phasor_slot=4, mouse_slot=2, mouse=True,
+                 prodos=None):
         self.rom = Path(rom_path).read_bytes()      # $C000-$FFFF
         assert len(self.rom) == 0x4000
+        self.prodos = None
+        self._mli_hi = None         # (address, value): the pending operand byte
         self.mouse_slot = mouse_slot
         self.mouse = MouseCard() if mouse else None
         self.speed = speed
@@ -385,6 +690,9 @@ class Machine:
         self.io_accesses = 0
         self.mpu = MPU(memory=self)
         self.booted_zero_page()
+        if prodos is not None:
+            self.prodos = prodos
+            prodos.attach(self)
 
     def booted_zero_page(self):
         """Set the monitor's text window and I/O hooks as the boot ROM does."""
@@ -414,7 +722,25 @@ class Machine:
                 return sw["page2"]
         return sw[flag]
 
+    def _mli_fetch(self, address):
+        """The operand fetch of `JSR $BF00` (the CPU's pc is at the operand,
+        the byte before is the JSR opcode): the fake ProDOS takes over."""
+        main = self.main
+        if address < 0x0201 or main[address - 1] != 0x20 or main[address] != 0x00 \
+                or main[address + 1] != 0xBF:
+            return None
+        return self.prodos.intercept(self, address)
+
     def __getitem__(self, address):
+        if self.prodos is not None:
+            if address == self.mpu.pc:
+                value = self._mli_fetch(address)
+                if value is not None:
+                    return value
+            elif self._mli_hi is not None and address == self._mli_hi[0]:
+                value = self._mli_hi[1]
+                self._mli_hi = None
+                return value
         if address < 0x0200:
             return (self.aux if self.sw["altzp"] else self.main)[address]
         if address < 0xC000:
@@ -608,14 +934,18 @@ class Machine:
         card.commit(card.x, card.y, (1 if left else 0) | (2 if right else 0))
 
     def run(self, max_cycles, stop_pc=None):
-        """Run for max_cycles; return True when stop_pc was reached."""
+        """Run for max_cycles; return True when stop_pc was reached (or the
+        program quit through the fake ProDOS)."""
         mpu = self.mpu
         end = mpu.processorCycles + max_cycles
         stops = () if stop_pc is None else (
             stop_pc if isinstance(stop_pc, (set, tuple, list)) else (stop_pc,))
+        prodos = self.prodos
         while mpu.processorCycles < end:
             mpu.step()
             if mpu.pc in stops:
+                return True
+            if prodos is not None and prodos.quit:
                 return True
         return False
 

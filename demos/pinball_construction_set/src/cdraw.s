@@ -34,7 +34,7 @@
 .import video_wait_vbl, rd_frame, rd_mark_record, cur_set, cur_move, cur_hide, cur_show
 .import cur_x, cur_y, cur_id, cur_want, hl_toggle
 .import panel_sprite, panel_fill, ps_id, ps_x, ps_y, pf_x0, pf_y0, pf_x1, pf_y1, pf_color
-.import rd_mark_all, rd_ax0, rd_ax1, rd_ay0, rd_ay1, rd_mark
+.import rd_mark_all, rd_ax0, rd_ax1, rd_ay0, rd_ay1, rd_mark, rd_count
 .import blit_sprite, copy_arena, fill_arena, bl_id, bl_x, bl_y, bl_cx0, bl_cx1, bl_cy0, bl_cy1
 .import arena_stride, cp_x0, cp_y0, cp_w, cp_rows, cp_count
 .import aux_fetch_rows, aux_store_rows, af_bank, af_src, af_dst, af_len, af_rows, af_sstride, af_dstride
@@ -74,6 +74,8 @@ frame_step:
         jsr     input_frame
         jsr     place_cursor
         jsr     rd_frame
+        lda     rd_count
+        sta     MB_RECTS
         jsr     snd_frame
         inc     frame_count
         bne     :+

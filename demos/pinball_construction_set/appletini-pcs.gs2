@@ -1,0 +1,26 @@
+gs2_version = 1
+id = "3b7d1c92-6e4a-4f0b-9a5d-2c8e0f4a13c5"
+name = "Appletini Pinball Construction Set"
+description = "Enhanced Apple //e, Appletini ONE 33 MHz, SHR, 8MB RamWorks, mouse in slot 2, Phasor in slot 4"
+platform = "apple2e_enhanced"
+clock = "ntsc"
+scanner = "apple2e"
+
+[appletini]
+accelerator = true
+speed = "33"
+ignore_c074 = false
+ramworks = true
+ram32 = false
+
+[[cards]]
+slot = 2
+card = "mouse"
+
+[[cards]]
+slot = 4
+card = "mockingboard"
+
+[[cards]]
+slot = 7
+card = "appletini"

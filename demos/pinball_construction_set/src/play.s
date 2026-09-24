@@ -88,6 +88,7 @@ play_begin:
         stz     tick_acc
         stz     tick_due
         stz     LBTN
+        stz     balls_shown             ; the panel was cleared: no icons yet
         jsr     rd_mark_all
         ; the first frame: start with the input read once
         jsr     frame_step

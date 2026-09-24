@@ -4,7 +4,8 @@
 ; ($00-$26 draw/scan locals, $3E sound toggle, $80-$AE cursor/object/DB
 ; globals, $C0-$FF runtime and scan-converter arrays). The port's own
 ; variables are linked into ZEROPAGE ($40-$7F), which the upstream never
-; touches (verified: only STGL $3E lies between $27 and $7F).
+; touches (verified: only STGL $3E lies between $27 and $7F); RUN2's
+; game variables are moved to $27-$35 (see below).
 
 ; --- soft switches -----------------------------------------------------
 KBD         = $C000
@@ -163,13 +164,14 @@ X1          = $D2
 Y1          = $D3
 X2          = $D4
 Y2          = $D5
-; RUN2
-PLAYER      = $80
-PLAYERCNT   = $81
-BALLS       = $82
-SLEEPCNT    = $83
-LIVEBALLS   = $8D
-GAMEMODE    = $8E
+; RUN2 (moved from $80-$8E by src/patches.json: the cursor record above
+; is written every frame, including the game's)
+PLAYER      = $27
+PLAYERCNT   = $28
+BALLS       = $29
+SLEEPCNT    = $2A
+LIVEBALLS   = $34
+GAMEMODE    = $35
 
 ; object record
 OBJ_POLYGON = 1

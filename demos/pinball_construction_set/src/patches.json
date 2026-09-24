@@ -54,6 +54,12 @@
  },
  {
   "module": "RUN2",
+  "line": 24,
+  "expect": "PLAYER EQU $80",
+  "replace": "PLAYER EQU $27 ;port: clear of the cursor record ($80-$86), which every frame updates"
+ },
+ {
+  "module": "RUN2",
   "line": 121,
   "end": 124,
   "expect": " STA $C050",
@@ -70,45 +76,6 @@
   "line": 136,
   "expect": " JSR $FCA8",
   "replace": " JSR PORT_WAIT_FRAME"
- },
- {
-  "module": "RUN2",
-  "line": 173,
-  "expect": " STA $C010",
-  "replace": []
- },
- {
-  "module": "RUN2",
-  "line": 175,
-  "end": 176,
-  "expect": "GETPL3 LDA $C061",
-  "replace": "GETPL3 JSR PORT_POLL"
- },
- {
-  "module": "RUN2",
-  "line": 186,
-  "end": 187,
-  "expect": "WAIT3 LDA $C061",
-  "replace": "WAIT3 JSR PORT_POLL"
- },
- {
-  "module": "RUN2",
-  "line": 196,
-  "end": 197,
-  "expect": " LDA STACKTEMP",
-  "replace": " RTS"
- },
- {
-  "module": "RUN2",
-  "line": 199,
-  "expect": "GETPL5 LDA $C000",
-  "replace": "GETPL5 JSR PORT_KEY"
- },
- {
-  "module": "RUN2",
-  "line": 201,
-  "expect": " STA $C010",
-  "replace": []
  },
  {
   "module": "RUN2",

@@ -73,17 +73,18 @@ $(BUILD)/PCS: $(PORT_O) $(GEN_O) $(ASSETS_O) $(SRC)/pcs.cfg
 	$(LD65) -C $(SRC)/pcs.cfg -m $(BUILD)/PCS.map -Ln $(BUILD)/PCS.lbl -o $@ $(PORT_O) $(GEN_O) $(ASSETS_O)
 
 $(BUILD)/PCS.SYSTEM: $(BUILD)/PCS $(TOOLS)/build_system.py
-	$(PYTHON) $(TOOLS)/build_system.py --program $(BUILD)/PCS --output $@ --limit 0x9C00
+	$(PYTHON) $(TOOLS)/build_system.py --program $(BUILD)/PCS --output $@ --limit 0xA000
 
-disk: $(BUILD)/PCS.SYSTEM $(BUILD)/PCS.SPR $(BUILD)/PCS.TITLE $(BUILD)/tables
+# the disk: PRODOS, PCS.SYSTEM, PCS.SPR and every table of build/tables
+# (the title screen is drawn by the program: no picture file)
+disk: $(DIST)/Appletini-PCS.hdv
+
+$(DIST)/Appletini-PCS.hdv: $(BUILD)/PCS.SYSTEM $(BUILD)/PCS.SPR $(BUILD)/tables $(TOOLS)/build_disk.py | $(DIST)
 	$(PYTHON) $(TOOLS)/build_disk.py --system $(BUILD)/PCS.SYSTEM --sprites $(BUILD)/PCS.SPR \
-		--title $(BUILD)/PCS.TITLE --tables $(BUILD)/tables --output $(DIST)/Appletini-PCS.hdv
+		--tables $(BUILD)/tables --output $@
 
 $(BUILD)/default_table.s $(BUILD)/tables: $(TOOLS)/make_tables.py $(BUILD)/parts.json | $(BUILD)
 	$(PYTHON) $(TOOLS)/make_tables.py --parts $(BUILD)/parts.json --out $(BUILD)/tables --default $(BUILD)/default_table.s
-
-$(BUILD)/PCS.TITLE: $(TOOLS)/title.py $(BUILD)/assets.inc | $(BUILD)
-	$(PYTHON) $(TOOLS)/title.py --assets assets --out $(BUILD)/PCS.TITLE
 
 baseline: | $(BUILD)/baseline
 	$(PYTHON) $(TOOLS)/merlin2ca65.py $(UPSTREAM) --layout baseline --output $(BUILD)/baseline

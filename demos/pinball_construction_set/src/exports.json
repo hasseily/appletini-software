@@ -30,7 +30,8 @@
     "MAIN",
     "DISKPLAY",
     "SETUP2",
-    "DOSOUND"
+    "DOSOUND",
+    "CLOSE2"
   ],
   "WIRE": [
     "START",

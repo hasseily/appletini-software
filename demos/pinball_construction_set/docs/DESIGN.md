@@ -225,7 +225,7 @@ DISK.S, SWAP.S, BOOT2.S: dropped; `src/files.s` is the ProDOS file UI.
 The object database is the original's, at its original addresses relative
 to `PBBASE`: `LOGIC` (24), `WSET` (4), `PBDATA` (count, sizes, records),
 the span gap buffer, `PBDX` (192) at `$BA40`. `PBBASE` is a link symbol
-(`src/pcs.cfg`); the port places the database at `$9C00`, outside the
+(`src/pcs.cfg`); the port places the database at `$A000`, outside the
 mirrored ranges (section 7).
 
 L-record (library object, at `OBJ + 3 + 2*vertices`):
@@ -264,12 +264,12 @@ frames, stride, height, width, vectors. A saved file stores `kind` and
 
 | Range | Use |
 |---|---|
-| main `$0000-$00FF` | the original's zero page (`$00-$26`, `$3E`, `$80-$E4`), the port's variables `$40-$7F` |
+| main `$0000-$00FF` | the original's zero page (`$00-$26`, `$3E`, `$80-$E4`), the port's variables `$40-$7F`; RUN2's game variables (`PLAYER`..`GAMEMODE`) are moved from `$80-$8E` to `$27-$35` because the cursor record at `$80-$86` is written every frame, the game's included |
 | main `$0110-$017F` | `aux_fetch` (`$0110`) and `aux_store` (`$0140`) in the stack page (RAMRD/RAMWRT do not move pages 0 and 1); the stack runs down from `$01FF` |
 | main `$0300-$0328` | debug mailbox |
 | main `$0C00-$1FFF` | BSS: variables, `PBTBL`/`V`/`RCN`/`TIME`, player state (also the loader's staging buffer), sleepers, dirty lists, cursor save-under (5,120 bytes, nearly full) |
-| main `$2000-$9BFF` | `PCS.SYSTEM`: entry code, read-only tables, then code (never written, so the mirror costs nothing) |
-| main `$9C00-$BAFF` | the object database: `PBBASE = $9C00` (`LOGIC`, `WSET`, `PBDATA` at `+$1C`), the span gap buffer (7.7 KB in all, twice the original's), `PBDX` at `$BA40-$BAFF` |
+| main `$2000-$9FFF` | `PCS.SYSTEM`: entry code, read-only tables, then code (never written, so the mirror costs nothing) |
+| main `$A000-$BAFF` | the object database: `PBBASE = $A000` (`LOGIC`, `WSET`, `PBDATA` at `+$1C`), the span gap buffer (6.7 KB in all, 1.7 times the original's), `PBDX` at `$BA40-$BAFF` |
 | main `$BB00-$BEFF` | the render arena (1,001 bytes); the ProDOS file buffer while loading or saving |
 | aux `$2000-$9FFF` | SHR pixels, SCBs, palette |
 | aux language card | sprites and icons (`PCS.SPR`) |
@@ -316,18 +316,71 @@ sweep, 3 = rising sweep, 4 = alternating then sweep, 5-7 = arpeggios. The
 SSI-263 speaks "PLAYER ONE".."PLAYER FOUR", "GAME OVER", "MULTIBALL" and
 "BONUS" in the game shell. `STGL` (Ctrl-S) mutes everything.
 
-## 11. Files
+## 11. Files, the disk menu and the game shell
 
-`PCS.SYSTEM` (the program), `PCS.SPR` (sprites, loaded into the aux
-language card), `PCS.TITLE` (32 KB SHR picture), tables `*.PCS`.
+The disk (`dist/Appletini-PCS.hdv`, 800 KB ProDOS, volume `A13PCS`,
+`tools/build_disk.py`): `PRODOS`, `PCS.SYSTEM` (the program, SYS),
+`PCS.SPR` (sprites, BIN aux `$D000`, loaded into the aux language card
+by `src/loader.s`), tables `*.PCS` (BIN aux 0, from `build/tables`; the
+seed `TABLE1.PCS` is `tools/make_tables.py`'s built-in table). The title
+screen is drawn by the program (the logo band, three lines of text and
+the default table), so there is no picture file.
 
-Table file: `"PCS1"`, 4 bytes; WSET (4); LOGIC (24); object count and
-sizes and records as in memory (L-record bytes +0/+1 = kind, frame);
-then the overlay: `"OVL1"`, 60-byte tile map, RLE of the edited tiles
-(`01 nn` = nn zero bytes, `01 01` = end, `nn` = nn literal bytes, as the
-original's picture RLE). `tools/pb2pcs.py` converts an original `.PB`
-file (DOS 3.3 binary) into this format: kinds from the original vectors,
-colours translated, the HGR picture ignored.
+Table file (`src/files.s`, `make_tables.pcs_file`): `"PCS1"`; LOGIC (24);
+WSET (4); PBDATA as in memory: count, sizes, records, with L-record
+bytes +0/+1 = (kind, frame) and bytes +5..+7, +10..+15 as the template's
+(`table_normalise` rewrites them on load, `table_denorm` recovers the
+kind from the sprite pointer on save: the kinds' sprite ranges are
+disjoint); then the overlay: `"OVL1"`, the 72-byte tile map (`ov_tiles`:
+byte `3*row + col/8`, bit `col%8`, 20x24 tiles of 8x8 pixels) and the
+pixels of every set tile, 32 bytes each (8 rows of 4 bytes, the row's
+bytes `4*col..4*col+3` of RamWorks bank 1 at `$2000 + 160*y`), in tile
+order, run-length coded: `n` (1..127) = n literal bytes follow, `$80|n` =
+the next byte n times, `0` = the end. The program writes a tile of one
+value as a run and any other tile as 32 literals; the Python encoder
+also finds runs inside tiles. Both decode alike. Tiles that are not set
+are cleared on load; `ov_enabled` = any tile set.
+
+The disk menu (`files_menu`, the editor's disk tool; `MB_STATE` =
+`MB_ST_DISK`) keeps the logo band and draws in the panel below it: LOAD,
+SAVE, EDIT, QUIT on one row, PLAY GAME on the next, then the catalog
+(the BIN files named `*.PCS` of the ProDOS prefix directory, read as raw
+directory blocks through OPEN/READ, up to 11 entries, in directory
+order) and a message line at the bottom. Mouse: DOMENU items with the
+usual press/highlight/release protocol; a click on an entry selects it
+(white), a second click on the selected entry loads it. Keys: L, S, E,
+Q, P and Esc. LOAD, EDIT and Esc return to the editor (`EDIT_REEDIT`);
+SAVE prompts for a name on the message line (letters, digits, periods,
+up to 11 characters, the selected entry's name as the default; left
+arrow deletes, Return saves as `NAME.PCS`, Esc cancels), creating the
+file or truncating an existing one; QUIT needs a second QUIT (click or
+key) and calls `exit_to_prodos`. A LOAD checks the header, the count,
+the sizes and the file's length (GET_EOF) before writing to the
+database, so a file that is not a table leaves the current table alone
+("NOT A TABLE"); a ProDOS error shows as "DISK ERROR nn" (hex). All the
+menu's state lives in the player state pages (`P1STATE`, 2 KB), which
+only the game shell uses; the MLI file buffer is `IOBUF` (`$BB00`, the
+render arena), so nothing is drawn while a file is open. Without ProDOS
+(no `JMP` at `$BF00`) the menu reports "NO PRODOS" and still offers
+EDIT, PLAY GAME and QUIT.
+
+PLAY GAME runs RUN2's shell (`RUN2_DISKPLAY`) between `play_begin`
+(`$80`: sleepers on) and `play_end`, like the editor's Play tool. The
+shell's player prompt `GETPLAYERCNT` (upstream: XOR text, Space cycles,
+button confirms) is the port's (`src/files.s`): "HOW MANY PLAYERS" and
+four digit boxes under the logo, a digit key or a click sets `PLAYERCNT`;
+Esc there leaves the shell the way the upstream's QUIT did (its callers'
+returns dropped, `CLOSE2` restores the objects' rest state). During a
+ball, Esc ends the game (RUN2's DOBALL); the menu is redrawn afterwards.
+
+`tools/a2sim.py`'s `FakeProDOS` services the MLI in the test machine
+(OPEN, READ, WRITE, CLOSE, CREATE, DESTROY, GET/SET_FILE_INFO,
+GET/SET_PREFIX, ON_LINE, SET/GET_MARK, SET/GET_EOF, QUIT) over a dict of
+files; the volume directory reads as the blocks `build_disk.py` writes.
+`tools/run_editor.py --prodos DIR` mounts a directory's files (saved
+tables land there). `tools/pb2pcs.py` (planned) converts an original
+`.PB` file (DOS 3.3 binary) into this format: kinds from the original
+vectors, colours translated, the HGR picture ignored.
 
 ## 12. Fidelity policy
 
@@ -341,10 +394,14 @@ exact.
 
 `make` converts the upstream sources (a local clone of the MIT-licensed
 repository, or `upstream/` in the tree), generates the assets and tables,
-assembles with ca65, links with ld65, and writes `dist/Appletini-PCS.hdv`.
-`make test` runs the py65 unit tests; `make run` renders screenshots of
-the editor and of a play session in the test machine and prints per-frame
-cycle and bus-byte statistics.
+assembles with ca65 and links with ld65; `make disk` writes
+`dist/Appletini-PCS.hdv` (`appletini-pcs.gs2` is a GSSquared
+configuration for it: enhanced //e, Appletini card in slot 7, mouse in
+slot 2, Mockingboard/Phasor in slot 4). `make test` runs the py65 unit
+tests (`tests/test_files.py` drives the disk menu with the fake ProDOS:
+catalog, load, save, a corrupt file, the game shell, QUIT). `tools/run_editor.py` renders screenshots of the editor and of a play
+session in the test machine and prints per-frame cycle and bus-byte
+statistics.
 
 ## 14. The magnifier
 
