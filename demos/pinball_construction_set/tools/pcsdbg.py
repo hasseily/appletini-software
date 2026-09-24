@@ -8,7 +8,8 @@
     d.run_frames(10)                          # more frames (actions from `do`)
 
 Dbg(frames, do=[...]) takes the same action strings as run_editor.py's
---do. `call` runs until the routine returns (a BRK driver at $1F80).
+--do. `call` runs until the routine returns (a BRK driver at $0380, in
+the mailbox page, past everything the port keeps there).
 Labels come from build/PCS.lbl (duplicates: the last definition wins, so
 EDIT/WIRE-local names may need an explicit address).
 """
@@ -37,7 +38,10 @@ class Dbg:
         return self.w(self.L[name]) if width == 2 else self.mem[self.L[name]]
 
     def call(self, label, a=0, x=0, y=0, altzp=False, limit=2_000_000):
-        drv = 0x1F80
+        """JSR the routine with the registers set; returns the steps taken.
+        The driver runs on the stack below the program's, and the program's
+        PC and stack pointer are restored, so run_frames can carry on."""
+        drv = 0x0380
         addr = self.L[label]
         code = bytearray()
         if altzp: code += bytes([0x8D, 0x09, 0xC0])
@@ -45,11 +49,14 @@ class Dbg:
         if altzp: code += bytes([0x8D, 0x08, 0xC0])
         code += bytes([0x00])
         self.mem[drv:drv + len(code)] = code
-        mpu = self.mpu; mpu.pc = drv; mpu.sp = 0xF0
+        mpu = self.mpu
+        pc0, sp0 = mpu.pc, mpu.sp
+        mpu.pc = drv; mpu.sp = (sp0 - 2) & 0xFF
         n = 0
         stop = drv + len(code) - 1
         while mpu.pc != stop and n < limit:
             mpu.step(); n += 1
+        mpu.pc, mpu.sp = pc0, sp0
         return n
 
     def screen_row(self, y, x0, x1):

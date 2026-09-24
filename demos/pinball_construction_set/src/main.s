@@ -34,7 +34,7 @@
 .import EDIT_START, EDIT_DRAWKIT, EDIT_REEDIT, EDIT_SLDXDY
 .import WIRE_START, WIRE_TIMES15
 .import PPAK_GETOBJ, PPAK_GETBOUNDS
-.import files_menu, title_show
+.import files_menu, title_show, overlay_clear
 .import default_table, default_table_len
 .import PBBASE
 
@@ -56,6 +56,7 @@ main:
         jsr     mailbox_init
         jsr     video_init
         jsr     rd_init
+        jsr     overlay_clear           ; RamWorks bank 1 is undefined at power-on
         jsr     input_init
         jsr     snd_init
         lda     #COL_TEXT

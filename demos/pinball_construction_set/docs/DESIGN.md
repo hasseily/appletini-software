@@ -345,3 +345,50 @@ assembles with ca65, links with ld65, and writes `dist/Appletini-PCS.hdv`.
 `make test` runs the py65 unit tests; `make run` renders screenshots of
 the editor and of a play session in the test machine and prints per-frame
 cycle and bus-byte statistics.
+
+## 14. The magnifier
+
+The original's magnifier edited HGR bits of the table picture. The port's
+(`src/magnify.s`, entered from EDIT's `MAGPAINT` through `MAGSTART`, which
+returns on Esc or QUIT) edits the overlay layer of section 4 in sixteen
+colours. `MB_STATE` is `MB_ST_MAG` while it runs.
+
+Screen: the logo band stays; below it, x 154..319, y 64..191:
+
+| Element | Where | What |
+|---|---|---|
+| window | x 174..301, y 66..161, 2-pixel grey frame around it | 32x24 table pixels at 4x; each pixel a 4x4 box, with the box's last column and row in the panel colour when the grid is on |
+| palette | 16 boxes of 8x8 at y 168, x 158 + 10*i, each in a 1-pixel ring | the colours 0..15; colour 0 (the eraser) is a black/panel checker; the current colour's ring is `COL_HILITE`, the others' black |
+| QUIT | x 172..199, y 180..191 | leaves |
+| GRID | x 276..303, y 180..191, `SPR_MAG_GRID` | toggles the grid; framed while it is on |
+
+The cursor is the brush. What the held button does is decided when it
+is pressed: on the table (x < 154) the window follows the cursor (centred
+on it, clamped to the table, x even) until the release, so a drag pans;
+inside the window the table pixel under the cursor takes the current
+colour every frame (colour 0 erases: nibble 0, the table shows through);
+on the palette the colour is picked; QUIT and GRID are `DOMENU` items
+(highlighted while pressed, acted on at the release). Keys: `0`-`9` and
+`A`-`F` pick a colour, `G` toggles the grid, Esc leaves.
+
+A painted pixel: its byte of the bank-1 row is fetched, the nibble
+replaced and stored (`aux_fetch_rows`/`aux_store_rows`, one byte), the
+tile's bit set in `ov_tiles` (byte `(y/8)*3 + x/64`, bit `(x/8) & 7`, as
+`overlay_row` reads it), `ov_enabled` set, the pixel marked dirty: the
+table shows it in the same frame. The window's box is redrawn after that
+frame from the SHR screen (bank 0), so an erased pixel's box shows what
+was beneath. The whole window is redrawn from the screen on every move
+(the screen already holds polygons, parts and edits merged): three table
+rows per arena pass, 6 KB of posted bytes and about 255K cycles, once per
+recentre, pan frame or grid toggle. Parts are drawn over the edits (the
+overlay is layer 2), so a part dragged over painted pixels hides them
+while it sits there.
+
+`overlay_clear` (exported) zeroes the tile map, `ov_enabled` and the 192
+rows of the layer (from a zeroed row buffer, source pitch 0) and marks
+the table: `main` calls it at start-up, since RamWorks memory is
+undefined at power-on, and the file code calls it for a fresh table.
+Buffers live in `P1STATE`; the window origin starts at the table's centre
+(DATA); `BASE1`/`BASE2`, CDRAW's HGR pointers, serve as the arena
+pointers while a window routine runs. `PRCHAR`'s column arithmetic is
+8-bit (columns above 31 print nothing), which is why QUIT is the left box.
