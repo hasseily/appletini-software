@@ -137,6 +137,7 @@ pf_y0:   .res 1
 pf_x1:   .res 2
 pf_y1:   .res 1
 pf_color: .res 1
+pf_band: .res 1                 ; panel_fill rows per band
 band_y0: .res 1
 band_y1: .res 1
 sl_cnt:  .res 1                 ; SLEEPCNT copied before ALTZP goes on
@@ -1437,9 +1438,9 @@ dot:
         sbc     band_y0
         jsr     arena_row_ptr
         lda     R_B
-        sec
-        sbc     #1
-        sta     R_A2
+        beq     :+                      ; x = 0: pixels 0..2
+        dec     a
+:       sta     R_A2
         lda     #COL_WHITE
         sta     R_C2
         ; pixels R_B-1 .. R_B+1
@@ -1930,15 +1931,22 @@ panel_fill:
         ora     #1
         sec
         sbc     cp_x0
-        sta     R_A
+        sta     R_D
         lda     pf_x1+1
         sbc     cp_x0+1
         lsr     a
-        ror     R_A
-        lda     R_A
+        ror     R_D
+        lda     R_D
         inc     a
         sta     cp_w
         sta     arena_stride
+        ; rows per band: 13 rows of up to 78 bytes fit the 1 KB arena, a
+        ; wider fill (the whole panel is 83 bytes) takes 12
+        ldx     #ARENA_ROWS
+        cmp     #ARENA_SIZE/ARENA_ROWS+1
+        bcc     :+
+        ldx     #ARENA_SIZE/((SCREEN_W-PANEL_X+1)/2)
+:       stx     pf_band
         lda     pf_y0
         sta     cp_y0
         sta     bl_cy0
@@ -1950,13 +1958,15 @@ panel_fill:
         sta     cp_rows
         ; rows may exceed the arena: do it in bands
 @band:  lda     cp_rows
-        cmp     #ARENA_ROWS+1
+        cmp     pf_band
         bcc     @last
-        lda     #ARENA_ROWS
+        beq     @last
+        lda     pf_band
         sta     cp_rows
         lda     bl_cy0
         clc
-        adc     #ARENA_ROWS-1
+        adc     pf_band
+        dec     a
         sta     bl_cy1
         jsr     @one
         lda     bl_cy1
@@ -1974,12 +1984,12 @@ panel_fill:
 @last:  jmp     @one
 @one:   lda     pf_color
         and     #$0F
-        sta     R_A
+        sta     R_D
         asl     a
         asl     a
         asl     a
         asl     a
-        ora     R_A
+        ora     R_D
         jsr     fill_arena
         jmp     copy_arena
 

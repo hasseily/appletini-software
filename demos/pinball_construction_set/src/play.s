@@ -128,6 +128,7 @@ new_frame_ticks:
 ; LBTN goes up and the plunger springs forward at the charged strength;
 ; afterwards the charge decays and the plunger settles back.
 PORT_TICK_INPUT:
+        phx
         lda     in_flip
         and     #$80
         sta     BTN0
@@ -147,6 +148,7 @@ PORT_TICK_INPUT:
         ldx     #$80                    ; charging: hold it back
 @set:   stx     LBTN
         sta     last_plunger
+        plx
         rts
 
 ; PORT_TICK_END: called at the end of a tick with the keyboard poll's
@@ -166,19 +168,34 @@ PORT_TICK_END:
 @more:  lda     #0
         rts
 
-; PORT_POLL: one frame, then N = the button state.
+; PORT_POLL: one frame, then N = the button state. These replace reads of
+; $C061/$C000 that RUN2's prompts do with a live Y: X and Y are kept.
 PORT_POLL:
+        phx
+        phy
         jsr     frame_step
+        ply
+        plx
         lda     in_btn
         rts
 
 ; PORT_KEY: one frame, then A = the key or 0.
 PORT_KEY:
+        phx
+        phy
         jsr     frame_step
-        jmp     input_getkey
+        jsr     input_getkey
+        ply
+        plx
+        rts
 
 PORT_WAIT_FRAME:
-        jmp     frame_step
+        phx
+        phy
+        jsr     frame_step
+        ply
+        plx
+        rts
 
 ; ---------------------------------------------------------------------------
 ; MAKETBLS (RUN2): the original built the HGR tables here; the port only

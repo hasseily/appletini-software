@@ -48,6 +48,7 @@ SLNEW    = $C3
 M_PTR:  .res 2
 .segment "BSS"
 lg_left: .res 1                 ; logo rows still to draw
+sl_knob: .res 1                 ; MOVESLIDE: the knob's row
 
 .segment "CODE"
 
@@ -174,7 +175,6 @@ DRAWLOGO:
         sta     arena_stride
         sta     cp_w
         stz     af_sstride+1
-        stz     af_dstride+1
         lda     #<LOGO_X
         sta     cp_x0
         lda     #>LOGO_X
@@ -264,15 +264,18 @@ MOVESLIDE:
 :       dec     bl_cx1
         lda     #COL_PANEL*$11
         jsr     fill_arena
-        sta     ALTZPON
-        lda     #SPR_SLIDE_SCALE
-        jsr     sprite_bank
-        jsr     blit_sprite
-        ; the knob at y + SLDXDY[SLNEW]
+        ; the knob at y + SLDXDY[SLNEW] (read here: SLNEW is in the main
+        ; zero page, unreachable once ALTZP is on)
         ldy     SLNEW
         lda     EDIT_SLDXDY,y
         clc
         adc     bl_cy0
+        sta     sl_knob
+        sta     ALTZPON
+        lda     #SPR_SLIDE_SCALE
+        jsr     sprite_bank
+        jsr     blit_sprite
+        lda     sl_knob
         sta     bl_y
         lda     #SPR_SLIDE_KNOB
         sta     bl_id

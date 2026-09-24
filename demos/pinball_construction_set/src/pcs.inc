@@ -72,6 +72,7 @@ MLI_ONLINE  = $C5
 IOBUF       = $BB00             ; 1 KB ProDOS file buffer during file I/O
 ARENA       = $BB00             ; render arena when no file is open
 ARENA_ROWS  = 13                ; 13 rows of 77 bytes = 1001 bytes
+ARENA_SIZE  = $0400             ; $BB00-$BEFF, the ProDOS buffer's 1 KB
 ARENA_BYTES = ARENA_ROWS * 77
 
 ; --- screen ------------------------------------------------------------

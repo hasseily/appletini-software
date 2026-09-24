@@ -239,18 +239,6 @@
  },
  {
   "module": "EDIT",
-  "line": 463,
-  "end": 467,
-  "expect": " LDX PARAM+3",
-  "replace": [
-   " LDX PARAM+3",
-   " STX CXD7",
-   " LDA #0",
-   " STA CXM7"
-  ]
- },
- {
-  "module": "EDIT",
   "line": 248,
   "expect": " JSR GETINFO",
   "replace": " JSR PPAK_GETINFO ;port: PPAK's entry label"
@@ -287,5 +275,22 @@
   "line": 918,
   "expect": " HEX 00",
   "replace": " HEX 0000 ;port: DOMENU ends the list at a zero word"
+ },
+ {
+  "module": "EDIT",
+  "line": 463,
+  "end": 467,
+  "expect": " LDX PARAM+3",
+  "replace": []
+ },
+ {
+  "module": "EDIT",
+  "line": 224,
+  "expect": "DRAWKIT JSR CLEARKIT",
+  "replace": [
+   "DRAWKIT LDX #$FF ;port: the tool handlers never return to DOMENU's caller",
+   " TXS",
+   " JSR CLEARKIT"
+  ]
  }
 ]

@@ -25,6 +25,7 @@
 .segment "ZEROPAGE"
 c_src:  .res 2
 c_dst:  .res 2
+c_cnt:  .res 1
 
 .segment "STARTUP"
 
@@ -79,10 +80,12 @@ clear_bss:
         bra     @page
 @rest:  cpy     #0
         beq     @done
-        dey
+        sty     c_cnt                   ; up to 255 bytes: count up
+        ldy     #0
 :       sta     (c_dst),y
-        dey
-        bpl     :-
+        iny
+        cpy     c_cnt
+        bne     :-
 @done:  rts
 
 ; copy X*256+Y bytes from c_src to c_dst (ascending)
@@ -102,11 +105,13 @@ copy_bytes:
         bra     @page
 @rest:  cpy     #0
         beq     @done
-        dey
+        sty     c_cnt
+        ldy     #0
 :       lda     (c_src),y
         sta     (c_dst),y
-        dey
-        bpl     :-
+        iny
+        cpy     c_cnt
+        bne     :-
 @done:  rts
 
 ; Restore the text screen and hand control back to ProDOS. QUIT never

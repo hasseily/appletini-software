@@ -56,13 +56,13 @@ LD_DST:  .res 2         ; copy destination (auxiliary card)
 
 TEXT_ROW10 = $0528      ; text page 1, rows 10 and 12 (40 bytes each, no screen holes)
 TEXT_ROW12 = $0628
-HEX_POS    = 36         ; where the error code goes in msg_error
+HEX_POS    = 35         ; where the error code's two digits go in msg_error
 
 ; ---------------------------------------------------------------------------
 .segment "RODATA"
 
 pathname:
-        .byte   9, "PCS.SPR"
+        .byte   7, "PCS.SPR"
 msg_error:
         .byte   "CANNOT LOAD PCS.SPR, PRODOS ERROR $00", 0
 msg_key:
