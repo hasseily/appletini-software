@@ -35,7 +35,7 @@ DISK := $(DIST)/Appletini-DOOM.hdv
 
 KERNEL_S := kstart space far video input frame loader
 RENDER_S := $(patsubst src/render/%.s,%,$(wildcard src/render/*.s))
-GAME_S := crt0 kglue
+GAME_S := $(patsubst src/game/%.s,%,$(wildcard src/game/*.s))
 GAME_C := $(patsubst src/game/%.c,%,$(wildcard src/game/*.c))
 
 OBJS := $(addprefix $(BUILD)/kernel/,$(addsuffix .o,$(KERNEL_S))) \
