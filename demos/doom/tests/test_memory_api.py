@@ -217,6 +217,48 @@ class MemoryApiAssemblyTest(unittest.TestCase):
                     self.assertEqual(self.state(doom, "amem_available"), 0)
                     self.assertEqual(service.completed, [])
 
+    def test_loader_startup_and_render_frames_with_api_enabled(self):
+        service = a2sim.FakeSmartPortMemory()
+        doom = run_doom.Doom(BUILD, DATA, speed=33, fast=False)
+        m, cpu = doom.machine, doom.mpu
+        m.smartport = service
+        doom.boot()
+        self.assertEqual(cpu.pc, doom.label("kernel_start"))
+        self.assertEqual(service.requests, [])
+
+        # Individual helper calls do not exercise the startup snapshot or
+        # the repeated GAME/RENDER handoff after the loader installs modules.
+        for frame in range(2):
+            with self.subTest(frame=frame):
+                stop = cpu.processorCycles + 200_000_000
+                while cpu.processorCycles < stop:
+                    m.step()
+                    if m.sw["altzp"]:
+                        continue
+                    if cpu.pc == doom.label("kernel_crash_stop"):
+                        self.fail(f"startup/frame crash ${doom.byte('kcrash'):02X}, "
+                                  f"AMEM ${doom.byte('amem_status'):02X}")
+                    if cpu.pc == doom.label("present_done"):
+                        break
+                else:
+                    self.fail(f"frame {frame} did not finish: PC=${cpu.pc:04X}")
+                self.assertEqual(doom.byte("amem_available"), 1)
+                self.assertEqual(doom.byte("amem_status"), 0)
+                self.assertEqual(doom.byte("kcrash"), 0)
+                self.assertFalse(service.selected)
+                self.assertGreater(len(set(m.bank_memory(0)[0x2000:0x8900])), 8,
+                                   "rendered SHR view is blank or uniform")
+
+        copies = [item for item in service.completed if item[0] == 1]
+        self.assertTrue(any(src[0] == 0 and dst[1] == doom.banked["game_home"]
+                            for _, src, dst, _ in copies))
+        self.assertTrue(any(src[1] == doom.banked["game_home"] and dst[0] == 0
+                            for _, src, dst, _ in copies))
+        fills = [item for item in service.completed if item[0] == 2]
+        self.assertGreaterEqual(len(fills), 3)  # startup and both rendered frames
+        self.assertTrue(all(item[2:] == ((0, 0, doom.label("VIEWBUF")),
+                                        doom.label("VIEWBUF_SIZE")) for item in fills))
+
 
 if __name__ == "__main__":
     unittest.main()

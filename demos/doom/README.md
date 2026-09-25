@@ -117,9 +117,15 @@ the four-tic limit. Use its matching metadata for captures. The serial report
 shows whether the memory API is enabled; this build uses host elapsed time
 for FPS/TPS because ARM transfers can merge VBL interrupts during CPU holds.
 
-The exact firmware API is documented in the sibling `appletini-one` branch
-`codex/memory-copy-fill-api` (F1.1.2), in `README_MEMORY_API.md`. The previous v10 disk
-remains available as a control for the helper's CPU-fallback overhead.
+The exact firmware API is documented in the sibling `appletini-one` repository,
+in `README_MEMORY_API.md`. Use F1.1.4 or later with its rebuilt FPGA image.
+F1.1.3 fixed an ARM timer bug, but Doom v11 still reported `DOOM CRASH $67`.
+An RTL regression then reproduced lost DMA completion during idle bus cycles;
+F1.1.4 retains that status until the next transfer. On 2026-09-25, the user
+confirmed that Doom v11 starts and runs with F1.1.4, without the `$67` crash.
+They observed no significant speedup; matched hardware captures are still
+needed to measure the change. The previous v10 disk remains available as a
+control for the helper's CPU-fallback overhead.
 
 See [profiling instructions](docs/PROFILING.md) for serial capture, repeatable
 hardware runs, and bank-aware emulator instruction/cycle reports. The hardware

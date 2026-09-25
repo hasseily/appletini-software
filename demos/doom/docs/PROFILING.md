@@ -373,9 +373,17 @@ clear. On stock F1.1.1 it uses CPU loops; the visible SHR blit is unchanged.
 
 Firmware F1.1.2 is on `appletini-one` branch `codex/memory-copy-fill-api`
 (commit `86b9922`).
-Build/package its ARM firmware on the PC using the existing matching F1.1.1
-XSA and bitstream; see that repository's `README_MEMORY_API.md`. No new FPGA
-image is required. This firmware has not been built or measured on the Mac.
+Use F1.1.4 or later for the hardware test, including its rebuilt FPGA image.
+F1.1.3 fixed a timer-conversion bug, but the same startup crash `$67` persisted.
+The FPGA could discard DMA completion during unrelated reads or idle cycles,
+before the ARM service saw it. F1.1.4 keeps completion until the next command;
+a regression reproduces the old failure through the real AXI wrapper. The
+request format is unchanged. On 2026-09-25, the user confirmed that the same
+Doom v11 disk starts and runs with F1.1.4, without the `$67` crash. They saw
+no significant speedup. This confirms startup on that hardware run; matched
+captures are still needed to measure copy/fill cost and frame-rate changes.
+See the sibling repository's `README_MEMORY_API.md` for the FPGA and firmware
+build steps; the old F1.1.1 bitstream lacks this fix.
 
 ```sh
 build/profile-venv/bin/python tools/profile_hardware.py \
