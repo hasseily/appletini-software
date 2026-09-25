@@ -11,8 +11,8 @@
 ;   2. The RamWorks size: each bank 127..0 gets its number and its
 ;      complement at aux PROBE; reading them back from bank 0 up (through a
 ;      stub in page 1: RAMRD moves instruction fetches) finds the first
-;      bank that is missing or aliased. Fewer than MIN_BANKS (64 = 4 MB)
-;      stops here.
+;      bank that is missing or aliased. Fewer than MIN_BANKS stops here:
+;      128 = 8 MB for BANKED_GAME, 64 = 4 MB for the legacy stand-in.
 ;   3. The data files: the volume directory (the current prefix) is read
 ;      and every BIN file with aux type $0000 is loaded, in directory
 ;      order. Each is a bank file: a header listing its segments, then
@@ -21,13 +21,14 @@
 ;      and copied into its bank with RAMWRT on. (The images have aux types
 ;      $0200 and $D000 and are skipped here; tools/build_disk.py writes
 ;      those types.) Nothing about the data is built into the loader.
-;   4. The images: GAME.BIN into RamWorks bank 1 at $0200 (its final
-;      place); RENDER.BIN into aux bank 0 at $0200 (the same addresses it
+;   4. The images: GAME.BIN into bank 125 for BANKED_GAME (legacy bank 1)
+;      at $0200; RENDER.BIN into aux bank 0 at $0200 (the same addresses it
 ;      will have in main memory; aux bank 0's SHR area is not in use yet);
 ;      LC.BIN (16 KB) straight into main $6000-$9FFF.
 ;   5. The install, with interrupts off and ProDOS no longer needed: the
 ;      language card is written from $6000-$9FFF (bank 2 $D000-$FFFF,
-;      bank 1 $D000-$DFFF); then a routine copied to $0100 (page 1: it
+;      bank 1 $D000-$DFFF). BANKED_GAME then installs staged code banks in
+;      auxiliary LC. Finally a routine copied to $0100 (page 1: it
 ;      runs with RAMRD on) copies aux bank 0 $0200.. over main memory page
 ;      for page -- over this loader and the ProDOS global page -- and
 ;      jumps to kernel_start in the language card with A = the bank count.
@@ -38,7 +39,7 @@
 ;   +4  1    format version, 1
 ;   +5  1    n, the number of segments (1..MAX_SEGS)
 ;   +6  2    zero
-;   +8  5n   per segment: bank (2..banks-1), address (u16, >= $0200),
+;   +8  5n   per segment: bank (1..banks-1; legacy 2..), address (u16, >= $0200),
 ;            length (u16, >= 1, address + length <= $C000)
 ;   zero padding to 256 bytes, then the n segments' bytes in entry order.
 ;
@@ -54,6 +55,9 @@
 ; buffer. Zero page: LZ ($60-$6F), outside what the monitor and the MLI use.
 
 .include "kernel.inc"
+.ifdef BANKED_GAME
+.include "banklayout.inc"
+.endif
 .macpack longbranch
 
 CATBUF      = $1400             ; the volume directory, up to CAT_BLOCKS blocks
@@ -212,7 +216,11 @@ loader_start:
 @images:
         lda     #<name_game
         ldx     #>name_game
+.ifdef BANKED_GAME
+        ldy     #GAME_HOME_BANK
+.else
         ldy     #GAME_BANK
+.endif
         jsr     load_image
         jcs     fail
         lda     #<name_render
@@ -270,9 +278,13 @@ load_bank_file:
         clc
         adc     #SEG_SIZE
         sta     seg_off
-        ; bank 2..nbanks-1
+        ; Banked builds also preload immutable game metadata into bank 1.
         lda     lz_bank
+.ifdef BANKED_GAME
+        cmp     #1
+.else
         cmp     #2
+.endif
         bcc     @badseg
         cmp     nbanks
         bcs     @nomem
@@ -779,6 +791,11 @@ install:
         lda     #>LC_STAGE
         ldy     #48
         jsr     copy_to_lc
+.ifdef BANKED_GAME
+        ; No more MLI calls: safely install each staged code bank into its
+        ; auxiliary LC without disturbing ProDOS's earlier LC mapping.
+        jsr     install_code_banks
+.endif
         ; the installer into page 1, with its page count and the bank count
         ldx     #installer_end-installer_image-1
 :       lda     installer_image,x
@@ -810,6 +827,75 @@ copy_to_lc:
         dex
         bne     :-
         rts
+
+.ifdef BANKED_GAME
+; DOOM.BANKS staged each 12 KiB code image at $0200 in extended RAM.
+; An explicit source/destination table also installs control code into base
+; auxiliary LC, whose lower RAM still contains the renderer image at boot.
+; Read one 4 KiB piece through the installed main-LC far routine, then write
+; auxiliary LC from main-low code with no zero-page or stack accesses while
+; ALTZP is enabled. Main RAMRD/RAMWRT remain off during those writes.
+install_code_banks:
+        stz     lc_install_index
+install_lc_next_bank:  lda     #$02
+        sta     lc_source_page
+        lda     #$D0
+        sta     lc_dest_page
+install_lc_next_piece: stz     far_src
+        lda     lc_source_page
+        sta     far_src+1
+        ldy     lc_install_index
+        lda     lc_install_sources,y
+        sta     far_src+2
+        lda     #<STAGE
+        sta     far_ptr
+        lda     #>STAGE
+        sta     far_ptr+1
+        stz     far_len
+        lda     #$10
+        sta     far_len+1
+        jsr     far_read
+        ldy     lc_install_index
+        lda     lc_install_targets,y
+        sta     RAMWORKS
+        lda     #>STAGE
+        sta     lc_read_page+2
+        lda     lc_dest_page
+        sta     lc_write_page+2
+        ldx     #16
+        ldy     #0
+        sta     ALTZPON
+lc_read_page:
+        lda     STAGE,y
+lc_write_page:
+        sta     $D000,y
+        iny
+        bne     lc_read_page
+        inc     lc_read_page+2
+        inc     lc_write_page+2
+        dex
+        bne     lc_read_page
+        sta     ALTZPOFF
+        clc
+        lda     lc_source_page
+        adc     #$10
+        sta     lc_source_page
+        lda     lc_dest_page
+        adc     #$10
+        sta     lc_dest_page
+        bcc     install_lc_next_piece                 ; $F0 + $10 wraps after the third piece
+        inc     lc_install_index
+        lda     lc_install_index
+        cmp     #CODE_BANK_COUNT
+        bne     install_lc_next_bank
+        rts
+lc_install_sources: CODE_BANK_SOURCES
+lc_install_targets: CODE_BANK_TARGETS
+.export lc_install_sources, lc_install_targets, CODE_BANK_COUNT
+lc_install_index: .byte 0
+lc_source_page:  .byte 0
+lc_dest_page:    .byte 0
+.endif
 
 ; The installer, run at INSTALL ($0100) with interrupts off: aux bank 0
 ; $0200.. -> main $0200.. page by page (RAMRD on reads aux, RAMWRT off

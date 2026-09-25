@@ -17,6 +17,8 @@ does): a driver in page 1 at DRIVER ($0140-$017F, the stub area the
 kernel leaves free) does JSR label (with space_game / space_render around
 it for space='game') and stops at its last byte. The program's PC, stack
 pointer and flags are restored, so run_frames can carry on.
+If a banked frame was paused in progress, call first finishes that frame
+to reach the next main renderer boundary before injecting its driver.
 """
 from __future__ import annotations
 
@@ -64,9 +66,34 @@ class Dbg:
         return self.d.word(name, space)
 
     # -- running -------------------------------------------------------------
+    def _main_pc(self, address: int) -> bool:
+        """The injected driver and kernel hooks execute in main context."""
+        return self.mpu.pc == address and (not self.d.banked or not self.m.sw["altzp"])
+
+    def _check_crash(self) -> None:
+        if self._main_pc(self.L["kernel_crash_stop"]):
+            raise RuntimeError(f"kernel crash ${self.d.byte('kcrash'):02X}")
+
     def call(self, label, a=0, x=0, y=0, space="render", limit=20_000_000) -> int:
         """JSR the routine (a label or an address) with the registers set and
-        interrupts off; returns the cycles from the JSR to its return."""
+        interrupts off; returns the cycles from the JSR to its return.
+
+        A paused banked frame must finish before the main page-one driver
+        can safely replace execution, including any partial phase copy.
+        This does not initialize a
+        frames=0 debugger stopped at kernel_start.
+        """
+        m, mpu = self.m, self.mpu
+        self._check_crash()
+        if self.d.banked and not any(self._main_pc(self.L[name])
+                                     for name in ("kernel_start", "frame_top")):
+            steps = 0
+            while not self._main_pc(self.L["frame_top"]):
+                if steps >= limit:
+                    raise RuntimeError(f"no main frame boundary before {label}, PC ${mpu.pc:04X}")
+                m.step()
+                steps += 1
+                self._check_crash()
         addr = self.L[label] if isinstance(label, str) else label
         code = bytearray()
         if space == "game":
@@ -76,7 +103,6 @@ class Dbg:
             code += bytes((0x20,)) + self.L["space_render"].to_bytes(2, "little")
         code += bytes((0xEA,))          # the stop
         assert len(code) <= 0x40
-        m, mpu = self.m, self.mpu
         m.main[DRIVER:DRIVER + len(code)] = code
         pc0, sp0, p0 = mpu.pc, mpu.sp, mpu.p
         mpu.pc = DRIVER
@@ -87,14 +113,16 @@ class Dbg:
         start = None
         ret = jsr + 3
         steps = 0
-        while mpu.pc != stop and steps < limit:
-            if mpu.pc == jsr and start is None:
+        self.cycles = None
+        while not self._main_pc(stop) and steps < limit:
+            if self._main_pc(jsr) and start is None:
                 start = mpu.processorCycles
             m.step()
             steps += 1
-            if mpu.pc == ret and start is not None and self.cycles is None:
+            self._check_crash()
+            if self._main_pc(ret) and start is not None and self.cycles is None:
                 self.cycles = mpu.processorCycles - start
-        if steps >= limit:
+        if not self._main_pc(stop):
             raise RuntimeError(f"{label} did not return, PC ${mpu.pc:04X}")
         cycles, self.cycles = self.cycles, None
         self.regs = (mpu.a, mpu.x, mpu.y, mpu.p)
@@ -104,10 +132,9 @@ class Dbg:
     def run_frames(self, n: int) -> None:
         """Run the frame loop for n more 60 Hz frames."""
         end = self.mpu.processorCycles + n * self.m.frame_cycles
-        crash = self.L["kernel_crash_stop"]
         step = self.m.step
         mpu = self.mpu
+        self._check_crash()
         while mpu.processorCycles < end:
             step()
-            if mpu.pc == crash:
-                raise RuntimeError(f"kernel crash ${self.d.byte('kcrash'):02X}")
+            self._check_crash()

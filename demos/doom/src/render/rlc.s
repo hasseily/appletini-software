@@ -6,10 +6,10 @@
 ; in the language card (LC bank 1, switched in by render_frame) or the zero
 ; page. Writes still go to main memory (RAMWRT stays off): the view buffer
 ; and the renderer's buffers. Each routine turns RAMRD on once, does all its
-; work, and turns it off: a $C0xx access costs a 1 MHz bus cycle (73 CPU
-; cycles in TURBO), and so does $C073, which is written only when the bank
-; differs from cur_bank (the last bank selected by the renderer; the kernel's
-; far routines are not used while rendering, so it stays true).
+; work, and turns it off. $C073 is written only when the bank differs from
+; cur_bank (the last bank selected by the renderer; the kernel's far routines
+; are not used while rendering, so it stays true). TURBO batches video
+; writes; actual I/O and RamWorks cache costs depend on the target firmware.
 ;
 ;   rb_read     X bytes (0 = 256) from rb_bank:(rb_src) to (rb_dst) in main
 ;   rb_read1    one byte from rb_bank:(rb_src) -> A
@@ -31,9 +31,14 @@
 .include "kernel.inc"
 .include "rdefs.inc"
 .import rc_xs0, rc_xs1, rc_ys0, rc_ys1
+.import kbuf
 
 
+.ifdef BANKED_GAME
+.segment "RZP": zeropage
+.else
 .segment "KZP": zeropage
+.endif
 cf_lo:      .res 1              ; column piece: the fraction byte of f
 q_i:        .res 1
 sp_xf:      .res 2              ; span: xfrac, yfrac (5.11)
@@ -252,9 +257,7 @@ q_flush:
         clc
 @loop:
 @src:   lda     $FFFF,y                 ; the texel (column base + row)
-        sta     @cm+1
-@cm:    lda     $0200                   ; through the colormap
-@dst:   sta     $FFFF,x
+        sta     kbuf,x                  ; separate texture and colormap reads
         lda     cf_lo
 @stl:   adc     #$00
         sta     cf_lo
@@ -265,6 +268,17 @@ q_flush:
         inx
 @end:   cpx     #$00                    ; X < count: carry clear for the adc
         bne     @loop
+        ; The kernel bounce buffer is idle throughout rendering and IRQs
+        ; leave it alone. It remains visible in main LC with RAMRD on.
+        ; Every raw texel is ready before shading; descending X preserves
+        ; destination offsets without another counter (0 means 256 pixels).
+@shade: dex
+        lda     kbuf,x
+        tay
+@cm:    lda     $0200,y                 ; through the selected colormap
+@dst:   sta     $FFFF,x
+        cpx     #0
+        bne     @shade
         bra     @next
 @fill:  lda     q_dlo,x
         sta     @fdst+1
@@ -297,7 +311,8 @@ q_flush:
 ; plane. sp_dp = the view buffer address of the first pixel (the next pixel
 ; is 84 bytes on), sp_xf/sp_yf the flat coordinates (5.11, texel (x, y) of
 ; the 32x32 flat at base + 32y + x); span_set patched the steps, the flat
-; and the colormap. The bank is selected and RAMRD is on for the span.
+; and the colormap. The bank is selected and RAMRD is on for both passes:
+; gather raw texels in kbuf, then shade them with the original 84-byte stride.
 span_draw:
         cmp     cur_bank
         beq     :+
@@ -317,17 +332,9 @@ spd_bh: adc     #$00                    ; + the flat's address, high byte
         ora     sp_glo,x                ; + 32 * (y & 7)
         tax
 spd_tex: lda     $FF00,x                 ; low byte: the flat's address
-        tax
-spd_cm: lda     $0200,x
-        sta     (sp_dp),y
-        ; the next pixel's address, 84 on
-        tya
+        sta     kbuf,y
+        iny
         clc
-        adc     #VIEW_H
-        tay
-        bcc     :+
-        inc     sp_dp+1
-:       clc
         lda     sp_xf
 spd_xsl: adc     #$00
         sta     sp_xf
@@ -344,6 +351,27 @@ spd_ysh: adc     #$00
         clc
         dec     sp_n
         bne     spd_pix
+        ; Y is the original count modulo 256 (zero still means 256).
+        ; Restore it for the shading pass; no new persistent state is needed.
+        sty     sp_n
+        ldx     #0
+        ldy     #0
+spd_shade:
+        lda     kbuf,x
+        sta     spd_cm+1
+spd_cm: lda     $0200                   ; colormap page patched by span_setrow
+        sta     (sp_dp),y
+        ; Preserve the destination cursor, including its final increment.
+        tya
+        clc
+        adc     #VIEW_H
+        tay
+        bcc     :+
+        inc     sp_dp+1
+:       inx
+        dec     sp_n
+        bne     spd_shade
+        clc                             ; original span return carry
         sta     RAMRDOFF
         rts
 
@@ -354,7 +382,9 @@ span_setflat:
         rts
 
 ; span_setrow: A = the colormap page, Y = the row: its steps from the row
-; cache (rc_xs*, rc_ys*)
+; cache (rc_xs*, rc_ys*). Called with RAMRD off. Its instructions are
+; immutable; only the LC span loop's operands are patched by these stores.
+.segment "RTEXTDATA"
 span_setrow:
         sta     spd_cm+2
         lda     rc_xs0,y
@@ -369,6 +399,7 @@ span_setrow:
 .export span_setflat, span_setrow, span_draw
 
 ; ---------------------------------------------------------------------------
+.segment "RLC1"
 ; pl_used: C set if any of the X (1..255) bytes at RENDER_BANK:(p0) is not
 ; $FF (a visplane's column tops: in use)
 .export pl_used
@@ -392,4 +423,3 @@ pl_used:
 @used:  sta     RAMRDOFF
         sec
         rts
-

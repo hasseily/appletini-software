@@ -567,6 +567,9 @@ def main() -> None:
     if not args.data.is_dir():
         raise SystemExit(f"missing data directory: {args.data}")
     data = data_files(args.data)
+    banked = args.build / "DOOM.BANKS"
+    if banked.is_file():
+        data[banked.name] = banked.read_bytes()
     try:
         notes = build(system, images, data, args.master, args.output)
     except DiskError as error:

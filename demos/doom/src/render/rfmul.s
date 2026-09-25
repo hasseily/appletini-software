@@ -32,7 +32,11 @@
 .macpack longbranch
 .include "rmul.inc"
 
+.ifdef BANKED_GAME
+.segment "RZP": zeropage
+.else
 .segment "KZP": zeropage
+.endif
 ms1:        .res 2
 ms2:        .res 2
 ms3:        .res 2

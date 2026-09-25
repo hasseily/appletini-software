@@ -844,7 +844,17 @@ extern const weaponaction_t weapon_actions[NUMACTIONS - AC_FIRST_WEAPON];
     c.append(c_array("uint8_t", "st_action",
                      ["0x%02X" % (a | (0x80 if quiet(i) else 0)) for i, a in enumerate(acts)], 12))
     c.append(c_array("uint16_t", "st_next", [index[s.next] for s in states], 12))
+    c += ["", "/* The packet needs only NOSECTOR and SHADOW for static things.",
+          " * Keep their non-overlapping byte masks in one per-type lookup. */",
+          "#ifdef BANKED_GAME"]
+    c.append(c_array("uint8_t", "mi_viewflags",
+                     ["0x%02X" % ((flag_value(f["flags"]) & 0x08)
+                                  | ((flag_value(f["flags"]) >> 16) & 0x04))
+                      for _, f in mobjs], 16))
+    c.append("#endif")
     c.append("")
+    c += ['#if defined(__CC65__) && defined(BANKED_GAME)',
+          '#pragma rodata-name (push, "GINFO")', '#endif']
     c.append("const mobjinfo_t mobjinfo[NUMMOBJTYPES] = {")
     for name, f in mobjs:
         speed = int(f["speed"])
@@ -856,6 +866,8 @@ extern const weaponaction_t weapon_actions[NUMACTIONS - AC_FIRST_WEAPON];
         vals += [f["reactiontime"], str(speed), f["radius"], f["height"], f["damage"]]
         c.append(f"    {{ {', '.join(vals)} }},  /* {name} */")
     c.append("};")
+    c += ['#if defined(__CC65__) && defined(BANKED_GAME)',
+          '#pragma rodata-name (pop)', '#endif']
     c.append("")
     c.append(c_array("int16_t", "mi_doomednum", [int(f["doomednum"]) for _, f in mobjs], 12))
     c.append("")

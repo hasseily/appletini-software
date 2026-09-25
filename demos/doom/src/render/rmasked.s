@@ -54,6 +54,7 @@
 
 .include "kernel.inc"
 .include "rdefs.inc"
+.include "rpacket.inc"
 .include "rmask.inc"
 .include "rmul.inc"
 .macpack longbranch
@@ -1500,12 +1501,12 @@ sp_thing:
         sta     ps_t+1                  ; 20i
         clc
         lda     ps_t
-        adc     #<(_rview + RV_THINGS)
+        adc     #<(RV_PACKET_ADDR + RV_THINGS)
         sta     rb_src
         lda     ps_t+1
-        adc     #>(_rview + RV_THINGS)
+        adc     #>(RV_PACKET_ADDR + RV_THINGS)
         sta     rb_src+1
-        lda     #GAME_BANK
+        lda     #RV_PACKET_BANK
         sta     rb_bank
         lda     #<sp_tb
         sta     rb_dst

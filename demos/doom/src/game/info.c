@@ -197,6 +197,22 @@ const uint16_t st_next[424] = {
     421, 422, 423, 420,
 };
 
+/* The packet needs only NOSECTOR and SHADOW for static things.
+ * Keep their non-overlapping byte masks in one per-type lookup. */
+#ifdef BANKED_GAME
+const uint8_t mi_viewflags[90] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+#endif
+
+#if defined(__CC65__) && defined(BANKED_GAME)
+#pragma rodata-name (push, "GINFO")
+#endif
 const mobjinfo_t mobjinfo[NUMMOBJTYPES] = {
     { S_PLAY, S_PLAY_RUN1, S_PLAY_PAIN, S_NULL, S_PLAY_ATK1, S_PLAY_DIE1, S_PLAY_XDIE1, 100, 255, 100, 0x02000C06UL, sfx_None, sfx_None, sfx_plpain, sfx_pldeth, sfx_None, 0, 0, 16, 56, 0 },  /* MT_PLAYER */
     { S_POSS_STND, S_POSS_RUN1, S_POSS_PAIN, S_NULL, S_POSS_ATK1, S_POSS_DIE1, S_POSS_XDIE1, 20, 200, 100, 0x00400006UL, sfx_posit1, sfx_pistol, sfx_popain, sfx_podth1, sfx_posact, 8, 8, 20, 56, 0 },  /* MT_POSSESSED */
@@ -289,6 +305,9 @@ const mobjinfo_t mobjinfo[NUMMOBJTYPES] = {
     { S_LIVESTICK, S_NULL, S_NULL, S_NULL, S_NULL, S_NULL, S_NULL, 1000, 0, 100, 0x00000002UL, sfx_None, sfx_None, sfx_None, sfx_None, sfx_None, 8, 0, 16, 16, 0 },  /* MT_MISC75 */
     { S_BIGTREE, S_NULL, S_NULL, S_NULL, S_NULL, S_NULL, S_NULL, 1000, 0, 100, 0x00000002UL, sfx_None, sfx_None, sfx_None, sfx_None, sfx_None, 8, 0, 32, 16, 0 },  /* MT_MISC76 */
 };
+#if defined(__CC65__) && defined(BANKED_GAME)
+#pragma rodata-name (pop)
+#endif
 
 const int16_t mi_doomednum[90] = {
     -1, 3004, 9, 3001, 3002, 58, 3005, 3003, -1, 3006, 2035, -1,

@@ -26,6 +26,7 @@
 
 .include "kernel.inc"
 .include "rdefs.inc"
+.include "rpacket.inc"
 .include "rmask.inc"
 .macpack longbranch
 
@@ -189,14 +190,14 @@ r_things:
 ; RAMRD session on bank 1 (reads of the zero page and this code only;
 ; the writes go to main memory)
 th_gather:
-        lda     #GAME_BANK
+        lda     #RV_PACKET_BANK
         cmp     cur_bank
         beq     :+
         sta     cur_bank
         sta     RAMWORKS
-:       lda     #<(_rview + RV_THINGS + RT_SECTOR)
+:       lda     #<(RV_PACKET_ADDR + RV_THINGS + RT_SECTOR)
         sta     th_p
-        lda     #>(_rview + RV_THINGS + RT_SECTOR)
+        lda     #>(RV_PACKET_ADDR + RV_THINGS + RT_SECTOR)
         sta     th_p+1
         sta     RAMRDON
         ldx     #0

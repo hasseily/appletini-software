@@ -52,7 +52,13 @@ wbstartstruct_t wminfo;
 uint16_t wi_tics;
 uint32_t leveltics;
 uint16_t leveltime, totalkills, totalitems, totalsecret;
+#if defined(BANKED_GAME) && defined(__CC65__)
+#pragma bss-name (push, "GVIEW")
+#endif
 rview_t rview;
+#if defined(BANKED_GAME) && defined(__CC65__)
+#pragma bss-name (pop)
+#endif
 uint8_t snd_last[8], snd_count;
 unsigned long game_tics;
 

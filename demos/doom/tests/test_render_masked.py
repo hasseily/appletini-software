@@ -87,8 +87,8 @@ class MaskedSim(C.RenderSim):
     def set_scene(self, mapname, view, things=(), psprites=(), tic=0, extralight=0,
                   fixedcolormap=None, shaded=False):
         self.set_view(mapname, view, tic, extralight, fixedcolormap, shaded)
-        rv = self.L["_rview"]
-        mem = self.m.bank_memory(1)
+        rv = self.packet_address
+        mem = self.m.bank_memory(self.packet_bank)
         mem[rv + 18] = len(things)
         mem[rv + 19] = len(psprites)
         for i, p in enumerate(list(psprites)[:2]):

@@ -70,7 +70,11 @@
 .assert finetangent_mid = finetangent_lo + 1024 && finetangent_hi = finetangent_mid + 1024, lderror, "column_tex: the tangent planes must be 1024 apart"
 
 
+.ifdef BANKED_GAME
+.segment "RZP": zeropage
+.else
 .segment "KZP": zeropage
+.endif
 sg_texcol:  .res 1              ; the column's texture column (& 255)
 sg_cm:      .res 1              ; the column's colormap page
 sg_isc:     .res 3              ; the column's iscale

@@ -32,7 +32,11 @@
 
 .assert <mul_sqr_lo = 0 && <mul_sqr_hi = 0 && <mul_nsqr_lo = 0 && <mul_nsqr_hi = 0, lderror, "mul tables must be page aligned (RRODATA start in doom.cfg)"
 
+.ifdef BANKED_GAME
+.segment "RZP": zeropage
+.else
 .segment "KZP": zeropage
+.endif
 mi:         .res 1              ; umul: index of the m_a byte
 mj:         .res 1              ; umul: index of the m_b byte
 mlen:       .res 1              ; umul: result bytes
@@ -484,7 +488,11 @@ tan_fine:
 
 ; ---------------------------------------------------------------------------
 ; point_to_angle: pa_x, pa_y (24-bit signed) -> pa_r (BAM16)
+.ifdef BANKED_GAME
+.segment "RZP": zeropage
+.else
 .segment "KZP": zeropage
+.endif
 pa_ax:      .res 3              ; |x|
 pa_ay:      .res 3              ; |y|
 pa_oct:     .res 1              ; bit 0: x < 0, bit 1: y < 0

@@ -69,8 +69,13 @@ VIEW_H      = 84                ; rows 0-83; 84-99 the status bar
 
 ; ---------------------------------------------------------------------------
 ; memory
-GAME_BANK   = 1                 ; RamWorks bank of the GAME space
-MIN_BANKS   = 64                ; 4 MB: the smallest machine the port runs on
+GAME_BANK   = 1                 ; legacy GAME space / banked far game records
+.ifdef BANKED_GAME
+.include "banked.inc"
+MIN_BANKS   = 128               ; banked engine, snapshots and converted episode
+.else
+MIN_BANKS   = 64                ; legacy platform configuration
+.endif
 .import VIEWBUF, VIEWBUF_SIZE   ; column x at VIEWBUF + 84*x (src/doom.cfg)
 
 ; kspace values
@@ -82,7 +87,7 @@ SPACE_GAME   = 1
 ; and .global export from the defining module and import everywhere else.
 .globalzp kspace                ; SPACE_RENDER or SPACE_GAME
 .globalzp kcall                 ; 2: the GAME routine call_game calls
-.globalzp vbl_count             ; +1 per VBL interrupt (60 Hz)
+.globalzp vbl_count             ; 16-bit count, +1 per VBL interrupt (50/60 Hz)
 .globalzp far_src               ; 3: lo, hi, bank -- a far address
 .globalzp far_dst               ; 3: lo, hi, bank
 .globalzp far_ptr               ; 2: a near address in the caller's space

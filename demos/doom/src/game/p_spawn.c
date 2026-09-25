@@ -11,6 +11,12 @@
 
 #ifdef GAME_REAL
 
+#if defined(BANKED_GAME) || defined(FAR_MOBJINFO)
+#define MOBJINFO(type) (*P_MobjInfo(type))
+#else
+#define MOBJINFO(type) mobjinfo[type]
+#endif
+
 /* the level-start part: in the set-up overlay on the 6502 (p_setup.c) */
 #ifdef __CC65__
 #pragma code-name (push, "GOVL")
@@ -67,7 +73,7 @@ void P_SpawnMapThing(int16_t x, int16_t y, int16_t angle, uint16_t type, uint16_
     t = P_ThingType(type);
     if (t == 0xFF)
         return;                     /* vanilla stops with an error */
-    info = &mobjinfo[t];
+    info = &MOBJINFO(t);
     s = P_AllocStatic();
     if (!s)
         kernel_crash(CRASH_MOBJS);
@@ -128,15 +134,15 @@ mobj_t *P_SpawnMissile(mobj_t *source, mobj_t *dest, uint8_t type)
     fixed_t dist, speed;
 
     th = P_SpawnMobj(source->x, source->y, source->z + 4 * 8 * FRACUNIT, type);
-    if (mobjinfo[type].seesound)
-        S_StartSound(th, mobjinfo[type].seesound);
+    if (MOBJINFO(type).seesound)
+        S_StartSound(th, MOBJINFO(type).seesound);
     th->target = source;
     an = R_PointToAngle2(source->x, source->y, dest->x, dest->y);
     if (FLAG(dest->flags, MF_SHADOW))
         an += P_SubRandom() << 4;   /* vanilla << 20 on 32-bit angles */
     th->angle = an;
     an >>= ANGLETOFINESHIFT;
-    speed = FIX(mobjinfo[type].speed);
+    speed = FIX(MOBJINFO(type).speed);
     th->momx = FixedMul(speed, fine_cosine(an));
     th->momy = FixedMul(speed, fine_sine(an));
     dist = P_AproxDistance(dest->x - source->x, dest->y - source->y);
@@ -169,11 +175,11 @@ void P_SpawnPlayerMissile(mobj_t *source, uint8_t type)
         }
     }
     th = P_SpawnMobj(source->x, source->y, source->z + 4 * 8 * FRACUNIT, type);
-    if (mobjinfo[type].seesound)
-        S_StartSound(th, mobjinfo[type].seesound);
+    if (MOBJINFO(type).seesound)
+        S_StartSound(th, MOBJINFO(type).seesound);
     th->target = source;
     th->angle = an;
-    speed = FIX(mobjinfo[type].speed);
+    speed = FIX(MOBJINFO(type).speed);
     th->momx = FixedMul(speed, fine_cosine(an >> ANGLETOFINESHIFT));
     th->momy = FixedMul(speed, fine_sine(an >> ANGLETOFINESHIFT));
     th->momz = FixedMul(speed, slope);

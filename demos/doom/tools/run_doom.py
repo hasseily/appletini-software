@@ -9,9 +9,12 @@ Usage: python3 tools/run_doom.py [--build DIR] [--data DIR] [--frames 120]
                                  [--quiet]
 
 The machine (tools/a2sim.py) is an enhanced //e with the mouse card in
-slot 2, the Phasor in slot 4, `--banks` RamWorks banks and the TURBO frame
-budget (1,250,000 cycles per 60 Hz frame; --speed N for a fixed N MHz
-preset). By default it boots like the real machine: a2sim's fake ProDOS
+slot 2, the Phasor in slot 4 and `--banks` RamWorks banks. The historical
+`--speed turbo` preset uses a synthetic 1,250,000-cycle frame budget;
+`--speed N` selects a fixed N MHz preset. Neither models hardware TURBO's
+batched video writes, synchronization or PSRAM/cache timing. These cycle
+reports are test-model measurements, not hardware performance estimates.
+By default it boots like the real machine: a2sim's fake ProDOS
 holds DOOM.SYSTEM, the three images and every data file of --data, the
 CPU starts DOOM.SYSTEM at $2000, and the loader (src/kernel/loader.s)
 catalogs the volume, loads everything through the MLI and installs the
@@ -39,7 +42,8 @@ number at its blit, tics run, work cycles (since the previous rendered
 frame, idle skipped), blit cycles, whether the blit waited for line 0,
 $Cxxx accesses and SHR writes. --stats FILE writes them as JSON with a
 summary (median/p99/max of work and blit, budget, frames over budget,
-tics per 60 frames) and the boot cost.
+tics per 60 frames) and the boot cost. A kernel crash stops the run,
+records the crash in the JSON report, and returns a nonzero exit status.
 """
 
 from __future__ import annotations
@@ -113,9 +117,14 @@ class Doom:
         self.build = Path(build) if build else default_build()
         self.data = Path(data) if data else self.build / "data"
         self.labels = labels_from(self.build / "doom.lbl")
+        metadata = self.build / "banked.json"
+        self.banked = json.loads(metadata.read_text()) if metadata.is_file() else None
         self.files = {name: (self.build / name).read_bytes()
                       for name in ("DOOM.SYSTEM", *IMAGES)}
         self.data_files = build_disk.data_files(self.data)
+        if self.banked:
+            name = self.banked["preload_file"]
+            self.data_files[name] = (self.build / name).read_bytes()
         self.fast = fast
         prodos = None
         if not fast:
@@ -131,8 +140,10 @@ class Doom:
         L = self.labels
         m = self.machine
         # the model's idle skip: only while the loop would really wait
-        m.idle_pcs[L["idle_wait"]] = ("vbl", lambda: m.main[L["vbl_count"]] == m.main[L["clk_last"]])
-        m.idle_pcs[L["present_wait"]] = ("line0", m.in_vbl)
+        m.idle_pcs[L["idle_wait"]] = ("vbl", lambda: not m.sw["altzp"]
+                                     and m.main[L["vbl_count"]:L["vbl_count"] + 2]
+                                     == m.main[L["clk_last"]:L["clk_last"] + 2])
+        m.idle_pcs[L["present_wait"]] = ("line0", lambda: not m.sw["altzp"] and m.in_vbl())
         self.boot_cycles = None
         self.start_cycle = None
 
@@ -143,14 +154,13 @@ class Doom:
     def boot(self, limit: int = 400_000_000) -> int:
         """Run until kernel_start; return the cycles the boot took."""
         m, mpu = self.machine, self.mpu
-        start = self.label("kernel_start")
         if self.fast:
             self.install_fast()
         else:
             m.load(0x2000, self.files["DOOM.SYSTEM"])
             mpu.pc = 0x2000
             mpu.sp = 0xFF
-            if not m.run(limit, stop_pc=start):
+            if not self.run_to("kernel_start", limit):
                 raise RuntimeError(f"no kernel_start after {limit} cycles, PC ${mpu.pc:04X}:\n"
                                    + m.text_screen())
         self.boot_cycles = mpu.processorCycles
@@ -163,7 +173,13 @@ class Doom:
         for contents in self.data_files.values():
             for bank, address, blob in parse_data_file(contents):
                 m.load(address, blob, aux_bank=bank)
-        m.load(0x0200, self.files["GAME.BIN"], aux_bank=1)
+        home = self.banked["game_home"] if self.banked else 1
+        m.load(0x0200, self.files["GAME.BIN"], aux_bank=home)
+        if self.banked:
+            for bank in self.banked["banks"].values():
+                storage = m.bank_memory(bank)
+                stage = self.banked.get("code_staging", {}).get(str(bank), bank)
+                storage[0xD000:0x10000] = bytes(m.bank_memory(stage)[0x0200:0x3200])
         m.load(0x0200, self.files["RENDER.BIN"])
         lc = self.files["LC.BIN"]
         m.lc[False][0x1000:0x4000] = lc[:0x3000]           # bank 2 $D000-$FFFF
@@ -176,7 +192,22 @@ class Doom:
 
     # -- running -----------------------------------------------------------
     def run_to(self, label: str, limit: int = 50_000_000) -> bool:
-        return self.machine.run(limit, stop_pc=self.label(label))
+        """Advance to a main-kernel label, excluding auxiliary LC aliases.
+
+        As with Machine.run, execute at least one instruction before testing
+        the stop condition, so repeated calls advance to the next occurrence.
+        """
+        m, mpu = self.machine, self.mpu
+        target = self.label(label)
+        end = mpu.processorCycles + limit
+        step = m.step
+        while mpu.processorCycles < end:
+            step()
+            if mpu.pc == target and (not self.banked or not m.sw["altzp"]):
+                return True
+            if m.prodos is not None and m.prodos.quit:
+                return False
+        return False
 
     def vbl_frame(self) -> int:
         """60 Hz frames since the kernel started."""
@@ -203,6 +234,10 @@ class Doom:
         if address >= 0xD000:
             return self.lc_byte(address)
         if space == "game":
+            if self.banked:
+                if m.main[self.label("kspace")] == 1:
+                    return m.main[address]
+                return m.bank_memory(self.banked["game_home"])[address]
             return m.bank_memory(1)[address]
         return m.main[address]
 
@@ -223,6 +258,7 @@ class Runner:
         self.shots = sorted(set(args.shot))
         self.rows = []
         self.log = []
+        self.crash = None
 
     def say(self, text: str) -> None:
         self.log.append(text)
@@ -287,6 +323,10 @@ class Runner:
         while mpu.processorCycles < end:
             step()
             pc = mpu.pc
+            # Auxiliary LC routines deliberately reuse the main kernel's
+            # addresses. A PC value alone is not a frame, wait or crash event.
+            if self.doom.banked and m.sw["altzp"]:
+                continue
             if pc == frame_top:
                 now = d.vbl_frame()
                 while self.actions and self.actions[0][0] <= now:
@@ -317,7 +357,12 @@ class Runner:
                 last_io, last_shr, last_tics = m.io_accesses, m.shr_writes, tics
                 waited = False
             elif pc == crash:
-                self.say(f"frame {d.vbl_frame()}: kernel crash ${d.byte('kcrash'):02X}")
+                self.crash = dict(code=d.byte("kcrash"), pc=pc,
+                                  cycle=mpu.processorCycles, vbl=d.vbl_frame())
+                message = f"frame {d.vbl_frame()}: kernel crash ${self.crash['code']:02X}"
+                self.say(message)
+                if self.args.quiet:
+                    print(message, file=sys.stderr)
                 break
             if pc in traces and traced < self.args.trace_limit:
                 traced += 1
@@ -336,10 +381,13 @@ class Runner:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(dict(boot_cycles=d.boot_cycles, fast=d.fast,
                                             speed=m.speed, frame_cycles=m.frame_cycles,
+                                            timing_scope="test-model cycles, not hardware TURBO timing",
+                                            exit_reason="kernel_crash" if self.crash else "frame_limit",
+                                            crash=self.crash,
                                             frames=self.rows, summary=summary, log=self.log),
                                        indent=1) + "\n")
             self.say(f"saved {path}")
-        return 0
+        return 1 if self.crash else 0
 
     def summary(self) -> dict | None:
         rows = self.rows
@@ -366,7 +414,8 @@ def main() -> int:
                     help="the linked program (default build/, else build/standin)")
     ap.add_argument("--data", type=Path, default=None, help="the data files (default BUILD/data)")
     ap.add_argument("--rom", type=Path, default=DEFAULT_ROM)
-    ap.add_argument("--speed", default="turbo", help="'turbo' or a fixed MHz preset")
+    ap.add_argument("--speed", default="turbo",
+                    help="historical synthetic 'turbo' budget, or a fixed MHz preset (e.g. 33)")
     ap.add_argument("--banks", type=int, default=128, help="RamWorks banks (64 KB each)")
     ap.add_argument("--fast", action="store_true", help="skip the loader: place everything from Python")
     ap.add_argument("--frames", type=int, default=120, help="60 Hz frames to run")

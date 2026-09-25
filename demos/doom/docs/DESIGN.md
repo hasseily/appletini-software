@@ -7,12 +7,12 @@ it is made.
 ## 1. Goal and scope
 
 A playable Doom on an enhanced Apple //e with the Appletini ONE: the vTW in
-**TURBO** (about 75 MHz on average), RamWorks memory (at least 6 MB: episode 1 loads into banks 2-95 at boot; the vTW serves 8 MB), the
+**TURBO**, **8 MB RamWorks** (128 banks; episode 1 data uses banks 2–95), the
 mouse card in slot 2, the Phasor in slot 4, SHR4 **PAL256** video, booted
 from a ProDOS hard-disk image on the Appletini's SmartPort.
 
 Content: **Freedoom Phase 1** (`freedoom1.wad`, BSD licence), episode 1
-(maps E1M1..E1M9 where they fit, see section 6). The WAD is not in the
+(all nine maps E1M1..E1M9, see section 6). The WAD is not in the
 repository: `tools/fetch_freedoom.py` downloads it from the npm package
 `kaboom.claude` (which ships it with its licence) and checks its SHA-256.
 
@@ -37,20 +37,26 @@ What "Doom" means here, in order of priority:
 Not in scope: multiplayer, savegames, demos, the automap (maybe later),
 high-detail 320-column rendering (a later option, section 4).
 
-## 2. Hardware facts (verified in appletini-one)
+## 2. Hardware mapping and timing assumptions
 
-- **TURBO**: no fixed rate; the user measures about 75 MHz on average.
-  The test machine counts 6502 cycles; the budget is **1,250,000 cycles
-  per 60 Hz frame**. Hot code should live in main or aux bank 0 memory
-  (shadow BRAM, cached); RamWorks banks are PSRAM with an 8-byte line
-  cache and never enter the TURBO word cache, so code running there and
-  data read from there are slower (sequential access is best).
-- **Video writes** go to the Appletini renderer at fabric speed in TURBO.
-  Every `$Cxxx` access takes the original path; keep soft-switch and I/O
-  accesses out of inner loops. RamWorks bank changes (`$C073`) drain any
-  pending motherboard mirror first. The test machine charges each `$Cxxx`
-  access one 1 MHz bus cycle, **73 CPU cycles** in TURBO (1,250,000 /
-  17,030), on top of the instruction.
+The address mapping was checked against the sibling `appletini-one` checkout.
+That establishes the layout used by the banked build, not the timing of the
+user's current target firmware.
+
+- **TURBO batches video writes.** A pixel write must not be treated as a
+  synchronous 1 MHz motherboard transaction. Actual batching, synchronization,
+  I/O, RamWorks/PSRAM and cache behavior need measurement on the target.
+- **Python test model**: `tools/a2sim.py` counts 65C02 instructions and supports
+  a nominal 1,250,000-cycle budget per 60 Hz interval, corresponding to 75 MHz,
+  plus a configurable fixed I/O surcharge (73 cycles by default in its mode
+  named `turbo`). This is a correctness harness with timing assumptions,
+  **not an implementation of hardware TURBO timing**. Its historical rates
+  must not be reported as measured FPS. A conventional 33 MHz emulator run
+  is also separate from hardware TURBO validation.
+- **RamWorks execution**: non-base auxiliary code, zero page and stacks use
+  the selected RamWorks bank. The local hardware checkout routes this through
+  PSRAM/cache logic; its delay is not represented by ordinary py65 instruction
+  cycles. Do not infer target bandwidth from an older checkout's mirror rules.
 - **SHR4 PAL256** (`appletini-one/ps_sources/frontend/apple_cycle_renderer.c`,
   `shr4_pal256_color`, `render_shr4_pal256_frame`): with the magic
   `"SHR4"|$80` = `$D3 $C8 $D2 $B4` at aux `$9DFC-$9DFF`, the paging byte
@@ -75,26 +81,28 @@ high-detail 320-column rendering (a later option, section 4).
   language card. Code that runs while RAMRD is on must be in page 0/1 or
   the language card. `$C073` is write-only: the size is found by writing
   each bank's number into it (127 down to 0) and reading back from 0 up
-  (a missing bank aliases a lower one). At least 4 MB (64 banks) required.
+  (a missing bank aliases a lower one). The banked game requires all 128 banks;
+  the legacy platform stand-in accepts 64.
 - **SmartPort**: 32 MB ProDOS volumes work (the AD8088 image is 32 MB).
 - **Keyboard**: the //e reports only the last key (`$C000`) and "any key
   down" (`$C010` bit 7). Open Apple (`$C061`) and Closed Apple (`$C062`)
   are independent buttons; so are the mouse buttons.
 - **Mouse card** slot 2 (`$C0A0-$C0AF`, `appletini-one/hdl/apple/mouse_card.sv`,
   see `demos/pinball_construction_set/src/input.s`), used here for
-  turning, and as the **60 Hz clock**: mode bit 3 raises an IRQ at the
+  turning, and as the **50/60 Hz clock**: mode bit 3 raises an IRQ at the
   start of every vertical blanking, also with the mouse otherwise off;
   writing 3 to the ACK register (`$C0AF`) releases the IRQ (bit 1) and
   clears its cause (bit 0). The sequence byte `$C0A6` counts the PS's
   reports (a torn two-byte X read is detected by reading it before and
   after). Positions are 16 bits, clamped to a window the program sets.
 - **Phasor** slot 4: two AY chips (see the PCS/Bosconian `sound.s`). One
-  burst of slot 4 accesses per frame.
+  burst of slot 4 accesses per frame is the planned audio backend; playback
+  is not implemented in this port yet.
 
 ## 3. Screen
 
-PAL256, 320x100. Rows 0-83: the 3D view; rows 84-99: the status bar
-(Doom's 320x32 `STBAR`, halved vertically).
+PAL256, 320x100. Rows 0-83: the 3D view; rows 84-99 are reserved for the
+status bar (Doom's 320x32 `STBAR`, halved vertically), which is not drawn yet.
 
 The view is rendered at **160x84 game pixels** ("low detail", every game
 pixel two screen pixels wide) into a buffer in main memory, **column
@@ -104,69 +112,137 @@ rows with each byte written twice. On the 640x400 output a game pixel is a
 damage/pickup tints are other `PLAYPAL` entries written to the palette
 (512 bytes, once per change).
 
-Frame publishing: the copy (13,440 reads, 26,880 writes, 236K cycles
-measured) starts right after line 0 so that it finishes before the next
-one. The kernel decides how to wait (section 8).
+Frame publishing: the copy performs 13,440 reads and 26,880 writes, about
+236K model cycles. The kernel uses a line-0 policy (section 8), whose guarantee
+depends on actual copy timing. A 33 MHz model run has shown a blit spanning
+line 0; this must not be presented as a proven tear-free hardware path.
 
 ## 4. Memory
 
-Two address spaces share page 0, page 1 and the main language card:
+### Default banked game (`BANKED=1`)
 
-| Space | `$0200-$BFFF` is | Holds |
-|---|---|---|
-| RENDER | main memory (RAMRD and RAMWRT off) | the renderer (BSP walk, segs, planes, sprites), its tables and buffers, the view buffer |
-| GAME | RamWorks bank 1 (RAMRD and RAMWRT on, `$C073` = 1) | the game logic (C, cc65) with its data: mobjs, thinkers, player, level state; the C stack |
+`tools/bank_game.py` partitions executable code into seven permanently loaded
+auxiliary language-card banks. During game code execution, RAMRD/RAMWRT are
+OFF and ALTZP is ON. Ordinary pointers continue to address main RAM while
+`$C073` selects the code bank's LC, zero page and hardware stack. Each LC image
+occupies `$D000-$FFFF`: 12 KiB including its interrupt vectors. The other
+physical `$D000` half is not additional simultaneously visible address space.
 
-| Range | Use |
-|---|---|
-| page 0 | `$02-$DF` kernel and renderer (segment `KZP`), `$E0-$FF` cc65 runtime (its `ZEROPAGE`: `sp`, `sreg`, `regsave`, `ptr1-4`, `tmp1-4`, `regbank`, 26 bytes, 6 free) |
-| page 1 | the 6502 stack, shared by both spaces. `$0100-$013F` holds the loader's installer and bank probe during boot only; `$0140-$017F` the debugger's call driver (`tools/doomdbg.py`). The space switch and far access need no page-1 stubs: they run in the language card, which RAMRD does not move |
-| main `$0200-$03FF` | renderer tables (`RLOWDATA`) |
-| main `$0400-$0BFF` | text/80-column pages: writes are mirrored to the motherboard, so read-only code and tables only (`RTEXTDATA`), loaded once |
-| main `$0C00-$8B7F` | renderer code, tables, data and BSS (`RCODE`, `RRODATA`, `RDATA`, `RBSS`); nothing written may live in `$2000-$5FFF` (mirrored) |
-| main `$8B80-$BFFF` | `VIEWBUF`, the 13,440-byte view buffer (column `x` at `$8B80 + 84*x`) |
-| main LC bank 2 `$D000-$DFFF` | the blit (`KLC2`, 1,574 bytes); later the column/span/sprite inner loops |
-| main LC `$E000-$FFF9` | the kernel jump table at `$E000` (`KJT`), then kernel code, data, BSS (`KCODE`, `KRODATA`, `KDATA`, `KBSS`: input block, counters, `kbuf`); `$FFFA-$FFFF` the vectors (NMI, RESET, IRQ) |
-| main LC bank 1 `$D000-$DFFF` | free (`KLC1`); only code outside `$D000-$DFFF` may switch the `$D000` bank |
-| aux bank 0 `$2000-$9FFF` | the SHR screen, palette, magic |
-| aux bank 0 `$0200-$1FFF`, `$A000-$BFFF`, aux LC | spare fast memory (status bar graphics, font, hot tables); aux LC and ALTZP only with interrupts off (the vectors and the stack are the main ones) |
-| RamWorks bank 1 `$0200-$B7FF` | GAME space: `GAME.BIN` (cc65's `STARTUP`, `CODE`, `RODATA`, `DATA`, `BSS`) |
-| RamWorks bank 1 `$B800-$BFFF` | the cc65 software stack (2 KB, from `$C000` down) |
-| RamWorks banks 2.. | the converted data (section 6: `DD_FIRST_BANK`..`DD_LAST_BANK`), then anything else |
+| Bank | Code group |
+| --- | --- |
+| 96 | Collision and map traversal |
+| 97 | Actors |
+| 98 | AI and sight |
+| 99 | Specials and movers |
+| 0 (base auxiliary LC) | Game control, packet construction, damage and pickups |
+| 101 | Setup and spawning |
+| 102 | Player and weapons |
 
-Segments and files (`src/doom.cfg`, one ld65 run, symbols resolve across
-all areas): the loader `LDRCODE` at `$2000` -> `DOOM.SYSTEM`; the RENDER
-areas -> `RENDER.BIN` (an image of main memory from `$0200`, filled up to
-`$0C00`, then up to its last byte); the language card -> `LC.BIN` (always
-16,384 bytes: bank 2 `$D000-$DFFF`, `$E000-$FFFF`, bank 1 `$D000-$DFFF`);
-bank 1 -> `GAME.BIN` (from `$0200`). cc65's standard segment names belong
-to GAME; kernel and renderer assembly always names its segments (`K*`,
-`R*`).
+`gamebanks.s` runs from invariant main memory. Generated public entry gates
+have stable addresses for direct calls, thinker functions and action tables.
+Calls within a bank can bypass the gates. Selected small helpers and immutable
+state tables are duplicated into code banks; their mutable caches remain shared.
+The gateway supports A→B→A reentry with a saved stack pointer per context,
+transfers 54 logical ZP bytes (8 game, 26 cc65, 12 far arguments and 8 kernel
+scratch), and preserves A/X/Y/P and the updated C software-stack pointer.
+Each bank has IRQ vectors; its handler borrows the main stack/context for the
+VBL service. NMI sources must be disabled across mapping transitions.
 
-Memory used by the platform skeleton (`tools/check_link.py`, stand-in
-build): zero page 44 of 222 bytes (kernel), 26 of 32 (cc65); RENDER 142
-bytes (the test pattern) of 32,640 in `$0C00-$8B7F`, `$0200-$0BFF` free;
-LC bank 2 `$D000` 1,574 of 4,096; LC `$E000-$FFF9` 1,769 of 8,186 (of
-which BSS 283: the 256-byte `kbuf`, the input block, counters); LC bank 1
-0 of 4,096; GAME 918 of 46,592 (the skeleton and the parts of none.lib it
-pulls in); `DOOM.SYSTEM` 1,979 bytes.
+Control code defaults to base auxiliary bank 0. The local TURBO HDL keeps its
+code, zero page and hardware stack in internal BRAM; extended banks use the
+PSRAM cache. Bank 0's lower RAM still owns the display, so its code image is
+staged in bank 100 and installed into LC only after the final ProDOS call.
+Generated `code_staging` metadata and loader source/destination tables make
+this explicit. `CONTROL_BANK=100` retains the previous placement for comparison.
 
-ProDOS is used only at boot: the loader reads every data file into
-RamWorks, then installs the RENDER image, the LC image and the GAME image
-and takes the whole machine (the ProDOS global page and the language card
-are overwritten). Quit restarts the machine.
+The hot `P_RunStatics` loop occupies 275 bytes of main game `CODE`, reached
+through a three-byte jump in actor LC bank 97. It still runs with bank 97's
+zero page, stack, state tables and local helpers selected. The partitioner
+keeps that logical actor context while moving only the instruction bytes;
+public gates and same-bank calls still target the LC wrapper. Four tiny cursor
+refreshes are inlined to avoid repeated auxiliary-stack traffic. The main
+body is immutable and restored with the ordinary game code at each handoff.
 
-**Far memory** (`bank:address`, 3 bytes: lo, hi, bank; in C a `far_t`,
-an `unsigned long` with the bank in bits 16-23). Arrays larger than a
-bank are split in chunks of `2^k` elements, one chunk per bank; a far
-array descriptor is 6 bytes, `{first bank u8, base address u16, element
-size u16, log2 elements per chunk u8}` (C: `struct far_array`), element
-`i` at bank `first + (i >> k)`, address `base + (i & (2^k-1)) * size`. The
-kernel provides `far_read` (far -> near), `far_write` (near -> far),
-`far_copy` (far -> far), `far_elem` (descriptor + index -> far address)
-and, for C, `far_peek` (one byte), usable from both spaces (section 8); a
-transfer never crosses the end of a bank. The renderer's inner loops
-select a texture bank once per column and read with RAMRD on.
+Both game and renderer need main lower memory. `space_game` and `space_render`
+save and restore their phase contents using backing banks. Renderer ZP is saved
+separately; kernel ZP and main LC stay live. All due game tics and packet
+construction run in one game phase per rendered frame. The persistent renderer
+map selection is updated before its phase resumes. Only mutable regions are saved each time, including renderer self-modified
+code. Read-only regions are restored from their initial backing images. The
+view is cleared before rendering, and the inactive C stack is not copied.
+After initialization, game saves and restores end at the allocator cursor,
+rounded upward to a page. A resident main-LC byte retains that endpoint while
+the renderer replaces ordinary game memory. New allocations are initialized
+before the next handoff; unallocated memory and dead path/view scratch need
+not persist. The first game load still uses the full initial window. The
+common copy loop moves eight bytes per iteration.
+Exact copy ranges and their assertions live in `space.s`.
+
+| Storage | Use |
+| --- | --- |
+| Main RAM, game phase | Common helpers/gates, game and level data, statics, 160 actors |
+| Main `$B380-$B7FF`, game phase | Shared path/view/debug scratch, outside posted video windows |
+| Main `$B800-$BFFF`, game phase | Full 2 KiB cc65 software stack, growing down from `$C000` |
+| Main RAM, render phase | Renderer code/tables/state and the 160×84 view buffer |
+| Main language card | Kernel, renderer inner loops and permanent interrupt service |
+| Bank 0 lower RAM | SHR screen, palette, display metadata and profiling mailbox |
+| Bank 0 ZP/stack/LC | Control-bank execution context, code and render packet |
+| Bank 1 `$0200-$1FFF` | Far blockmap thing-chain heads |
+| Bank 1 from `$6000` | 3,060-byte immutable mobj metadata table |
+| Banks 2–95 | Converted episode 1 data |
+| Bank `DD_LAST_BANK+1` | Renderer far cache/workspace (lower RAM) |
+| Bank 122 | Renderer phase backing storage |
+| Bank 124 from `$0200` | Published 2,600-byte render packet, including up to 128 things |
+| Bank 125 | Game phase backing storage |
+| Bank 126 | Specials journal and initial sector snapshots |
+| Bank 127 from `$0200` | Math tables and far game workspace |
+
+The packet is built in spare LC RAM of the control bank, then copied through
+main scratch into bank 124 with the header published last. The renderer reads
+its header and individual records there. Packet construction reuses path
+intercept scratch after game tics; it does not overlap an active path traversal.
+That 1,152-byte scratch lives immediately below the C stack at `$B380-$B7FF`,
+outside main's posted video windows. The arena ends at `$B380`; removing the
+scratch from ordinary BSS lowers its start by the same amount, preserving
+capacity. Scratch users initialize the bytes they read, so this separate
+segment does not require the ordinary BSS clearing pass. Steady phase copies
+stop at the live arena endpoint and do not preserve this dead scratch; page
+rounding can include a partial scratch page when the arena is completely full.
+Line/node/subsector/blockmap-cell cache capacities are 16/32/16/8 in this build.
+The existing 160-actor limit, 128 packet things and 2 KiB C stack are retained.
+
+`tools/build_banked.py` generates `doom-banked.cfg` from `src/doom.cfg` plus the
+bank fragments and links the complete program. Outputs are `DOOM.SYSTEM`,
+`RENDER.BIN`, `LC.BIN`, `GAME.BIN`, seven `GBANK*.BIN` images, `GAME.TABLES`,
+`GAME.INFO`, and the loader package `DOOM.BANKS`. The disk needs the latter
+package, not separate entries for every code image. `banked.json`, `doom.map`
+and `link-report.json` record the actual layout. `check_link.py` verifies bank
+capacity, stack/arena limits, vectors, images and preload consistency.
+
+### Legacy stand-in and flat reference
+
+`make STANDIN=1` keeps the original two-space platform test: renderer in main
+RAM, the small GAME skeleton in auxiliary bank 1 with RAMRD/RAMWRT on, common
+main ZP/stack/LC, and a 2 KiB C stack. `BANKED=0` selects this old layout for
+reference; the full game exceeds its 46,592-byte GAME region. The separate flat
+65C02 harness uses synthetic instruction windows and is a gameplay reference,
+not evidence that the original hardware layout fits.
+
+### Far data and boot
+
+A far address is `{lo, hi, bank}` (C `far_t` stores the bank in bits 16–23).
+An array descriptor is `{first bank u8, base u16, element size u16, log2 u8}`.
+Element `i` is at bank `first + (i >> log2)`, address
+`base + (i & (2^log2-1)) * size`; no transfer crosses `$BFFF`.
+
+For the banked game, the main-context bridge lets `far_read`/`far_write` copy
+between shared main RAM and the chosen bank directly. `far_copy` between two
+auxiliary banks still uses a bounce buffer in main LC. Renderer inner loops
+select a texture bank for RAMRD while continuing to write main RAM.
+
+ProDOS is used only at boot. Code LC images are staged in their banks' lower
+RAM, then installed after the last MLI call. The loader subsequently overwrites
+its own main-memory space with the renderer and enters the kernel. Quit reboots.
 
 ## 5. Numbers
 
@@ -563,13 +639,15 @@ card, seen by both spaces:
 
 - `render_map` (C `extern unsigned char render_map;`): the MAPDIR slot to
   draw, 9 x (episode - 1) + map - 1; `$FF` (the initial value) draws
-  nothing and leaves the view buffer alone. **The game sets it when a
-  level starts**; a change loads the MAP record (array descriptors, sky)
+  nothing and leaves the view buffer alone. The banked phase handoff publishes
+  `gamemap-1` before restoring the renderer; a change loads the MAP record (array descriptors, sky)
   and the animation list on the next frame.
 - `render_shaded` (C `render_shaded`): 0 textured floors and ceilings, else
   flat-shaded; its initial value is the build option `RENDER_SHADED`
-  (`make AFLAGS+=-DRENDER_SHADED=1`, default 0).
-- The packet: `render_frame` reads the 40-byte header of `_rview` (bank 1);
+  (default 0; the legacy renderer build accepts
+  `make AFLAGS+=-DRENDER_SHADED=1`).
+- The packet: `render_frame` reads the 40-byte packet header (bank 124 in the
+  banked build; `_rview` in bank 1 in the legacy renderer harness);
   the things are **not copied** (2,560 bytes of main memory, and 42K cycles
   a frame, for data only the masked phase reads): `rv_thing` (A = index)
   reads one into `rv_tbuf` with one bank read. The game does not run while
@@ -600,7 +678,9 @@ openings are allocated exactly as the reference counts them (`MAXOPENINGS`
 bytes: 2 per masked column first, then 1 per clip column), so the same
 drawsegs lose their clips on overflow.
 
-**Memory** (the final map; section 4's table is the platform's):
+**Historical standalone renderer memory** (before banked integration): these
+addresses and spare-byte totals describe that renderer link. Section 4 and the
+current generated link report describe the integrated build.
 
 | Area | Use |
 |---|---|
@@ -649,9 +729,17 @@ drawsegs lose their clips on overflow.
   32-entry queue in the language card (bank, address, count, texture
   column, 8.8 fraction, step, colormap page, hmask); `q_flush` draws a whole
   wall range (or a plane's sky, or a full queue) in one RAMRD session,
-  `$C073` rewritten only between banks. The drawer is Doom's
-  R_DrawColumn (self-modified operands, texel through the colormap by a
-  patched `lda $cm00`): 40 cycles a pixel.
+  `$C073` rewritten only between banks. The drawer preserves Doom's
+  R_DrawColumn stepping with self-modified operands. It first gathers a
+  piece's raw texels into the existing 256-byte main-LC `kbuf`, then reads
+  them in reverse order, applies the colormap and writes their destination
+  offsets. This separates texture and colormap PSRAM reads to reduce cache
+  replacement. Main BRAM writes do not invalidate that cache in the local
+  HDL. The buffer is idle during rendering and untouched by the IRQ handler;
+  every byte read is initialized by the first pass. No RAM is added. The
+  extra CPU work trades against target-dependent memory stalls; hardware
+  measurements, rather than instruction counts, determine whether it wins.
+  One-colour fills retain their direct loop, and queue order is unchanged.
 - *Planes*: visplanes in `RENDER_BANK` (the recommendation), found through
   a 64-bucket hash that keeps creation order (the reference returns the
   first match). A plane's columns are initialised as its range grows (the
@@ -659,10 +747,15 @@ drawsegs lose their clips on overflow.
   are copied back to main memory once, before its spans; a column equal to
   the previous one starts and ends no span and is skipped. `map_plane`
   caches the row's distance and steps (per row and plane height, as the
-  reference) and each column's sine and cosine (per frame); the span loop
-  (language card, RAMRD on for the span) is about 100 cycles a pixel: two
-  16-bit fraction adds, the 5.11 texel address through two tables, the
-  colormap, the 84-byte stride.
+  reference) and each column's sine and cosine (per frame). The span loop
+  runs in the language card with RAMRD on. Its first pass advances the two
+  16-bit 5.11 coordinates and gathers raw flat texels into `kbuf`; the second
+  applies the colormap and writes with the original 84-byte stride. This
+  separates the flat and colormap PSRAM read streams, adding CPU work in
+  exchange for potential cache reuse. It preserves the final coordinates,
+  destination cursor and zero count, including the legacy 256-pixel case.
+  The immutable 28-byte `span_setrow` helper lives in `RTEXTDATA` and is
+  called with RAMRD off; its stores patch the LC loop's operands only.
 - *Arithmetic*: 8x8 products by quarter squares through four zero-page
   pointers, unrolled per operand shape and result width (`MULU`/`MULUB`),
   zero bytes skipped: about 50 cycles a product. R_ScaleFromGlobalAngle
@@ -676,8 +769,8 @@ drawsegs lose their clips on overflow.
   `PL_OVERFLOW`, and every plane piece is queued at once as a fill (or a
   sky column) by the seg loop, as the reference's overflow path.
 
-**Measured** (`tests/test_render_core.py -v`, the py65 test machine, TURBO
-accounting): 109 views (the 36 deliverables, the 6 golden eyes, 9
+**Measured** (`tests/test_render_core.py -v`, historical synthetic py65 cycle
+accounting, not hardware TURBO timing): 109 views (the 36 deliverables, the 6 golden eyes, 9
 flat-shaded, 40 random views of `--sweep`'s generator, 15 animation tics,
 3 fixed-colormap/extralight), every one byte-identical to the reference.
 No things and no weapon here, but the two-sided middles are drawn (so these
@@ -742,7 +835,7 @@ planes, `render_frame` calls `r_things` (LC bank 1 in), switches the
 **The vissprites** (`rthings.s`). The reference projects a sector's things
 when the walk first enters the sector, in packet order. Nothing the walls
 draw depends on them, so the 6502 projects after the walk: `th_gather`
-reads the sector of each packet thing (one RAMRD session on bank 1, a byte
+reads the sector of each packet thing (one RAMRD session on the packet bank, a byte
 pair every 20), the things are hashed by sector (64 buckets, each chain in
 packet order), and the walk's list of sectors (7.1) is replayed: the same
 vissprites in the same order. A thing is read (`rv_thing`, 20 bytes) only
@@ -892,126 +985,79 @@ differing pixels).
 
 ## 8. The kernel (src/kernel/)
 
-Boot and load, bank check, video set-up (PAL256), space switching, far
-access, the frame loop, timing, the blit, input, sound, reboot. Every
-routine lives in the main language card except the loader; the numbers
-below are from the test machine in TURBO (73 cycles per `$Cxxx` access).
+The kernel provides boot/loading, bank checks, PAL256 video, far access, phase
+switching, input, VBL timing, presentation and reboot. Audio remains a planned
+backend. The banked architecture is specified in section 4; historical
+stand-in cycle counts do not describe its gateways or phase copies.
 
-**Boot** (`loader.s`, `DOOM.SYSTEM` at `$2000`): 40-column text with a
-"LOADING" line and the file being read; `/RAM` disconnected (it lives in
-aux bank 0); the RamWorks size (section 2; fewer than 64 banks: error
-`$F2`); the prefix (`GET_PREFIX`, else the directory of `$0280`); the
-volume directory is read (4 blocks) and **every BIN file with aux type
-$0000 is loaded**, in directory order: nothing about the data set is
-built into the loader. Each is a data file of section 6 (256-byte header
-`"A2DM"`, version 1, up to 49 segments `bank u8, address u16, length
-u16`): each segment must lie in `$0200-$BFFF` of a bank `2..banks-1`
-(errors `$F3`, `$F2`); it is read through the MLI into a 7.5 KB staging
-buffer (`$A000`) and copied to its bank with RAMWRT on (only the zero
-page is written meanwhile). Then `GAME.BIN` (aux type `$0200`) into bank
-1 at `$0200`, `RENDER.BIN` (`$0200`) into aux bank 0 at `$0200` (its own
-addresses; the SHR area is not in use yet), `LC.BIN` (`$D000`) into main
-`$6000-$9FFF`. Install, interrupts off: the language card from
-`$6000-$9FFF`; then a routine copied to `$0100` (it runs with RAMRD on)
-copies aux bank 0 over main memory page by page, over the loader and the
-ProDOS global page, and jumps to `kernel_start` with A = the bank count.
-On an error before the install: a message with the code (`$F0` bad
-header, `$F1` short file, `$F2` memory, `$F3` segment, `$F4` image too
-large, `$F6` no path, or a ProDOS code), a key, ProDOS QUIT. The full
-Freedoom data set (39 files, 4.23 MB) boots in 68.6 M cycles in the test
-machine (0.9 s at 75 MHz plus the disk).
+**Boot** (`loader.s`, `DOOM.SYSTEM` at `$2000`): disconnect `/RAM`, probe all
+RamWorks banks (128 required by the banked build), determine the ProDOS prefix,
+and load BIN files with aux type `$0000`. `DOOM.BANKS` uses the same `A2DM`
+segment format as the converted data and includes LC images, tables and object
+metadata. Each segment is checked against its bank/address limits. Reads use a
+main staging buffer and RAMWRT copies; ALTZP remains off during MLI calls.
+`GAME.BIN` goes to bank 125; `RENDER.BIN` is staged in bank 0; `LC.BIN` is staged
+in main RAM. After the final MLI call, interrupts are disabled and the staged
+auxiliary LC code is installed. A page-1 installer copies the renderer over the
+loader, installs main LC and enters `kernel_start`. Loader errors report a code
+and return to ProDOS before the destructive install phase.
 
-**Start** (`kstart.s`): stack, zero page, kernel and renderer BSS, view
-buffer cleared; `kbanks` = the bank count; `video_init`; `input_init`
-(no mouse card: `kernel_crash` code 2, there is no clock without it);
-the GAME space's C start-up (`game_boot`: `sp` = `$C000`, `zerobss`,
-`game_init()`) through `call_game`; interrupts on; the frame loop.
-`kernel_crash` (A = code; a BRK is code 1) shows "DOOM CRASH $cc" on the
-text screen and stops at `kernel_crash_stop`; `kernel_reboot` goes to
-the ROM's cold start (the RESET vector of the card points there too).
+**Start** (`kstart.s`): initialize main stack/ZP, kernel and renderer BSS, video
+and input; enter the game phase, initialize banking contexts, and run the C
+startup (`sp=$C000`, `zerobss`, `game_init`). Return to the renderer, enable IRQs
+and enter `frame_loop`. The mouse card is required for the VBL clock. A BRK or
+explicit crash prints `DOOM CRASH $cc` and stops; quit/reset restarts the machine.
 
-**Spaces** (`space.s`): `space_game` (`$C073` = 1, RAMRD and RAMWRT on,
-`kspace` = 1) and `space_render` keep A, X, Y and P: 262 and 185 cycles
-(3 and 2 `$Cxxx` accesses). `call_game` runs the GAME routine at `kcall`
-with A, X, Y in and A, X, Y, P out, from and back to RENDER space: 474
-cycles for an empty routine.
+**Kernel calls**: main LC retains the physical jump table at `$E000` for far
+read/write/copy/element, palette, reboot and crash. Banked game-facing entries
+are gates in shared main RAM that select the main context before calling it.
+The input block and bank count are copied into game-visible main storage before
+each game entry. Far addresses/lengths and scratch results cross the bridge as
+part of its ZP context. The main kernel can select data banks without replacing
+its executing code; the return gateway restores the suspended game bank.
 
-**Jump table** at `$E000` (entries are only appended; parameters in the
-kernel's zero page): `$E000 far_read`, `$E003 far_write`, `$E006
-far_copy`, `$E009 far_elem` (A/X = descriptor), `$E00C set_palette` (A),
-`$E00F kernel_reboot`, `$E012 kernel_crash` (A). GAME code calls them
-through `src/game/kglue.s`, which turns cc65's `__fastcall__` arguments
-into the zero-page parameters (`src/game/kernel.h`); the input block
-`kin`, `ktics` and `kbanks` are read directly.
+**Clock and frame loop**: the mouse card VBL IRQ increments 16-bit `vbl_count`.
+An atomic snapshot gives the elapsed interval, including low-byte and full
+counter wrap. Every VBL adds 7 accumulator units; a tic takes 10 units on PAL
+or 12 on NTSC, scheduling 35 TPS on either standard. `VIDEO_HZ=50|60` selects the
+boot default; V changes the game clock and readout together. Rate changes
+discard the old fractional remainder. Up to **four tics** run per rendered
+frame; excess due tics increment 16-bit `kdropped` and are discarded, with no
+whole-tic backlog carried to later frames. This deliberately slows simulation
+below 8.75 rendered FPS; 35 TPS is reached when the frame rate allows it.
+The v9 trial allowed 16 tics, but hardware testing found worse controls and
+lower FPS, so v10 restores four while keeping the corrected PAL clock.
+Whole 10/12-VBL groups are processed
+together before the remaining VBLs, so long pauses need less accounting work.
+The clock routines execute from read-only RENDER memory below $6000.
+After input, `space_game` runs once, all due tics use `call_game_active`, and
+`game_frame` constructs/publishes the packet. `space_render` runs once, followed
+by `render_frame` and `present`. Input events are consumed after the first tic.
+Counters include `ktics`, `kframes`, `kdropped`, `kblits` and `kwaits`.
 
-**Far access** (`far.s`; parameters `far_src`/`far_dst` 3 bytes, `far_ptr`
-2, `far_len` 2, `far_idx` 2): in RENDER space a read sets `$C073` and
-RAMRD and copies directly (lda/sta indirect, 16-17 cycles a byte); in
-GAME space RAMRD and RAMWRT both follow `$C073`, so data between bank 1
-and another bank goes through `kbuf` (256 bytes in the card), two
-`$C073` writes per 256-byte piece and about 37 cycles a byte. Measured:
-a 4-byte read 371 cycles (RENDER) / 495 (GAME); 256 bytes 4,409 / 9,761;
-4 KB 66,059 / 154,661; `far_copy` of 700 bytes 26,883; `far_elem` at most
-1,097 (size 4, log2 12: a shift per log2 bit, then shift-and-add). Game
-code should read whole records at once, and hot data belongs in bank 1.
+**Video**: `video_init` configures SHR4 PAL256 and the initial palette.
+`blit_view` copies the 13,440-byte column-major view to 26,880 SHR pixels,
+doubling each pixel horizontally. Its existing unrolled loop costs about
+236,000 model cycles; this is not a hardware TURBO duration. `present` starts
+outside VBL or waits for the next line 0 when already in VBL. The model checks
+line-0 crossings, while actual publication timing still requires target tests.
+TURBO video writes are batched.
 
-**Clock and frame loop** (`kstart.s`, `frame.s`): the mouse card's VBL
-interrupt (mode `$09`) increments `vbl_count`; the handler (121 cycles,
-one `$Cxxx` write) touches only the zero page, the stack and the card, so
-it runs in either space. Every VBL adds 7 to an accumulator and every 12
-make a tic: exactly 35 tics per 60 VBLs, in the pattern 0,1,0,1,0,1,1,
-0,1,0,1,1. At most 4 tics per rendered frame (`MAX_TICS`); the excess is
-dropped (`kdropped`) so the game slows down rather than jump. The loop:
-`input_frame`; `clock_tics`; no tic due: wait for the next VBL
-(`idle_wait`) and start over, an idle pass costing 1,030 cycles per VBL
-(9 `$Cxxx` accesses, most of it input); else `game_tic()` per tic through
-`call_game` (after the first, `input_consume`), `render_frame` (RENDER
-space, `src/render/`), `present`. Counters: `ktics`, `kframes`,
-`kdropped`, `kblits`, `kwaits`.
+**Input**: `kin` has mouse X delta, fire/use/run buttons, movement, held/new key,
+weapon selection and flags. Keyboard arrows/W/S move or turn; A/D or comma/
+period strafe; mouse X turns, mouse/Open/Closed Apple buttons fire/use. Tab
+changes the run toggle. Esc sets the menu flag, currently without a menu
+consumer. Motion, transient keys and button presses accumulate until the first
+tic consumes them; held states remain current.
 
-**Video and blit** (`video.s`): `video_init` clears aux `$2000-$9DFF`,
-sets the paging byte, the magic and PLAYPAL 0, then `$C029` = `$C1`.
-`set_palette` (A = 0..13, both spaces) copies `PLAYPAL` n from
-`DD_DIR_BANK:DD_PLAYPAL` + 512n to `$9E00`, forcing the selector nibble
-2. `blit_view` copies `VIEWBUF` to SHR rows 0-83, each byte twice, per
-column with an unrolled 84-row block (`lda (p),y / sta row,x /
-sta row+1,x / iny`, X = 2x in two halves): **236,029 cycles** (19% of the
-frame; 3 `$Cxxx` accesses; 26,880 SHR writes), 1,574 bytes in LC bank 2.
-
-**Line-0 policy** (`present`): outside vertical blanking (`$C019` bit 7
-set, lines 0-191) the next line 0 is at least 70 lines (4.45 ms) away and
-the blit starts at once; it takes 3.1 ms at 75 MHz and needs at least 53
-MHz on average to fit. During blanking, line 0 may come before the blit
-ends, so `present` waits for the end of blanking (`present_wait`) and
-blits right after line 0; the wait costs up to 70 lines (27% of a frame).
-With the test pattern the tics and the render take about 220,000 cycles
-after the VBL interrupt, less than blanking, so every frame waits (51 of
-51 in the test) and no frame is torn (`tools/run_doom.py` checks that a
-blit never spans a line 0); with the real renderer the render will end in
-the displayed part of the frame and the blit will start at once. A
-finer policy (the Phasor's 1 MHz timer, to know the line) can shorten the
-wait if it matters.
-
-**Input** (`input.s`, section 10): per pass, the keyboard (`$C000`, else
-`$C010` for "still held"), Open and Closed Apple, the mouse (X between
-two reads of the sequence byte, the buttons; X is put back to `$8000`
-when it leaves `$2000-$DFFF`): 973 cycles, 9 `$Cxxx` accesses. The block
-`kin` (C `struct kinput`): `+0 mouse_dx` s16, `+2 buttons` (fire = Open
-Apple or left button, use = Closed Apple or right button, bit 7 the Tab
-run toggle), `+3 move` from the held key (forward: up arrow/W; back: down
-arrow/S; turn: left/right arrows; strafe: A or `,`, D or `.`), `+4 key`
-(held, upper case), `+5 newkey`, `+6 weapon` (1-7), `+7 flags` (Esc).
-Motion, new keys, weapon, flags and fire/use presses between tics
-accumulate until `input_consume`, after the first tic of each rendered
-frame; held states are current.
-
-**The GAME skeleton** (`src/game/game.c`): `game_init`, `game_tic` (counts
-tics, copies `kin`, reads one far array element through `far_elem` and
-`far_read`: the stand-in data's probe array across chunk boundaries, or
-a `PLAYPAL` entry of the converter's data). A tic of it costs about
-7,200 cycles (mostly cc65's 32-bit arithmetic).
+The `STANDIN=1` platform build uses the original bank-1 GAME skeleton and test
+pattern, retaining separate boot/input/far-access regression coverage.
 
 ## 9. The game (src/game/)
+
+Gameplay behavior below applies to the integrated game. Some per-module segment
+sizes and overlay descriptions record the older flat/legacy build; the Memory
+subsection and section 4 describe the current permanent LC-bank layout.
 
 Doom's play simulation for episode 1, in three parts: the **core**
 (this section: things, movement and collision, the blockmap, hitscan and
@@ -1367,10 +1413,12 @@ death) or a revisited one must look as the converter made it.
 - pressed buttons are put back up and scrolled walls back to their first
   offsets from the part's near lists, which a level end leaves intact.
 
-Both live in the specials' bank, `kbanks - 2` (below the game's far
-bank; `CRASH_BANKS` if it is not above the renderer's): the journal at
-`$0200-$09FF`, the snapshots from `$0A00`, continuing in the bank below
-if a map's array does not fit.
+Both start in the specials' bank, `kbanks - 2` (126 in the banked build):
+the journal at `$0200-$09FF`, snapshots from `$0A00`. Snapshot overflow descends
+to another available bank. The banked allocator skips game backing 125, packet
+124 and renderer backing 122, and refuses to cross into converted data or the
+renderer cache (`DD_LAST_BANK+1`). Lower RAM in LC code banks is available once
+the loader has installed their code.
 
 **Level flow** (`g_game.c`): an exit sets `gameaction`; the next tic
 makes the tally (`wminfo`, vanilla's `wbstartstruct_t` for one player:
@@ -1416,67 +1464,41 @@ snapshot), a new game back on E1M1 7.98 M.
 
 ### Memory
 
-The core does not fit the GAME space (RamWorks bank 1 `$0200-$B7FF`,
-46,592 bytes, section 4). Measured (`tests/test_game_core.py`,
-`GameSpaceBudgetTest`, the GAME segments linked alone):
+The default banked build now fits the complete game and all nine converted
+maps. Section 4 describes the implemented layout. Its actor pool retains
+160 entries × 64 bytes; the shared C stack retains 2,048 bytes. No gameplay
+ordering change or actor-cap reduction was needed.
 
-| | bytes |
-|---|---|
-| CODE (assembly 25,946; C 5,681; cc65 runtime 1,961) | 33,588 |
-| RODATA (states 2.5 K, mobjinfo 3.1 K, rndtable, tables) | 6,230 |
-| BSS (level-data caches 4,820; rview 2,600; intercepts 1,152; square tables 1,024; candidates 845; W 256; ...) | 11,598 |
-| resident total (+ DATA, STARTUP) | 51,429 |
-| GFAR (far tables, becomes level memory after boot) | 8,194 |
-| GOVL (set-up overlay, becomes actor slots) | 4,070 |
+The former overflowing layout required 71,297 resident bytes including linked
+cc65 support, plus 8,194 bytes of math tables and a 5,347-byte setup overlay,
+before dynamic level data. Those totals explain why simply enlarging bank 1
+was insufficient; they are historical pre-partition measurements, not current
+segment addresses. `BANKED=0` retains that legacy layout as a reference; capacity tests now
+check the actual banked build.
 
-With the monsters part (the specials' stand-in): CODE 42,765, RODATA
-6,448, BSS 12,846 (the sight caches 856), resident 62,072, GOVL 4,102.
-With the specials part too (the GAME objects of `make`, `od65
---dump-segsize`): CODE 49,134, RODATA 6,919, BSS 13,322, resident
-69,391, GFAR 8,194, GOVL 5,347; `GameSpaceBudgetTest` can no longer even
-link it in its 64 KB measuring map.
-
-Level memory per map, without actors, computed from each map's sizes
-(blockmap chains, sector arrays, line marks, thinker blocks, statics,
-`ARENA_RESERVE`; each actor 63 more):
-
-| map | E1M1 | E1M2 | E1M3 | E1M4 | E1M5 | E1M6 | E1M7 | E1M8 | E1M9 |
-|---|---|---|---|---|---|---|---|---|---|
-| skill 2 | 9,963 | 13,155 | 13,434 | 14,914 | 13,148 | 17,010 | 22,368 | 6,534 | 13,421 |
-| skill 4 | 10,331 | 13,891 | 14,666 | 15,922 | 13,740 | 18,914 | 23,936 | 6,550 | 13,741 |
-
-So the core needs about 51 KB resident plus 10-24 KB of level memory
-plus actors (40 actors: 2.5 KB), of which 12 KB can reuse the GFAR and
-GOVL bytes: 50-66 KB against 46.5 KB, before the monsters and specials
-parts (their vanilla C is about the size of `p_map.c` + `p_mobj.c`; as
-assembly perhaps 10-14 KB). The zero page is short too: `GZP` (8 bytes)
-overflows the kernel's and renderer's `KZP` area by 1 byte in the full
-link. This needs a platform decision (the lead's); the candidates, by
-yield:
-
-1. GAME space with ALTZP on: bank 1's own language card, 16 KB at
-   `$D000-$FFFF` (two `$D000` banks), would hold the level memory or the
-   assembly. Costs: the kernel's entries and far access are in the main
-   card, so GAME calls them through a trampoline in bank 1 RAM that
-   switches ALTZP off and on (its own zero page and stack page also
-   switch), and the VBL interrupt needs a vector and handler copy in
-   bank 1's card (or interrupts off in GAME space).
-2. The render packet in the main language card (both spaces see it: the
-   renderer would read it without its far copy): -2.6 KB.
-3. The free parts of the main card (`KLC1` `$D000` bank 1: 4 KB, about
-   6 KB of `$E000-$FFF9`): the hot assembly there, if the kernel and the
-   renderer can spare them.
-4. The info tables (6 KB) in far memory with a small cache of the types
-   and states in use; the level-data caches smaller (4.8 KB now; they
-   trade speed).
-
-Nothing short of (1) or a second bank for game data covers E1M7 on
-ultra-violence with the monsters and specials. Meanwhile
-`GameSpaceTest.test_links_in_bank1` is an expected failure, the
-budget test fails if the sizes grow, and the 6502 build is run and
-measured in the py65 harness, which gives it 62 KB.
+The implemented savings are far blocklink heads and mobj metadata, smaller
+16/32/16/8 line/node/subsector/cell caches, private/duplicated LC constants and
+level accessors, the LC-built/far-published packet, and reused path-intercept
+scratch. Statics, active actors and mutable level structures remain in shared
+main RAM. Setup code is permanently banked instead of copied over actor slots.
+The generated link report checks a conservative largest-level budget plus all
+160 actors and the full stack; banked execution tests load every map at
+Nightmare and verify stack guards. With the debug readout, the link has a
+32,055-byte main arena, with a 1,451-byte conservative margin after level data
+and the full actor pool.
+The control LC bank occupies 11,963 of 12,282 non-vector bytes including the
+packet. Generated `link-report.json` is the authority after further changes.
+The observed sample used at most 64 bytes
+of C-stack writes and 41 bytes of hardware stack; these are not exhaustive
+bounds on every possible call chain.
 
 ### Measurements
+
+The following measurements are historical flat-harness results. Its synthetic
+code windows and old far-access surcharge differ from the banked runtime.
+Use them to compare routines, not as hardware TURBO FPS. The first integrated
+banked profile was about 12 M model cycles/frame before copy/packet optimization;
+current optimization work and timing limitations are recorded in STATUS.md.
 
 The whole game in the py65 harness (`tests/test_game_sim.py`; far
 accesses charged what the kernel's cost in GAME space, 360 + 37 cycles
@@ -1515,6 +1537,12 @@ Primitives (`tests/test_game_asm.py`, GAME.BIN's cache sizes): FixedMul
 mean / 887,983 max.
 
 ### Tests
+
+The banked suites now add actual memory mapping, nested calls and interrupt
+boundaries, all nine map loads with the full actor pool, differential gameplay,
+far-data equivalence, snapshot allocation, and complete loader/game/renderer
+frames. See STATUS.md for the scope of each suite. These complement the
+historical host and flat-reference tests below.
 
 - `tests/test_game_info.py`: `gen_info.py` and `gen_offsets.py` are
   current; every kept state and type equals vanilla's info.c
@@ -1582,47 +1610,49 @@ Mouse X turns (Doom's mouse sensitivity), mouse button fires. The held
 key (`$C000` while `$C010` bit 7 is set) moves: up/down arrows or W/S
 forward and back, left/right arrows turn, A/D (or `,`/`.`) strafe. Open
 Apple fires, Closed Apple uses (doors, switches); both work while a
-movement key is held. `1`-`7` select weapons, Esc opens the menu, Tab
-toggles run.
+movement key is held. `1`-`7` select weapons; Tab toggles run. Esc sets
+an input flag, but menu UI and its consumer are not implemented.
 
 ## 11. Sound
 
-Doom's sound effects approximated on the AY chips (tone/noise/envelope
-recipes per effect, priorities as Doom's `S_StartSound`), later MUS music
-on the second chip.
+`S_StartSound` currently records effect IDs in an eight-entry history and
+increments `snd_count`; tests compare those events. There is no audible Phasor
+backend yet. AY tone/noise/envelope recipes and priorities, followed by MUS
+music, remain planned work.
 
 ## 12. Build and test
 
-`make` converts the data (`tools/wad2a2.py`, `FREEDOOM ?=
-build/freedoom1.wad`, fetched by `tools/fetch_freedoom.py`) into
-`build/data`, runs `tools/gen_tables.py` when it exists, assembles
-(ca65), compiles (cc65 `-t none`, linked with `none.lib`: the runtime and
-C library without ROM or OS calls), links `src/doom.cfg` into
-`build/DOOM.SYSTEM`, `RENDER.BIN`, `LC.BIN`, `GAME.BIN`, and checks them
-(`tools/check_link.py`: sizes, the jump table, the vectors, memory per
-area). `make STANDIN=1` (also the default without the converter) builds
-the same program against the platform's stand-in data set
-(`tools/make_standin.py`: `PLAYPAL` and a probe array chunked over banks
-3-6) in `build/standin`. `make disk` writes `dist/Appletini-DOOM.hdv`:
-a ProDOS volume sized to its contents plus 64 free blocks (up to 65,535
-blocks), `DOOM.SYSTEM` first, `PRODOS` from the master image, the images
-with their load addresses as aux types, the data files as BIN aux `$0000`;
-seedling, sapling and tree files, so no file needs splitting, but the
-volume directory holds 51 entries (46 data files); the builder re-reads
-and verifies its image. The full Freedoom data makes an 8,469-block
-(4.3 MB) volume. `make test` runs `tests/test_*.py`.
+See [../README.md](../README.md) for dependencies and commands. `make` defaults
+to `BANKED=1` with the real converted data. It fetches/converts Freedoom if
+necessary, invokes `tools/build_banked.py`, and runs `tools/check_link.py` on
+the completed banked images. `make disk` packages the five program files
+(`DOOM.SYSTEM`, `RENDER.BIN`, `LC.BIN`, `GAME.BIN`, `DOOM.BANKS`) and converted
+data into a verified ProDOS volume at `dist/Appletini-DOOM.hdv`. The generated
+link report, not an old snapshot of object sizes, is the current memory budget.
 
-`tools/a2sim.py` (from the PCS port) runs everything: TURBO frames of
-1,250,000 cycles, `$Cxxx` accesses charged, 128 RamWorks banks (a
-parameter), the mouse card's VBL interrupt, the idle skip of `idle_wait`
-and `present_wait`, PAL256 screenshots as the Appletini renders them, the
-fake ProDOS with large files. `tools/run_doom.py` boots `DOOM.SYSTEM`
-through the fake ProDOS with the data mounted (or `--fast`), drives a
-scripted session (keys, held keys, mouse motion and buttons, Apple keys
-at 60 Hz frame numbers), saves screenshots and per-rendered-frame costs
-(work, blit, line-0 waits, torn frames, `$Cxxx` accesses; `--stats`
-JSON). `tools/doomdbg.py` boots and calls labelled routines from Python
-with their cycle counts. `tests/test_platform.py` (boot, PAL256, pattern
-screenshot, far access, space switch, blit, tic clock, input, the GAME
-skeleton, loader errors, the model) and `tests/test_disk.py` cover the
-platform.
+```sh
+make
+make disk
+python3 tools/run_doom.py --build build --data build/data --speed 33 --frames 180 --out build/run
+make test
+```
+
+`make STANDIN=1` uses the small platform skeleton and test pattern under
+`build/standin`, with its own generated data. `BANKED=0` selects the old memory
+layout; the full game is too large for it. The flat game harness's synthetic
+instruction windows serve differential testing only.
+
+`tools/a2sim.py` now maps auxiliary LC, ZP and hardware stack to the selected
+RamWorks bank. `tools/run_doom.py` boots the assembled loader through FakeProDOS
+(or installs its images directly with `--fast`), drives scripted input, saves
+PAL256 screenshots and reports model cycles. `--frames` counts model 60 Hz
+intervals. Kernel PC events and idle hooks are qualified by the main LC context,
+since auxiliary game code deliberately reuses those addresses.
+
+`test_doom_banked_platform.py` covers complete loading and live game/render
+frames with real kernel far copies; `test_game_banked.py` covers the mapped
+game with trapped far transport. `test_game_banks.py` checks nested bank calls
+and IRQ injection. Existing platform/disk and renderer/reference suites remain
+separate regression tests. None constitutes a physical Appletini TURBO timing
+measurement; the Python harness's mode named `turbo` is a nominal cycle model,
+and a conventional emulator at 33 MHz is a different execution environment.

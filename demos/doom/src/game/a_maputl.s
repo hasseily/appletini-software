@@ -49,6 +49,10 @@
 .import w_sar8, w_ldo, w_sto, w_ldp, w_stp, w_fixo, w_fixp, w_fixl, w_sextl, w_mul, w_div
 .import w_tst, w_add3, w_sub3
 .import popax, incsp4, incsp8, addysp
+.if .defined(BANKED_GAME) .or .defined(FAR_BLOCKLINKS) .or .defined(FAR_MOBJINFO)
+.globalzp far_src, far_dst, far_ptr, far_len
+.import kjt_far_read, kjt_far_write
+.endif
 
 .export _P_PointOnLineSide, _P_BoxOnLineSide, _P_PointOnDivlineSide, _P_MakeDivline
 .export _P_InterceptVector, _P_LineOpening, _P_BlockX, _P_BlockY
@@ -61,11 +65,31 @@
 .export line_checked, lines_iter, things_iter, bl_func, bxl, bxh, byl, byh
 .export path_traverse, pt_flags, pt_trav, aprox_dist, info_ptr, make_divline, ivec
 .export c_ab, ret_w, cell_head, actor_cell, static_cell, find_link, unlink_at, link_head
+.export write_link
+.export _P_MobjInfo
 
 MARKLIST    = 48
 
 .segment "BSS"
+.if .defined(BANKED_GAME) .or .defined(FAR_BLOCKLINKS)
+head_addr:      .res 2              ; far address of the currently inspected cell
+head_value:     .res 2              ; its near proxy, never retained across callbacks
+.endif
+.if .defined(BANKED_GAME) .or .defined(FAR_MOBJINFO)
+info_valid:     .res 1
+info_type:      .res 1
+info_record:    .res MI_SIZE
+.endif
+.ifdef BANKED_GAME
+; Path traversal, view construction and the debug row reuse this buffer.
+; Keep their frequent writes outside main's posted video windows. Contents
+; are scratch: each user initializes what it reads before using it.
+.segment "GINTERCEPTS"
+.endif
 _intercepts:    .res MAXINTERCEPTS * IN_SIZE
+.ifdef BANKED_GAME
+.segment "BSS"
+.endif
 _intercept_p:   .res 2
 earlyout:       .res 1
 linemarks:      .res 2
@@ -204,8 +228,30 @@ thing_radius:
         lda     (ptr1),y
         rts
 
-; ptr1 = &mobjinfo[A] (MI_SIZE = 34 bytes each: A * 32 + A * 2)
+; C accessor for immutable object information. The returned record is
+; valid until the next info_ptr/P_MobjInfo for a different type.
+_P_MobjInfo:
+        jsr     info_ptr
+        lda     ptr1
+        ldx     ptr1+1
+        rts
+
+; ptr1 = &mobjinfo[A] (MI_SIZE = 34 bytes each: A * 32 + A * 2).
+; The banked game caches one immutable record from bank 1:$6000. Preserve
+; X/Y, as the original near-address helper did; callers reload ptr1 after
+; any call that can inspect another object's type.
 info_ptr:
+.if .defined(BANKED_GAME) .or .defined(FAR_MOBJINFO)
+        phx
+        phy
+        ldx     info_valid
+        beq     @fetch
+        cmp     info_type
+        beq     @cached
+@fetch: sta     info_type
+        ldx     #1
+        stx     info_valid
+.endif
         stz     ptr1+1
         asl     a
         rol     ptr1+1
@@ -223,11 +269,40 @@ info_ptr:
         bcc     :+
         inc     ptr1+1
         clc
-:       adc     #<_mobjinfo
+:
+.if .defined(BANKED_GAME) .or .defined(FAR_MOBJINFO)
+        adc     #<$6000
+.else
+        adc     #<_mobjinfo
+.endif
         sta     ptr1
         lda     ptr1+1
+.if .defined(BANKED_GAME) .or .defined(FAR_MOBJINFO)
+        adc     #>$6000
+        sta     far_src+1
+        lda     ptr1
+        sta     far_src
+        lda     #1
+        sta     far_src+2
+        lda     #<info_record
+        sta     far_ptr
+        lda     #>info_record
+        sta     far_ptr+1
+        lda     #MI_SIZE
+        sta     far_len
+        stz     far_len+1
+        jsr     kjt_far_read
+@cached:
+        lda     #<info_record
+        sta     ptr1
+        lda     #>info_record
+        sta     ptr1+1
+        ply
+        plx
+.else
         adc     #>_mobjinfo
         sta     ptr1+1
+.endif
         rts
 .assert MI_SIZE = 34, error, "info_ptr multiplies by 34"
 
@@ -952,6 +1027,66 @@ cell_head:
 @out:   clc
         rts
 
+; ptr2's cell head -> a near two-byte proxy when the heads live in bank 1.
+; Chain traversal itself follows the ordinary near actor/static pointers.
+; A caller consumes or updates the proxy before invoking any callbacks,
+; so recursively entered thing iterators cannot leave a stale head live.
+read_head:
+.if .defined(BANKED_GAME) .or .defined(FAR_BLOCKLINKS)
+        lda     ptr2
+        sta     head_addr
+        sta     far_src
+        lda     ptr2+1
+        sta     head_addr+1
+        sta     far_src+1
+        lda     #1                      ; BLOCKLINK_BANK in p_setup.c
+        sta     far_src+2
+        lda     #<head_value
+        sta     far_ptr
+        sta     ptr2
+        lda     #>head_value
+        sta     far_ptr+1
+        sta     ptr2+1
+        lda     #2
+        sta     far_len
+        stz     far_len+1
+        jsr     kjt_far_read
+.endif
+        sec
+        rts
+
+; Store A/X into the link at ptr2. Only the first link in a chain is far;
+; the links inside actors/statics are written directly, as before.
+write_link:
+        sta     (ptr2)
+        ldy     #1
+        txa
+        sta     (ptr2),y
+.if .defined(BANKED_GAME) .or .defined(FAR_BLOCKLINKS)
+        lda     ptr2
+        cmp     #<head_value
+        bne     @done
+        lda     ptr2+1
+        cmp     #>head_value
+        bne     @done
+        lda     head_addr
+        sta     far_dst
+        lda     head_addr+1
+        sta     far_dst+1
+        lda     #1
+        sta     far_dst+2
+        lda     #<head_value
+        sta     far_ptr
+        lda     #>head_value
+        sta     far_ptr+1
+        lda     #2
+        sta     far_len
+        stz     far_len+1
+        jmp     kjt_far_write
+@done:
+.endif
+        rts
+
 ; the cell of the actor gmo -> cell_head
 actor_cell:
         ldx     #W_T0
@@ -968,7 +1103,10 @@ actor_cell:
         jsr     blocky
         sta     byl
         stx     byh
-        jmp     cell_head
+        jsr     cell_head
+        bcc     :+
+        jmp     read_head
+:       rts
 
 ; the cell of the static gmo -> cell_head: ((x - orgx) >> 7, (y - orgy) >> 7)
 static_cell:
@@ -988,7 +1126,10 @@ static_cell:
         jsr     @one
         sta     byl
         stx     byh
-        jmp     cell_head
+        jsr     cell_head
+        bcc     :+
+        jmp     read_head
+:       rts
 ; ((the int16 at (gmo)+Y) - tmp4:tmp3) >> 7 -> A (low), X (high)
 @one:   sec
         lda     (gmo),y
@@ -1049,12 +1190,12 @@ unlink_at:
         bcc     :+
         ldy     #SO_BNEXT
 :       lda     (gmo),y
-        sta     (ptr2)
+        pha
         iny
         lda     (gmo),y
-        ldy     #1
-        sta     (ptr2),y
-        rts
+        tax
+        pla
+        jmp     write_link
 
 ; link gmo at the head of the chain at ptr2, its bnext at offset Y
 link_head:
@@ -1067,11 +1208,8 @@ link_head:
         ply
         sta     (gmo),y
         lda     gmo
-        sta     (ptr2)
-        ldy     #1
-        lda     gmo+1
-        sta     (ptr2),y
-        rts
+        ldx     gmo+1
+        jmp     write_link
 
 ; void P_UnsetThingPosition(mobj_t *thing)
 _P_UnsetThingPosition:
@@ -1224,6 +1362,7 @@ _P_BlockThingsIterator:
 things_iter:
         jsr     cell_head
         bcc     @true
+        jsr     read_head
         ldy     #1
         lda     (ptr2),y
         tax

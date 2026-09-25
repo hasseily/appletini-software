@@ -306,23 +306,37 @@ class KernelTest(unittest.TestCase):
         MEASURE["blit_view $Cxxx accesses"] = m.io_accesses - io
 
     def test_clock_tics(self):
-        d, m = self.d, self.m
+        # Unlike resident far helpers, the clock runs in RENDER code. A
+        # fixed-duration stand-in run may stop midway through GAME mapping.
+        d = doomdbg.Dbg(frames=0, build=BUILD)
+        m = d.m
         vbl, last, acc = d.L["vbl_count"], d.L["clk_last"], d.L["clk_acc"]
         tics = []
         m.main[acc] = 0
+        m[d.L["clk_divisor"]] = 12
         for i in range(60):
-            m.main[last] = i & 255
-            m.main[vbl] = (i + 1) & 255
+            m.main[last:last + 2] = i.to_bytes(2, "little")
+            m.main[vbl:vbl + 2] = (i + 1).to_bytes(2, "little")
             d.call("clock_tics")
             tics.append(d.regs[0])
         self.assertEqual(sum(tics), 35)
         self.assertEqual(tics[:12], [0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1])   # 7 in 12
-        # a long render: 12 VBLs at once are 7 tics, capped to 4, 3 dropped
+        # Twelve VBLs owe seven tics but run only four; another whole
+        # second runs four and drops 31 more without preserving a backlog.
         dropped = d.get("kdropped", 2)
-        m.main[acc], m.main[last], m.main[vbl] = 0, 10, 22
+        m.main[acc] = 0
+        m.main[last:last + 2] = (10).to_bytes(2, "little")
+        m.main[vbl:vbl + 2] = (22).to_bytes(2, "little")
         d.call("clock_tics")
         self.assertEqual(d.regs[0], 4)
-        self.assertEqual(d.get("kdropped", 2) - dropped, 3)
+        self.assertEqual((d.get("kdropped", 2) - dropped) & 65535, 3)
+        m.main[vbl:vbl + 2] = (82).to_bytes(2, "little")
+        d.call("clock_tics")
+        self.assertEqual(d.regs[0], 4)
+        self.assertEqual((d.get("kdropped", 2) - dropped) & 65535, 34)
+        d.call("clock_tics")
+        self.assertEqual(d.regs[0], 0)
+        self.assertEqual((d.get("kdropped", 2) - dropped) & 65535, 34)
 
     def test_input_mapping(self):
         d, m = self.d, self.m

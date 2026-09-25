@@ -25,7 +25,11 @@ stub_col:   .res 1              ; the marked column, 0..159
 stub_last:  .res 2              ; kmouse_x when last drawn
 .export stub_col
 
+.ifdef BANKED_GAME
+.segment "RZP": zeropage
+.else
 .segment "KZP": zeropage
+.endif
 sz_p:       .res 2
 sz_v:       .res 1
 

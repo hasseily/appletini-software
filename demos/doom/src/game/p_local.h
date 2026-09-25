@@ -34,6 +34,10 @@
 #include "info.h"
 #include "kernel.h"
 
+/* Read-only object metadata in the banked game. Do not retain this
+ * pointer across a call that requests a different object's metadata. */
+const mobjinfo_t *FASTCALL P_MobjInfo(uint8_t type);
+
 /* --- constants (vanilla p_local.h) ----------------------------------------- */
 #define FLOATSPEED      (FRACUNIT * 4)
 #define MAXHEALTH       100

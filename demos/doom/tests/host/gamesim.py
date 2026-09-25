@@ -121,16 +121,23 @@ def segments(mapfile: Path) -> dict[str, tuple[int, int]]:
 
 class HarvardView:
     """The memory the CPU sees while it executes an instruction in a code
-    window: the instruction's own bytes (opcode and operands, at pc0..pc0+2)
-    from the windows' image, every data access from the flat memory."""
+    window: each opcode/operand fetch comes from the windows' image;
+    subsequent accesses to those same addresses read ordinary data.
 
-    __slots__ = ("mem", "code", "pc0")
+    A data pointer can equal the current PC in this artificial memory map.
+    Returning code solely by address silently made those reads fetch an
+    opcode, which hid until a changed game layout put a sector there.
+    """
+
+    __slots__ = ("mem", "code", "pc0", "fetch_mask")
 
     def __init__(self, mem, code):
-        self.mem, self.code, self.pc0 = mem, code, 0
+        self.mem, self.code, self.pc0, self.fetch_mask = mem, code, 0, 0
 
     def __getitem__(self, a):
-        if 0 <= a - self.pc0 <= 2:
+        offset = a - self.pc0
+        if 0 <= offset <= 2 and self.fetch_mask & (1 << offset):
+            self.fetch_mask &= ~(1 << offset)
             return self.code[a]
         return self.mem[a]
 
@@ -142,6 +149,10 @@ class HarvardMPU(MPU):
     """py65's 65C02 with the code windows (flat.cfg): a step at a PC in a
     window runs with HarvardView as its memory. Cycles are the same; the
     windows are the harness's, not the Apple's."""
+
+    _operand_bytes = {mode: 2 for mode in ("abs", "abx", "aby", "iax", "ind")}
+    _operand_bytes.update({mode: 1 for mode in
+                           ("imm", "inx", "iny", "rel", "zpg", "zpi", "zpx", "zpy")})
 
     def setup_windows(self, windows):
         """windows: [(start, image bytes)]"""
@@ -158,6 +169,8 @@ class HarvardMPU(MPU):
         if self.inwin[pc]:
             v = self.view
             v.pc0 = pc
+            size = 1 + self._operand_bytes.get(self.disassemble[v.code[pc]][1], 0)
+            v.fetch_mask = (1 << size) - 1
             self.memory = v
             MPU.step(self)
             self.memory = self.raw

@@ -9,6 +9,12 @@
 .include "gmacros.inc"
 .include "gwork.inc"
 .include "rview.inc"
+.ifdef BANKED_GAME
+.include "banked.inc"
+.globalzp far_dst, far_ptr, far_len
+.import kjt_far_write
+.import _mi_viewflags
+.endif
 
 ; (only with the converted data: the stand-in data set builds the
 ; platform's GAME skeleton, src/game/game.c)
@@ -56,27 +62,45 @@ turnheld:   .res 1
 tc_speed:   .res 1
 tc_fwd:     .res 1
 tc_side:    .res 1
-band_head:  .res NBANDS
-band_hist:  .res NBANDS
-band_count: .res 1
-band_limit: .res 1
-band_full:  .res 1
-cand_lo:    .res MAXCAND
-cand_hi:    .res MAXCAND
-cand_next:  .res MAXCAND
-bv_px:      .res 2
-bv_py:      .res 2
-bv_n:       .res 1
-bv_cull:    .res 1
-bv_b:       .res 1
-bv_state:   .res 2
-bv_dx:      .res 2
-bv_dy:      .res 2
-bv_dot:     .res 4
-mv:         .res 2
-mc:         .res 2
-mr:         .res 4
-msign:      .res 1
+; View construction runs after all thinkers and never traverses paths.
+; Reuse the path-intercept scratch while producing the render packet.
+.ifdef BANKED_GAME
+.import _intercepts
+view_work_offset .set 0
+.macro VIEW_WORK name, count
+name = _intercepts + view_work_offset
+view_work_offset .set view_work_offset + count
+.endmacro
+.else
+.macro VIEW_WORK name, count
+name: .res count
+.endmacro
+.endif
+VIEW_WORK band_head, NBANDS
+VIEW_WORK band_hist, NBANDS
+VIEW_WORK band_count, 1
+VIEW_WORK band_limit, 1
+VIEW_WORK band_full, 1
+VIEW_WORK cand_lo, MAXCAND
+VIEW_WORK cand_hi, MAXCAND
+VIEW_WORK cand_next, MAXCAND
+VIEW_WORK bv_px, 2
+VIEW_WORK bv_py, 2
+VIEW_WORK bv_n, 1
+VIEW_WORK bv_cull, 1
+VIEW_WORK bv_b, 1
+VIEW_WORK bv_state, 2
+VIEW_WORK bv_dx, 2
+VIEW_WORK bv_dy, 2
+VIEW_WORK bv_dot, 4
+VIEW_WORK mv, 2
+VIEW_WORK mc, 2
+VIEW_WORK mr, 4
+VIEW_WORK msign, 1
+.ifdef BANKED_GAME
+.assert view_work_offset <= MAXINTERCEPTS * 9, error, "view scratch exceeds intercept buffer"
+.endif
+.delmacro VIEW_WORK
 
 .segment "CODE"
 
@@ -418,9 +442,16 @@ gather: ldx     #NBANDS-1
         bne     @snext
         ldy     #SO_TYPE
         lda     (gth),y
+.ifdef BANKED_GAME
+        ; Immutable per-type bits are in this bank: avoid a full metadata
+        ; read and kernel-bank round trip for each static candidate.
+        tax
+        lda     _mi_viewflags,x
+.else
         jsr     info_ptr
         ldy     #MI_FLAGS
         lda     (ptr1),y
+.endif
         and     #MF0_NOSECTOR
         bne     @snext
         ldy     #SO_X
@@ -883,9 +914,14 @@ _R_BuildView:
         sta     bv_state+1
         ldy     #SO_TYPE
         lda     (gth),y
+.ifdef BANKED_GAME
+        tax
+        lda     _mi_viewflags,x
+.else
         jsr     info_ptr
         ldy     #MI_FLAGS+2
         lda     (ptr1),y
+.endif
         ldx     #SO_SECTOR
         bra     @common
 @actor: lda     bv_cull
@@ -970,7 +1006,8 @@ _R_BuildView:
         sta     ptr4
         bcc     :+
         inc     ptr4+1
-:       inc     bv_n
+:
+        inc     bv_n
 @skip:  plx
         lda     cand_next,x
         jmp     @cand
@@ -979,6 +1016,9 @@ _R_BuildView:
         jmp     @band
 @done:  lda     bv_n
         sta     _rview+RV_NTHINGS
+.ifdef BANKED_GAME
+        jsr     packet_flush
+.endif
         rts
 ; A/X = the int16 at (gth)+Y
 @s16:   lda     (gth),y
@@ -1021,6 +1061,70 @@ _R_BuildView:
         inc     bv_n
 @off:   rts
 .assert RP_SY = RP_SX + 4, error, "sx and sy copied at once"
+
+.ifdef BANKED_GAME
+; The packet lives in this code bank's spare LC RAM. The main-LC kernel
+; cannot read that RAM after the gateway turns ALTZP off, so first copy
+; each chunk through the now-dead candidate/path scratch in main memory.
+; All pointers are initialized afresh for each chunk; no flush state lives
+; in _intercepts, which is overwritten by the first copy.
+RV_PACKET_SIZE = RV_HEADER + RV_MAXTHINGS * RT_SIZE
+PACKET_CHUNK_SIZE = 1024
+.assert RV_PACKET_SIZE = 2600, error, "packet flush layout changed"
+.assert PACKET_CHUNK_SIZE <= MAXINTERCEPTS * 9, error, "packet chunk exceeds scratch"
+.macro PACKET_CHUNK offset, length
+        .local page, tail
+        lda     #<(_rview + offset)
+        sta     ptr1
+        lda     #>(_rview + offset)
+        sta     ptr1+1
+        lda     #<_intercepts
+        sta     ptr2
+        lda     #>_intercepts
+        sta     ptr2+1
+        ldy     #0
+        ldx     #>(length)
+page:   lda     (ptr1),y
+        sta     (ptr2),y
+        iny
+        bne     page
+        inc     ptr1+1
+        inc     ptr2+1
+        dex
+        bne     page
+.if <(length)
+        ldx     #<(length)
+tail:   lda     (ptr1),y
+        sta     (ptr2),y
+        iny
+        dex
+        bne     tail
+.endif
+        lda     #<(PACKET_BASE + offset)
+        sta     far_dst
+        lda     #>(PACKET_BASE + offset)
+        sta     far_dst+1
+        lda     #PACKET_BANK
+        sta     far_dst+2
+        lda     #<_intercepts
+        sta     far_ptr
+        lda     #>_intercepts
+        sta     far_ptr+1
+        lda     #<(length)
+        sta     far_len
+        lda     #>(length)
+        sta     far_len+1
+        jsr     kjt_far_write
+.endmacro
+
+packet_flush:
+        PACKET_CHUNK PACKET_CHUNK_SIZE, PACKET_CHUNK_SIZE
+        PACKET_CHUNK PACKET_CHUNK_SIZE * 2, RV_PACKET_SIZE - PACKET_CHUNK_SIZE * 2
+        ; Publish the header last, after every record it describes is ready.
+        PACKET_CHUNK 0, PACKET_CHUNK_SIZE
+        rts
+.delmacro PACKET_CHUNK
+.endif
 
 ; W[X] = W_FR >> 8 (arithmetic)
 fr_sar8:

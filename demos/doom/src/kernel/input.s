@@ -87,7 +87,10 @@ run:        .res 1              ; KB_RUN or 0
 key_hold:   .res 1
 last_x:     .res 2
 kmouse_x:   .res 2
-.export kin, _kin := kin, kmouse_x
+.export kin, kmouse_x
+.ifndef BANKED_GAME
+.export _kin := kin
+.endif
 
 .segment "KZP": zeropage
 in_x:       .res 2              ; the card's X this frame

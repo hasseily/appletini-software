@@ -47,6 +47,9 @@
 .import gtables_start, gtables_end
 .import __BSS_RUN__, __BSS_SIZE__, __GFAR_RUN__, __GFAR_SIZE__, __GOVL_RUN__, __GOVL_SIZE__
 .import __STACKSTART__, __STACKSIZE__
+.ifdef BANKED_GAME
+.import __ISCRATCH_START__
+.endif
 
 .export _FixedMul, _FixedDiv, _int2fix, _fine_sine, _fine_cosine, _tanto_angle
 .export _game_farinit, _game_far_bank, _arena_bounds, _P_LoadOverlay
@@ -72,9 +75,18 @@ gpt:    .res 2
 ; the set-up overlay (GOVL, right after GFAR), whose bytes the actor pool
 ; takes after each level's set-up
 _arena_bounds:
+.ifdef BANKED_GAME
+        ; The intercept/view scratch occupies the 1152 bytes immediately
+        ; below the software stack, outside main's posted video windows.
+        .word   __BSS_RUN__ + __BSS_SIZE__, __ISCRATCH_START__
+        ; Tables are loaded directly into far memory and setup code remains
+        ; in its auxiliary LC bank. The level owns one ordinary main arena.
+        .word   0, 0, 0
+.else
         .word   __BSS_RUN__ + __BSS_SIZE__, __STACKSTART__ - __STACKSIZE__
         .word   __GFAR_RUN__, __GOVL_RUN__, __GOVL_RUN__ + __GOVL_SIZE__
 .assert __GOVL_RUN__ = __GFAR_RUN__ + __GFAR_SIZE__, lderror, "GOVL must follow GFAR"
+.endif
 
 ; the operands and the result of fx_mul / fx_div are slots of W (gwork.s)
 fxa     = W + W_FA
@@ -549,7 +561,12 @@ _game_farinit:
         bcs     :+
         lda     #CRASH_BANKS
         jmp     kjt_crash
-:       sta     far_dst+2
+:
+.ifdef BANKED_GAME
+        ; GAME.TABLES was installed by the loader at GT_ADDR in this bank.
+        rts
+.else
+        sta     far_dst+2
         lda     #<GT_ADDR
         sta     far_dst
         lda     #>GT_ADDR
@@ -565,9 +582,15 @@ _game_farinit:
         sta     far_len+1
         jmp     kjt_far_write
 .assert gtables_start = __GFAR_RUN__, lderror, "the tables start GFAR"
+.endif
 
 ; void P_LoadOverlay(void): the set-up overlay back into place
 _P_LoadOverlay:
+.ifdef BANKED_GAME
+        ; Setup routines are permanent banked code, addressed via their
+        ; invariant entry stubs like every other game routine.
+        rts
+.else
         lda     _game_far_bank
         sta     far_src+2
         lda     #<(GT_ADDR + __GFAR_SIZE__)
@@ -583,5 +606,6 @@ _P_LoadOverlay:
         lda     #>__GOVL_SIZE__
         sta     far_len+1
         jmp     kjt_far_read
+.endif
 
 .endif ; DD_MAPDIR

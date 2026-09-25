@@ -54,16 +54,32 @@
 ; (the sizes are powers of two; a build may set smaller ones with ca65's
 ; -D, as the py65 harness does to fit its 64 KB)
 .ifndef LINECACHE
+.if .defined(BANKED_GAME) .or .defined(SMALL_GAME_CACHES)
+LINECACHE   = 16
+.else
 LINECACHE   = 64
 .endif
+.endif
 .ifndef NODECACHE
+.if .defined(BANKED_GAME) .or .defined(SMALL_GAME_CACHES)
+NODECACHE   = 32
+.else
 NODECACHE   = 128
 .endif
+.endif
 .ifndef SSECCACHE
+.if .defined(BANKED_GAME) .or .defined(SMALL_GAME_CACHES)
+SSECCACHE   = 16
+.else
 SSECCACHE   = 64
 .endif
+.endif
 .ifndef CELLCACHE
+.if .defined(BANKED_GAME) .or .defined(SMALL_GAME_CACHES)
+CELLCACHE   = 8
+.else
 CELLCACHE   = 16
+.endif
 .endif
 CELL_LINES  = 27
 

@@ -35,7 +35,9 @@
 ; 1 and eye_sec, the weapon's light (rthings.s eye_light).
 
 .include "kernel.inc"
+.include "profile.inc"
 .include "rdefs.inc"
+.include "rpacket.inc"
 .macpack longbranch
 
 .import store_wall_range, draw_planes, find_plane, plane_frame
@@ -59,7 +61,11 @@ BF_STATE    = 10                ; 0: first child running, 1: second
 BF_SIZE     = 11
 
 ; ---------------------------------------------------------------------------
+.ifdef BANKED_GAME
+.segment "RZP": zeropage
+.else
 .segment "KZP": zeropage
+.endif
 m_a:        .res 4
 m_b:        .res 4
 m_r:        .res 8
@@ -270,13 +276,17 @@ render_frame:
         bcs     @done
 @go:    jsr     mul_init
         jsr     frame_setup
+        PROFILE_STAGE PROF_WALLS
         jsr     bsp_walk
         jsr     q_flush
+        PROFILE_STAGE PROF_PLANES
         jsr     draw_planes
         jsr     q_flush
+        PROFILE_STAGE PROF_THINGS
         jsr     r_things                ; the vissprites (rthings.s, LC bank 1)
         bit     LCBANK2WR               ; the masked phase runs in bank 2
         bit     LCBANK2WR
+        PROFILE_STAGE PROF_MASKED
         jmp     r_masked                ; (rmasked.s)
 @done:  bit     LCBANK2WR               ; bank 2 again: the kernel's blit
         bit     LCBANK2WR
@@ -289,11 +299,11 @@ render_frame:
 ; the game does not run while the frame is drawn, so this is the packet as
 ; the game left it)
 read_packet:
-        lda     #GAME_BANK
+        lda     #RV_PACKET_BANK
         sta     rb_bank
-        lda     #<_rview
+        lda     #<RV_PACKET_ADDR
         sta     rb_src
-        lda     #>_rview
+        lda     #>RV_PACKET_ADDR
         sta     rb_src+1
         lda     #<rv_buf
         sta     rb_dst
@@ -333,12 +343,12 @@ rv_thing:
         sta     t1                      ; * 20
         clc
         lda     t0
-        adc     #<(_rview + RV_THINGS)
+        adc     #<(RV_PACKET_ADDR + RV_THINGS)
         sta     rb_src
         lda     t1
-        adc     #>(_rview + RV_THINGS)
+        adc     #>(RV_PACKET_ADDR + RV_THINGS)
         sta     rb_src+1
-        lda     #GAME_BANK
+        lda     #RV_PACKET_BANK
         sta     rb_bank
         lda     #<rv_tbuf
         sta     rb_dst

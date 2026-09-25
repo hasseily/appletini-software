@@ -32,6 +32,9 @@
 
 .include "gmacros.inc"
 .include "aspec.inc"
+.ifdef BANKED_GAME
+.include "banked.inc"
+.endif
 
 .ifdef DD_MAPDIR
 
@@ -2633,6 +2636,16 @@ _P_ResetLevelData:
         bcc     @place
 @below: dec     snap_nextbank
         lda     snap_nextbank
+.ifdef BANKED_GAME
+        ; These lower-RAM banks hold the phase images and render packet.
+        ; Auxiliary LC code banks may still supply their independent RAM.
+        cmp     #GAME_HOME_BANK
+        beq     @below
+        cmp     #PACKET_BANK
+        beq     @below
+        cmp     #RENDER_HOME_BANK
+        beq     @below
+.endif
         cmp     #DD_LAST_BANK + 2
         bcs     :+
         lda     #CRASH_BANKS_SPEC

@@ -67,14 +67,17 @@ far_read:
         sta     fz_b
         lda     far_ptr+1
         sta     fz_b+1
+.ifndef BANKED_GAME
         lda     kspace
         bne     @game
+.endif
         lda     far_src+2
         sta     RAMWORKS
         sta     RAMRDON
         jsr     copy_len
         sta     RAMRDOFF
         rts
+.ifndef BANKED_GAME
 @game:  ; far (fz_a, bank far_src+2) -> kbuf -> near (fz_b, bank 1)
         lda     far_src+2
         sta     fz_bank
@@ -89,6 +92,7 @@ far_read:
         jsr     kbuf_to_b
         bra     @piece
 @done:  rts
+.endif
 
 ; ---- far_write ------------------------------------------------------------
 far_write:
@@ -100,14 +104,17 @@ far_write:
         sta     fz_b
         lda     far_dst+1
         sta     fz_b+1
+.ifndef BANKED_GAME
         lda     kspace
         bne     @game
+.endif
         lda     far_dst+2
         sta     RAMWORKS
         sta     RAMWRTON
         jsr     copy_len
         sta     RAMWRTOFF
         rts
+.ifndef BANKED_GAME
 @game:  ; near (fz_a, bank 1) -> kbuf -> far (fz_b, bank far_dst+2)
         lda     far_dst+2
         sta     fz_bank
@@ -124,6 +131,7 @@ far_write:
 @done:  lda     #GAME_BANK
         sta     RAMWORKS
         rts
+.endif
 
 ; ---- far_copy -------------------------------------------------------------
 far_copy:
@@ -147,14 +155,19 @@ far_copy:
         sta     RAMWORKS
         jsr     kbuf_to_b
         bra     @piece
-@done:  lda     kspace
+@done:
+.ifndef BANKED_GAME
+        lda     kspace
         bne     @game
+.endif
         sta     RAMRDOFF
         sta     RAMWRTOFF
         rts
+.ifndef BANKED_GAME
 @game:  lda     #GAME_BANK
         sta     RAMWORKS
         rts
+.endif
 
 ; ---- the pieces of a bounced transfer -------------------------------------
 ; start_pieces: fz_rem = far_len.
@@ -245,6 +258,11 @@ copy_len:
 ; A/X = the descriptor (near), far_idx = the index -> far_src.
 ; Cost: about 30 cycles per bit of log2, plus 25 per bit of the in-chunk
 ; index up to its highest set bit (shift-and-add by the element size).
+.ifdef BANKED_GAME
+; Only the game calls this descriptor helper. It never changes RAMRD, so
+; keeping it in game main memory frees scarce invariant main-LC space.
+.segment "GBANKCODE"
+.endif
 far_elem:
         sta     fz_a                    ; the descriptor
         stx     fz_a+1

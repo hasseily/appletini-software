@@ -28,11 +28,12 @@ scripted input). Here, for cc65's side:
   - the code cc65 makes of FLAG() (doomtype.h) reads the flags word's
     own byte: cc65 2.18 drops a member's offset from
     ((uint8_t *)&p->member)[n], which the macro avoids;
-  - the game links in the GAME space as src/doom.cfg defines it
-    (tests/host/gamespace.cfg: bank 1 $0200-$B7FF), with room left for
-    E1M1's level memory. This does not hold yet (DESIGN.md section 9,
-    "Memory"): the test is an expected failure, and GameSpaceBudgetTest
-    records the sizes and fails if they grow.
+  - the game links into permanent 12 KiB auxiliary LC code banks and
+    main RAM at $0200-$B7FF, retaining a 2 KiB software stack and enough
+    main arena for the current nine-map set and 160 actors. This uses
+    the real banked linker configuration, including LC packet storage.
+    The integrated platform and preload files are also checked by
+    tools/check_link.py during the production build.
 
 The data: build/data (tools/wad2a2.py); without it the tests are skipped.
 Run:  python3 tests/test_game_core.py [-v]
@@ -41,6 +42,7 @@ Run:  python3 tests/test_game_core.py [-v]
 from __future__ import annotations
 
 import ctypes
+import json
 import math
 import os
 import struct
@@ -52,6 +54,7 @@ from pathlib import Path
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT / "tools"))
 import gen_info  # noqa: E402
+import check_link  # noqa: E402
 import wad2a2  # noqa: E402
 
 DATA = PROJECT / "build/data"
@@ -60,7 +63,6 @@ DATA = PROJECT / "build/data"
 GAMESRC = Path(os.environ.get("DOOM_GAMESRC", PROJECT / "src/game"))
 HOSTDIR = PROJECT / "build/host"
 LIB = HOSTDIR / ("libgame.so" if "DOOM_GAMESRC" not in os.environ else "libgame-snap.so")
-GAMEBUILD = "build/gtrack/"
 MEASURE = {}
 
 MOBJS = gen_info.parse_mobjs()
@@ -555,81 +557,50 @@ class CodegenTest(unittest.TestCase):
         self.assertRegex(code, r"adc\s+#\$14", "FLAG() lost the member's offset")
 
 
-def gamespace_link():
-    """The game linked by tests/host/gamespace.cfg: (ok, ld65's messages,
-    {segment: (start, size)})."""
-    sys.path.insert(0, str(PROJECT / "tests/host"))
-    import gamesim
-    out = HOSTDIR / "gamespace"
-    try:
-        gamesim.build(out, cfg=PROJECT / "tests/host/gamespace.cfg", asmdefs=[])
-        ok, msg = True, ""
-    except subprocess.CalledProcessError as e:
-        ok, msg = False, e.stderr or ""
-    segs = {}
-    mapfile = out / "flat.map"
-    if ok and mapfile.is_file():
-        import re
-        for m in re.finditer(r"^(\w+)\s+([0-9A-F]{6})\s+([0-9A-F]{6})\s+([0-9A-F]{6})",
-                             mapfile.read_text(), re.M):
-            segs[m.group(1)] = (int(m.group(2), 16), int(m.group(4), 16))
-    return ok, msg, segs
-
-
-def gamespace_sizes():
-    """The GAME space's contents by segment, from the objects themselves
-    (the link may fail): {segment: bytes}, the cc65 library's included."""
-    sys.path.insert(0, str(PROJECT / "tests/host"))
-    import gamesim
-    import re
-    out = HOSTDIR / "gamespace_sizes"
-    cfg = HOSTDIR / "gamespace_big.cfg"
-    cfg.write_text((PROJECT / "tests/host/gamespace.cfg").read_text()
-                   .replace("size = $B600", "size = $FD00").replace("start = $E000;", "start = $FF00;")
-                   .replace("$E000, size = $1F00", "$FF00, size = $00FA")
-                   # the BSS on its own (the sum passes 64 KB with the monsters)
-                   .replace("    KERN:", "    GBSS: file = \"\", start = $0200, size = $FD00, type = rw;\n    KERN:")
-                   .replace("INIT:     load = GAME", "INIT:     load = GBSS")
-                   .replace("BSS:      load = GAME", "BSS:      load = GBSS"))
-    # everything in GAME.BIN's segments: no code windows (those are the
-    # py65 harness's)
-    gamesim.build(out, cfg=cfg, asmdefs=[], cwindow=[])
-    segs = {}
-    for m in re.finditer(r"^(\w+)\s+([0-9A-F]{6})\s+([0-9A-F]{6})\s+([0-9A-F]{6})",
-                         (out / "flat.map").read_text(), re.M):
-        segs[m.group(1)] = int(m.group(4), 16)
-    return segs
-
-
-@unittest.skipUnless(have_data(), "no converted data (build/data)")
-class GameSpaceTest(unittest.TestCase):
-    @unittest.expectedFailure
-    def test_links_in_bank1(self):
-        """The whole core in RamWorks bank 1 $0200-$B7FF (46,592 bytes)
-        with E1M1's level memory: not yet (DESIGN.md section 9, Memory)."""
-        ok, msg, segs = gamespace_link()
-        self.assertTrue(ok, msg)
-
-
 @unittest.skipUnless(have_data(), "no converted data (build/data)")
 class GameSpaceBudgetTest(unittest.TestCase):
-    """The sizes behind DESIGN.md section 9's memory budget, measured."""
-
-    # resident: the core 51,429, with the monsters part 62,072 (specials
-    # stand-in); the monsters' assembly is 10.1 KB of code
-    CEILING = {"resident": 62500, "GOVL": 4300, "GFAR": 8194}
+    """Link the banked core and guard its physical RAM and level arena."""
 
     def test_budget(self):
-        segs = gamespace_sizes()
-        resident = sum(segs.get(k, 0) for k in ("STARTUP", "LOWCODE", "ONCE", "CODE", "RODATA",
-                                                 "DATA", "INIT", "BSS"))
-        MEASURE["GAME: code + rodata + data + bss (resident)"] = resident
-        for k in ("CODE", "RODATA", "DATA", "BSS", "GFAR", "GOVL"):
-            MEASURE[f"GAME: {k}"] = segs.get(k, 0)
-        MEASURE["GAME: bank 1 space, $0200-$B7FF"] = 0xB600
-        self.assertLessEqual(resident, self.CEILING["resident"])
-        self.assertLessEqual(segs.get("GOVL", 0), self.CEILING["GOVL"])
-        self.assertEqual(segs.get("GFAR", 0), self.CEILING["GFAR"])
+        # Separate output avoids racing the real-mapper execution suite.
+        # Rebuild here so alternate DOOM_GAMESRC snapshots cannot reuse a
+        # previous source tree's passing size report.
+        out = HOSTDIR / "banked-budget"
+        subprocess.run([sys.executable, str(PROJECT / "tools/bank_game.py"),
+                        "--source", str(GAMESRC), "--data", str(DATA),
+                        "--out", str(out), "--standalone"], check=True,
+                       stdout=subprocess.DEVNULL)
+        report = json.loads((out / "budget.json").read_text())
+        inventory = json.loads((out / "banks.json").read_text())
+        cfg = (out / "banked.cfg").read_text()
+        areas = check_link.config_records(cfg, "MEMORY")
+        assignments = check_link.config_records(cfg, "SEGMENTS")
+        segments = report["segments"]
+        labels = check_link.read_labels(out / "game.lbl")
+        self.assertEqual(check_link.number(areas["GAME"]["start"]), 0x0200)
+        self.assertEqual(check_link.number(areas["GAME"]["size"]), 0xB600)
+        self.assertEqual((labels["__STACKSTART__"], labels["__STACKSIZE__"]), (0xC000, 2048))
+        self.assertGreaterEqual(report["main_arena_bytes"], check_link.BANKED_ARENA_REQUIRED)
+        self.assertEqual(report["main_arena_bytes"], 0xB800 - segments["BSS"]["end"])
+        self.assertEqual(report["actor_pool_bytes"], 160 * 64)
+        self.assertEqual(report["lc_packet_bytes"], 2600)
+        self.assertEqual(assignments["GVIEW"]["load"], f'GB{inventory["banks"]["control"]}')
+        for group, bank in inventory["banks"].items():
+            with self.subTest(bank=bank, group=group):
+                area = f"GB{bank}"
+                self.assertEqual(check_link.number(areas[area]["start"]), 0xD000)
+                self.assertEqual(check_link.number(areas[area]["size"]), 0x2FFA)
+                used = 0
+                for name, segment in segments.items():
+                    if assignments[name]["load"] == area:
+                        self.assertGreaterEqual(segment["start"], 0xD000)
+                        self.assertLessEqual(segment["end"], 0xFFFA)
+                        used += segment["bytes"]
+                self.assertEqual((out / f"GBANK{bank}.BIN").stat().st_size, 0x3000)
+                MEASURE[f"GAME: bank {bank} {group}, bytes / capacity"] = f"{used} / {0x2FFA}"
+        MEASURE["GAME: main arena / required bytes"] = \
+            f'{report["main_arena_bytes"]} / {check_link.BANKED_ARENA_REQUIRED}'
+        MEASURE["GAME: software stack bytes"] = labels["__STACKSIZE__"]
 
 
 def approx(dx, dy):

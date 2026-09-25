@@ -35,6 +35,7 @@
 ; frame); kwaits counts the frames that waited.
 
 .include "kernel.inc"
+.include "profile.inc"
 .include "doomdata.inc"
 
 .import kbuf
@@ -164,18 +165,27 @@ set_palette:
 :       inx
         bne     @grey
 .endif
+.ifndef BANKED_GAME
         lda     kspace
         bne     @game
+.endif
         sta     RAMRDOFF
         sta     RAMWRTOFF
         rts
+.ifndef BANKED_GAME
 @game:  lda     #GAME_BANK
         sta     RAMWORKS
         rts
+.endif
 
 ; ---------------------------------------------------------------------------
 ; present: blit the view when line 0 will not pass during the copy.
 ; ---------------------------------------------------------------------------
+.ifdef BANKED_GAME
+; Called only in RENDER with RAMRD off. Keep its immutable code in the
+; renderer's remaining read-only gap to make room for the resident API stub.
+.segment "RCODE"
+.endif
 present:
         lda     RDVBLBAR
         bmi     present_blit            ; lines 0-191: at once
@@ -186,6 +196,7 @@ present_wait:                           ; tools/a2sim.py skips this wait ("line0
         lda     RDVBLBAR
         bpl     present_wait
 present_blit:
+        PROFILE_STAGE PROF_BLIT
         jsr     blit_view
 present_done:
         inc     kblits

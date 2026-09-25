@@ -21,7 +21,8 @@
  * (a_levdata.s on the 6502); the rarely used ones are here.
  *
  * The level arena is the memory above the C BSS up to the C stack
- * ($B800), plus the bytes the far tables used at boot (segment GFAR,
+ * ($B800; the banked build ends at $B380 below shared intercept/view scratch),
+ * plus the bytes the far tables used at boot (segment GFAR,
  * copied to the game's far bank by game_farinit) and, after the set-up,
  * those of the set-up code itself (segment GOVL, below). It is reset at
  * every level start; the other parts allocate from it in their level
@@ -50,6 +51,15 @@ uint8_t bmapwidth, bmapheight;
 mobj_t **blocklinks;
 static uint16_t bmapcells;
 
+#if defined(BANKED_GAME) || defined(FAR_BLOCKLINKS)
+/* Bank 1's lower RAM is free when game data lives in main memory. The
+ * cell heads stay far; actors and the links between them retain their
+ * ordinary two-byte identities. Keep these addresses in a_maputl.s. */
+#define BLOCKLINK_BANK  1
+#define BLOCKLINK_BASE  0x0200u
+#define BLOCKLINK_LIMIT 0x2000u
+#endif
+
 /* --- the arena ------------------------------------------------------------------ */
 /* On the 6502 the level set-up (the arena, P_SetupLevel, and p_spawn.c's
  * map thing spawner) is an overlay, segment GOVL: linked right after the
@@ -76,7 +86,15 @@ static uint8_t host_arena[HOST_ARENA];
 #define HOLE_LO     0
 #define HOLE_HI     0
 #endif
-static uintptr_t arena_ptr, hole_ptr;
+#ifdef BANKED_GAME
+/* The phase copier preserves only allocated level memory. This cursor is
+ * read after all game calls have returned; allocations initialize their
+ * contents before publishing a larger live extent. */
+uintptr_t arena_ptr;
+#else
+static uintptr_t arena_ptr;
+#endif
+static uintptr_t hole_ptr;
 
 static void P_ArenaReset(void)
 {
@@ -121,6 +139,10 @@ uint16_t P_ArenaFree(void)
  * pool (with the overlay's slots) holds at most MAXACTORS. */
 void *P_ArenaPool(uint16_t *count)
 {
+#ifdef BANKED_GAME
+    *count = MAXACTORS;
+    return P_ArenaAlloc(MAXACTORS * sizeof(mobj_t));
+#else
     uint16_t avail = HOLE_HI - hole_ptr, spare, n, later;
 
     spare = ARENA_HI > arena_ptr ? ARENA_HI - arena_ptr : 0;
@@ -134,6 +156,7 @@ void *P_ArenaPool(uint16_t *count)
     hole_hi = OVL_LO - n * sizeof(mobj_t);
     memset((void *)hole_hi, 0, n * sizeof(mobj_t));
     return (void *)hole_hi;
+#endif
 }
 #endif
 
@@ -322,7 +345,23 @@ void P_SetupLevel(uint8_t episode, uint8_t map, uint8_t skill)
     bmapwidth = (uint8_t)hdr[2];
     bmapheight = (uint8_t)hdr[3];
     bmapcells = (uint16_t)bmapwidth * bmapheight;
+#if defined(BANKED_GAME) || defined(FAR_BLOCKLINKS)
+    /* No near allocation: clear the far heads a piece at a time through
+     * the already existing setup buffer. Zeroing only the active map's
+     * cells is sufficient when restarting or changing levels. */
+    blocklinks = (mobj_t **)BLOCKLINK_BASE;
+    if (bmapcells > (BLOCKLINK_LIMIT - BLOCKLINK_BASE) / 2)
+        kernel_crash(CRASH_ARENA);
+    memset(setup_buf, 0, sizeof setup_buf);
+    for (n = 0; n < bmapcells * 2; n += count) {
+        count = bmapcells * 2 - n;
+        if (count > sizeof setup_buf)
+            count = sizeof setup_buf;
+        far_write(setup_buf, FAR(BLOCKLINK_BANK, BLOCKLINK_BASE + n), count);
+    }
+#else
     blocklinks = P_ArenaAlloc(bmapcells * sizeof(mobj_t *));
+#endif
     sec_floorh = P_ArenaAlloc(numsectors * 2);
     sec_ceilh = P_ArenaAlloc(numsectors * 2);
     sec_special = P_ArenaAlloc(numsectors);

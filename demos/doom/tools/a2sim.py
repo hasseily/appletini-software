@@ -5,18 +5,21 @@ Copied from the Pinball Construction Set port (demos/pinball_construction_set/
 tools/a2sim.py, itself from the Bilestoad and Bosconian ports) and extended
 for Doom (docs/DESIGN.md sections 2, 8 and 12):
 
-- **TURBO**: `Machine(speed="turbo")` makes a 60 Hz frame last 1,250,000
-  CPU cycles (the design's budget: about 75 MHz on average). A numeric
-  speed keeps the old meaning (17030 * speed cycles per frame). The 1 MHz
-  bus clock (Phasor timers, paddles) is derived from the frame length.
-  Every $C000-$CFFF access "takes the original path" on the vTW: in TURBO
-  the model charges `io_cycles` extra CPU cycles for each (default: one
-  1 MHz bus cycle, frame_cycles / 17030 = 73), 0 at numeric speeds.
+- **Synthetic timing presets**: the historical name `speed="turbo"`
+  selects 1,250,000 CPU cycles per frame. Numeric speeds use 17030 * speed
+  cycles per frame. The 1 MHz peripheral clock (Phasor timers, paddles)
+  is derived from the frame length. The historical preset also charges
+  `io_cycles` extra cycles for each $C000-$CFFF access (default 73), while
+  numeric presets default to zero extra cycles. These are test budgets,
+  not a faithful hardware TURBO model: batched video writes, publication
+  synchronization, PSRAM latency and cache behavior are not simulated.
 - **Video timing**: a frame starts at line 0 (cycle 0 of the frame, the
   Appletini's frame marker where the SHR shadow is published); vertical
   blanking ($C019 bit 7 low) is lines 192-261, the last 70/262 of it.
 - **RamWorks**: `ramworks_banks` banks of 64 KB (default 128 = 8 MB);
   a $C073 value past the last bank aliases modulo the bank count.
+  ALTZP maps zero page, the CPU stack and both language-card halves into
+  that selected bank, independently of RAMRD/RAMWRT.
 - **VBL interrupt**: the mouse card's VBL interrupt (mode bit 3) is
   raised at the start of vertical blanking and delivered to the CPU (IRQ
   vector at $FFFE) while the I flag is clear, until the program's ACK
@@ -73,7 +76,7 @@ FRAME_CYCLES_1MHZ = 17030          # 262 lines * 65 cycles (NTSC)
 VBL_START_CYCLE = 192 * 65         # first cycle of vertical blanking
 LINES = 262
 VBL_START_LINE = 192
-TURBO_FRAME_CYCLES = 1_250_000     # DESIGN.md section 2: the budget per 60 Hz frame
+TURBO_FRAME_CYCLES = 1_250_000     # historical synthetic budget, not measured hardware timing
 DEFAULT_RAMWORKS_BANKS = 128       # 8 MB
 
 # The mouse card's slot ROM (appletini-one/hdl/apple/mouse_card_slot2.mem,
@@ -692,12 +695,156 @@ class FakeProDOS:
         self._put24(mem, parms + 2, len(entry["data"]))
 
 
+class FakeSmartPortMemory:
+    """Opt-in byte-FIFO model of the Appletini AMEM extension.
+
+    This checks the assembled caller's transport and memory effects. It does
+    not estimate ARM/DMA latency or model physical video mirroring. Without
+    this explicit object Machine retains its historical ROM-only slot 7.
+    """
+
+    def __init__(self, *, supported=True, available=True, private_port=True,
+                 fail_before=0, fail_after=None, partial_bytes=0, error=0x67):
+        self.supported, self.available = supported, available
+        self.private_port = private_port
+        self.fail_before, self.fail_after, self.error = fail_before, fail_after, error
+        self.partial_bytes = partial_bytes
+        self.selected = False
+        self.input = bytearray()
+        self.output = bytearray()
+        self.requests = []
+        self.completed = []
+        self.partial_writes = []
+        self.ready = False
+        self.never_ready = False
+        self.rom = bytearray(256)
+        for offset, value in ((1, 0x20), (3, 0), (5, 3), (7, 0), (0xff, 0x0a)):
+            self.rom[offset] = value
+        self.caps = bytearray(b"AMEM\1\0\20\20\7\0\0\2\0\xc0\x7e\1" + bytes(16))
+        self.caps[20:22] = (512).to_bytes(2, "little")
+
+    def read(self, machine, address):
+        if address == 0xCFFF:
+            self.selected = False
+            return None
+        if machine.sw["intcxrom"]:
+            return None
+        if address < 0xC800:
+            self.selected = 0xC700 <= address < 0xC800
+            return self.rom[address & 255] if self.selected else None
+        if not self.selected:
+            return None
+        if address == 0xCFF0:
+            return self.output[0] if self.output else 0
+        if address == 0xCFF1:
+            return (0x20 if self.private_port else 0) | (0x80 if self.ready else 0)
+        return None
+
+    def write(self, machine, address, value):
+        if address == 0xCFFF:
+            self.selected = False
+            return True
+        if machine.sw["intcxrom"] or not self.selected:
+            return False
+        if address == 0xCFF0:
+            self.input.append(value)
+        elif address == 0xCFF2:
+            if not self.output:
+                raise AssertionError("SmartPort caller popped an empty reply")
+            del self.output[0]
+        elif address == 0xCFF1:
+            request = bytes(self.input)
+            self.input.clear()
+            self.requests.append((value, request))
+            self.output = bytearray(self._execute(machine, value, request))
+            self.ready = not self.never_ready
+        else:
+            return False
+        return True
+
+    def _execute(self, machine, family, request):
+        if family != 2 or len(request) < 10 or request[1:3] != b"\3\0":
+            raise AssertionError(f"Malformed SmartPort request: {family=} {request.hex()}")
+        if request[6:10] != bytes(4):
+            raise AssertionError("SmartPort parameter padding was not zero")
+        command, selector = request[0], request[5]
+        if command == 0:
+            if len(request) != 10:
+                raise AssertionError("STATUS request contains trailing bytes")
+            if selector != 0x80 or not self.supported:
+                return b"\x21"
+            self.caps[15] = int(self.available)
+            return b"\0\x20\0" + self.caps
+        if command != 4 or selector != 0x80 or len(request) < 12:
+            return b"\x21"
+        length = int.from_bytes(request[10:12], "little")
+        if len(request) != 12 + length:
+            raise AssertionError("CONTROL payload length differs from transmitted bytes")
+        if not self.supported or not self.available:
+            return b"\x60"
+        if self.fail_before:
+            return bytes([self.fail_before])
+        data = request[12:]
+        if len(data) < 8 or data[:5] != b"AMEM\1" or data[6:8] != b"\0\0" or \
+                not 1 <= data[5] <= 16 or len(data) != 8 + 16 * data[5]:
+            return b"\x61"
+        descriptors = []
+        for position in range(8, len(data), 16):
+            d = data[position:position + 16]
+            op, flags = d[:2]
+            size = int.from_bytes(d[10:12], "little")
+            if op not in (1, 2) or flags & ~1 or any(d[13:]) or \
+                    (op == 1 and d[12]) or (op == 2 and any(d[2:6])):
+                return b"\x62"
+            source, destination = None, None
+            for offset in ((2, 6) if op == 1 else (6,)):
+                space, bank = d[offset:offset + 2]
+                address = int.from_bytes(d[offset + 2:offset + 4], "little")
+                if space not in (0, 1) or (space == 0 and bank) or bank > 126 or \
+                        not size or address < 0x200 or address + size > 0xC000:
+                    return b"\x63"
+                endpoint = (space, bank, address)
+                if offset == 2:
+                    source = endpoint
+                else:
+                    destination = endpoint
+            if source and source[:2] == destination[:2] and \
+                    source[2] < destination[2] + size and destination[2] < source[2] + size:
+                return b"\x64"
+            if not flags & 1 and (destination[0] == 0 or destination[1] == 0):
+                return b"\x65"
+            descriptors.append((op, source, destination, size, d[12]))
+
+        def storage(endpoint):
+            space, bank, address = endpoint
+            memory = machine.main if space == 0 else machine.aux_banks.setdefault(bank, bytearray(65536))
+            return memory, address
+
+        for index, (op, source, destination, size, fill) in enumerate(descriptors):
+            target, offset = storage(destination)
+            if source:
+                origin, start = storage(source)
+                value = origin[start:start + size]
+            else:
+                value = bytes([fill]) * size
+            if self.fail_after is not None and index >= self.fail_after:
+                partial = min(size, self.partial_bytes)
+                target[offset:offset + partial] = value[:partial]
+                self.partial_writes.append((destination, partial))
+                return bytes([self.error])
+            target[offset:offset + size] = value
+            self.completed.append((op, source, destination, size))
+        return b"\0"
+
+
 class Machine:
     def __init__(self, rom_path, speed=1, phasor_slot=4, mouse_slot=2, mouse=True,
-                 prodos=None, ramworks_banks=DEFAULT_RAMWORKS_BANKS, io_cycles=None):
+                 prodos=None, ramworks_banks=DEFAULT_RAMWORKS_BANKS, io_cycles=None,
+                 smartport=None):
         self.rom = Path(rom_path).read_bytes()      # $C000-$FFFF
         assert len(self.rom) == 0x4000
         self.prodos = None
+        self.smartport = smartport
         self._mli_hi = None         # (address, value): the pending operand byte
         self.mouse_slot = mouse_slot
         self.mouse = MouseCard() if mouse else None
@@ -717,8 +864,15 @@ class Machine:
         self.aux_banks = {0: bytearray(0x10000)}
         self.bank = 0
         self.aux = self.aux_banks[0]
-        self.lc = {False: bytearray(0x4000), True: bytearray(0x4000)}
-        self.lc_bank1 = {False: bytearray(0x1000), True: bytearray(0x1000)}
+        # ALTZP selects the current RamWorks bank for page 0, page 1 and
+        # the language card, matching apple_decode_private_access in
+        # hdl/globals.sv. The alternate $D000 half occupies physical
+        # $C000-$CFFF in that bank. Keep the historical main/base-aux
+        # views for callers that install images directly.
+        self.lc = {False: bytearray(0x4000),
+                   True: memoryview(self.aux_banks[0])[0xC000:0x10000]}
+        self.lc_bank1 = {False: bytearray(0x1000),
+                         True: memoryview(self.aux_banks[0])[0xC000:0xD000]}
         self.lc_read = False
         self.lc_write = False
         self.lc_prewrite = False
@@ -737,7 +891,7 @@ class Machine:
         self.speaker_toggles = 0
         self.phasor = Phasor(self.bus_clock)
         self.phasor_slot = phasor_slot
-        self.video_writes = 0       # writes that would use the 1 MHz bus
+        self.video_writes = 0       # video-region writes counted; no per-write bus timing implied
         self.shr_writes = 0         # writes to aux bank 0 $2000-$9FFF (the SHR area)
         self.io_accesses = 0
         self.idle_pcs = {}          # pc -> "vbl" | "line0" (see the module doc)
@@ -821,6 +975,10 @@ class Machine:
             return self._io_read(address)
         if address < 0xD000:
             self.mpu.processorCycles += self.io_cycles
+            if self.smartport is not None:
+                value = self.smartport.read(self, address)
+                if value is not None:
+                    return value
             slot = (address >> 8) & 7
             if (not self.sw["intcxrom"] and slot == self.phasor_slot):
                 return self.phasor.read(address)
@@ -829,9 +987,12 @@ class Machine:
                 return self.mouse.rom[address & 0xFF]
             return self.rom[address - 0xC000]
         if self.lc_read:
+            if self.sw["altzp"]:
+                physical = address - 0x1000 if address < 0xE000 and not self.lc_bank2 else address
+                return self.aux[physical]
             if address < 0xE000 and not self.lc_bank2:
-                return self.lc_bank1[self.sw["altzp"]][address - 0xD000]
-            return self.lc[self.sw["altzp"]][address - 0xC000]
+                return self.lc_bank1[False][address - 0xD000]
+            return self.lc[False][address - 0xC000]
         return self.rom[address - 0xC000]
 
     def __setitem__(self, address, value):
@@ -858,14 +1019,19 @@ class Machine:
             return
         if address < 0xD000:
             self.mpu.processorCycles += self.io_cycles
+            if self.smartport is not None and self.smartport.write(self, address, value):
+                return
             if ((address >> 8) & 7) == self.phasor_slot:
                 self.phasor.write(address, value)
             return
         if self.lc_write:
-            if address < 0xE000 and not self.lc_bank2:
-                self.lc_bank1[self.sw["altzp"]][address - 0xD000] = value
+            if self.sw["altzp"]:
+                physical = address - 0x1000 if address < 0xE000 and not self.lc_bank2 else address
+                self.aux[physical] = value
+            elif address < 0xE000 and not self.lc_bank2:
+                self.lc_bank1[False][address - 0xD000] = value
             else:
-                self.lc[self.sw["altzp"]][address - 0xC000] = value
+                self.lc[False][address - 0xC000] = value
 
     # -- I/O -------------------------------------------------------------
     SWITCH_PAIRS = ("store80", "ramrd", "ramwrt", "intcxrom", "altzp",

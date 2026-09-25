@@ -1,9 +1,10 @@
 /* The render packet: what the game hands the renderer every frame.
  *
- * It lives in the GAME space (symbol _rview in bank 1); the renderer copies
- * it into main memory with one far read at the start of render_frame, so
- * the game can keep playing with its own structures while the frame is
- * drawn. Positions are in the renderer's sub-units (1/16 map unit, i.e.
+ * The renderer copies the header and reads visible thing records as needed;
+ * game execution is suspended while it draws. The banked build constructs
+ * the full packet in its control-code LC bank, then publishes it to a
+ * dedicated auxiliary bank in three buffered transfers. Positions are in
+ * the renderer's sub-units (1/16 map unit, i.e.
  * fixed_t >> 12, sign-extended to 32 bits); angles are BAM16 (angle_t >>
  * 16). The layout is fixed and mirrored in src/kernel/rview.inc: change
  * both and tools/refrender.py's reading of it together.
@@ -20,6 +21,7 @@
 #include <stdint.h>
 
 #define RV_MAXTHINGS 128
+#define RV_STORAGE_THINGS RV_MAXTHINGS
 
 #define RT_SHADOW     0x01      /* MF_SHADOW: the spectre's fuzz */
 #define RT_FULLBRIGHT 0x80      /* in frame: Doom's FF_FULLBRIGHT, moved to bit 7 */
@@ -50,7 +52,7 @@ typedef struct {
     uint8_t    nthings;
     uint8_t    npsprites;       /* 0..2 */
     rpsprite_t psprites[2];     /* offset 20 */
-    rthing_t   things[RV_MAXTHINGS];   /* offset 40 */
+    rthing_t   things[RV_STORAGE_THINGS];   /* offset 40 */
 } rview_t;
 
 extern rview_t rview;

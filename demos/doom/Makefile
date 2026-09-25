@@ -1,7 +1,7 @@
 # Doom (Freedoom Phase 1) for the Appletini
 #
-#   make            the data, then DOOM.SYSTEM and the images RENDER.BIN,
-#                   LC.BIN, GAME.BIN in $(BUILD)
+#   make            the data, DOOM.SYSTEM, RENDER.BIN, LC.BIN, GAME.BIN
+#                   and the banked-code preload DOOM.BANKS in $(BUILD)
 #   make disk       dist/Appletini-DOOM.hdv (a ProDOS volume sized to the data)
 #   make test       the unit tests (py65 and pure Python)
 #   make STANDIN=1  the same with the platform's stand-in data set
@@ -33,7 +33,15 @@ BUILD ?= build/standin
 DATA ?= $(BUILD)/data
 endif
 DIST := dist
-DISK := $(DIST)/Appletini-DOOM.hdv
+DISK ?= $(DIST)/Appletini-DOOM.hdv
+PROFILE ?= 0
+CONTROL_BANK ?= 0
+VIDEO_HZ ?= 60
+ifneq ($(VIDEO_HZ),50)
+ifneq ($(VIDEO_HZ),60)
+$(error VIDEO_HZ must be 50 or 60)
+endif
+endif
 
 KERNEL_S := kstart space far video input frame loader
 # the renderer: src/render/*.s against the converted data; the stand-in data
@@ -54,12 +62,20 @@ OBJS := $(addprefix $(BUILD)/kernel/,$(addsuffix .o,$(KERNEL_S))) \
 	$(addprefix $(BUILD)/render/,$(addsuffix .o,$(RENDER_S))) \
 	$(addprefix $(BUILD)/game/,$(addsuffix .o,$(GAME_S) $(GAME_C)))
 PROGRAM := $(BUILD)/DOOM.SYSTEM $(BUILD)/RENDER.BIN $(BUILD)/LC.BIN $(BUILD)/GAME.BIN
+ifeq ($(STANDIN),)
+BANKED ?= 1
+else ifeq ($(BANKED),1)
+$(error BANKED=1 needs converted game data; omit BANKED when using STANDIN=1)
+endif
+ifeq ($(BANKED),1)
+PROGRAM += $(BUILD)/DOOM.BANKS
+endif
 
-AFLAGS := --cpu 65c02 -g -I src/kernel -I $(DATA)
+AFLAGS := --cpu 65c02 -g -D VIDEO_HZ=$(VIDEO_HZ) -I src/kernel -I $(DATA)
 CFLAGS := -t none --cpu 65c02 --standard c99 -Oirs -g -I $(GAMESRC) -I $(DATA)
 DATA_STAMP := $(DATA)/manifest.json
 
-.PHONY: all disk test clean
+.PHONY: all disk profile test clean
 
 all: $(PROGRAM)
 
@@ -108,17 +124,55 @@ $(BUILD)/game/%.o: $(BUILD)/game/%.s
 
 .PRECIOUS: $(BUILD)/game/%.s
 
+ifeq ($(BANKED),1)
+BANKED_DEPS := Makefile $(wildcard $(GAMESRC)/* src/kernel/* src/render/*) src/doom.cfg \
+	tools/bank_game.py tools/build_banked.py tools/gen_tables.py tools/check_link.py
+# A single witness works with macOS make 3.81 as well as GNU make 4.x.
+# Rebuild if any output is missing, including metadata used by the runner.
+BANKED_OUTPUTS := $(PROGRAM) $(BUILD)/AMEM.BIN $(BUILD)/banked.json $(BUILD)/doom.map $(BUILD)/doom.lbl \
+	$(BUILD)/doom.dbg $(BUILD)/doom-banked.cfg $(BUILD)/GAME.TABLES $(BUILD)/GAME.INFO \
+	$(BUILD)/banks/banks.json $(BUILD)/link-report.json \
+	$(addprefix $(BUILD)/GBANK,$(addsuffix .BIN,96 97 98 99 $(CONTROL_BANK) 101 102))
+BANKED_STAMP := $(BUILD)/banked.stamp
+BANKED_BUILD_ID := $(abspath $(GAMESRC)) $(abspath $(DATA)) PROFILE=$(PROFILE) CONTROL_BANK=$(CONTROL_BANK) VIDEO_HZ=$(VIDEO_HZ) $(CA65) $(CC65) $(LD65)
+ifeq ($(PROFILE),1)
+BANKED_OUTPUTS += $(BUILD)/profile.json
+endif
+BANKED_MISSING := $(filter-out $(wildcard $(BANKED_OUTPUTS)),$(BANKED_OUTPUTS))
+ifneq ($(strip $(shell cat $(BANKED_STAMP) 2>/dev/null)),$(BANKED_BUILD_ID))
+BANKED_MISSING += configuration
+endif
+ifneq ($(BANKED_MISSING),)
+.PHONY: banked_missing
+$(BANKED_STAMP): banked_missing
+endif
+$(BANKED_OUTPUTS): $(BANKED_STAMP)
+$(BANKED_STAMP): $(BANKED_DEPS) $(DATA_STAMP)
+	$(PYTHON) tools/build_banked.py --build $(BUILD) --data $(DATA) --source $(GAMESRC) --python $(PYTHON) \
+		--ca65 $(CA65) --cc65 $(CC65) --ld65 $(LD65) --control-bank $(CONTROL_BANK) --video-hz $(VIDEO_HZ) $(if $(filter 1,$(PROFILE)),--profile)
+	$(PYTHON) tools/check_link.py --build $(BUILD) --json $(BUILD)/link-report.json
+	@printf '%s\n' '$(BANKED_BUILD_ID)' > $@
+else
+ifneq ($(wildcard $(BUILD)/banked.json),)
+$(error This BUILD directory contains a banked game; use a separate BUILD for BANKED=0)
+endif
 $(PROGRAM) &: $(OBJS) src/doom.cfg
 	$(LD65) -C src/doom.cfg -m $(BUILD)/doom.map -Ln $(BUILD)/doom.lbl --dbgfile $(BUILD)/doom.dbg \
 		-o $(BUILD)/ $(OBJS) none.lib
 	$(PYTHON) tools/check_link.py --build $(BUILD)
+endif
 
 # --- the disk -------------------------------------------------------------
 disk: $(DISK)
 
-$(DISK): $(PROGRAM) $(DATA_STAMP) tools/build_disk.py | $(DIST)
+$(DISK): $(PROGRAM) $(BANKED_STAMP) $(DATA_STAMP) tools/build_disk.py | $(DIST)
 	$(PYTHON) tools/build_disk.py --build $(BUILD) --data $(DATA) --output $@ \
 		--master $(APPLETINI_ROOT)/software/ProDOS_2_4_3.po
+
+# Keep the instrumented hardware image and matching serial metadata together.
+profile:
+	$(MAKE) PROFILE=1 BUILD=build/profile DISK=$(DIST)/Appletini-DOOM-profile.hdv disk
+	cp build/profile/profile.json $(DIST)/Appletini-DOOM-profile.json
 
 # --- tests ----------------------------------------------------------------
 # the platform tests build their own stand-in configuration (build/standin)
@@ -131,4 +185,7 @@ $(BUILD) $(BUILD)/kernel $(BUILD)/render $(BUILD)/game $(DIST):
 # keeps the converted data and the WAD
 clean:
 	rm -rf $(BUILD)/kernel $(BUILD)/render $(BUILD)/game $(PROGRAM) $(BUILD)/doom.* \
+		$(BUILD)/banks $(BUILD)/banked.json $(BUILD)/banked.stamp $(BUILD)/doom-banked.cfg \
+		$(BUILD)/banklayout.inc $(BUILD)/DOOM.BANKS $(BUILD)/GBANK*.BIN \
+		$(BUILD)/GAME.TABLES $(BUILD)/GAME.INFO $(BUILD)/AMEM.BIN $(BUILD)/link-report.json \
 		$(BUILD)/tables.stamp build/standin $(DIST)

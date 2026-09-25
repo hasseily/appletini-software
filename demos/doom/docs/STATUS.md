@@ -1,250 +1,372 @@
-# Doom port: status after phase 2, and the memory problem
+# Doom port status
 
-Written for a pause: phase 2 (the 6502 renderer and the game logic) is
-done and verified, but the game does not fit its address space. This
-file records where things stand, the numbers, and the options with what
-each one yields, so the decision can be taken with everything in view.
-Sections 4, 7, 8 and 9 of DESIGN.md hold the detail.
+Updated 2026-09-25. **The complete banked game links, boots and runs on the
+physical Appletini.** The former contiguous-RAM link failure is resolved by
+the default `BANKED=1` build. Hardware E1M1 profiling is underway in TURBO;
+the broader gameplay tests currently run in the memory-map emulator.
 
-## 1. What exists and what it passes
+## Memory layout
 
-**Renderer** (`src/render/`, 7.1 and 7.2 of DESIGN.md): BSP walk, walls,
-planes, sky, two-sided middles, sprites, the spectre's fuzz, the weapon,
-animation, extralight and fixed colormaps, in 65C02 assembly. Every
-frame is byte-identical to the Python reference renderer
-(`tools/refrender.py`):
+Game code is loaded once into seven auxiliary language-card banks, each
+linked at `$D000-$FFF9`, with vectors at `$FFFA-$FFFF`:
 
-- `tests/test_render_core.py`: 109 views without things (36
-  deliverables, 6 golden, 9 flat-shaded, 40 random, 15 animation tics,
-  3 colormap views) plus the four limits forced low.
-- `tests/test_render_masked.py`: the same views with the 128 nearest
-  things and the pistol, 76 synthetic scenes (rotations, flipped frames,
-  very near and far, edges, fullbright, spectres, things behind and
-  across two-sided middles, the weapon at nine positions, flashes, a
-  crowd of 120) and forced limits.
+| Bank | Main code group |
+| --- | --- |
+| 96 | Collision and map traversal |
+| 97 | Actors |
+| 98 | AI and sight |
+| 99 | Specials and movers |
+| 0 (base auxiliary LC) | Game control, packet construction, damage and pickups |
+| 101 | Level setup and spawning |
+| 102 | Player and weapons |
 
-Cost: mean 3.5 M cycles a frame with things (p90 6.3-6.9 M, max 7.7 M),
-against the 1.25 M that one 60 Hz frame gives at 75 MHz: 20-25 fps in
-typical views, about 10 fps in the worst. Where it goes: walls 1.25 M,
-planes and spans 0.9 M, wall pixels 0.43 M, BSP/segs/bboxes 0.66 M,
-the masked phase 0.4 M. Per the decision to leave speed until the
-gameplay is validated, nothing has been tuned beyond what the agents did
-while writing it. Memory: main memory and all three language-card areas
-are within about 250 bytes of full; the zero page has 7 bytes free.
+During game execution, RAMRD/RAMWRT are off: ordinary data and pointers use
+main RAM. ALTZP selects the code bank's zero page, hardware stack and language
+card. Main-memory gateways support nested calls and callbacks, preserve
+registers and 54 logical zero-page bytes, and restore suspended hardware
+stacks. IRQ handling borrows the main context. NMI sources must remain disabled.
 
-**Game** (`src/game/`, section 9): vanilla Doom's logic, kept as host C
-(the reference, tested with gcc) with 65C02 assembly twins of the hot
-modules for cc65: player movement and weapons, collision and the
-blockmap, mobj movement and states, sight, monster AI, damage and
-pickups, all 141 line specials and the sector specials (doors, floors,
-stairs, donut, plats, ceilings, crushers, teleporters, lights, switches,
-buttons, scrolling walls), the level flow (exit, intermission, secret
-exit, E1M8 finale, new game, level undo through snapshots and a journal).
+The renderer also needs main RAM. `space.s` saves and restores the two phases'
+contents; all due tics and packet construction share one game phase per
+rendered frame. Only mutable regions are saved each time, including renderer
+self-modified code. Read-only regions come from their initial backing images;
+the view buffer is cleared and the inactive C-stack contents are discarded.
 
-- Host tests: `test_game_core.py` (13), `test_game_monsters.py` (20),
-  `test_game_specials.py` (18 host + 3 lockstep), `test_game_info.py`
-  (tables equal vanilla's info.c and ZDoom's actors).
-- The 6502 build against the host, compared after every tic (positions,
-  momenta, states, random index, weapons, psprites, sectors, lines,
-  level flow, sound counts, the render packet): `test_game_asm.py` (13),
-  `test_game_sim.py` (5: a 290-tic session on E1M1, a barrel, E1M8,
-  29 awake monsters for 300 tics, 14 pickups), the specials' lockstep.
+| Storage | Owner |
+| --- | --- |
+| Main RAM during game phase | Shared helpers, mutable game/level data and actors |
+| Main `$B380-$B7FF` during game phase | 1,152-byte shared path/view/debug scratch, outside posted video windows |
+| Main `$B800-$BFFF` during game phase | Full 2,048-byte C software stack |
+| Bank 125 | Game phase backing storage |
+| Bank 122 | Renderer phase backing storage |
+| Bank 124, `$0200` | 2,600-byte packet: header and up to 128 things |
+| Bank 127, from `$0200` | Game math tables and far game workspace |
+| Bank 1, `$0200-$1FFF` | Far blockmap thing-chain heads |
+| Bank 1, from `$6000` | Immutable object metadata (`GAME.INFO`, 3,060 bytes) |
+| Bank 126 | Specials journal and initial sector snapshots |
+| Banks 2–95 | Converted Freedoom episode 1 data |
+| Bank 0 lower RAM | SHR screen, palette and profiling mailbox |
+| Bank 0 ZP/stack/LC | Control-bank execution context, code and render packet |
 
-These run in a py65 "flat" harness that gives the game 62 KB and code
-windows, not the Apple's memory map: see the problem below.
+Snapshot rollover skips banks 125, 124 and 122. It can use lower RAM in code
+banks after their LC images have been installed, but stops above the converted
+data and renderer-cache bank. Code and lower data RAM are independent storage.
 
-Tic costs (E1M1, far accesses charged at the kernel's rate): standing
-42 K, walking 64-70 K, firing 165-365 K (max 2.3 M: three autoaim
-traces plus the shot), 29 awake monsters: mean 717 K, p90 1.4 M, max
-2.8 M; the render packet 370 K a frame; level load 7-9 M.
+Additional space comes from smaller correctness-preserving level caches,
+selected code/state-table duplication, far blocklink heads and object metadata,
+and reuse of path-intercept scratch during packet preparation. The packet is
+built in spare control-bank LC RAM and published to bank 124 through main
+scratch. Statics and actors retain near pointers. The existing **160 actors**
+at 64 bytes each and **128 visible packet things** are retained; no actor-limit
+reduction or thinker reordering was used to make the new layout fit.
 
-**Platform** (`src/kernel/`, section 8): loader, PAL256 video, spaces,
-far access, VBL clock, frame loop, blit, input; `tests/test_platform.py`
-(27) and `tests/test_disk.py` (6). `tools/a2sim.py` is the test machine.
+`tools/build_banked.py`, `tools/bank_game.py`, and `tools/check_link.py` generate
+and verify the final link, code images, preloads, stack and conservative level
+budget. With the debug readout, the integrated link leaves a 31,780-byte main
+arena and a 1,176-byte margin over its conservative level-plus-160-actor requirement.
+The profiling build has 31,574 arena bytes and a 970-byte conservative margin.
+The largest occupied LC bank is the control bank: 11,963 of 12,282 non-vector
+bytes, including packet storage. Consult generated `link-report.json` after
+changes; these are layout checks, not a guarantee that every larger WAD fits.
 
-Not done: the status bar, title and menus, sound, and the first real
-boot of the whole program (loader + kernel + renderer + game) in the
-simulator, because the link fails.
+## Implemented gameplay and rendering
 
-## 2. The problem: the game is 85 KB, its space is 46.6 KB
+The 65C02 renderer draws the BSP, textured walls/floors/ceilings, sky, masked
+middles, sprites, spectres, weapon layers, animation and lighting. Its separate
+reference tests compare complete frames with `tools/refrender.py`.
 
-The GAME space is RamWorks bank 1, `$0200-$B7FF` (46,592 bytes; the
-C stack takes `$B800-$BFFF`). The game's segments today (`od65
---dump-segsize` of `build/game/*.o`; the last two are reused as level
-memory after the level is set up):
+The game implements player movement and weapons, collision/blockmap traversal,
+actor states, sight, monster AI, damage, pickups, line/sector specials, movers,
+lights, switches, buttons and scrolling walls. Level flow includes exits,
+secret exits, intermission/finale states, restart and restoration of changed
+map data. The C implementation remains the gameplay reference.
 
-| Segment | bytes | What |
-|---|---|---|
-| CODE | 49,134 | assembly 41.5 K (a_map 6.0, a_mobj 5.5, a_movers 4.7, a_enemy 4.6, a_maputl 4.0, a_spec 3.7, a_user 3.6, a_sight 3.0, a_levdata 2.6, a_inter 2.6, a_view 1.9, fixed 1.9, gwork 0.6, kglue 0.1); C 5.7 K (p_spawn 1.5, p_setup 1.4, g_game 1.0, m_misc 0.5, ...); cc65 runtime 2.0 K |
-| RODATA | 6,919 | states 3.0 K, mobjinfo 3.1 K, spec_tab 0.4 K, rndtable, small tables |
-| BSS | 13,322 | level-data caches 4.8 K, rview (render packet, 128 things) 2.6 K, g_game 2.7 K, a_maputl 1.3 K, intercepts 1.2 K, fixed 1.1 K, sight caches 0.9 K, a_view 0.9 K, candidates 0.8 K, W 0.3 K |
-| resident | **69,375** | |
-| GFAR | 8,194 | far tables, copied to the game's far bank at boot; then level memory |
-| GOVL | 5,347 | set-up overlay (read back before each level); then actor slots |
-| total in the image | **82,916** | |
+Still unfinished:
 
-Plus level memory (blockmap chains, sector arrays, line marks, thinker
-blocks, statics, reserve; the GFAR + GOVL bytes, 13.5 K, are the only
-room for it now) and 64 bytes per awake actor:
+- HUD/status bar, title/menu UI, and intermission/finale presentation. Their
+  assets and game state exist; screens and menu interaction do not. Esc only
+  sets an input flag.
+- Audible effects and music. `S_StartSound` records effect IDs in the existing
+  eight-entry event history and increments a counter; no Phasor playback
+  backend consumes it yet.
+- Prolonged physical play across all nine maps and broader TURBO profiling.
 
-| map | E1M1 | E1M2 | E1M3 | E1M4 | E1M5 | E1M6 | E1M7 | E1M8 | E1M9 |
-|---|---|---|---|---|---|---|---|---|---|
-| skill 2 | 9,963 | 13,155 | 13,434 | 14,914 | 13,148 | 17,010 | 22,368 | 6,534 | 13,421 |
-| skill 4 | 10,331 | 13,891 | 14,666 | 15,922 | 13,740 | 18,914 | 23,936 | 6,550 | 13,741 |
+## Verification
 
-So the whole game with E1M7 on ultra-violence and, say, 100 awake actors
-wants about 69 + 24 + 6.4 = **100 KB**, against 46.6 KB. The linker
-today stops at "CODE overflows GAME by 4,462 bytes" (CODE alone), and
-"GZP overflows KZP by 1 byte" (the game wants 8 bytes of zero page; the
-kernel and renderer leave 7).
+The new tests complement the existing host C, flat 65C02, renderer, converter,
+platform and disk suites:
 
-## 3. Hardware facts that bound the options
+| Suite | Checked behavior |
+| --- | --- |
+| `test_game_banks.py` | Actual memory mapping; nested A→B→A and main-kernel calls; 54-byte context; IRQ injection at instruction boundaries |
+| `test_game_banked.py` | All nine converted maps at Nightmare with 160 actor slots and an intact stack guard; E1M1/E1M8 differential movement, weapons, monsters, RNG, inventory and packets |
+| `test_game_far_data.py` | Existing gameplay-equivalence sessions with far heads/metadata and smaller caches; flat-harness fetch-alias regression |
+| `test_game_snapshots_banked.py` | Snapshot rollover, reserved-bank preservation, sector roundtrip and allocation-floor failure |
+| `test_banked_link.py` | Bank capacities, image/preload consistency, layout budgets and partition regressions |
+| `test_doom_banked_platform.py` | Assembled ProDOS loader through FakeProDOS; exact LC/table/metadata installation; real kernel copies and phase changes; four nonblank, changing SHR frames driven by keyboard/mouse input |
 
-Verified in appletini-one's HDL (`hdl/globals.sv`, the vTW translator)
-and the kernel measurements:
+Observed stack writes in the banked gameplay samples used 64 bytes of the
+2 KiB software stack and at most 41 bytes of any hardware stack. These are
+sample maxima, not proofs for every gameplay path. The full reservations remain.
 
-1. A RamWorks bank is a whole 64 KB: with ALTZP on, the zero page, the
-   stack and the language card (`$D000-$FFFF`) come from the selected
-   bank too. So code in a bank's language card disappears when the bank
-   register changes, like code in its `$0200-$BFFF`.
-2. RAMRD and RAMWRT choose main or "aux", and aux is the one bank that
-   `$C073` selects. There is no way to read one bank and write another
-   in the same instruction: bank-to-bank data goes through main memory,
-   the main language card or the zero page (a bounce).
-3. Every `$C0xx` access costs a 1 MHz bus cycle, about 73 cycles at
-   75 MHz (TURBO waits for the mirror). A space switch is 2-3 of them,
-   a bank switch 1. Hence the kernel's far access from GAME space costs
-   about 360 cycles fixed plus 37 a byte (RENDER space: 16 a byte). A
-   bounce written for it could reach about 300 + 24 a byte, no better.
-4. Main memory (`$0200-$BFFF`) and the main language card are the
-   renderer's and the kernel's, and full. The renderer must live in main
-   memory: its inner loops read a texture bank with RAMRD on and write
-   the view buffer in main memory, which is the only arrangement fact 2
-   allows.
-5. The view buffer (13.4 KB of main memory) is dead between the blit
-   and the next `render_frame`, i.e. while the tics run, but only as
-   scratch: nothing in it survives a frame.
+The flat harness still uses synthetic instruction windows. The legacy
+single-bank layout remains too small for the complete game; current capacity
+tests check the real banked layout. The banked tests use the same mapping for
+instruction and data fetches. The standalone banked game harness
+traps far transport; the complete platform test also executes the real kernel
+transport and loader.
 
-The largest fast address space the machine can give the game is
-therefore **one RamWorks bank with ALTZP on**: `$0200-$BFFF` (47.5 KB)
-plus its own language card (16 KB, of which 12 KB contiguous), its own
-zero page (256 bytes) and its own stack: about **63.3 KB** after the
-kernel's trampolines. Everything beyond that is "far" at the cost in
-fact 3, or lives in an overlay.
+## Performance status
 
-## 4. Options, with what each yields
+The first serial capture contains 118 completed frames in about 59.7 host
+seconds: approximately **1.98 FPS**. The earlier visual estimate was about
+3 FPS. That capture exposed an IRQ-counting defect: 4,583 purported VBLs on
+a 50 Hz machine inflated elapsed time to 91.7 seconds and understated rates.
+Both IRQ routes now qualify the mouse-card VBL cause before advancing the
+clock; the host report also checks its elapsed time against the Mac clock.
+The second capture (build `efd1f27f`) has 2,957 VBL counts in 60.0 host seconds,
+consistent with 50 Hz. It reports 135 frames and 540 tics: **2.28 FPS / 9.13 TPS**
+using VBL time, or **2.25 FPS / 9.00 TPS** over the host window. The latter is
+about 14% faster than the first capture on the same timing basis. The IRQ fix
+and first packet optimization were combined, so this does not isolate their
+individual gains. Packet construction still receives 29.7% of samples, walls
+19.7%, game tics 13.6%, and the two phase copies together 17.7%.
 
-**A. GAME space with ALTZP on** (+16.7 KB and the zero page). Needs in
-the kernel: a trampoline in bank 1 (`$0200-$BFFF`, visible in both
-ALTZP states) that switches ALTZP off, copies the call's parameters into
-the kernel's zero page, calls the jump table, and switches back (+146
-cycles per kernel call, i.e. +40% on a far read); the same in reverse
-for `call_game`; a vector table and an IRQ stub in bank 1's language
-card (`ALTZP off; jsr kernel irq body; ALTZP on; rti`); the loader
-writing a bank-1 language-card image (a fourth image file); the
-simulator modelling the per-bank card (today it has one aux card). The
-game gets 256 bytes of zero page (the W slots and the 8-byte GZP go
-there, which also makes the assembly faster) and 12-16 KB more. This is
-the one option that changes the ceiling; everything else is a diet.
+The first packet optimization replaces two per-static-object metadata fetches
+with a generated 90-byte flag table in code bank 100. Across the same three
+steady model frames, metadata reads fell from 579 to zero, packet cycles
+from 3,661,545 to 1,255,769 (**65.7% less**), and total CPU cycles from
+31,112,724 to 28,707,896 (**7.7% less**). It uses 84 additional code-bank bytes
+and no additional main RAM. These are model measurements, not hardware gains.
 
-**B. Cold code in overlays** (loaded from far memory into a window
-when needed, as the level set-up already is): the movers' set-up code
-(EV_DoDoor, EV_DoFloor, EV_BuildStairs, plats, ceilings, teleport: about
-4 KB, run when a line is triggered), the specials' use/cross/shoot
-dispatch (about 2 KB), damage and pickups (2.6 KB, run on hits),
-p_setup's resident part (1.4 KB), the level flow (1 KB), m_misc (0.5 KB).
-About 11 KB out, a 4-5 KB window in: **net 6-7 KB**, at about 150-200 K
-cycles per overlay load, i.e. per door opened or item picked up (a
-tenth of a frame; acceptable) but not per tic. The missile spawners and
-the sight code must stay resident (they run every second or every tic).
+Profiling build `61904a52` moves the shared path/view/debug scratch from main HGR
+addresses to `$B380-$B7FF`. An E1M1 trace counted 8,306 scratch writes per frame,
+91% of packet construction's writes into main posted video windows. The local
+TURBO implementation batches these writes, then drains the queue at bank
+steering operations. Moving scratch avoids that traffic without changing the
+level arena capacity or stack reservation. These write counts describe traffic;
+PSRAM/cache costs and periodic sampling also affect the phase shares.
 
-**C. Tables and buffers**: mobjinfo (3.1 KB) far, read at spawn and on
-damage; the render packet capped at 64 things (-1.3 KB); the C stack cut
-to 512 bytes, the C being small now (-1.5 KB); the level-data caches
-trimmed (-1 KB, costs speed): **about 5-7 KB**.
+The third hardware capture tested that relocation: **2.30 FPS / 9.20 TPS**
+over 60.0 VBL-calibrated seconds (138 frames), with packet construction still
+at 28.9%. The less-than-1% FPS difference from the second run does not establish
+a useful gain. TURBO was already handling that posted traffic efficiently
+enough that removing it did not improve this workload meaningfully.
 
-**D. Level memory far with caches, hot subset resident.** The map data
-(lines, sectors, nodes, blockmap) is already far with caches and the
-tics are within budget, so the same pattern extends to level memory:
-statics (dormant things: E1M7 about 5 KB) far with a short list of the
-ones that animate; line marks and thinker blocks far; the blockmap thing
-chains (E1M7 about 4 KB), the dynamic sector state (about 2 KB) and the
-actor pool resident. Actors have to be capped (their pool is the largest
-hot item: 64 bytes each); with 96 slots, 6 KB. Awake monsters beyond
-the cap would stay dormant, which is a visible difference from vanilla
-on the crowded maps at ultra-violence. Hot level memory: **about 13 KB**.
+Build `afed1603` moves the control/packet LC bank from extended bank 100 to base
+auxiliary bank 0, preserving the code and algorithm. In the local HDL, base
+auxiliary code/ZP/stack use BRAM while extended-bank accesses compete through
+a shared eight-byte PSRAM cache. This targets the memory behavior missing
+from instruction-cycle profiling. Bank 100 remains its boot staging area;
+an explicit loader table installs the image after ProDOS finishes without
+overwriting the staged renderer or display. A separate `CONTROL_BANK=100`
+build remains available for comparison. The target firmware is newer than the
+local checkout; its exact cache geometry remains unverified.
 
-**Tally of A + B + C + D**: resident 69.4 - 7 - 6 = 56.4 KB, plus the
-overlay window (counted in B), plus hot level memory 13 KB = 69.4 KB
-against a 63.3 KB pool. **Still about 6 KB short**, before any margin;
-so the actor cap would have to be lower (64: 4 KB), the caches smaller,
-and more of the code cold (the monsters' pain/death/pickup paths,
-the switches and lights) — each of which costs speed or fidelity. It
-fits only just, and it is a large, cross-cutting change to code that
-is verified today.
+The fourth hardware capture confirms a substantial benefit: **3.22 FPS /
+12.87 TPS**, 192 frames in 59.68 VBL-calibrated seconds, or 3.20 FPS over the
+60.0-second Mac window. Both clocks show about **40% more FPS** than v3.
+Dividing periodic samples by frame count gives the following coarse costs:
 
-**Rejected** (why, for the record):
-- Code mirrored in two banks with data split between them: the code is
-  49 KB of the 64, so two banks give less data room than one with ALTZP.
-- Two banks as two spaces (say, the monsters in bank 2): they share the
-  actors, the sectors and the map caches at every step.
-- Swapping the homes (game in main memory, renderer in a bank): fact 4;
-  and main memory is no larger.
-- Game state in the dead view buffer or in main memory: nothing there
-  survives a frame; saving and restoring 13 KB costs 640 K cycles a
-  frame.
-- Per-tic code overlays (swap the monsters' code in and out each tic):
-  10 KB a tic at 37 cycles a byte is 370 K.
-- Actors far: a thinker's actor round trip is about 4 K cycles; twenty
-  awake monsters would cost 80 K a tic before doing anything.
+| Phase | v3 sampled ms/frame | v4 sampled ms/frame |
+| --- | ---: | ---: |
+| Packet | 125.8 | 7.0 |
+| Walls | 89.0 | 85.3 |
+| Game tics | 59.3 | 58.9 |
+| Both phase copies | 75.8 | 76.1 |
+| Planes | 35.8 | 35.6 |
 
-## 5. Where fidelity could be traded instead
+These are sampled estimates, not exact timers. Other work is broadly steady;
+its larger percentage reflects the packet time removed. The result strongly
+supports extended-bank memory access as the former packet bottleneck.
 
-If the ceiling of 63 KB is taken as the frame, the honest question is
-what to leave out of vanilla's logic rather than where to hide it:
+Build `5ec12366` saves/restores only through the allocator's
+page-rounded live endpoint, instead of copying unused space up to `$B800`.
+E1M1 leaves roughly 16 KiB unused, avoiding that traffic in each direction.
+The first load remains complete, and new allocations extend the next saved
+range automatically. An eight-byte unrolled loop also reduces per-byte CPU
+overhead. The model shows 33.2% less copy-phase instruction work and 8.2% less
+total CPU work across three steady E1M1 frames. The v5 hardware capture measures
+**3.32 FPS / 13.28 TPS**, 199 frames in 59.96 VBL-calibrated seconds (3.32 FPS
+over the 60.00-second Mac window). This is a modest 3.2% VBL-calibrated gain
+over v4; the two copies together fall from about 76.1 to 66.9 sampled ms/frame.
+The instruction model overstates the improvement on this workload. Tests cover exact
+page boundaries, growth/shrinkage, skipped-tail canaries and stack preservation.
 
-- The specials beyond E1's 42 line types cost little (one table), but
-  the movers' code for stairs, donut, crushers and plats is 2-3 KB of
-  assembly that E1 uses rarely or never (donut and crushers: never).
-- The intermission, finale and level undo (snapshots and the journal:
-  about 2 KB resident, the rest far) could be simplified to a restart
-  from a fresh load if level memory were reloaded from the WAD images
-  (it cannot be today: the game rewrites the converted sector records in
-  place).
-- Autoaim's three traces on every shot, and the 128-thing render packet,
-  are the two biggest per-frame costs and also memory.
-- The actor cap (D) is the one that changes what the player sees.
+Build `d18e857a` changes textured wall/sky column drawing to two passes: fetch
+the column's raw texels into the existing main-LC `kbuf`, then apply its
+colormap and write the pixels. Previously every pixel alternated texture and
+colormap reads through the shared PSRAM cache. Main BRAM writes do not evict
+that cache in the local HDL, so the buffer stores preserve texture locality.
+No additional RAM is allocated; code grows by nine bytes. The model executes
+about 1.0% more CPU cycles overall. The v6 hardware capture measures **3.41 FPS /
+13.66 TPS**, 204 frames in 59.74 VBL-calibrated seconds (3.38 FPS over the
+60.33-second Mac window). This is 2.9% faster by VBL time and 2.0% by Mac time
+than v5. Walls fall from 86.8 to 79.0 sampled ms/frame, consistent with a
+modest locality benefit; periodic sampling is not an exact timer.
+Thirteen complete reference frames match
+exactly, including masked walls, sprites and different lighting. Direct queue
+tests cover bounds, wraparound, bank changes, overlapping pieces and VBL IRQs
+during both passes; all five profiling runtime tests also pass.
 
-## 6. Test status at the pause
+Build `bbc57588` targets the next gameplay bottleneck. The static-object update
+loop moves 275 code bytes from actor LC bank 97 into main game RAM. A three-byte
+LC jump preserves its existing bank context, local helper calls and public
+gateways. Four cursor-refresh calls are inlined. On one stationary E1M1 model
+frame (four tics after two warmup frames), actor-LC byte reads fall from 70,906
+to 14,210 and actor-stack accesses from 5,988 to 2,000. These include instruction
+fetches; they are access counts, not hardware timings. Gameplay CPU cycles fall
+from 301,547 to 289,606. The profiling build retains 970 bytes of conservative
+arena margin and all 160 actor slots. All nine maps load at Nightmare; two-map
+gameplay differential tests, complete loader/frame-handoff tests, all five
+profiling runtime tests and 22 link/partition tests pass. The v7 hardware capture
+measures **3.71 FPS / 14.85 TPS**, 220 frames in 59.26 VBL-calibrated seconds
+(3.67 FPS over the 60.00-second Mac window). This is an 8.7% gain by VBL time
+and 8.4% by Mac time. Game tics fall from 54.9 to 29.2 sampled ms/frame; walls
+remain about 80 ms/frame. The larger wall and copy shares mainly reflect the
+gameplay time removed, not equivalent increases in their absolute costs.
 
-See the end of this file for the run made at the pause (`make test`
-covers the platform, disk, converter, reference renderer, game and
-renderer suites; the renderer suites need `RENDER_GAMESRC` pointing at
-the game snapshot in `build/rtrack/gamesnap`, and the game lockstep
-suites their flat harness, until the link fits).
+Build `7aafbe11` applies the two-pass read ordering to floor/ceiling spans:
+gather raw flat texels into existing `kbuf`, then shade and write with the
+84-byte stride. The loop grows 21 bytes; moving the immutable 28-byte
+`span_setrow` helper to text RAM leaves nine bytes free in LC1 and 20 in RTEXT.
+No RAM buffer is added. Thirteen full-frame reference comparisons, 16 direct
+span executions (including wrapping, boundary checks and IRQs in both passes),
+and five profiling runtime tests pass. The instruction model adds 1.9% total
+CPU work. The v8 hardware capture measured **3.73 FPS / 14.92 TPS**: no useful
+gain over v7 established.
 
-The main link (`make`) fails on the overflows in section 2. The renderer
-links and runs on its own (`make BUILD=build/rtrack/
-GAMESRC=build/rtrack/gamesnap`); the game runs on its own in the flat
-py65 harness.
+Build `0355b9eb`, `dist/Appletini-DOOM-profile-v9-pal.hdv`, introduced the PAL
+game-clock correction. It starts at 50 Hz; V selects 50/60 Hz for both gameplay
+and measurement. Its scheduler targeted 35 TPS, permitted 16 catch-up tics per
+frame, and accounted for
+elapsed time with an atomic 16-bit VBL snapshot. Nine clock regression tests,
+the legacy clock test, six readout tests, link checks, disk-file hash checks
+and a loader/gameplay smoke run passed. The smoke run rendered six frames
+and executed 66 tics with movement. Its emulator uses a 60 Hz clock and does
+not validate hardware PAL or TURBO performance. Subsequent hardware testing
+rejected v9: the user reported much worse controls and lower rendered FPS
+with the longer catch-up batches.
 
-## 7. What was not touched, per the decision on speed
+The v10 candidate, build `ade36695`, is
+`dist/Appletini-DOOM-profile-v10-pal.hdv` with matching
+`dist/Appletini-DOOM-profile-v10-pal.json`. It restores at most **four game
+tics per rendered frame**. Excess due tics are counted and dropped without a
+backlog. Game time therefore deliberately slows at low FPS. The 50 Hz default,
+16-bit elapsed VBL clock, accurate readout and exact dropped-tic accounting
+remain; the scheduler reaches 35 TPS when the machine is fast enough.
+Ten candidate clock tests and the stand-in clock test pass. An assembled-loader
+33 MHz model run with W held boots and completes six frames with 21 tics
+(`1, 4, 4, 4, 4, 4`) without a crash. One frame crosses line 0, an existing
+model presentation-timing artifact; the run does not establish hardware
+performance or presentation quality.
+v10 hardware performance and control feel still need testing.
 
-The renderer's speed (3.5 M cycles a frame against 1.25 M) and the
-firing and monster tic peaks are recorded but not worked on: the
-gameplay is to be validated first. The memory problem above is not a
-speed matter: it stops the program from linking at all.
+### v11: optional ARM copy/fill API
 
-## Test run at the pause (commit 37075e4)
+Build `ac9e0e63` is `dist/Appletini-DOOM-profile-v11-amem-pal.hdv`, with matching
+`.json` metadata. Image size is 4,472,832 bytes; SHA-256:
+`a50a75cb7153ecdb1cc9bfe4950d2b6034966ddc34e029982c0ddc148bba2c61`.
 
-| Suite | Result |
-|---|---|
-| tests/test_platform.py | 27 OK |
-| tests/test_game_core.py | 13: OK but 1 expected failure (the bank-1 link) and 1 error (`GameSpaceBudgetTest` cannot link the combined game in its 64 KB measuring map) |
-| tests/test_game_asm.py | 13 OK |
-| tests/test_game_info.py | 5 OK (4 skipped without the vanilla/ZDoom sources) |
-| tests/test_game_sim.py | 5 OK (lockstep) |
-| tests/test_game_monsters.py | 20 OK |
-| tests/test_game_specials.py | 21 OK (18 host, 3 lockstep) |
-| tests/test_render_core.py (`RENDER_GAMESRC=build/rtrack/gamesnap`) | 10 OK |
-| tests/test_render_masked.py (same) | 8 OK |
+It retains PAL 50 Hz and the four-tic limit. At startup, the resident helper
+probes the Appletini SmartPort memory API. Supported firmware executes phase
+copies and the internal view-buffer clear on ARM. Stock firmware uses the
+existing CPU loops. Pre-execution `$60` can also disable the API safely;
+other execution failures stop without retrying partially changed memory.
+
+Three 256-byte overlays reuse the existing LC `kbuf`. Their immutable source
+is in renderer bank 122 at `$B800–$BAFF`, outside the saved renderer extent.
+The existing main arena stays at 31,551 bytes. Resident free space is 29 bytes
+in LC1, 17 in LCHI, 82 in LC2. The visible SHR blit still uses the existing
+display path; all new MAIN writes explicitly opt into PRIVATE working memory.
+
+Firmware implementation is pushed to `appletini-one` on branch
+`codex/memory-copy-fill-api`: API commit `d87c8c4`, followed by the F1.1.2
+version bump in `86b9922`, based on `b9fcdef` (F1.1.1 code plus subsequent
+shipping documentation). `README_MEMORY_API.md` specifies
+the wire format, safety/visibility contract, examples and PC build commands.
+No RTL change or firmware binary was produced. The broad flush work remains
+deferred, and hardware speedup is unmeasured.
+
+Checks passed: eight assembled API tests, 24 link guards, ten clock tests,
+five profiling runtime tests, and 21 serial/profiling tests. The firmware's
+actual C parser passes eight native test groups; its hardware backend passes
+576 fake-MMIO alignment/direction cases, plus edge/failure checks. Native
+syntax checks include SmartPort dispatch and the DMA helper. Both firmware
+suites run with ASan/UBSan; these do not replace a Vitis build or FPGA tests.
+
+The release's actual assembled loader boots through the model's ProDOS shim
+with unsupported and supported SmartPort firmware. Both complete four moving
+frames, producing identical game packets and image hashes, with tics
+`1, 5, 9, 13`. The API path makes 37 requests and finishes at status `$00`;
+the fallback probes once and reports `$21`. Overlay bytes remain intact and
+all five program-file hashes inside the HDV match the release metadata.
+Reports are in `build/profile-v11-amem-pal/acceptance-*.json` and
+`release-verification.json`. These runs prove function, not hardware speed.
+
+CPU holds can merge VBL IRQs, so serial captures of API-capable builds use
+host elapsed time for FPS/TPS and report resident API availability/status.
+VBL phase shares may undercount transfer time; the on-screen rates are not
+authoritative during long holds. Use the same v11 disk on both firmwares for
+the A/B measurement, then compare v10 versus stock-firmware v11 for reload cost.
+
+The opt-in
+`make profile` image now samples 13 phases on the existing VBL IRQ and publishes
+a versioned, coherent snapshot in base auxiliary RAM for the serial console.
+`tools/profile_hardware.py` captures raw snapshots, FPS/TPS, phase sample shares,
+firmware status, and JSON/CSV reports. Periodic samples can phase-lock; these
+shares are coarse evidence, not high-resolution phase timings. The sampler
+adds no timer peripheral reads. A VIA clock was deferred because the local
+firmware's sound-card accesses trigger a CPU slowdown window.
+
+`tools/profile_doom.py` attributes instruction/cycle costs to physical code
+banks, functions and phases, and counts bank gateway edges and far transfers.
+An execution-preservation test compares a profiled machine with an ordinary
+runner, including all memory, registers, mappings and cycle totals. See
+[profiling instructions](PROFILING.md) for a repeatable hardware/model workflow.
+
+
+The hardware build now displays FPS and TPS in the bottom strip. It measures
+completed frames and game tics over at least two seconds of mouse-card VBL
+interrupts. **V** selects the **60HZ/50HZ** game clock and resets the
+sample window; match the machine's NTSC/PAL clock. The readout uses no CPU-speed
+estimate, adds 67 bytes of game BSS, and draws only seven rows per refresh.
+The scheduler targets 35 TPS at either rate and permits up to four tics per
+rendered frame, dropping excess due tics without a backlog. At lower frame
+rates simulation deliberately slows. A PAL image can start at 50 Hz with
+`VIDEO_HZ=50`.
+See the README for hardware-test instructions.
+
+A provisional profile of the first integrated build, before phase-copy and
+packet optimizations, measured about **12 million model cycles per rendered
+frame** in three steady E1M1 frames (four tics per frame). Approximately 55%
+was rendering, 26% phase copying, 17% game/packet work and 2% presentation.
+Bank gateway code accounted for roughly 63% of game time, or 11% of the frame.
+These figures identify optimization targets and are not a current FPS promise.
+Phase-copy and packet batching changes have since reduced a comparable idle
+sample to about **10.8 M model cycles/frame**, with phase copies around
+**2.38 M** (previously 3.13 M). The final integrated input-driven test measured
+10.99–11.39 M model cycles/frame. A separate 33 MHz model run completed six
+rendered frames over 180 model VBL intervals, including initialization, and
+reported one blit crossing line 0. Presentation can therefore straddle a frame
+publication in that preset. None of these is a hardware frame-rate result.
+
+The Python harness's mode named `turbo` uses a nominal 75 MHz CPU budget and
+a fixed I/O surcharge; it is not hardware TURBO emulation. A conventional
+33 MHz emulator run is also separate from target TURBO. The harness does not reproduce the target's full PSRAM/cache, batching or synchronization
+timing. **TURBO batches video writes**; treating each pixel write as a
+synchronous 1 MHz bus transaction would give the wrong performance model.
+The target firmware's actual behavior must be measured before claiming a
+hardware frame rate.
+
+## Build and next work
+
+From `demos/doom`, run `make`, `make disk`, and `make test`. Run the integrated
+model with `python3 tools/run_doom.py --build build --data build/data --speed 33 --frames 180`.
+See [the README](../README.md) for dependencies and stand-in/reference builds.
+
+Next work is to reduce measured phase/gateway/render cost, finish UI and audio,
+and continue validating gameplay and performance on the user's TURBO target.
+The earlier options analysis is retained in [BANKING_OPTIONS.md](BANKING_OPTIONS.md)
+with an implementation update; the rejected general claim that code banking
+cannot solve the fit problem no longer applies.

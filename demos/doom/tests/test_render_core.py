@@ -3,7 +3,7 @@
 
 The linked program (the renderer track's build, BUILD below) runs in the
 py65 test machine through tools/doomdbg.py: a view goes into the render
-packet (_rview in bank 1, nthings = npsprites = 0), render_map selects the
+packet (the build's published packet, nthings = npsprites = 0), render_map selects the
 map, render_frame runs, and the view buffer must equal, byte for byte,
 tools/refrender.py's Renderer.render of the same view with no things and no
 weapon (walls, planes, sky and the two-sided middle textures;
@@ -66,6 +66,9 @@ class RenderSim:
         self.dbg = doomdbg.Dbg(frames=0, build=build, data=DATA)
         self.m = self.dbg.m
         self.L = self.dbg.L
+        meta = self.dbg.d.banked
+        self.packet_bank = meta["packet_bank"] if meta else 1
+        self.packet_address = meta["packet_address"] if meta else self.L["_rview"]
 
     # the language card as the renderer sees it ($E000 area and bank 1 $D000)
     def lc_write(self, label: str, value: int) -> None:
@@ -86,8 +89,8 @@ class RenderSim:
         pk[16:18] = (tic & 0xFFFF).to_bytes(2, "little")
         pk[18] = 0          # nthings
         pk[19] = 0          # npsprites
-        rv = self.L["_rview"]
-        self.m.bank_memory(1)[rv:rv + len(pk)] = pk
+        rv = self.packet_address
+        self.m.bank_memory(self.packet_bank)[rv:rv + len(pk)] = pk
 
     def render(self) -> tuple[bytes, int]:
         cycles = self.dbg.call("render_frame", limit=200_000_000)

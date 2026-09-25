@@ -28,7 +28,7 @@
 
 
 .import set_pos, unset_pos, is_static, info_ptr, ret_w, call_ax, cf_ptr
-.import actor_cell, static_cell, find_link, line_get
+.import actor_cell, static_cell, find_link, line_get, write_link
 .import _P_UnlinkStatic, _P_ArenaAlloc, _P_ArenaPool, _P_RejectVisible, _arena_bounds
 .import try_move, thing_zh, _P_SlideMove, _ceilingline
 .import w_mov, w_add, w_sub, w_neg, w_abs, w_zero, w_cmp, w_sign, w_ldi, w_fix
@@ -363,6 +363,11 @@ _P_InitMobjs:
 ; void P_ExtendPool(void): the set-up overlay's bytes (up to arena_bounds[4])
 ; become free actor slots, up to MAXACTORS in all
 _P_ExtendPool:
+.ifdef BANKED_GAME
+        ; The main-memory arena allocated all MAXACTORS at setup. Code
+        ; remains in its LC banks and contributes no reclaimed slots.
+        rts
+.else
         lda     _nummobjs
         cmp     #MAXACTORS
         bcs     @rts
@@ -405,6 +410,7 @@ _P_ExtendPool:
         inc     _nummobjs
         bra     _P_ExtendPool
 @rts:   rts
+.endif
 
 ; alloc_actor: an actor slot, zeroed -> A/X (0: none); C set: one must
 ; exist (else kernel_crash CRASH_MOBJS). When the free list is empty a
@@ -848,10 +854,8 @@ _P_WakeStatic:
         ldy     #MO_BNEXT+1
         sta     (ptr3),y
         lda     ptr3
-        sta     (ptr2)
-        ldy     #1
-        lda     ptr3+1
-        sta     (ptr2),y
+        ldx     ptr3+1
+        jsr     write_link
 @linked:
         lda     _sview_src
         cmp     ws_s
@@ -2371,6 +2375,14 @@ _P_RemoveMobj:
 
 ; ---- the statics' tic ----------------------------------------------------------------------------
 ; void P_RunStatics(void)
+; This pointer refresh is on the per-static hot path. Inline the ten bytes
+; to avoid a JSR/RTS and its auxiliary-stack accesses on every refresh.
+.macro RS_GPT
+        lda     rs_s
+        sta     gpt
+        lda     rs_s+1
+        sta     gpt+1
+.endmacro
 _P_RunStatics:
         lda     _statics
         sta     rs_s
@@ -2383,7 +2395,7 @@ _P_RunStatics:
         cmp     _statics_end+1
         bne     :+
         rts
-:       jsr     rs_gpt
+:       RS_GPT
         ldy     #SO_SFLAGS
         lda     (gpt),y
         and     #SF_FREE
@@ -2409,7 +2421,7 @@ _P_RunStatics:
         ora     rs_st+1
         bne     @live
         ; the end of its states: gone
-        jsr     rs_gpt
+        RS_GPT
         ldy     #SO_SFLAGS
         lda     (gpt),y
         and     #SF_NOBLOCK
@@ -2428,7 +2440,7 @@ _P_RunStatics:
         beq     @quiet
         cmp     #AC_Look
         bne     @wake
-        jsr     rs_gpt
+        RS_GPT
         ldy     #SO_SFLAGS
         lda     (gpt),y
         and     #SF_DORMANT
@@ -2448,7 +2460,7 @@ _P_RunStatics:
         ldx     rs_st+1
         jsr     set_state
         bra     @next
-@quiet: jsr     rs_gpt
+@quiet: RS_GPT
         ldy     #SO_STATE
         lda     rs_st
         sta     (gpt),y
@@ -2470,11 +2482,7 @@ _P_RunStatics:
         inc     rs_s+1
         jmp     @loop
 
-rs_gpt: lda     rs_s
-        sta     gpt
-        lda     rs_s+1
-        sta     gpt+1
-        rts
+.delmacro RS_GPT
 
 ; Z clear iff the dormant static gpt's A_Look may succeed: its sector heard
 ; a noise, or REJECT lets it see the living player's sector
