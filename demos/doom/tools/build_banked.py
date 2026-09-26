@@ -23,10 +23,12 @@ def configuration(build: Path, banks: Path, overlay_run: int = 0xE000) -> str:
     cfg = cfg.replace('start = $0200, size = $B600, type = rw;',
                       'start = $0200, size = $B180, type = rw;')
     cfg = cfg.replace('    # the loader\n',
-                      '    AMEMSTORE: file = "%OAMEM.BIN", start = $B800, size = $0300, type = ro;\n'
+                      '    AMEMSTORE: file = "%OAMEM.BIN", start = $B800, size = $0500, type = ro;\n'
                       f'    AMEMCOPYRUN: file = "", start = ${overlay_run:04X}, size = $0100, type = rw;\n'
                       f'    AMEMPROBERUN: file = "", start = ${overlay_run:04X}, size = $0100, type = rw;\n'
                       f'    AMEMFILLRUN: file = "", start = ${overlay_run:04X}, size = $0100, type = rw;\n'
+                      f'    AMEMGAMERUN: file = "", start = ${overlay_run:04X}, size = $0100, type = rw;\n'
+                      f'    AMEMRENDERRUN: file = "", start = ${overlay_run:04X}, size = $0100, type = rw;\n'
                       '    GZPMEM: file = "", start = $0040, size = $0008, type = rw;\n'
                       '    ISCRATCH: file = "", start = $B380, size = $0480, type = rw, define = yes;\n'
                       '    TABLES: file = "%OGAME.TABLES", start = $0200, size = $BDF0, type = ro;\n'
@@ -40,6 +42,8 @@ def configuration(build: Path, banks: Path, overlay_run: int = 0xE000) -> str:
                       '    AMEMCOPY: load = AMEMSTORE, run = AMEMCOPYRUN, type = rw, define = yes;\n'
                       '    AMEMPROBE: load = AMEMSTORE, run = AMEMPROBERUN, type = rw, define = yes;\n'
                       '    AMEMFILL: load = AMEMSTORE, run = AMEMFILLRUN, type = rw, define = yes;\n'
+                      '    AMEMGAME: load = AMEMSTORE, run = AMEMGAMERUN, type = rw, define = yes;\n'
+                      '    AMEMRENDER: load = AMEMSTORE, run = AMEMRENDERRUN, type = rw, define = yes;\n'
                       '    GBSTUBS: load = GAME, type = ro;\n'
                       '    GBANKCODE: load = GAME, type = rw;\n'
                       '    STARTUP:  ')

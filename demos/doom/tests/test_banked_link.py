@@ -145,10 +145,10 @@ SEGMENTS {
         metadata = json.loads(path.read_text())
         metadata["memory_api_optional"] = True
         path.write_text(json.dumps(metadata))
-        names = ("AMEMCOPY", "AMEMPROBE", "AMEMFILL")
+        names = ("AMEMCOPY", "AMEMPROBE", "AMEMFILL", "AMEMGAME", "AMEMRENDER")
         path = self.build / "doom-banked.cfg"
         cfg = path.read_text().replace("MEMORY {", "MEMORY {\n"
-            '    AMEMSTORE: file = "%OAMEM.BIN", start = $B800, size = $0300;\n' +
+            '    AMEMSTORE: file = "%OAMEM.BIN", start = $B800, size = $0500;\n' +
             "".join(f'    {name}RUN: file = "", start = $E100, size = $0100;\n'
                     for name in names))
         cfg = cfg.replace("SEGMENTS {", "SEGMENTS {\n" + "".join(
@@ -160,7 +160,7 @@ SEGMENTS {
             self.labels[f"__{name}_LOAD__"] = 0xB800 + 256*i
         self.write_map()
         self.write_labels()
-        blob = bytes(range(256))*3
+        blob = bytes(range(256))*len(names)
         (self.build / "AMEM.BIN").write_bytes(blob)
         path = self.build / "DOOM.BANKS"
         package = bytearray(path.read_bytes())
@@ -188,7 +188,7 @@ SEGMENTS {
         self.write_labels()
         self.assertTrue(any("resident 256-byte kbuf" in error for error in self.errors()))
         self.labels["__KBSS_SIZE__"] = 256
-        self.segments["AMEMFILL"] = (0xE101, 256)
+        self.segments["AMEMRENDER"] = (0xE101, 256)
         self.write_map()
         self.write_labels()
         self.assertTrue(any("overlay extent" in error for error in self.errors()))

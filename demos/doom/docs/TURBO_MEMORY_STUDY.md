@@ -8,6 +8,20 @@ and made control changes too large between frames. v10 keeps PAL calibration
 and restores v8's four-tic limit. Firmware comparisons should use the same v10
 build on both sides; its hardware results are still pending.
 
+**Later hardware result, 2026-09-25:** the user now runs **F1.1.4**, and v11's
+SmartPort memory API remains enabled with status `$00` through the stationary
+E1M1 capture. It measures **4.03 FPS / 16.13 TPS** in TURBO, 7.6% above v8
+using host time for both. See [the measured result](STATUS.md#v11-hardware-result-f114).
+At the time that capture was analyzed, the local API checkout was still
+F1.1.2 (`86b9922`). The subsequent v12 batching work reviewed the updated
+F1.1.4 source (`6335a98`) and uses its ordered descriptor lists, reducing seven
+memory requests per frame to three. The v12 hardware capture still records
+242 frames / 968 tics in 60 seconds, matching v11: **no measurable throughput
+gain from batching**. See [v12 details](STATUS.md#v12-batched-phase-copies-on-f114)
+and [the comparison](STATUS.md#v12-hardware-result-no-measured-batching-gain).
+The F1.1.1 mechanisms and prototype estimates below remain historical; only
+the API behavior needed for v12 was reverified against F1.1.4.
+
 ## Conclusions
 
 - The accelerated CPU and Appletini display do not inherently need every
@@ -29,12 +43,14 @@ build on both sides; its hardware results are still pending.
   scheduling can also benefit existing code without adopting a new API.
 
 **Follow-up recorded at the user's request:** fix the broad F1.1.1 flush
-conditions in section 4 later. Those rules remain unchanged. The
+conditions in section 4 later. Those rules were unchanged in the reviewed
+sources. The
 `codex/memory-copy-fill-api` firmware branch now implements an ARM-only
 SmartPort copy/fill service, using the existing hold, shadow-port and PSRAM-DMA
 interfaces. The v11 Doom candidate uses it for private phase memory and the
 internal view-buffer clear, with a stock-firmware CPU fallback. The exact
-contract is in `appletini-one/README_MEMORY_API.md`; hardware throughput is
+prototype contract is in `appletini-one/README_MEMORY_API.md`. Whole-game
+throughput is now measured on F1.1.4 above; isolated API throughput remains
 unmeasured. This implements generic transfer acceleration before adding MAIN banks.
 
 ## 1. What mirroring does in 1.1.1

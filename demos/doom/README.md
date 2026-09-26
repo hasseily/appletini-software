@@ -3,14 +3,21 @@
 A 65C02 port using Freedoom Phase 1 episode 1, SHR4 PAL256 video, the
 Appletini mouse card, **TURBO**, and **8 MB RamWorks**. The complete loader,
 game and renderer now link and run together in the Apple memory-map emulator.
-The game runs on physical Appletini; the v8 E1M1 TURBO capture measures 3.73 FPS.
+The game runs on physical Appletini; the v12 E1M1 TURBO capture on firmware
+F1.1.4 measures **4.03 FPS / 16.13 TPS** over a 60-second host window.
 Profiling and performance optimization are now the priority.
 The v10 PAL candidate restores the four-tic frame limit after hardware testing
 rejected v9's longer catch-up batches for poor controls and lower rendered FPS.
-The v11 candidate keeps that limit and adds optional ARM copy/fill calls for
+The v11 build keeps that limit and adds optional ARM copy/fill calls for
 phase snapshots and the internal view-buffer clear. It probes at startup and
-uses CPU copies on stock firmware. API firmware and v11 hardware performance
-still need testing on the PC/hardware.
+uses CPU copies on unsupported firmware. The API remained enabled with status
+`$00` throughout the capture. Throughput is 7.6% above v8 using host time for
+both runs; a same-firmware control is still needed to isolate the API's gain.
+The v12 build batches the six phase copies into two ordered requests,
+then clears the view buffer separately. That reduces seven memory requests
+per frame to three. On the same F1.1.4 firmware, its stationary capture records
+the same 242 frames and 968 tics in 60 seconds as v11: no measurable throughput
+gain from batching.
 
 The default build uses permanently loaded game code in seven auxiliary
 language-card banks. Ordinary game pointers address shared main RAM; phase
@@ -111,8 +118,8 @@ rendering stages, presentation and debug work. A separate snapshot is readable
 through the Appletini serial console without stopping the game.
 
 The current PAL hardware-test pair is
-`dist/Appletini-DOOM-profile-v11-amem-pal.hdv` and
-`dist/Appletini-DOOM-profile-v11-amem-pal.json`. It starts at **50HZ** and uses
+`dist/Appletini-DOOM-profile-v12-amem-batch-pal.hdv` and
+`dist/Appletini-DOOM-profile-v12-amem-batch-pal.json`. It starts at **50HZ** and uses
 the four-tic limit. Use its matching metadata for captures. The serial report
 shows whether the memory API is enabled; this build uses host elapsed time
 for FPS/TPS because ARM transfers can merge VBL interrupts during CPU holds.
@@ -123,9 +130,11 @@ F1.1.3 fixed an ARM timer bug, but Doom v11 still reported `DOOM CRASH $67`.
 An RTL regression then reproduced lost DMA completion during idle bus cycles;
 F1.1.4 retains that status until the next transfer. On 2026-09-25, the user
 confirmed that Doom v11 starts and runs with F1.1.4, without the `$67` crash.
-They observed no significant speedup; matched hardware captures are still
-needed to measure the change. The previous v10 disk remains available as a
-control for the helper's CPU-fallback overhead.
+
+The reviewed F1.1.4 source is commit `6335a98`; it
+validates the complete descriptor list before executing it in order under
+one CPU hold. Keep v11 as the unbatched control on the same firmware. The
+previous v10 disk also remains available as a CPU-copy control on F1.1.4.
 
 See [profiling instructions](docs/PROFILING.md) for serial capture, repeatable
 hardware runs, and bank-aware emulator instruction/cycle reports. The hardware

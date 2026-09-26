@@ -41,6 +41,7 @@
 ; Game copies stop at the allocator's page-rounded high-water mark. Its
 ; unallocated tail and shared intercept/view scratch are dead at a handoff.
 RENDER_END = >(VIEWBUF + __RZP_SIZE__ + $FF)
+.export RENDER_END
 .assert RENDER_END <= $B8, lderror, "renderer snapshot overlaps immutable AMEM overlays"
 .assert __RLOBSS_RUN__ >= $0C00, lderror, "renderer low state moved below snapshot"
 .assert __RLOBSS_RUN__ + __RLOBSS_SIZE__ <= $2000, lderror, "renderer low state exceeds snapshot"
@@ -71,6 +72,9 @@ space_game:
         bne     @zp
         bit     LCBANK1WR
         bit     LCBANK1WR
+        lda     #$BB
+        jsr     phase_batch
+        bcc     @loaded
         lda     #RENDER_HOME_BANK
         ldx     #$02
         ldy     #$04
@@ -87,6 +91,7 @@ space_game:
         ldx     #$02
         ldy     #$B8
         jsr     phase_load
+@loaded:
         bit     LCBANK2WR
         bit     LCBANK2WR
         lda     #SPACE_GAME
@@ -109,6 +114,9 @@ space_render:
         sta     render_map
         bit     LCBANK1WR
         bit     LCBANK1WR
+        lda     #$BC
+        jsr     phase_batch
+        bcc     @loaded
         lda     #GAME_HOME_BANK
         ldx     #>__DATA_RUN__
         ldy     #$B8
@@ -117,6 +125,7 @@ space_render:
         ldx     #$02
         ldy     #RENDER_END
         jsr     phase_load
+@loaded:
         ldx     #<__RZP_SIZE__-1
 @zp:    lda     VIEWBUF,x
         sta     __RZP_RUN__,x
@@ -145,6 +154,16 @@ space_render:
 ; must be selected. Both mappings are off on entry/return. The overlay loader
 ; and CPU fallback only change RAMRD/RAMWRT while executing resident LC.
 .segment "KLC1TAIL"
+; A = immutable batch overlay page. Carry clear means the handoff completed;
+; carry set selects the original CPU path, without reloading a batch helper.
+phase_batch:
+        ldy     amem_available
+        beq     @cpu
+        jsr     amem_load
+        jmp     kbuf
+@cpu:   sec
+        rts
+
 phase_save:
         sta     far_dst+2
         cmp     #GAME_HOME_BANK
