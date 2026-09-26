@@ -27,9 +27,10 @@ Apple II software and hardware demonstrations built to exercise Appletini.
 - [Doom / Freedoom](demos/doom/README.md): a 65C02 port targeting TURBO,
   SHR4 PAL256 and 8 MB RamWorks. The banked game and renderer run together
   on physical Appletini. Hardware profiling and optimization continue;
-  audio and UI screens remain unfinished. The v11 PAL candidate retains the
-  four-tic frame limit and uses the optional ARM copy/fill API in firmware
-  F1.1.2, with CPU copies on older firmware.
+  audio and UI screens remain unfinished. The v12 PAL build batches the
+  optional ARM copy/fill API calls, retaining the four-tic frame limit and CPU
+  fallback. Both v11 and v12 on F1.1.4 measure 4.03 FPS / 16.13 TPS in TURBO;
+  the stationary E1M1 capture establishes no throughput gain from batching.
 
 ## Disk images
 

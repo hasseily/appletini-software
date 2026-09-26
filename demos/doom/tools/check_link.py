@@ -104,7 +104,7 @@ def banked_report(build: Path) -> tuple[dict, list[str]]:
     assignments = config_records(cfg, "SEGMENTS")
     segments = map_segments((build / "doom.map").read_text())
     labels = read_labels(build / "doom.lbl")
-    overlay_names = ("AMEMCOPY", "AMEMPROBE", "AMEMFILL")
+    overlay_names = ("AMEMCOPY", "AMEMPROBE", "AMEMFILL", "AMEMGAME", "AMEMRENDER")
     if metadata.get("memory_api_optional"):
         for name in overlay_names:
             area = areas.get(name + "RUN", {})
@@ -340,8 +340,8 @@ def banked_report(build: Path) -> tuple[dict, list[str]]:
     expected_payloads[(1, 0x6000)] = images.get("GAME.INFO", b"")
     if metadata.get("memory_api_optional"):
         expected_payloads[(122, 0xB800)] = images.get("AMEM.BIN", b"")
-        if len(expected_payloads[(122, 0xB800)]) != 768:
-            errors.append("AMEM.BIN must contain three complete 256-byte overlays")
+        if len(expected_payloads[(122, 0xB800)]) != 256 * len(overlay_names):
+            errors.append("AMEM.BIN must contain five complete 256-byte overlays")
         for i, name in enumerate(overlay_names):
             segment = segments.get(name, {})
             if (segment.get("start"), segment.get("size"), labels.get(f"__{name}_LOAD__")) != (

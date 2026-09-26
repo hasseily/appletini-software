@@ -91,7 +91,8 @@ class PhaseCopyTest(unittest.TestCase):
         start, end = 0x0C00, 0x1E00
         m.main[0x0200:0xC000] = pattern(0xBE00, 0x19)
         storage = m.bank_memory(bank)
-        storage[0x0200:0xC000] = pattern(0xBE00, 0x83)
+        # The backing tail holds executable AMEM overlays since v11.
+        storage[0x0200:0xB800] = pattern(0xB600, 0x83)
         expected = bytearray(storage[0x0200:0xC000])
         expected[start - 0x0200:end - 0x0200] = m.main[start:end]
         writes = self.call(doom, "phase_save", bank, start >> 8, end >> 8)

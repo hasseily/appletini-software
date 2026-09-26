@@ -1,9 +1,11 @@
 ; Optional Appletini ARM COPY/FILL service, SmartPort controller selector $80.
 ; No slot-ROM entry is called: its $07F8 workspace belongs to the GAME image.
-; Three immutable pages in bank 122 are overlaid on the existing LC kbuf.
+; Five immutable pages in bank 122 are overlaid on the existing LC kbuf.
 ; The mouse IRQ only touches $C0A0/$C0AF and never takes C800 ownership or kbuf.
 .include "kernel.inc"
 .import kbuf, kmemclr, amem_load
+.import phase_game_end, _arena_ptr, __DATA_RUN__
+.importzp RENDER_END
 .export amem_init, amem_available, amem_status
 
 SP_DATA = $CFF0
@@ -62,10 +64,10 @@ ready:  lda SP_DATA
 :       sta amem_status
 .endmacro
 
-.macro REQUEST
+.macro REQUEST descriptors
         .byte 4,3,0,0,0,$80,0,0,0,0
-        .word 24
-        .byte "AMEM",1,1,0,0
+        .word 8+16*descriptors
+        .byte "AMEM",1,descriptors,0,0
 .endmacro
 
 ; A=bank, X=first page, Y=exclusive last page; C=load, clear=save.
@@ -131,7 +133,7 @@ copy_done:
 copy_failed:
         jmp kernel_crash
 copy_request:
-        REQUEST
+        REQUEST 1
 copy_desc:
         .byte 1,1,1,0,0,0,1,0,0,0,0,0,0,0,0,0
 .assert *-amem_copy <= 256, error, "COPY overlay exceeds kbuf"
@@ -190,7 +192,8 @@ probe_transport:
         cmp #16
         bne probe_done
         lda VIEWBUF+7
-        beq probe_done
+        cmp #4                  ; largest phase batch has four descriptors
+        bcc probe_done
         lda VIEWBUF+8
         and #7
         cmp #7
@@ -239,7 +242,7 @@ amem_fill:
         jmp kernel_crash
 @done: rts
 fill_request:
-        REQUEST
+        REQUEST 1
         .byte 2,1,0,0
         .word 0
         .byte 0,0
@@ -247,3 +250,74 @@ fill_request:
         .byte 0,0,0,0
 .assert *-amem_fill <= 256, error, "FILL overlay exceeds kbuf"
 .res 256-(*-amem_fill),0
+
+; A batch either completes (C clear), is rejected before execution with $60
+; (C set, disable API so the caller runs the whole CPU fallback), or stops.
+; Never replay a partially executed list after any other error.
+.macro BATCH_RESULT
+        .local done, failed
+        bit SP_RELEASE
+        lda amem_status
+        beq done
+        cmp #AMEM_UNAVAILABLE
+        bne failed
+        stz amem_available
+        sec
+        rts
+done:   clc
+        rts
+failed: jmp kernel_crash
+.endmacro
+
+; Same-address phase copy, with explicit PRIVATE permission for working RAM.
+.macro PHASE_COPY source, source_bank, destination, destination_bank, first, last
+        .byte 1,1,source,source_bank
+        .word first
+        .byte destination,destination_bank
+        .word first,last-first
+        .byte 0,0,0,0
+.endmacro
+
+; Save all mutable renderer ranges before the final descriptor replaces MAIN
+; with GAME. On the first handoff phase_game_end is still $B8 (full load).
+.segment "AMEMGAME"
+amem_game:
+        lda phase_game_end
+        sec
+        sbc #$02
+        sta game_load_desc+11
+        EXCHANGE game_request,84
+        BATCH_RESULT
+game_request:
+        REQUEST 4
+        PHASE_COPY 0,0,1,RENDER_HOME_BANK,$0200,$0400
+        PHASE_COPY 0,0,1,RENDER_HOME_BANK,$0C00,$2000
+        PHASE_COPY 0,0,1,RENDER_HOME_BANK,$6000,RENDER_END*$100
+game_load_desc:
+        PHASE_COPY 1,GAME_HOME_BANK,0,0,$0200,$0200
+.assert *-amem_game <= 256, error, "GAME batch overlay exceeds kbuf"
+.res 256-(*-amem_game),0
+
+; Save live GAME state before restoring RENDER. The saved renderer zero page
+; lives in VIEWBUF, so its FILL must wait until space_render recovers that ZP.
+.segment "AMEMRENDER"
+amem_render:
+        ldy _arena_ptr+1
+        lda _arena_ptr
+        beq @rounded
+        iny
+@rounded:
+        sty phase_game_end
+        tya
+        sec
+        sbc #>__DATA_RUN__
+        sta game_save_desc+11
+        EXCHANGE render_request,52
+        BATCH_RESULT
+render_request:
+        REQUEST 2
+game_save_desc:
+        PHASE_COPY 0,0,1,GAME_HOME_BANK,(__DATA_RUN__ & $FF00),(__DATA_RUN__ & $FF00)
+        PHASE_COPY 1,RENDER_HOME_BANK,0,0,$0200,RENDER_END*$100
+.assert *-amem_render <= 256, error, "RENDER batch overlay exceeds kbuf"
+.res 256-(*-amem_render),0

@@ -280,13 +280,15 @@ The existing main arena stays at 31,551 bytes. Resident free space is 29 bytes
 in LC1, 17 in LCHI, 82 in LC2. The visible SHR blit still uses the existing
 display path; all new MAIN writes explicitly opt into PRIVATE working memory.
 
-Firmware implementation is pushed to `appletini-one` on branch
+The original firmware implementation was pushed to `appletini-one` on branch
 `codex/memory-copy-fill-api`: API commit `d87c8c4`, followed by the F1.1.2
 version bump in `86b9922`, based on `b9fcdef` (F1.1.1 code plus subsequent
 shipping documentation). `README_MEMORY_API.md` specifies
 the wire format, safety/visibility contract, examples and PC build commands.
-No RTL change or firmware binary was produced. The broad flush work remains
-deferred, and hardware speedup is unmeasured.
+No RTL change or firmware binary was produced at that stage. The broad flush
+work was deferred. The hardware result below uses the user's newer F1.1.4;
+the initial review still had F1.1.2 source. The v12 work below subsequently
+verified the updated F1.1.4 checkout.
 
 Checks passed: eight assembled API tests, 24 link guards, ten clock tests,
 five profiling runtime tests, and 21 serial/profiling tests. The firmware's
@@ -309,6 +311,137 @@ host elapsed time for FPS/TPS and report resident API availability/status.
 VBL phase shares may undercount transfer time; the on-screen rates are not
 authoritative during long holds. Use the same v11 disk on both firmwares for
 the A/B measurement, then compare v10 versus stock-firmware v11 for reload cost.
+
+### v11 hardware result: F1.1.4
+
+The 2026-09-25 stationary E1M1 capture on user-reported firmware **F1.1.4**
+is `build/profiles/e1m1-idle-turbo-v11-amem-pal.json` (and `.csv`). Its metadata
+matches build `ac9e0e63`. TURBO is confirmed in both firmware status snapshots;
+the memory API is enabled with last status `$00` at both ends. All 30 capture
+intervals are valid. Over **60.005 host seconds**, it records **242 frames /
+968 tics**, or **4.03 FPS / 16.13 TPS**.
+
+Use host time for both sides of the historical comparison:
+
+| Capture | Host FPS | Host TPS | Host ms/frame |
+| --- | ---: | ---: | ---: |
+| v8, earlier firmware | 3.75 | 15.00 | 266.7 |
+| v11, F1.1.4 | 4.03 | 16.13 | 248.0 |
+
+That is **7.6% more throughput**, saving about **18.7 ms/frame**. It is not an
+isolated measurement of the copy API: firmware and the PAL scheduler changed
+since v8, although both captures average exactly four tics per frame. There
+is no saved v10 hardware capture. Run v10 on the same F1.1.4
+and scene to compare the CPU-copy and API builds while holding firmware fixed.
+This includes v11's helper overhead; an explicit fallback switch in v11 would
+allow a closer API/fallback comparison on the same firmware.
+
+Walls remain the largest sampled phase (**32.75%**), followed by planes
+(13.37%) and game tics (13.14%). The two copy phases total **18.05%**, versus
+26.99% in v8. These are sample shares, not measured durations or an API speedup.
+Wall samples per completed frame are nearly unchanged (4.02 in v8, 3.97 in
+v11), so the larger wall percentage does not demonstrate slower wall drawing.
+The visible SHR blit remains on the existing TURBO display path (9.76% of
+samples), which batches video writes.
+
+The VBL counter covers 58.62 calibrated seconds versus 60.005 host seconds
+(48.85 observed IRQs/second). CPU holds and snapshot publication timing can
+affect this difference; it is not a measurement of total transfer hold time.
+Keep using host FPS/TPS and obtain command timings before attributing the
+remaining copy cost. The **four-tic cap is saturated** (968 / 242 = 4): current
+simulation speed is about 46% of 35 TPS, and 35 TPS with this cap requires
+8.75 FPS. Movement, combat and map-change validation remain to be reported.
+
+The batching experiment implemented in v12 below follows from this capture.
+v11 makes six COPY calls and one FILL call per normal frame,
+reloading a 256-byte helper for each. The documented API supports ordered
+descriptor lists: four copies on entry to GAME and two on entry to RENDER
+could become two requests, leaving the FILL separate until the renderer's
+zero page has been recovered from VIEWBUF. That would reduce seven requests
+to three. Validate list support on F1.1.4 and measure the result; neither the
+savings nor the older prototype's hold costs are established by this capture.
+
+### v12: batched phase copies on F1.1.4
+
+Build `e2676d7e` is `dist/Appletini-DOOM-profile-v12-amem-batch-pal.hdv`, with
+matching `.json` metadata. Image size is 4,473,344 bytes; SHA-256:
+`5497e2dce588a09c1047ce91dc0fa77e77d6c760e7684c1a6e89af1d5081f4f2`.
+It retains the PAL default and four-tic cap. The
+reviewed firmware is `appletini-one` F1.1.4, commit `6335a98`: descriptor lists
+are validated before writes and execute in order under one CPU hold.
+
+Entering GAME batches three renderer saves followed by the GAME load.
+Returning batches the live GAME save followed by the renderer restore. The
+view-buffer FILL stays separate until the renderer zero page has been recovered
+from that buffer. The first GAME load still covers the full initial image;
+later transfers use the page-rounded allocator endpoint.
+
+Per normal frame, CONTROL requests and helper reloads fall from **seven to
+three**. FIFO submission falls from 252 to 172 bytes, and four 256-byte helper
+reloads disappear. The six COPY descriptors, FILL and transferred data volume
+are unchanged. These are operation counts, not a predicted hardware speedup.
+
+The startup probe now requires capacity for at least four descriptors. Firmware
+without that capability uses CPU copies. A pre-execution `$60` disables the API
+and runs the entire handoff through the existing CPU path; all other execution
+errors stop without replaying a potentially partial batch.
+
+Two additional immutable helper pages occupy bank 122 `$BB00–$BCFF`; all five
+overlays reuse the same resident 256-byte `kbuf`. The main arena remains
+31,551 bytes and the C stack remains 2 KiB. Resident free space is 16 bytes in
+LC1, 3 in LCHI and 82 in LC2. Both profiling PAL and ordinary NTSC builds link.
+
+Checks passed: 13 assembled memory-API tests, 24 link guards, three phase-copy
+regressions, ten clock tests and five profiling runtime tests. They cover full
+handoff contents, the 4/2/1 descriptor sequence, initial and changing live
+extents, zero-page/register/IRQ preservation, capability limits, safe fallback
+from either handoff and no retry after a partially executed batch.
+
+The exact release boots through the assembled loader with supported and
+unsupported SmartPort firmware. Both complete four moving frames with
+identical packets and image hashes, also matching v11's recorded frames.
+The API run makes 17 requests including the probe and initialization, versus
+37 in v11, and finishes at status `$00`. All five immutable overlay pages
+remain intact. The five program-file hashes extracted from the HDV match its
+metadata. Reports and the reproducible verification script are in
+`build/profile-v12-amem-batch-pal/acceptance-*.json`, `release-verification.json`
+and `verify_release.py`. These checks validate function, not hardware timing.
+
+### v12 hardware result: no measured batching gain
+
+The 2026-09-25 stationary capture is
+`build/profiles/e1m1-idle-turbo-v12-amem-batch-pal.json` (and `.csv`). Its
+metadata matches build `e2676d7e`; all 30 intervals are valid. Both endpoint
+snapshots confirm TURBO and an enabled memory API with status `$00`.
+
+| F1.1.4 capture | Host seconds | Frames / tics | Host FPS / TPS |
+| --- | ---: | ---: | ---: |
+| v11, individual copies | 60.005 | 242 / 968 | 4.03 / 16.13 |
+| v12, batched copies | 60.007 | 242 / 968 | 4.03 / 16.13 |
+
+The identical counts establish **no measurable throughput improvement** in
+this run. Both average about 248 ms/frame and remain at four tics/frame.
+The result does not prove that batching saves zero time, but removing four
+requests and helper reloads has not improved the observed frame rate.
+
+Combined copy samples fall from 529 to 490 (18.05% to 16.80%). Total samples
+also fall from 2,931 to 2,917, with observed IRQ rates of 48.85 and 48.61 Hz.
+Longer CPU holds can merge IRQs; periodic sampling and publication timing also
+affect the counts. These changes do not measure transfer time or establish
+that the copy work became faster. Walls remain the largest sampled phase
+(32.60%), followed by planes (13.95%) and game tics (13.47%).
+
+Further call-count reductions are a lower priority after this result. The
+next useful investigations are wall-renderer work and actual bulk-transfer
+timings. Batching leaves all copied bytes and the firmware's internal chunk
+work unchanged. Measure those costs before changing the memory architecture;
+the current phase samples cannot distinguish transfer execution from held
+time reliably. Alternating 180–300-second v11/v12 captures can resolve smaller
+changes than this single pair: snapshot publication is only about once per
+five frames here, so 60-second endpoints have appreciable uncertainty.
+Movement and combat remain separate workloads to validate.
+
+### Profiling infrastructure
 
 The opt-in
 `make profile` image now samples 13 phases on the existing VBL IRQ and publishes

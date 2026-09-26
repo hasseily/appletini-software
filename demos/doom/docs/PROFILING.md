@@ -371,11 +371,12 @@ and four-tic cap (build `ac9e0e63`). At startup it probes Appletini SmartPort se
 uses the new API for GAME/RENDER phase copies and the internal view-buffer
 clear. On stock F1.1.1 it uses CPU loops; the visible SHR blit is unchanged.
 
-Firmware F1.1.2 is on `appletini-one` branch `codex/memory-copy-fill-api`
+The original F1.1.2 API prototype is on `appletini-one` branch `codex/memory-copy-fill-api`
 (commit `86b9922`).
-Build/package its ARM firmware on the PC using the existing matching F1.1.1
-XSA and bitstream; see that repository's `README_MEMORY_API.md`. No new FPGA
-image is required. This firmware has not been built or measured on the Mac.
+Its PC build instructions use the matching F1.1.1 XSA and bitstream; see that
+repository's `README_MEMORY_API.md`. The user's measured target is now
+**F1.1.4**. The v12 work below verifies its source at `6335a98`; the older
+prototype alone was insufficient to establish the target's behavior.
 
 ```sh
 build/profile-venv/bin/python tools/profile_hardware.py \
@@ -384,6 +385,14 @@ build/profile-venv/bin/python tools/profile_hardware.py \
   --seconds 60 --mode turbo --label "E1M1 stationary v11 AMEM PAL" \
   --out build/profiles/e1m1-idle-turbo-v11-amem-pal.json
 ```
+
+The saved F1.1.4 run records **4.03 FPS / 16.13 TPS** (242 frames / 968 tics
+over 60.005 host seconds), with the API enabled and status `$00` at both ends.
+This is 7.6% above v8's **host-window** 3.75 FPS, not a controlled API-only gain.
+See [the recorded result](STATUS.md#v11-hardware-result-f114). For the next
+control, run the v10 command above on the **same F1.1.4 firmware**, scene and
+TURBO settings, retaining the firmware version in the label. v10 uses CPU
+copies; comparing it with v11 includes the latter's helper overhead.
 
 Run the **same v11 disk** on stock and new firmware, using the same scene and
 TURBO settings. The report reads the resident probe state at both ends and
@@ -404,6 +413,37 @@ Check movement, turning, firing and a map change after the stationary run.
 Then compare stock-firmware v11 with v10 to quantify helper reload overhead.
 The model tests validate memory, transport and fallbacks; they do not model
 ARM/DMA throughput and cannot predict the hardware FPS gain.
+
+### v12: ordered phase-copy batches
+
+Boot **`dist/Appletini-DOOM-profile-v12-amem-batch-pal.hdv`**, build `e2676d7e`,
+on F1.1.4 and use its matching metadata. It retains PAL 50 Hz and the four-tic
+cap, grouping six phase copies into two ordered requests. FILL remains a third
+request after renderer zero-page recovery. The probe requires capacity for
+four descriptors; unsupported firmware continues to use CPU copies.
+
+```sh
+build/profile-venv/bin/python tools/profile_hardware.py \
+  --metadata dist/Appletini-DOOM-profile-v12-amem-batch-pal.json \
+  --port /dev/cu.usbserial-01F164161 --baud 921600 \
+  --seconds 60 --mode turbo --label "E1M1 stationary v12 batch F1.1.4" \
+  --out build/profiles/e1m1-idle-turbo-v12-amem-batch-pal.json
+```
+
+Compare with v11 on the **same F1.1.4 firmware**, stationary view and TURBO
+settings. The saved v11 reference is 4.03 FPS / 16.13 TPS; repeat both runs if
+the scene or setup differs. Keep using host-window FPS/TPS: batching reduces
+request overhead but lengthens individual holds, which can merge VBL IRQs.
+Do not infer a speedup from lower copy sample percentages or model cycles.
+Also check movement, turning, firing and a map change.
+
+The first saved v12 capture records **242 frames / 968 tics in 60.007 host
+seconds**, matching v11's counts and **4.03 FPS / 16.13 TPS**. API status stays
+enabled/`$00`. No throughput gain is established by batching. Combined copy
+sample share falls from 18.05% to 16.80%, but this is not a transfer-speed
+measurement. See [the recorded comparison](STATUS.md#v12-hardware-result-no-measured-batching-gain).
+To resolve smaller differences, alternate 180–300-second captures of both
+builds with the same setup; snapshot publication makes short windows noisy.
 
 ## 5. Instruction and cycle profiling in the Python model
 
