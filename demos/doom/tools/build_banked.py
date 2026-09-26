@@ -81,6 +81,7 @@ def preload(build: Path, inventory: dict) -> bytes:
 
 def build(args) -> None:
     video_hz = getattr(args, "video_hz", 60)
+    render_shaded = bool(getattr(args, "render_shaded", False))
     if video_hz not in (50, 60):
         raise ValueError("video_hz must be 50 or 60")
     out, data = args.build.resolve(), args.data.resolve()
@@ -119,6 +120,7 @@ def build(args) -> None:
         obj.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run([args.ca65, "--cpu", "65c02", "-g", "-D", "BANKED_GAME",
                         "-D", f"VIDEO_HZ={video_hz}",
+                        "-D", f"RENDER_SHADED={int(render_shaded)}",
                         *(["-D", "PROFILE"] if args.profile else []),
                         "-I", str(PROJECT / "src/kernel"), "-I", str(PROJECT / "src/render"),
                         "-I", str(data), "-I", str(out), "-o", str(obj), str(source)],
@@ -140,7 +142,7 @@ def build(args) -> None:
     subprocess.run(link, check=True)
     (out / "DOOM.BANKS").write_bytes(preload(out, inventory))
     metadata = {"format": 1, "banks": inventory["banks"], "game_home": 125,
-                "default_video_hz": video_hz,
+                "default_video_hz": video_hz, "render_shaded": render_shaded,
                 "code_staging": inventory["code_staging"],
                 "render_home": 122, "packet_bank": 124, "packet_address": 0x0200,
                 "tables_bank": 127, "info_bank": 1, "preload_file": "DOOM.BANKS",
@@ -173,7 +175,7 @@ def build(args) -> None:
                    "memory_api": {"address_space": "main_shadow",
                                   "available_address": labels["amem_available"],
                                   "status_address": labels["amem_status"]},
-                   "default_video_hz": video_hz,
+                   "default_video_hz": video_hz, "render_shaded": render_shaded,
                    "build_id": tag.hex(), "fields": fields,
                    "stages": [{"name": name, "field": name} for name in names],
                    "clock_source": "mouse VBL", "publish_vbls": 60,
@@ -189,6 +191,8 @@ def build(args) -> None:
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--profile", action="store_true", help="hardware VBL phase sampler")
+    p.add_argument("--render-shaded", action="store_true",
+                   help="flat-shaded floors/ceilings; walls, sky and sprites remain textured")
     p.add_argument("--video-hz", type=int, choices=(50, 60), default=60,
                    help="initial video rate for the tic scheduler and debug readout")
     p.add_argument("--control-bank", type=int, choices=(0, 100), default=0,

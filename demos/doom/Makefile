@@ -37,9 +37,15 @@ DISK ?= $(DIST)/Appletini-DOOM.hdv
 PROFILE ?= 0
 CONTROL_BANK ?= 0
 VIDEO_HZ ?= 60
+RENDER_SHADED ?= 0
 ifneq ($(VIDEO_HZ),50)
 ifneq ($(VIDEO_HZ),60)
 $(error VIDEO_HZ must be 50 or 60)
+endif
+endif
+ifneq ($(RENDER_SHADED),0)
+ifneq ($(RENDER_SHADED),1)
+$(error RENDER_SHADED must be 0 or 1)
 endif
 endif
 
@@ -71,7 +77,7 @@ ifeq ($(BANKED),1)
 PROGRAM += $(BUILD)/DOOM.BANKS
 endif
 
-AFLAGS := --cpu 65c02 -g -D VIDEO_HZ=$(VIDEO_HZ) -I src/kernel -I $(DATA)
+AFLAGS := --cpu 65c02 -g -D VIDEO_HZ=$(VIDEO_HZ) -D RENDER_SHADED=$(RENDER_SHADED) -I src/kernel -I $(DATA)
 CFLAGS := -t none --cpu 65c02 --standard c99 -Oirs -g -I $(GAMESRC) -I $(DATA)
 DATA_STAMP := $(DATA)/manifest.json
 
@@ -134,7 +140,7 @@ BANKED_OUTPUTS := $(PROGRAM) $(BUILD)/AMEM.BIN $(BUILD)/banked.json $(BUILD)/doo
 	$(BUILD)/banks/banks.json $(BUILD)/link-report.json \
 	$(addprefix $(BUILD)/GBANK,$(addsuffix .BIN,96 97 98 99 $(CONTROL_BANK) 101 102))
 BANKED_STAMP := $(BUILD)/banked.stamp
-BANKED_BUILD_ID := $(abspath $(GAMESRC)) $(abspath $(DATA)) PROFILE=$(PROFILE) CONTROL_BANK=$(CONTROL_BANK) VIDEO_HZ=$(VIDEO_HZ) $(CA65) $(CC65) $(LD65)
+BANKED_BUILD_ID := $(abspath $(GAMESRC)) $(abspath $(DATA)) PROFILE=$(PROFILE) CONTROL_BANK=$(CONTROL_BANK) VIDEO_HZ=$(VIDEO_HZ) RENDER_SHADED=$(RENDER_SHADED) $(CA65) $(CC65) $(LD65)
 ifeq ($(PROFILE),1)
 BANKED_OUTPUTS += $(BUILD)/profile.json
 endif
@@ -149,7 +155,7 @@ endif
 $(BANKED_OUTPUTS): $(BANKED_STAMP)
 $(BANKED_STAMP): $(BANKED_DEPS) $(DATA_STAMP)
 	$(PYTHON) tools/build_banked.py --build $(BUILD) --data $(DATA) --source $(GAMESRC) --python $(PYTHON) \
-		--ca65 $(CA65) --cc65 $(CC65) --ld65 $(LD65) --control-bank $(CONTROL_BANK) --video-hz $(VIDEO_HZ) $(if $(filter 1,$(PROFILE)),--profile)
+		--ca65 $(CA65) --cc65 $(CC65) --ld65 $(LD65) --control-bank $(CONTROL_BANK) --video-hz $(VIDEO_HZ) $(if $(filter 1,$(PROFILE)),--profile) $(if $(filter 1,$(RENDER_SHADED)),--render-shaded)
 	$(PYTHON) tools/check_link.py --build $(BUILD) --json $(BUILD)/link-report.json
 	@printf '%s\n' '$(BANKED_BUILD_ID)' > $@
 else

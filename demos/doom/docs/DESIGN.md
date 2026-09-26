@@ -644,8 +644,9 @@ card, seen by both spaces:
   and the animation list on the next frame.
 - `render_shaded` (C `render_shaded`): 0 textured floors and ceilings, else
   flat-shaded; its initial value is the build option `RENDER_SHADED`
-  (default 0; the legacy renderer build accepts
-  `make AFLAGS+=-DRENDER_SHADED=1`).
+  (default 0; use `make RENDER_SHADED=1`, including for the banked hardware
+  build, or `tools/build_banked.py --render-shaded`). Walls, sky and sprites
+  remain textured.
 - The packet: `render_frame` reads the 40-byte packet header (bank 124 in the
   banked build; `_rview` in bank 1 in the legacy renderer harness);
   the things are **not copied** (2,560 bytes of main memory, and 42K cycles

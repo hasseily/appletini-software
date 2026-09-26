@@ -58,6 +58,16 @@ extended-bank placement, build into a separate directory with
 `make PROFILE=1 CONTROL_BANK=100 BUILD=build/control-psram disk DISK=dist/Appletini-DOOM-control-psram.hdv`.
 Use that build's `profile.json` for its serial captures.
 
+`RENDER_SHADED=1` selects the existing flat-shaded **floors and ceilings**.
+Walls, sky and sprites remain textured; this is not a fully untextured mode.
+For a separate PAL profiling image, build with:
+
+```sh
+make PROFILE=1 VIDEO_HZ=50 RENDER_SHADED=1 BUILD=build/flat-planes-pal \
+  DISK=dist/Appletini-DOOM-flat-planes-pal.hdv disk
+cp build/flat-planes-pal/profile.json dist/Appletini-DOOM-flat-planes-pal.json
+```
+
 The disk includes `DOOM.SYSTEM`, `RENDER.BIN`, `LC.BIN`, `GAME.BIN`, converted
 data, and `DOOM.BANKS` containing code and far-table preloads. Generated
 `banked.json`, `doom.map`, and `link-report.json` describe the final layout.
