@@ -18,6 +18,17 @@ which is a different engine written for cc65.
 | `docs/design-proposals/` | The three independent proposals the architecture was drawn from, each with a correctness critique and a hardware critique |
 | `docs/research/` | Reports on upstream's renderer and platform layer, on the Appletini hardware, and on the existing port |
 | `docs/firmware/` | Plans and adversarial reviews for Appletini firmware changes that would speed up software like this. They are proposals; none is implemented. |
+| `tools/` | Host tools (Python 3, standard library only): the fetch script, the front end and the assembler and linker for upstream's sources (`tools/v816/`) |
+| `tests/` | Unit tests: `python3 -m unittest discover -s tests` |
+
+## Image match
+
+`python3 tools/fetch_upstream.py` fills `build/`. Then
+`python3 tools/v816/imgmatch.py` assembles upstream's sources with the tools of
+this port, recovers from the release image where the vendor's linker placed
+each section fragment, links, and compares the result with the release byte
+by byte. It writes `build/match-report.json` and `build/linkmap.json` (the
+address of every fragment and the value of every symbol).
 
 The research and firmware notes were written against Appletini firmware
 F1.1.4 to F1.2.1 and upstream commit `8ea2eac`. Paths shown as `<upstream>`,
