@@ -152,7 +152,11 @@ class DiskImage(NamedTuple):
 
 
 def kind(image: DiskImage, segment: Segment) -> str:
-    """What `segment` holds, one of the KIND_ constants."""
+    """What `segment` holds, one of the KIND_ constants.
+
+    A label for listings (tools/list_segments.py), by the banks of the
+    release. Code that must know which segments the linker made asks
+    the rules file instead (release.linked_memories)."""
     bank = segment.address >> 16
     if segment.flags & SEG_PIC:
         return KIND_PICTURE

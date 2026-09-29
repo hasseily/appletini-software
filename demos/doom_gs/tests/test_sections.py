@@ -174,6 +174,67 @@ class PartlyKnown(unittest.TestCase):
             ['the image gives only the low 16 bits of .sectionEnd heap'])
 
 
+class FixedAddress(unittest.TestCase):
+    RULES = '''
+(define memories
+  '((memory Code (address (#x030000 . #x03ffff))
+            (section (startup #x030000)))
+    ))
+'''
+    SOURCE = (' .section startup, root\n .byte 1, 2, 3, 4\n'
+              ' .section startup, root\n .byte 5, 6, 7, 8\n')
+
+    def problems(self, first):
+        program = support.program_of({'s.s': self.SOURCE}, self.RULES)
+        places = {('s.s', 0): first, ('s.s', 1): first + 4}
+        memory = support.linked_at(program, places).memory
+        layout = place.recover(program, memory)
+        self.assertEqual(layout.addresses(), places)
+        return [problem.message
+                for problem in sections.finish(program, layout).problems]
+
+    def test_section_that_starts_at_its_address(self):
+        self.assertEqual(self.problems(0x030000), [])
+
+    def test_section_that_starts_elsewhere(self):
+        """With two fragments the rules let each go anywhere in the
+        memory (place.py); the section must still start at $030000."""
+        self.assertEqual(self.problems(0x030100), [
+            'the section startup starts at $030100, its fixed address '
+            'is $030000'])
+
+
+@support.needs_upstream
+@support.needs_release
+class ReleaseTable(unittest.TestCase):
+    """What init_table() assumes of data_init_table, against the one
+    image it was read from. If an upstream links initialised data that
+    the startup code copies, or the linker orders the table otherwise,
+    this fails before the image comparison says why."""
+
+    def test_entries_clear_the_bss_sections_in_the_order_of_names(self):
+        game = support.match_results()[1]['game']
+        extent = game['sections'][sections.INIT_TABLE]
+        memory = support.release_targets()[0].memory
+        data = memory.read(extent['first'],
+                           1 + extent['last'] - extent['first'])
+        size = sections.INIT_ENTRY.size
+        self.assertEqual(len(data) % size, 0)
+        entries = [sections.INIT_ENTRY.unpack_from(data, offset)
+                   for offset in range(0, len(data), size)]
+        self.assertEqual([entry for entry in entries if entry[1] != 0], [],
+                         'entries that copy data')
+        cleared = sorted({
+            entry['section'] for entry in game['fragments']
+            if entry['kind'] == 'bss' and 'noinit' not in entry['modifiers']
+            and entry['size']})
+        self.assertEqual(
+            [(start, size) for start, _, size in entries],
+            [(game['sections'][name]['first'],
+              1 + game['sections'][name]['last']
+              - game['sections'][name]['first']) for name in cleared])
+
+
 class NoTable(unittest.TestCase):
     def test_program_without_sections_to_clear(self):
         program = support.program_of(

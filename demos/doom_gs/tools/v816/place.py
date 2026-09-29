@@ -82,8 +82,9 @@ class Layout(NamedTuple):
     constraints  by atom, the Constraints that the holes gave
     ambiguous    by key, the addresses that pass every test, for the
                  fragments with more than one
-    unplaced     the keys of the fragments of the program with bytes
-                 or with constraints that have no address
+    unplaced     the keys of the fragments of the program without an
+                 address that have a size (bss included: the linker
+                 must put them somewhere) or constraints
     """
     placements: dict
     known: dict
@@ -171,7 +172,21 @@ def solve(hole, base, data, known, bases):
 
     The hole is in a fragment at `base`. The value must have one atom
     that `known` does not have, with the coefficient 1 or -1, and the
-    hole must hold enough of the value: 16 bits at least.
+    hole must hold enough of it to give 16 bits of the number or all
+    24. How much that is depends on the operator, not on the width
+    alone:
+
+      no operator, 3 bytes or more       all 24 bits
+      no operator, 2 bytes; .word0       the low 16 bits
+      a branch, 1 or 2 bytes             all 24 bits: the distance
+                                         and the address of the hole
+      .tiny, 1 byte; .near, 2 bytes      all 24 bits, with the base of
+                                         the rules file
+      .kbank, 2 bytes                    all 24 bits, with the bank of
+                                         the instruction
+
+    Everything else gives None: one byte without an operator, .byte0,
+    .byte1, .byte2, .word2, and .tiny or .near without a base.
     """
     value = hole.value.linear.substitute(known)
     if len(value.terms) != 1 or abs(value.terms[0][1]) != 1:
@@ -450,8 +465,7 @@ class _Recovery:
             addresses = self._passing(fragment)
             if addresses and len(addresses) > 1:
                 ambiguous[fragment.key] = addresses
-            elif addresses is not None or (fragment.initialised
-                                           and fragment.size):
+            elif addresses is not None or fragment.size:
                 unplaced.append(fragment.key)
         return Layout(self.placements, self.known, self.constraints,
                       ambiguous, sorted(unplaced))

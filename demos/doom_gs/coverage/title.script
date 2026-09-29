@@ -1,0 +1,17 @@
+# The title loop: the title page, then the built-in demo (demo3), which
+# plays on for 25 seconds of machine time with a shot every 5 seconds.
+# The notes "demo" and "demo-25s" bound the measure of the frame rate.
+wait d_main65.s:pagedrawn == 1 within 90s   # the title page is up
+at +1s shot title
+wait _g_demoplayback == 1 within 60s
+wait _g_gamestate == 0 within 10s       # GS_LEVEL: E1M3 loads,
+at +1t note demo                        # and its first tic has run
+shot demo-00s
+at +5s shot demo-05s
+at +5s shot demo-10s
+at +5s shot demo-15s
+at +5s shot demo-20s
+at +5s shot demo-25s
+note demo-25s
+wait _g_demoplayback == 1 within 1s     # the demo is still on
+stop

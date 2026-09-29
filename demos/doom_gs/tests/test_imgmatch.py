@@ -8,7 +8,8 @@ import json
 import unittest
 
 import support
-from v816 import asm816, expr, imgmatch, ir, link, memimage, scm
+from v816 import (asm816, expr, imgmatch, ir, link, memimage, scm,
+                  sections)
 
 RULES = '''
 (define memories
@@ -99,6 +100,23 @@ class EqualImages(unittest.TestCase):
             {'fragment': 't.s#4', 'section': 'code', 'size': 2,
              'file': 't.s', 'line': 19, 'found_at': []}])
 
+    def test_single_evidence(self):
+        """The address of counter (bss) rests on the one hole that
+        refers to it. Every other number has two things behind it:
+        start and work their bytes and a hole, the table its bytes and
+        the hole of .sectionStart data_init_table."""
+        self.assertEqual(self.report['single_evidence'], [{
+            'atom': 'the address of t.s#6', 'value': 0x028000,
+            'mask': 0xffffff, 'fragment': 't.s#3', 'offset': 1}])
+        support_ = {(entry['unit'], entry['number']): entry['support']
+                    for entry in self.map['fragments']}
+        self.assertEqual(support_, {
+            ('(linker)', 0): 2, ('t.s', 2): 1, ('t.s', 3): 2,
+            ('t.s', 5): 2, ('t.s', 6): 1})
+
+    def test_note_on_the_table_of_the_linker(self):
+        self.assertEqual(self.report['notes'], [sections.INIT_TABLE_NOTE])
+
     def test_report_is_json(self):
         json.dumps(self.report)
         json.dumps(self.map)
@@ -113,7 +131,7 @@ class EqualImages(unittest.TestCase):
             'unit': 't.s', 'number': 3, 'section': 'code', 'kind': 'text',
             'modifiers': [], 'size': 9, 'initialised': True,
             'file': 't.s', 'line': 14, 'address': 0x030400,
-            'method': 'reference', 'exact': True,
+            'method': 'reference', 'exact': True, 'support': 2,
             'labels': {'work': 0x030400}})
         self.assertEqual(by_key[('t.s', 6)]['address'], 0x028000)
         self.assertFalse(by_key[('t.s', 6)]['initialised'])
@@ -239,6 +257,41 @@ class DifferentImages(unittest.TestCase):
         self.assertEqual(report['differing_bytes'], 6)
         self.assertEqual(report['mismatch_bytes'], 9)
 
+    def test_table_of_the_linker_not_in_the_image(self):
+        """The one hole of crt0 is then all that says where the table
+        is."""
+        def change(address, data):
+            if address == TABLE_ADDRESS:
+                data[0] ^= 1
+
+        report, map_ = matched(change)
+        self.assertEqual(
+            [entry['atom'] for entry in report['single_evidence']],
+            ['the address of t.s#6', '.sectionStart data_init_table'])
+        self.assertEqual(
+            [entry['support'] for entry in map_['fragments']
+             if entry['unit'] == '(linker)'], [1])
+
+    def test_bss_fragment_that_nothing_places(self):
+        source = (' .section startup, root\n .require buffer\n rtl\n'
+                  ' .public buffer\n .section znear, bss\n'
+                  'buffer: .space 8\n')
+        memory = memimage.MemoryImage()
+        memory.load(0x030000, b'\x6b')
+        report, _ = imgmatch.match(
+            [support.assemble_clean(source, 't.s')], scm.parse(RULES),
+            memory)
+        self.assertEqual(
+            [entry['fragment'] for entry in report['unplaced']], ['t.s#1'])
+        self.assertEqual(report['mismatch_bytes'], 0)
+        self.assertFalse(imgmatch.clean(report))
+
+    def test_clean_needs_every_fragment_placed(self):
+        report, _ = matched()
+        self.assertTrue(imgmatch.clean(report))
+        report['fragments']['part_of_the_program'] += 1
+        self.assertFalse(imgmatch.clean(report))
+
     def test_built_bytes_outside_the_image(self):
         source = (' .section startup, root\n jsl long:f\n'
                   ' .section code\nf: .space 4\n')
@@ -338,6 +391,24 @@ class Release(unittest.TestCase):
         import fetch_upstream
         self.assertEqual(self.report['image_sha256'],
                          fetch_upstream.RELEASE_SHA256)
+
+    def test_numbers_that_rest_on_one_reference(self):
+        """Every number is in the report or has a second source. The
+        two bss fragments are read from a .near operand each; if
+        upstream gains or loses such a fragment, look at it."""
+        game = self.report['programs']['game']
+        self.assertEqual(
+            [entry['atom'] for entry in game['single_evidence']],
+            ['the address of r_data65.s#3', 'the address of r_sprite65.s#2'])
+        weak = sorted('the address of %s#%d' % (entry['unit'],
+                                                entry['number'])
+                      for entry in self.maps['game']['fragments']
+                      if entry['support'] == 1 and not entry['initialised'])
+        self.assertEqual(weak, [entry['atom'] for entry
+                                in game['single_evidence']])
+        for name in ('boot', 'loader'):
+            self.assertEqual(
+                self.report['programs'][name]['single_evidence'], [])
 
     def test_every_fragment_of_the_programs_is_placed(self):
         for name, program in self.report['programs'].items():

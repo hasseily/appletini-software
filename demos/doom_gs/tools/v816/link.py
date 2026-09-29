@@ -48,7 +48,8 @@ class Program:
     exports     the Value of each exported name
     bases       the value of DIRECT_PAGE_BASE and NEAR_BASE, where the
                 rules file defines them
-    problems    names that are exported twice, and the like
+    problems    names that are exported twice, sections whose kind was
+                assumed where it matters, and the like
     """
 
     def __init__(self, objects, rules):
@@ -65,6 +66,7 @@ class Program:
                 self._export(unit, name)
         self.fragments = {fragment.key: fragment
                           for unit in objects for fragment in unit.fragments}
+        self.problems += self._assumed_kinds()
         self.holes = {
             key: [hole._replace(value=self.resolved(hole.value))
                   for hole in fragment.holes]
@@ -73,6 +75,25 @@ class Program:
             unit.name: {name: self.resolved(value)
                         for name, value in unit.symbols.items()}
             for unit in objects}
+
+    def _assumed_kinds(self):
+        """Problems for the fragments whose .section gave no kind, in a
+        section that other fragments give a kind other than text: the
+        assembler took text for them (objfile.ObjectFragment), which
+        may not be what the vendor's tools do. Kinds that fragments
+        give explicitly are the source's own choice and are not
+        compared with each other."""
+        given = {}
+        for fragment in self.fragments.values():
+            if fragment.kind_given and fragment.kind != 'text':
+                given.setdefault(fragment.section, set()).add(fragment.kind)
+        return [Problem('the section %s has no kind here, and the kind %s '
+                        'elsewhere: text was assumed'
+                        % (fragment.section,
+                           ', '.join(sorted(given[fragment.section]))),
+                        key, 0)
+                for key, fragment in sorted(self.fragments.items())
+                if not fragment.kind_given and fragment.section in given]
 
     def _export(self, unit, name):
         atom = (linear.SYMBOL, name)

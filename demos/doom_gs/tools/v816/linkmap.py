@@ -8,8 +8,10 @@ that json can write:
     fragments   each fragment of the program: unit, number, section,
                 kind, size, the place in the source, and when it is
                 placed its address, the method and whether the
-                placement is exact (tools/v816/place.py), with the
-                address of each label
+                placement is exact (tools/v816/place.py), its
+                support (tools/v816/evidence.py: how many independent
+                things in the image give the address; 1 means that a
+                single reading does) and the address of each label
     dropped     the fragments that are not part of the program
                 (link.Program.reachable)
     sections    first and last address of each section
@@ -24,6 +26,7 @@ The map holds names and numbers of upstream's program, so its place is
 build/.
 """
 
+from . import evidence as evidence_
 from . import linear
 
 
@@ -35,7 +38,7 @@ def number(value, known):
     return result.constant if result.is_constant else None
 
 
-def _fragment(fragment, placement, address):
+def _fragment(fragment, placement, address, support):
     entry = {
         'unit': fragment.key[0], 'number': fragment.key[1],
         'section': fragment.section, 'kind': fragment.kind,
@@ -48,21 +51,24 @@ def _fragment(fragment, placement, address):
         entry['method'] = placement.method
         entry['exact'] = placement.exact
     if address is not None:
+        entry['support'] = support
         entry['labels'] = {name: address + offset
                            for name, offset in sorted(fragment.labels.items())}
     return entry
 
 
-def make(program, layout, finished):
+def make(program, layout, finished, evidence):
     """The map of `program` (link.Program) for the place.Layout
-    `layout` and the sections.Finished `finished`."""
+    `layout`, the sections.Finished `finished` and the
+    evidence.Evidence `evidence`."""
     part_of_program = program.reachable()
     fragments = []
     dropped = []
     for key in sorted(program.fragments):
         entry = _fragment(program.fragments[key],
                           layout.placements.get(key),
-                          finished.addresses.get(key))
+                          finished.addresses.get(key),
+                          evidence_.fragment_support(evidence, key))
         if key in part_of_program or key in finished.addresses:
             fragments.append(entry)
         else:

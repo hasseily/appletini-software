@@ -33,8 +33,11 @@ How the bytes are counted, for each program:
 The report has, for each fragment with bytes that differ, the first
 such bytes with the source line; the bytes of the release that are not
 0 and in no fragment; the fragments that are unplaced, ambiguous or
-placed without passing every test; names without a value; values that
-the image contradicts; and the errors of the assembler and the linker.
+placed without passing every test; the numbers that rest on one
+reference in the image (single_evidence, tools/v816/evidence.py);
+names without a value; values that the image contradicts; the errors
+of the assembler and the linker; and notes on what was made again from
+this one image only.
 """
 
 import argparse
@@ -46,8 +49,8 @@ from pathlib import Path
 if __package__ in (None, ''):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from v816 import (frontend, link, linkmap, objfile, place,  # noqa: E402
-                  release, scm, sections)
+from v816 import (evidence, frontend, link, linkmap,  # noqa: E402
+                  objfile, place, release, scm, sections)
 
 ROOT = frontend.ROOT
 BUILD = frontend.BUILD
@@ -64,6 +67,17 @@ def assemble(results, program_name):
     return [objfile.assemble(result.unit, result.source.path.name)
             for result in results
             if result.source.link_unit == program_name]
+
+
+def initialised_sections(objects):
+    """The names of the sections that have bytes in the image of
+    `objects`: those of fragments with bytes, and the table that the
+    linker makes (sections.py)."""
+    names = {fragment.section for unit in objects
+             for fragment in unit.fragments
+             if fragment.initialised and fragment.size}
+    names.add(sections.INIT_TABLE)
+    return names
 
 
 def _where(fragment, offset):
@@ -221,6 +235,14 @@ def _unsolved(program, finished):
     return sorted(names)
 
 
+def _single(single, known):
+    return [{'atom': link.atom_text(atom), 'value': known[atom],
+             'mask': constraint.mask,
+             'fragment': link.key_text(constraint.key),
+             'offset': constraint.offset}
+            for atom, constraint in single]
+
+
 def match(objects, rules, memory):
     """Builds the program of `objects` (ObjectFiles) with `rules`
     (scm.Rules) and compares it with `memory`, the memory of the
@@ -229,6 +251,7 @@ def match(objects, rules, memory):
     part_of_program = program.reachable()
     layout = place.recover(program, memory)
     finished = sections.finish(program, layout)
+    weighed = evidence.weigh(program, layout, finished, memory)
     linked = link.link(program, finished.addresses, finished.known)
     addresses = differing(memory, linked.memory)
     homeless = [key for key in layout.unplaced + sorted(layout.ambiguous)
@@ -257,6 +280,7 @@ def match(objects, rules, memory):
         'ambiguous': _fragment_list(program, sorted(layout.ambiguous),
                                     layout),
         'placed_inexactly': _fragment_list(program, inexact, layout),
+        'single_evidence': _single(weighed.single, finished.known),
         'not_part_of_the_program': _dropped(program, memory, finished,
                                             linked, part_of_program),
         'unsolved_symbols': _unsolved(program, finished),
@@ -267,13 +291,18 @@ def match(objects, rules, memory):
                           for problem in program.problems + linked.problems],
         'assembler_errors': [str(error) for unit in objects
                              for error in unit.errors],
+        'notes': ([sections.INIT_TABLE_NOTE]
+                  if sections.INIT_TABLE_KEY in finished.addresses else []),
     }
-    return report, linkmap.make(program, layout, finished)
+    return report, linkmap.make(program, layout, finished, weighed)
 
 
 def clean(report):
-    """True when the report of a program has nothing wrong."""
-    return not (report['mismatch_bytes'] or report['unplaced']
+    """True when the report of a program has nothing wrong: among
+    others, every fragment that is part of the program is placed."""
+    counts = report['fragments']
+    return not (counts['placed'] != counts['part_of_the_program']
+                or report['mismatch_bytes'] or report['unplaced']
                 or report['ambiguous'] or report['placed_inexactly']
                 or report['unsolved_symbols'] or report['inconsistent']
                 or report['link_problems'] or report['assembler_errors'])
@@ -288,10 +317,14 @@ def run(image_path, results, upstream=frontend.UPSTREAM):
               'image_sha256': hashlib.sha256(data).hexdigest(),
               'programs': {}}
     maps = {}
-    for target in release.targets(data):
-        rules = scm.load(upstream / 'src' / 'iigs' / target.rules_file)
+    rules = {name: scm.load(upstream / 'src' / 'iigs' / rules_file)
+             for name, rules_file in release.RULES_FILES.items()}
+    objects = {name: assemble(results, name) for name in rules}
+    game_memories = release.linked_memories(
+        rules['game'], initialised_sections(objects['game']))
+    for target in release.targets(data, game_memories):
         report['programs'][target.name], maps[target.name] = match(
-            assemble(results, target.name), rules, target.memory)
+            objects[target.name], rules[target.name], target.memory)
     programs = report['programs'].values()
     report['total_bytes'] = sum(each['total_bytes'] for each in programs)
     report['mismatch_bytes'] = sum(each['mismatch_bytes']

@@ -42,6 +42,15 @@ class ObjectFragment:
     `initialised`, else none. `labels` maps each label that is not
     local to its offset. `requires` are the names of the .require
     directives in the fragment.
+
+    `kind` is the kind of the .section directive, or text when the
+    directive gives none; `kind_given` tells the two apart. Taking
+    text is an assumption: text is the default kind of a section, but
+    the manual does not say whether a .section NAME without a kind
+    takes the kind that NAME is given elsewhere. link.Program reports
+    every link where the answer would matter: a fragment without a
+    kind in a section that another fragment gives a kind other than
+    text.
     """
     key: Tuple[str, int]
     section: str
@@ -55,6 +64,7 @@ class ObjectFragment:
     spans: List[Span] = field(default_factory=list)
     labels: Dict[str, int] = field(default_factory=dict)
     requires: List[str] = field(default_factory=list)
+    kind_given: bool = True
 
     @property
     def initialised(self):
@@ -312,7 +322,8 @@ class _Assembler:
         made = ObjectFragment(
             (self.name, number), fragment.section, fragment.kind or 'text',
             fragment.modifiers, fragment.where,
-            size=self.offsets[number][-1])
+            size=self.offsets[number][-1],
+            kind_given=fragment.kind is not None)
         data = bytearray()
         for index, item in enumerate(fragment.items):
             offset = self.offsets[number][index]

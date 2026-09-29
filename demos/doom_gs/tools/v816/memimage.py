@@ -14,6 +14,12 @@ from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple
 BANK_SIZE = 0x10000
 ADDRESS_SPACE = 0x1000000
 _NOT_LOADED = -1
+# The owner of each byte is the index of its region, kept in an array
+# of this type code. A C int is 32 bits on the hosts we build on; with
+# 'h' the index would stop at 32767. load() refuses a region past the
+# limit rather than let an index wrap.
+_OWNER_TYPE = 'i'
+MAX_REGIONS = 2 ** (8 * array(_OWNER_TYPE).itemsize - 1) - 1
 
 
 class Region(NamedTuple):
@@ -60,6 +66,9 @@ class MemoryImage:
         if address < 0 or address + len(data) > ADDRESS_SPACE:
             raise ValueError('$%06X + %d bytes is outside 24 bits'
                              % (address, len(data)))
+        if len(self.regions) >= MAX_REGIONS:
+            raise ValueError('more than %d loads in one image'
+                             % MAX_REGIONS)
         region = Region(len(self.regions), address, len(data), label)
         self.regions.append(region)
         position = 0
@@ -74,13 +83,13 @@ class MemoryImage:
     def _load_in_bank(self, region, bank, offset, data) -> None:
         if bank not in self._data:
             self._data[bank] = bytearray(BANK_SIZE)
-            self._owner[bank] = array('h', [_NOT_LOADED]) * BANK_SIZE
+            self._owner[bank] = array(_OWNER_TYPE, [_NOT_LOADED]) * BANK_SIZE
         end = offset + len(data)
         owners = self._owner[bank]
         if owners[offset:end].count(_NOT_LOADED) != len(data):
             self._note_overlaps(region, bank, offset, end)
         self._data[bank][offset:end] = data
-        owners[offset:end] = array('h', [region.index]) * len(data)
+        owners[offset:end] = array(_OWNER_TYPE, [region.index]) * len(data)
 
     def _note_overlaps(self, region, bank, offset, end) -> None:
         owners = self._owner[bank]

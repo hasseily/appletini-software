@@ -22,10 +22,18 @@ order of the names,
     2 bytes   .sectionSize
 
 The vendor's manual does not describe the table; its form is that of
-the image and of crt0.s. The address of the table comes from the
-recovery (the holes of crt0.s hold .sectionStart data_init_table),
-because the linker is free to put the table anywhere in the memories
-that accept the section.
+the image and of crt0.s, and it was read from one image only, the
+release (INIT_TABLE_NOTE, which the match report repeats). That image
+has no entry that copies data (the second field is always 0) and its
+entries are in the order of the names; a program with initialised
+data in RAM, or a linker that orders the entries otherwise, would need
+more than this. tests/test_sections.py checks both against the release.
+The address of the table comes from the recovery (the holes of crt0.s
+hold .sectionStart data_init_table), because the linker is free to put
+the table anywhere in the memories that accept the section.
+
+Fixed placement. A section with a fixed address in the rules file must
+start there; finish() reports a section whose placed fragments do not.
 """
 
 import struct
@@ -36,7 +44,11 @@ from . import link, linear, objfile, place
 LINKER_UNIT = '(linker)'
 INIT_TABLE = 'data_init_table'
 INIT_TABLE_KEY = (LINKER_UNIT, 0)
-_ENTRY = struct.Struct('<IIH')
+INIT_ENTRY = struct.Struct('<IIH')
+INIT_TABLE_NOTE = (
+    'data_init_table is made again from its form in one image (the '
+    'release): entries that clear bss only, in the order of the section '
+    'names. An entry that copies data is not supported.')
 
 
 class Finished(NamedTuple):
@@ -72,11 +84,11 @@ def init_table(program, addresses):
     cleared = [key for key in addresses if program.fragments[key].cleared]
     found = extents(program, {key: addresses[key] for key in cleared})
     return b''.join(
-        _ENTRY.pack(first, 0, 1 + last - first)
+        INIT_ENTRY.pack(first, 0, 1 + last - first)
         for _, (first, last) in sorted(found.items()))
 
 
-def _blocks(rules):
+def blocks(rules):
     """The extents of the blocks that fill their memory."""
     found = {}
     for name, size in rules.blocks.items():
@@ -88,7 +100,7 @@ def _blocks(rules):
     return found
 
 
-def _operators(found):
+def operators(found):
     """The numbers of the section operators for the extents `found`."""
     numbers = {}
     for name, (first, last) in found.items():
@@ -96,6 +108,21 @@ def _operators(found):
         numbers[(linear.SECTION, 'sectionEnd', name)] = last
         numbers[(linear.SECTION, 'sectionSize', name)] = 1 + last - first
     return numbers
+
+
+def _misplaced(rules, found):
+    """Problems for the sections of `found` (extents by name) that have
+    a fixed address in `rules` and do not start there."""
+    problems = []
+    for name, (first, _) in sorted(found.items()):
+        fixed = [rule.first for _, rule in rules.accepting(name)
+                 if rule.fixed]
+        if fixed and first not in fixed:
+            problems.append(link.Problem(
+                'the section %s starts at $%06X, its fixed address is $%s'
+                % (name, first, ', $'.join('%06X' % address
+                                          for address in fixed))))
+    return problems
 
 
 def finish(program, layout):
@@ -114,10 +141,11 @@ def finish(program, layout):
             size=len(table), data=table)
         program.holes[INIT_TABLE_KEY] = []
         addresses[INIT_TABLE_KEY] = start
-    found = _blocks(program.rules)
+    found = blocks(program.rules)
     found.update(extents(program, addresses))
+    problems += _misplaced(program.rules, found)
     known = dict(layout.known)
-    known.update(_operators(found))
+    known.update(operators(found))
     for atom, constraints in sorted(layout.constraints.items()):
         if atom not in known and atom[0] != linear.FRAGMENT:
             known[atom] = constraints[0].value

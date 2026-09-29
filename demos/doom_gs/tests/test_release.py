@@ -3,7 +3,7 @@
 import unittest
 
 import support
-from v816 import release
+from v816 import release, scm
 
 BLOCK = support.BLOCK
 
@@ -23,9 +23,24 @@ def disk():
     return bytes(image)
 
 
+# The memories of the game: the code at $B800 and in bank 3 has bytes;
+# bank $10 holds bss only, so the resident data there is not the
+# linker's.
+RULES = scm.parse('''
+(define memories
+  '((memory Low (address (#x00b800 . #x00b9ff)) (section low))
+    (memory Irq (address (#x00dc00 . #x00deff)) (section irq))
+    (memory Code (address (#x030000 . #x03ffff)) (section far zfar))
+    (memory Far (address (#x100000 . #x10ffff)) (section zfar))
+    ))
+''')
+INITIALISED = {'low', 'irq', 'far'}
+
+
 class Targets(unittest.TestCase):
     def setUp(self):
-        self.targets = release.targets(disk())
+        self.targets = release.targets(
+            disk(), release.linked_memories(RULES, INITIALISED))
 
     def test_three_programs(self):
         self.assertEqual(
@@ -64,6 +79,25 @@ class Targets(unittest.TestCase):
         self.assertEqual(memory.read(0x00bd2b, 2), b'\x03\0')
         self.assertEqual(memory.loaded_bytes(0), 3 * BLOCK)
 
+    def test_linked_memories(self):
+        self.assertEqual(
+            release.linked_memories(RULES, INITIALISED),
+            [(0x00b800, 0x00b9ff), (0x00dc00, 0x00deff),
+             (0x030000, 0x03ffff)])
+
+    def test_segment_found_by_its_moved_part(self):
+        """Only the interrupt code of the segment at $B800 lies in a
+        memory of the link, at $DC00: the whole segment is the
+        game's."""
+        memories = release.linked_memories(RULES, {'irq'})
+        memory = release.targets(disk(), memories)[0].memory
+        self.assertEqual(memory.banks(), [0x00])
+        self.assertEqual(memory.loaded_bytes(0), 3 * BLOCK)
+
+    def test_nothing_linked(self):
+        memory = release.targets(disk(), [])[0].memory
+        self.assertEqual(memory.banks(), [])
+
     def test_disk_address(self):
         self.assertEqual(release.disk_address(0x00dc00), 0x00ba00)
         self.assertEqual(release.disk_address(0x00deff), 0x00bcff)
@@ -72,10 +106,11 @@ class Targets(unittest.TestCase):
         self.assertEqual(release.disk_address(0x03dc00), 0x03dc00)
 
 
+@support.needs_upstream
 @support.needs_release
 class ReleaseImage(unittest.TestCase):
     def test_sizes(self):
-        targets = release.load(str(support.RELEASE_IMAGE))
+        targets = support.release_targets()
         sizes = {target.name: sum(target.memory.loaded_bytes(bank)
                                   for bank in target.memory.banks())
                  for target in targets}

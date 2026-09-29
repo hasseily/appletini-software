@@ -155,6 +155,42 @@ class NameProblems(unittest.TestCase):
             ['1 bytes at $030001 are in two fragments: a.s#0 and a.s#1'])
 
 
+class AssumedKinds(unittest.TestCase):
+    """A .section without a kind is taken as text (objfile)."""
+
+    def messages(self, sources):
+        program = support.program_of(sources, RULES)
+        return [(problem.message, problem.key)
+                for problem in program.problems]
+
+    def test_section_without_a_kind_that_is_bss_elsewhere(self):
+        self.assertEqual(self.messages({
+            'a.s': ' .section znear, bss\n .space 2\n',
+            'b.s': ' .section znear\n .space 2\n'}), [
+            ('the section znear has no kind here, and the kind bss '
+             'elsewhere: text was assumed', ('b.s', 0))])
+
+    def test_without_a_kind_and_text(self):
+        self.assertEqual(self.messages({
+            'a.s': ' .section code, text\n nop\n',
+            'b.s': ' .section code\n nop\n'}), [])
+
+    def test_kinds_given_explicitly(self):
+        """Upstream gives halflist the kinds rodata and text; nothing
+        was assumed there."""
+        self.assertEqual(self.messages({
+            'a.s': ' .section halflist, rodata\n .byte 1\n',
+            'b.s': ' .section halflist, text\n nop\n'}), [])
+
+    def test_kind_is_recorded_as_given_or_not(self):
+        unit = support.assemble_clean(
+            ' .section code\n nop\n .section code, text\n nop\n')
+        self.assertEqual(
+            [(fragment.kind, fragment.kind_given)
+             for fragment in unit.fragments],
+            [('text', False), ('text', True)])
+
+
 class Reachable(unittest.TestCase):
     def reachable(self, sources):
         return support.program_of(sources, RULES).reachable()

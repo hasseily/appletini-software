@@ -1,0 +1,113 @@
+# A tour of the nine maps of episode 1 with the level cheat, 5 seconds
+# of machine time in each with a shot, in god mode (iddqd) so that no
+# monster ends it early.
+#
+# In this port idclev takes no map number: it ends the level
+# (src/iigs/m_cheat65.s, cheatClev calls G_ExitLevel), and the level
+# after map N is N + 1 (src/iigs/g_game65.s, doCompleted). So the tour
+# goes E1M1 to E1M8. E1M9 comes only after the secret exit of E1M3; the
+# script stands in for that exit by setting the next map of the
+# intermission after E1M3 (_g_wminfo + 4, WM_NEXT: the map number - 1)
+# to 8, as doCompleted does for a secret exit. After E1M9 the game goes
+# on to E1M4 by itself.
+#
+# At the intermission the use key ends the counts, then goes to the
+# next map (WI_Ticker in src/iigs/wi_stuff65.s).
+
+wait d_main65.s:pagedrawn == 1 within 90s   # the title page is up
+at +1s press escape                     # a new game at the default skill
+wait m_menu65.s:currentMenu == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+at +1s press return
+wait m_menu65.s:currentMenu == 2 within 10s
+wait m_menu65.s:itemOn == 2 within 1
+at +1s press return
+wait _g_usergame == 1 within 10s
+wait _g_gamestate == 0 within 10s
+wait long _g_gametic grows 1 within 60s # E1M1 is loaded
+type iddqd
+
+wait _g_gamemap == 1 within 1           # E1M1
+at +3s shot e1m1
+at +2s type idclev
+wait _g_gamestate == 1 within 30s       # the intermission
+at +5s shot after-e1m1                 # (drawn by then at 2.86 MHz)
+press space                             # the counts at once
+at +2s press space                      # the next map
+wait _g_gamestate == 0 within 30s
+wait long _g_gametic grows 1 within 60s # it is loaded
+
+wait _g_gamemap == 2 within 1           # E1M2
+at +3s shot e1m2
+at +2s type idclev
+wait _g_gamestate == 1 within 30s       # the intermission
+at +5s shot after-e1m2                 # (drawn by then at 2.86 MHz)
+press space                             # the counts at once
+at +2s press space                      # the next map
+wait _g_gamestate == 0 within 30s
+wait long _g_gametic grows 1 within 60s # it is loaded
+
+wait _g_gamemap == 3 within 1           # E1M3
+at +3s shot e1m3
+at +2s type idclev
+wait _g_gamestate == 1 within 30s       # the intermission
+poke _g_wminfo+4 8                      # the secret exit: E1M9 next
+at +5s shot after-e1m3                 # (drawn by then at 2.86 MHz)
+press space                             # the counts at once
+at +2s press space                      # the next map
+wait _g_gamestate == 0 within 30s
+wait long _g_gametic grows 1 within 60s # it is loaded
+
+wait _g_gamemap == 9 within 1           # E1M9
+at +3s shot e1m9
+at +2s type idclev
+wait _g_gamestate == 1 within 30s       # the intermission
+at +5s shot after-e1m9                 # (drawn by then at 2.86 MHz)
+press space                             # the counts at once
+at +2s press space                      # the next map
+wait _g_gamestate == 0 within 30s
+wait long _g_gametic grows 1 within 60s # it is loaded
+
+wait _g_gamemap == 4 within 1           # E1M4
+at +3s shot e1m4
+at +2s type idclev
+wait _g_gamestate == 1 within 30s       # the intermission
+at +5s shot after-e1m4                 # (drawn by then at 2.86 MHz)
+press space                             # the counts at once
+at +2s press space                      # the next map
+wait _g_gamestate == 0 within 30s
+wait long _g_gametic grows 1 within 60s # it is loaded
+
+wait _g_gamemap == 5 within 1           # E1M5
+at +3s shot e1m5
+at +2s type idclev
+wait _g_gamestate == 1 within 30s       # the intermission
+at +5s shot after-e1m5                 # (drawn by then at 2.86 MHz)
+press space                             # the counts at once
+at +2s press space                      # the next map
+wait _g_gamestate == 0 within 30s
+wait long _g_gametic grows 1 within 60s # it is loaded
+
+wait _g_gamemap == 6 within 1           # E1M6
+at +3s shot e1m6
+at +2s type idclev
+wait _g_gamestate == 1 within 30s       # the intermission
+at +5s shot after-e1m6                 # (drawn by then at 2.86 MHz)
+press space                             # the counts at once
+at +2s press space                      # the next map
+wait _g_gamestate == 0 within 30s
+wait long _g_gametic grows 1 within 60s # it is loaded
+
+wait _g_gamemap == 7 within 1           # E1M7
+at +3s shot e1m7
+at +2s type idclev
+wait _g_gamestate == 1 within 30s       # the intermission
+at +5s shot after-e1m7                 # (drawn by then at 2.86 MHz)
+press space                             # the counts at once
+at +2s press space                      # the next map
+wait _g_gamestate == 0 within 30s
+wait long _g_gametic grows 1 within 60s # it is loaded
+
+wait _g_gamemap == 8 within 1           # E1M8
+at +3s shot e1m8
+at +2s stop

@@ -3,6 +3,7 @@
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import support
@@ -100,6 +101,24 @@ class Loading(unittest.TestCase):
 
 
 @support.needs_release
+class ManyRegions(unittest.TestCase):
+    def test_owners_past_16_bits(self):
+        """Region indexes above 32767 are kept, not wrapped."""
+        image = memimage.MemoryImage()
+        for address in range(40000):
+            image.load(address, b'x')
+        self.assertEqual(image.region_at(39999).index, 39999)
+        self.assertEqual(image.region_at(32768).address, 32768)
+
+    def test_limit(self):
+        image = memimage.MemoryImage()
+        with mock.patch.object(memimage, 'MAX_REGIONS', 2):
+            image.load(0, b'a')
+            image.load(1, b'b')
+            with self.assertRaisesRegex(ValueError, 'more than 2 loads'):
+                image.load(2, b'c')
+
+
 class ReleaseMemory(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -1,0 +1,245 @@
+# Every view size through the options menu, in E1M1: OPTIONS, then
+# DISPLAY & SOUND, then VIEW with the left arrow, from FULL down to 1/4
+# SIZE (uiSizes of src/iigs/m_menu65.s), then back to FULL with the
+# right arrow; a shot of the game at each size, with the menus closed.
+# Each change is checked on VW_SIZE (src/iigs/viewwin.inc): FULL 10,
+# 3/4 8, 2/3 7, 1/2 5, 1/3 3, 1/4 2.
+#
+# Menus: MAIN 0 (item 1 OPTIONS), OPTIONS 6 (item 1 DISPLAY & SOUND),
+# VIDEO 12 (item 0 VIEW). Esc goes back to the parent menu and closes
+# the main menu.
+
+wait d_main65.s:pagedrawn == 1 within 90s   # the title page is up
+at +1s press escape                     # a new game at the default skill
+wait m_menu65.s:currentMenu == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+at +1s press return
+wait m_menu65.s:currentMenu == 2 within 10s
+wait m_menu65.s:itemOn == 2 within 1
+at +1s press return
+wait _g_usergame == 1 within 10s
+wait _g_gamestate == 0 within 10s
+wait long _g_gametic grows 1 within 60s # E1M1 is loaded
+wait byte VW_SIZE == 10 within 1        # FULL
+at +3s shot size-full
+
+press escape                            # to VIEW
+wait m_menu65.s:currentMenu == 0 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 6 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+press left
+wait byte VW_SIZE == 8 within 10s
+at +1s shot menu-3-4
+press escape                            # the menus closed
+wait m_menu65.s:currentMenu == 6 within 10s
+press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+press escape
+wait _g_menuactive == 0 within 10s
+at +3s shot size-3-4
+
+press escape                            # to VIEW
+wait m_menu65.s:currentMenu == 0 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 6 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+press left
+wait byte VW_SIZE == 7 within 10s
+at +1s shot menu-2-3
+press escape                            # the menus closed
+wait m_menu65.s:currentMenu == 6 within 10s
+press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+press escape
+wait _g_menuactive == 0 within 10s
+at +3s shot size-2-3
+
+press escape                            # to VIEW
+wait m_menu65.s:currentMenu == 0 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 6 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+press left
+wait byte VW_SIZE == 5 within 10s
+at +1s shot menu-1-2
+press escape                            # the menus closed
+wait m_menu65.s:currentMenu == 6 within 10s
+press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+press escape
+wait _g_menuactive == 0 within 10s
+at +3s shot size-1-2
+
+press escape                            # to VIEW
+wait m_menu65.s:currentMenu == 0 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 6 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+press left
+wait byte VW_SIZE == 3 within 10s
+at +1s shot menu-1-3
+press escape                            # the menus closed
+wait m_menu65.s:currentMenu == 6 within 10s
+press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+press escape
+wait _g_menuactive == 0 within 10s
+at +3s shot size-1-3
+
+press escape                            # to VIEW
+wait m_menu65.s:currentMenu == 0 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 6 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+press left
+wait byte VW_SIZE == 2 within 10s
+at +1s shot menu-1-4
+press escape                            # the menus closed
+wait m_menu65.s:currentMenu == 6 within 10s
+press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+press escape
+wait _g_menuactive == 0 within 10s
+at +3s shot size-1-4
+
+press escape                            # to VIEW
+wait m_menu65.s:currentMenu == 0 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 6 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+press right
+wait byte VW_SIZE == 3 within 10s
+at +1s shot menu-1-3-again
+press escape                            # the menus closed
+wait m_menu65.s:currentMenu == 6 within 10s
+press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+press escape
+wait _g_menuactive == 0 within 10s
+at +3s shot size-1-3-again
+
+press escape                            # to VIEW
+wait m_menu65.s:currentMenu == 0 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 6 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+press right
+wait byte VW_SIZE == 5 within 10s
+at +1s shot menu-1-2-again
+press escape                            # the menus closed
+wait m_menu65.s:currentMenu == 6 within 10s
+press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+press escape
+wait _g_menuactive == 0 within 10s
+at +3s shot size-1-2-again
+
+press escape                            # to VIEW
+wait m_menu65.s:currentMenu == 0 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 6 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+press right
+wait byte VW_SIZE == 7 within 10s
+at +1s shot menu-2-3-again
+press escape                            # the menus closed
+wait m_menu65.s:currentMenu == 6 within 10s
+press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+press escape
+wait _g_menuactive == 0 within 10s
+at +3s shot size-2-3-again
+
+press escape                            # to VIEW
+wait m_menu65.s:currentMenu == 0 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 6 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+press right
+wait byte VW_SIZE == 8 within 10s
+at +1s shot menu-3-4-again
+press escape                            # the menus closed
+wait m_menu65.s:currentMenu == 6 within 10s
+press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+press escape
+wait _g_menuactive == 0 within 10s
+at +3s shot size-3-4-again
+
+press escape                            # to VIEW
+wait m_menu65.s:currentMenu == 0 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 6 within 10s
+press down
+wait m_menu65.s:itemOn == 1 within 10s
+press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+press right
+wait byte VW_SIZE == 10 within 10s
+at +1s shot menu-full-again
+press escape                            # the menus closed
+wait m_menu65.s:currentMenu == 6 within 10s
+press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+press escape
+wait _g_menuactive == 0 within 10s
+at +3s shot size-full-again
+stop

@@ -1,0 +1,57 @@
+# A new game from the menus at the default skill: E1M1, standing still
+# for 10 seconds, then the walk to the first door (linedefs 151 and 152
+# of E1M1, at x 1536-1552, y -2560 to -2432): strafe right past the
+# pillar of the central platform and the barrel at (1312, -3264), walk
+# north up the corridor (it slides the player east along its north wall
+# to about (1470, -2455)), turn right to face the door, fire at it, open
+# it and walk through. The notes "still" and "still-10s" bound the
+# measure of the frame rate standing still.
+#
+# The menus are followed by their state, so that the keys come when the
+# game is ready for them at any CPU rate. Times in the level are game
+# tics (Nt), which keep the moves about the same at any rate; the
+# stand-still time is machine time (Ns). The level loads in 3 s at
+# 12 MHz, 12 s at 2.86 MHz.
+
+wait d_main65.s:pagedrawn == 1 within 90s   # the title page is up
+at +1s press escape                     # the main menu (0), at NEW GAME
+wait _g_menuactive == 1 within 10s
+wait m_menu65.s:currentMenu == 0 within 1
+wait m_menu65.s:itemOn == 0 within 1
+at +3s shot menu                        # (drawn by then at 2.86 MHz)
+press return                            # the skill menu (2), at the
+wait m_menu65.s:currentMenu == 2 within 10s   # default skill
+wait m_menu65.s:itemOn == 2 within 1
+at +3s shot skill
+press return                            # HURT ME PLENTY: E1M1 loads
+wait _g_usergame == 1 within 10s
+wait _g_gamestate == 0 within 10s       # GS_LEVEL
+wait long _g_gametic grows 1 within 60s # the first tic after the load
+wait _g_gamemap == 1 within 1           # E1M1,
+wait _g_gameskill == 2 within 1         # at skill 2 (sk_medium)
+at +3s note still                       # the level's screen is up
+shot still-00s
+at +5s shot still-05s
+at +5s shot still-10s
+note still-10s
+
+key down d                              # strafe right
+at +34t key up d
+key down up                             # walk north
+at +50t key down d
+at +8t key up d
+at +50t shot walk
+at +50t key up up
+at +5t key down right                   # face east, at the door
+at +36t key up right
+shot turned
+at +5t key down control                 # fire
+at +20t key up control
+at +5t shot fire
+at +10t press space                     # open the door
+at +35t shot door-opening
+at +35t shot door-open
+key down up                             # through it
+at +35t key up up
+shot through
+at +10t stop

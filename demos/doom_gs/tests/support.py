@@ -5,9 +5,13 @@ upstream. Tests of the real release image and of upstream's own tools
 skip when tools/fetch_upstream.py has not filled build/.
 """
 
+import atexit
 import importlib.util
+import shutil
 import struct
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -235,3 +239,45 @@ def match_results():
         _match_results.extend(
             imgmatch.run(RELEASE_IMAGE, frontend_results()))
     return _match_results
+
+
+_release_targets = []
+
+
+def release_targets():
+    """The release.Targets of the release image, with the memories of
+    the game that upstream's rules and sources give, made once for all
+    tests."""
+    from v816 import imgmatch, release, scm
+    if not _release_targets:
+        rules = scm.load(UPSTREAM / 'src' / 'iigs' /
+                         release.RULES_FILES['game'])
+        objects = imgmatch.assemble(frontend_results(), 'game')
+        memories = release.linked_memories(
+            rules, imgmatch.initialised_sections(objects))
+        _release_targets.extend(release.load(str(RELEASE_IMAGE), memories))
+    return _release_targets
+
+
+_ref816_built = []
+
+
+def ref816_build():
+    """Build everything of tools/ref816 (the machine, the vector harness
+    and the two test programs) once, from scratch, into a directory of
+    their own under build/, removed when the tests end. Returns
+    (directory, what the compiler said)."""
+    if not _ref816_built:
+        BUILD.mkdir(exist_ok=True)
+        out = Path(tempfile.mkdtemp(prefix='test-ref816-', dir=str(BUILD)))
+        atexit.register(shutil.rmtree, str(out), True)
+        result = subprocess.run(
+            ['make', '-B', '-C', str(ROOT / 'tools' / 'ref816'),
+             'OUT=%s' % out, 'all'],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            universal_newlines=True)
+        _ref816_built.extend([out, result])
+    out, result = _ref816_built
+    if result.returncode:
+        raise AssertionError('make failed:\n' + result.stdout)
+    return out, result.stdout

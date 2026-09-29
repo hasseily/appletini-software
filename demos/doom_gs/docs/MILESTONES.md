@@ -38,7 +38,7 @@ These are firm. Breaking one is a defect even if the tests pass.
 | Rule | Why |
 | --- | --- |
 | Never commit upstream source, upstream's generated code, the release image, ROM images or third-party test vectors. Fetch them into `build/`, which is ignored. | Upstream is GPL-2; this repository follows [The Bilestoad](../../bilestoad/README.md) in keeping upstream out. |
-| Nothing derived from upstream's `src/iigs/cal_integer.s` may leave `build/`: no copies, translations, counts or symbol values. | It is a copy of the Calypsi vendor runtime, licensed for that toolchain only. The port uses its own routines. |
+| Nothing of upstream's `src/iigs/cal_integer.s` may leave `build/`: no copies, excerpts or translations of its code, and no routine written from reading it. The port's replacements are written from the call sites and the documented behaviour only. Facts about the file, such as its length or a `file:line` reference, are fine. | It is a copy of the Calypsi vendor runtime, licensed for that toolchain only. |
 | The Calypsi manual extract stays in `build/reference/`. | Vendor copyright. |
 | Emulated machines are deterministic: the same inputs give the same run, byte for byte. No host time, no randomness. | Lockstep comparison depends on it. |
 | Python tools use the standard library only and run on Python 3.9 to 3.14. C tools are C11, standard library only, built by a `Makefile` with `-Wall -Wextra` and no warnings. | Reproducible builds on the owner's Mac. |
@@ -54,6 +54,16 @@ From `demos/doom_gs`:
 python3 tools/fetch_upstream.py            # clone at 8ea2eac, release image, into build/
 python3 tools/v816/imgmatch.py             # assemble, link, compare with the release
 python3 -m unittest discover -s tests      # all unit tests
+```
+
+The reference machine of milestone 2 (about 10 minutes for everything):
+
+```
+python3 tools/ref816/fetch_vectors.py      # 65816 test vectors into build/vectors/
+make -C tools/ref816 vectors selftest machinetest
+python3 tools/ref816/title.py              # boots the release to its title screen
+python3 tools/ref816/run_script.py title newgame viewsize tour --twice
+python3 tools/ref816/profile816.py --run   # traces, then docs/PROFILE.md
 ```
 
 `fetch_upstream.py` pins upstream commit
@@ -72,8 +82,8 @@ binary and the owner's Mac has no Rosetta.
 | --- | --- | --- |
 | 0 | Hardware microbenchmarks on the Appletini | Not started. Needs the physical card and the owner. |
 | 1 | Front end, 65816 assembler and linker, image match | **Done**, commit `89bb480f`. |
-| 2 | Reference machine runs the release; measured profiles | **In progress** since 2026-09-29. See "If a run was interrupted". |
-| 3 | Target machine model with cost model; 65816 interpreter | Not started |
+| 2 | Reference machine runs the release; measured profiles | **Done**, see the results below. |
+| 3 | Target machine model with cost model; 65816 interpreter | Next. Specified below. |
 | 4 | Hand-written record replay on hardware | Not started |
 | 5 | Whole game interpreted, lockstep through demo3; first hardware run | Not started |
 | 6 | Translator with template tests; first modules | Not started |
@@ -108,6 +118,51 @@ An independent review found no cheating and two medium weaknesses; they are
 step 2.0 below.
 
 ## Milestone 2: reference machine and measured profiles
+
+### Results
+
+Done on 2026-09-29, independently reviewed, with the review's findings fixed
+and verified.
+
+| Check | Result |
+| --- | --- |
+| 65816 core against SingleStepTests (commit `db6b104`) | 5,120,000 cases: 0 register, memory, cycle-count or bus failures; 44 known issues in two narrow rules, each citing the published errata of the vector set |
+| Title screen | Reached from the release image; the colour DOOM title picture |
+| Game clock | 34.955 tics per emulated second, as the DOC settings predict |
+| Scripts | `title`, `newgame`, `viewsize` and `tour` run to their end at 2.86 MHz and 12 MHz, twice each with identical RAM hashes; all nine maps visited |
+| Unit tests | 735, none skipped |
+
+Frame cost on an ideal 65816 with no wait states, 4 tics per frame:
+
+| Scene | Instructions a frame | Cycles a frame | Frames a second at 2.86 MHz | at 12 MHz |
+| --- | ---: | ---: | ---: | ---: |
+| Standing still in E1M1 | 331,325 | 1,123,634 | 2.50 | 10.79 |
+| Title demo, E1M3 | 461,187 | 1,604,459 | 1.64 | 6.19 |
+
+The full measurements are in [`PROFILE.md`](PROFILE.md). What they change:
+
+- **Register widths.** Only 70 of 38,793 executed addresses run with more
+  than one accumulator and index width, so static width inference works
+  almost everywhere. `build/ref816/widths.json` lists every exception.
+- **Stack.** At most 86 bytes on the frame stack and 228 on the tic stack,
+  far below the 4 KB the architecture reserved.
+- **Where the time goes.** The record replay is 34% of the cycles standing
+  still and 42% in the demo; the seg loops are 32% standing still. Both are
+  planned as hand-written code.
+- **Screen.** Standing still, only 152 of the 8,519 screen bytes written a
+  frame change the stored value; in the demo 15,262 of 21,881.
+- **The assumptions of ARCHITECTURE.md section 6.** Instructions outside the
+  replay are about half the assumed 450,000; far accesses outside the replay
+  are 30,000 to 47,000, fewer than assumed but a larger share of the
+  instructions. Section 8 of `PROFILE.md` gives each.
+
+Known limits: the machine has no wait states, so its times are those of an
+ideal CPU; counts per frame do not depend on that. It has not been compared
+with GSSquared or a real IIgs. `$C039` (serial) is the only register the game
+touches that it does not model.
+
+### Specification
+
 
 A 65816 machine on the host that runs upstream's release, plays it under
 script, and measures what the port needs to know. It replaces the assumed
@@ -218,8 +273,9 @@ List every approximated or stubbed hardware behaviour, with its address.
 
 Tracing in `tools/ref816/trace.c`, enabled by options so an untraced run
 stays fast, and a report tool `tools/ref816/profile816.py` that maps
-addresses to symbols through `build/linkmap.json`. Group `cal_integer.s` as
-"vendor runtime" in anything written outside `build/`.
+addresses to symbols through `build/linkmap.json`. `docs/PROFILE.md` folds the
+code of `cal_integer.s` into its "others" rows and never shows it on its own;
+its separate figures go to `build/ref816/profile-withheld.json`.
 
 Measure per rendered frame, median and range over at least 20 frames, for
 standing still in E1M1 and for the title demo:
@@ -277,6 +333,94 @@ Someone who did not write the code checks it. Review; do not rewrite.
 
 Commit milestone 2 only after the review passes.
 
+## Milestone 3: target machine model and 65816 interpreter
+
+Two pieces every later milestone needs, whatever the firmware decisions:
+
+- `a2vm`, a fast model of the Appletini target, to run port code on the host.
+- A 65816 interpreter written in 65C02 assembly. It is tier 0 of the
+  architecture: it runs cold code, code with unclassified self-modification,
+  and anything the translator refuses.
+
+New code goes in `tools/a2vm/` (host tool) and `src/vm/` (port code that runs
+on the Apple, assembled with ca65 from cc65 2.18).
+
+### 3.1 `a2vm`, the target model
+
+A C11 program with the same build rules as `tools/ref816`.
+
+| Part | What to model |
+| --- | --- |
+| CPU | W65C02S, including RMB, SMB, BBR, BBS, WAI and STP, exact in registers, flags and memory effects, with the datasheet's cycle counts. Check it against a public per-opcode vector set for the WDC 65C02 fetched into `build/vectors/` (the SingleStepTests organisation has one); list any unreliable cases by opcode with the reason. |
+| Memory | Enhanced //e main 64 KB and 128 RamWorks banks selected by `$C071/$C073`, with RAMRD, RAMWRT, ALTZP, 80STORE, PAGE2, HIRES and both language cards per bank, exactly as [`demos/doom/tools/a2sim.py`](../../doom/tools/a2sim.py) models them. |
+| Devices | `$C019`, keyboard `$C000/$C010`, Open and Solid Apple, the mouse card in slot 2 with its VBL interrupt, the memory API FIFO at `$CFF0-$CFF2` in slot 7 with the version 1 rules of `README_MEMORY_API.md` in appletini-one (COPY, FILL, PRIVATE, every validation error), and screen dumps of standard SHR and the PAL256 extension from aux bank 0 `$2000-$9FFF`. |
+| Start-up | Load ca65 binaries at given addresses and banks, or run a ProDOS system file through a trap of the MLI entry, as `a2sim.py`'s `FakeProDOS` does. |
+| Cost model | Every access classed as fast memory (main or base aux), extended memory through the one-line cache (hit, clean miss, dirty miss), a `$Cxxx` bus cycle, an SHR write that leaves bytes pending in the mirror, a mapping change that clears the TURBO caches, or a memory API request. Costs come from a parameter file with two profiles: F1.2.1 today, and F1.2.1 with the changes of the firmware design doc. Report time per frame and per phase in both. |
+
+The parameters are derived from the RTL, as `docs/firmware/` explains, until
+milestone 0 measures them. Say so in the output.
+
+**Validation against `a2sim.py`.** `a2vm` has a compatibility mode that
+counts cycles the way `a2sim.py` does. In that mode it runs the existing
+Doom port's banked build for 20 rendered frames and must match `a2sim.py`
+at every frame boundary: RAM of every bank, the screen, registers and cycle
+count. The existing port and its tools are in [`demos/doom`](../../doom/README.md);
+its README explains how to build it and run it with `tools/run_doom.py`.
+
+**Acceptance for 3.1:**
+
+1. Builds with no warnings; the 65C02 vectors pass, or each exception is
+   listed with evidence.
+2. The 20-frame comparison with `a2sim.py` matches exactly.
+3. `a2vm` runs those frames at least 20 times faster than `a2sim.py`.
+4. For the same 20 frames it reports frame time under both cost profiles.
+   Today's profile must come within 25% of the 248 ms per frame measured on
+   hardware, or the report must say which parameter is suspected.
+
+### 3.2 The interpreter
+
+`src/vm/`: a 65816 interpreter in 65C02 assembly that runs on `a2vm`.
+
+- The virtual 65816 state lives in main zero page: A, B, X, Y, S, D, DBR,
+  PBR, P, and the M, X and E flags.
+- The virtual 24-bit address space maps onto the Appletini as
+  ARCHITECTURE.md section 3.3 describes: a table from each virtual 32 KB
+  half-bank to `$4000-$BFFF` of one RamWorks bank, with the special cases for
+  virtual banks `$00`, `$01`, `$02` and `$E1`. For this milestone the table
+  may be simpler, but it must keep far reads and writes behind one interface
+  so the planner of milestone 7 can change it.
+- Code is fetched through a cache of 256-byte pages in fast memory. A write
+  to a cached page invalidates it, so self-modifying code stays correct.
+- Every 65816 opcode in native and emulation mode, including decimal mode,
+  MVN and MVP a byte at a time, WAI, STP, BRK, COP, RTI and interrupt entry.
+- The interpreter's own code fits the budget of ARCHITECTURE.md section 3.2:
+  4 KB of core in main language card `$E000-$FFFF` plus 4 KB of handlers in
+  language card bank 1. If it cannot fit, say what it needs.
+
+**Acceptance for 3.2:**
+
+1. Correctness: the SingleStepTests 65816 vectors of milestone 2, run through
+   the interpreter on `a2vm`, pass in registers and memory for every opcode
+   in both modes. Cycle and bus records are not compared. Exceptions are
+   listed with evidence, and the 44 known issues of milestone 2 are handled
+   the same way.
+2. Cost: the median and the range of 65C02 cycles per interpreted 65816
+   instruction, by opcode and weighted by the instruction mix of
+   `docs/PROFILE.md`, under both cost profiles. This replaces assumption P5
+   of ARCHITECTURE.md section 6.
+3. First contact with the game: the interpreter runs upstream's image, from
+   the entry point, in lockstep with `ref816`. The comparison is of the
+   virtual registers after every instruction and of every memory write, up
+   to the first access to the IIgs I/O space. Report how far it got.
+4. A unit test in `tests/` runs a sample of the vectors through the
+   interpreter, and a `make` target runs all of them.
+
+### 3.3 Independent review
+
+As in 2.5: build from clean, rerun every acceptance test, look for shortcuts
+that make a result untrustworthy, check the ground rules, and list real
+defects most serious first.
+
 ## Milestone 0: hardware costs
 
 This needs the physical Appletini and the owner, so it can run in parallel
@@ -291,15 +435,13 @@ with milestones 2 and 3. ARCHITECTURE.md section 12 has the file list.
 - A standard 320-mode SHR picture with per-row palettes. Upstream uses
   standard SHR; the existing Doom port uses only the PAL256 extension.
 
-## Milestones 3 to 11
+## Milestones 4 to 11
 
 ARCHITECTURE.md section 8 defines deliverable and test for each. Two points
 decided since it was written:
 
-- The target model for milestone 3 can start from the existing port's
-  `../doom/tools/a2sim.py`, which models the Appletini memory map on py65, at
-  about 3.5 million cycles per second. The architecture proposes a C
-  replacement called `a2vm` for speed.
+- `PROFILE.md` measures what the architecture assumed. Recompute the phase
+  windows and the frame budget from it before milestone 7.
 - Milestone 4 and later should design the frame around the firmware
   proposals below: keep `$C073` fixed inside a frame, and read extended
   memory through the `$C069` read bank if it is built.
@@ -311,19 +453,19 @@ decided since it was written:
 | Firmware design for faster extended memory and SHR (`$C069` read bank, lazy SHR mirror, relaxed PSRAM admission, and four more) | A Claude Doc in the owner's account, "vTW Memory Fast Path: Design". Its source material is [`firmware/`](firmware/). | Awaiting the owner's review. Nothing implemented. |
 | Estimated effect of those changes on the existing port | Measured event counts in the model, costs derived from the RTL | +20% to +30% from firmware alone; up to about +50% with software changes |
 | Firmware source | [hasseily/appletini-one](https://github.com/hasseily/appletini-one), `origin/main` at F1.2.1 | 21 of its 30 testbenches run under Verilator without Vivado, with a behavioural `LUT6` model |
-| Existing Doom port | [`../doom`](../doom/README.md), branch `claude/iigs-doom-port` | 4.03 FPS measured on hardware, E1M1 idle, TURBO |
+| Existing Doom port | [`demos/doom`](../../doom/README.md), branch `claude/iigs-doom-port` | 4.03 FPS measured on hardware, E1M1 idle, TURBO |
 
 ## If a run was interrupted
 
-Milestone 2 is built by a sequence of agents that do not commit. If the work
-stopped partway:
+Each milestone is built by a sequence of agents that do not commit. If the
+work stopped partway:
 
-1. `git status` in the repository. Uncommitted changes under `tools/v816/`,
-   `tests/` and `README.md` are step 2.0. Anything under `tools/ref816/`,
-   `coverage/` or `docs/PROFILE.md` is steps 2.1 to 2.4.
-2. Run the unit tests and `tools/v816/imgmatch.py`. If the match is still 0
-   differing bytes and the tests pass, step 2.0 may be complete; compare the
-   code with the table in 2.0.
-3. Treat anything under `tools/ref816/` as unreviewed. Rebuild it and check it
+1. `git status` in the repository. Uncommitted files belong to the milestone
+   marked "Next" in the status table; its specification says which step
+   writes which directory.
+2. Run the unit tests and `tools/v816/imgmatch.py`. Earlier milestones must
+   still pass: 0 differing bytes, and all tests green.
+3. Treat every uncommitted file as unreviewed. Rebuild it and check it
    against the acceptance tests of its step before building on it.
-4. `build/` can always be recreated with `tools/fetch_upstream.py`.
+4. `build/` can always be recreated with `tools/fetch_upstream.py` and
+   `tools/ref816/fetch_vectors.py`.

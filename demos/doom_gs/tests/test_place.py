@@ -273,6 +273,25 @@ class Rules(unittest.TestCase):
             _, layout = recovered({'t.s': source}, places)
             self.assertEqual(('t.s', 1) in layout.placements, found)
 
+    def test_bss_fragment_that_no_hole_refers_to(self):
+        """A .require makes the bss fragment part of the program, and
+        nothing in the image says where it is: it is unplaced, not left
+        out."""
+        source = (' .section startup, root\n .require buffer\n rtl\n'
+                  ' .public buffer\n .section znear, bss\n'
+                  'buffer: .space 8\n')
+        places = {('t.s', 0): 0x030000, ('t.s', 1): 0x028000}
+        _, layout = recovered({'t.s': source}, places)
+        self.assertEqual(layout.addresses(), {('t.s', 0): 0x030000})
+        self.assertEqual(layout.unplaced, [('t.s', 1)])
+        self.assertEqual(layout.ambiguous, {})
+
+    def test_empty_bss_fragment_that_no_hole_refers_to(self):
+        source = (' .section startup, root\n .require buffer\n rtl\n'
+                  ' .public buffer\n .section znear, bss\nbuffer:\n')
+        _, layout = recovered({'t.s': source}, {('t.s', 0): 0x030000})
+        self.assertEqual(layout.unplaced, [])
+
     def test_empty_fragment_with_a_label(self):
         source = (' .section startup, root\n .word end\n lda long:end\n'
                   ' .section code\nend:\n')
@@ -324,6 +343,16 @@ class Solve(unittest.TestCase):
         self.assertEqual(
             self.solve(Value('kbank', Linear.atom(self.P)), '3412'),
             (self.P, 0x031234, 0xffffff))
+
+    def test_operators_without_a_base(self):
+        """.tiny and .near give nothing when the rules file does not
+        define the base of the area."""
+        for reloc, data in (('tiny', '12'), ('near', '3412')):
+            data = bytes.fromhex(data)
+            hole = asm816.Hole(1, len(data),
+                               Value(reloc, Linear.atom(self.P)),
+                               asm816.KIND_DATA, 0)
+            self.assertIsNone(place.solve(hole, 0x031000, data, {}, {}))
 
     def test_branch(self):
         own = ('fragment', 'a.s', 0)
