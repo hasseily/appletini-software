@@ -4,18 +4,21 @@ This file lets any engineer, or any AI agent, continue the port without the
 conversation that started it. It states what is done, what is in progress,
 and the exact specification and acceptance tests of the next steps.
 
-Status as of 2026-09-29.
+Status as of 2026-09-30.
 
 ## Read first
 
 1. [`README.md`](../README.md): what the port is, and the licensing rules.
-2. [`ARCHITECTURE.md`](ARCHITECTURE.md): the draft design. Sections 0 (facts
-   settled from the source), 1 (summary), 7 (verification), 8 (milestones)
-   and 13 (open questions). **The project owner has not reviewed it yet.**
-3. [`research/iigs-platform.md`](research/iigs-platform.md) and
+2. The section "Direction since 2026-09-30" below: the owner chose a native
+   65C02 rewrite. [`NATIVE.md`](NATIVE.md) is its architecture, once written
+   (see the status table).
+3. [`ARCHITECTURE.md`](ARCHITECTURE.md): the earlier virtual-65816 design.
+   Its end state is superseded; section 0 (facts settled from the source)
+   and section 7 (verification) still hold.
+4. [`research/iigs-platform.md`](research/iigs-platform.md) and
    [`research/iigs-renderer.md`](research/iigs-renderer.md): how upstream
    works, with file and line references.
-4. [`research/appletini-hardware.md`](research/appletini-hardware.md): what
+5. [`research/appletini-hardware.md`](research/appletini-hardware.md): what
    the target is fast and slow at.
 
 ## Goal
@@ -26,10 +29,12 @@ enhanced Apple //e with an Appletini card. The owner wants "their whole game
 to run on 65c02 and the Appletini with the SHR techniques they use". The
 Appletini's accelerator is a W65C02S soft core, so no 65816 code runs as is.
 
-The chosen approach (ARCHITECTURE.md section 1) is a virtual 65816 machine:
-an interpreter for cold code, translated regions for warm code, and
-hand-written 65C02 kernels for the hot loops. Every step is checked against a
-reference that runs the original release.
+The approach, since 2026-09-30, is a native rewrite: every routine becomes
+65C02 code with data layouts chosen for the 65C02, keeping upstream's SHR
+techniques. Music is converted from the WAD's MUS songs to the Phasor. Every
+step is checked against a reference that runs the original release. The
+earlier plan, a virtual 65816 machine (ARCHITECTURE.md), was measured too
+slow in milestone 3.
 
 ## Ground rules
 
@@ -45,6 +50,7 @@ These are firm. Breaking one is a defect even if the tests pass.
 | Unit tests live in `tests/` and run with `python3 -m unittest discover -s tests` from this directory. Tests that need `build/` skip with a clear message when it is missing. | One command checks everything. |
 | Do not weaken a test, and do not special-case game addresses or file names to force a result. Report what does not work. | Earlier stages were independently reviewed for exactly this. |
 | Work on branch `claude/iigs-doom-port`. Commit only finished, tested milestones or documents. | The owner approved commits and pushes on this branch. |
+| Code written by translating upstream routines stays under `build/` until the owner decides how the repository licenses this directory. | It is derived from GPL-2 code, so the first rule does not cover it. |
 
 ## Setting up
 
@@ -66,6 +72,21 @@ python3 tools/ref816/run_script.py title newgame viewsize tour --twice
 python3 tools/ref816/profile816.py --run   # traces, then docs/PROFILE.md
 ```
 
+The target model and the interpreter of milestone 3 (about 15 minutes):
+
+```
+python3 tools/a2vm/fetch_vectors.py        # 65C02 test vectors into build/vectors/
+make -C tools/a2vm all vectors selftest bench compare
+python3 tools/a2vm/cost_report.py          # the cost model against the hardware
+make -C src/vm sizes vectors selftest
+python3 tools/ref816/make_image.py && make -C src/vm contact
+python3 tools/a2vm/interpreter_report.py --run   # then docs/INTERPRETER.md
+```
+
+`make -C tools/ref816 clean` deletes all of `build/ref816`, and
+`make -C tools/a2vm clean` deletes `build/a2vm/interp`; regenerate them
+with the commands above.
+
 `fetch_upstream.py` pins upstream commit
 `8ea2eac8b650daf2cf66127c4be6d3f8654dd335` and the release image
 `doom-hd.hdv` with SHA-256
@@ -83,15 +104,9 @@ binary and the owner's Mac has no Rosetta.
 | 0 | Hardware microbenchmarks on the Appletini | Not started. Needs the physical card and the owner. |
 | 1 | Front end, 65816 assembler and linker, image match | **Done**, commit `89bb480f`. |
 | 2 | Reference machine runs the release; measured profiles | **Done**, see the results below. |
-| 3 | Target machine model with cost model; 65816 interpreter | Next. Specified below. |
-| 4 | Hand-written record replay on hardware | Not started |
-| 5 | Whole game interpreted, lockstep through demo3; first hardware run | Not started |
-| 6 | Translator with template tests; first modules | Not started |
-| 7 | Hot regions translated; phase windows | Not started |
-| 8 | Hand-written seg loops, node fetch, thinker walk | Not started |
-| 9 | Status bar, HUD, menus, automap, intermission | Not started |
-| 10 | Sound effects, then music, on the Phasor | Not started |
-| 11 | Settings and saves, nine-map soak, release | Not started |
+| 3 | Target machine model with cost model; 65816 interpreter | **Done**, see the results below. |
+| 4 | Native rewrite: architecture (`NATIVE.md`), with a measured experiment | In progress: a design run writes `NATIVE.md` and `research/native-*.md`. Awaits the owner's review. |
+| 5 and later | Native rewrite milestones | Defined in `NATIVE.md` section 13 once it is reviewed |
 
 ## Milestone 1: done
 
@@ -335,6 +350,47 @@ Commit milestone 2 only after the review passes.
 
 ## Milestone 3: target machine model and 65816 interpreter
 
+### Results
+
+Done on 2026-09-30, independently reviewed, with the review's findings fixed
+and verified.
+
+| Check | Result |
+| --- | --- |
+| a2vm's 65C02 core against SingleStepTests (WDC 65C02, commit `2f6980a`) | 2,540,000 cases: 0 register, memory, cycle or bus failures. 10,029 known issues, all `STA a,X` and `STA a,Y` within a page, where the dummy read follows the Appletini RTL (`ST_INDEX_DUMMY` in `w65c02_core.sv`), as the firmware's own harness does. About 215 million instructions a second. |
+| a2vm against `demos/doom/tools/a2sim.py` | Exact match over 20 frames of the existing Doom port and a full ProDOS loader boot: every byte of main memory, the language cards and all 128 RamWorks banks, every soft switch, the registers, the cycle count and the final screen. 57 to 78 times faster. |
+| Cost model against the hardware (E1M1 standing still, existing port) | 248.6 ms a frame against 248 ms measured, **with one parameter fitted**: the ARM's AXI register latency (`axi_us`), 0.135 µs. At the firmware documents' estimate of 0.305 µs the copy phases were 2.0 to 2.3 times too slow; the frame total and the copy phases alone give the same fit (0.133 and 0.137 µs). The independent checks: walls, planes, tics, masked drawing and the blit within 11% phase by phase, and the card's own counters within 3%. Milestone 0 measures `axi_us`. |
+| Firmware design, same frames | 188.6 ms, 32% more frames a second. One lazy SHR flush a frame, caused by the port's `$C073` write before a memory API call, costs 27 ms of it. |
+| Interpreter on the 65816 vectors | 5,120,000 cases: 0 register or memory failures; the same 44 known issues as milestone 2 |
+| Interpreter size | Core 1,782 of 4,096 bytes, far layer 227 of 1,228, handlers 3,604 of 4,096 |
+| First contact with the game | 322,215 instructions identical to `ref816`, registers and every write, up to the game's first I/O access |
+
+**The interpreter is slower than the architecture assumed.** An interpreted
+game instruction costs 299 to 319 65C02 cycles: 5.3 to 5.7 µs on today's
+firmware and 4.4 to 4.6 µs with the firmware design, against 3.2 µs assumed
+(P5). An all-interpreted frame would take 1.5 to 2.7 s. Details are in
+[`INTERPRETER.md`](INTERPRETER.md).
+
+- 54% of those cycles are in the far layer: every direct-page and stack byte
+  goes through it.
+- On today's firmware, 24% of the time is bus cycles for RAMRD, RAMWRT and
+  `$C073` around far accesses. The zero-page bank pair proposed for the
+  firmware would remove most of them.
+- So the translator must cover more of the frame than planned, and the far
+  layer is the first thing to optimise.
+
+Known limits: the game's memory map exists only in the host harness. The
+first contact stops at the first I/O access, because the platform layer does
+not exist yet.
+
+**After the native direction.** These measurements are why the owner chose a
+native rewrite. `a2vm` and its cost model stay central: every native routine
+runs and is timed on it. The interpreter is kept as a tool, at most a
+bring-up aid; it is not in the shipped game.
+
+### Specification
+
+
 Two pieces every later milestone needs, whatever the firmware decisions:
 
 - `a2vm`, a fast model of the Appletini target, to run port code on the host.
@@ -435,23 +491,69 @@ with milestones 2 and 3. ARCHITECTURE.md section 12 has the file list.
 - A standard 320-mode SHR picture with per-row palettes. Upstream uses
   standard SHR; the existing Doom port uses only the PAL256 extension.
 
-## Milestones 4 to 11
+## Direction since 2026-09-30: a native rewrite
 
-ARCHITECTURE.md section 8 defines deliverable and test for each. Two points
-decided since it was written:
+The owner's words: "To go faster we'll probably have to fully rewrite and
+optimize the 65816 code into 65c02 code. The music I think is originally
+midi, and we should translate it directly to the phasor. Don't use the
+ensonic as a base."
 
-- `PROFILE.md` measures what the architecture assumed. Recompute the phase
-  windows and the frame budget from it before milestone 7.
-- Milestone 4 and later should design the frame around the firmware
-  proposals below: keep `$C073` fixed inside a frame, and read extended
-  memory through the `$C069` read bank if it is built.
+What this means for the plan:
+
+- **Native code.** Every routine becomes 65C02 code, with data layouts chosen
+  for the 65C02. The translator and the virtual 65816 machine of
+  ARCHITECTURE.md are no longer the end state.
+- **Kept from upstream.** The game's behaviour, and its SHR techniques:
+  per-column records, record replay, dithered colormaps, fill spans and
+  covered ranges.
+- **Verification.** A native routine is checked against `ref816` through a
+  state bridge that reads upstream's structures by symbol and converts them
+  to the port's layout: routine by routine, tic by tic (demo sync), and
+  frame by frame (the SHR bytes).
+- **Music.** The WAD's MUS lumps (`D_E1M1` and the rest) are converted on the
+  host to event streams for the Phasor's four AY-3-8913 chips. Upstream
+  renders the same songs through a SoundFont into Ensoniq DOC sample units
+  (`tools/music` in the clone); that is not used.
+- **Firmware.** The port must run on F1.2.1 as it is and use the proposed
+  zero-page bank pair when present. `a2vm` must model the pair.
+- **Licence, open.** Code translated from upstream is a derivative of GPL-2
+  code. Until the owner decides how this directory is licensed, it stays
+  under `build/` (ground rules).
+
+**Rough speed, an assumption until measured.** Standing still, upstream needs
+1.12 million 65816 cycles a frame. If native code needs 1.5 to 3 times that
+many 65C02 cycles, the CPU work is about 30 to 60 ms a frame. With the
+firmware design that would be roughly 10 to 20 frames a second. On F1.2.1,
+far accesses dominate unless the data layout avoids them: roughly 5 to 8.
+Milestone 4 measures the 1.5 to 3 factor on three real routines.
+
+### Milestone 4: native architecture
+
+A design run started on 2026-09-30. It writes, without changing tools, tests
+or sources:
+
+| Output | Content |
+| --- | --- |
+| `research/native-modules.md` | Every upstream module: size, heat, 16-bit share, self-modification, data; subsystems and rewrite order |
+| `research/native-verification.md` | The state bridge and the routine, tic and frame tests, checked on a real dump |
+| `research/native-memory.md` | Code and data map, per-phase windows through the memory API, far access on F1.2.1 and with the pair, what `a2vm` must add |
+| `research/native-experiment.md` | Three hot routines written natively, checked on captured inputs, bytes and cycles against upstream. The code stays in `build/native-experiment/`. |
+| `research/native-sound.md` | MUS to Phasor converter and player, sound effects, tests |
+| `NATIVE.md` | The architecture: frame-rate estimates on both firmware variants, the milestones from 5 with acceptance tests, risks, questions for the owner |
+
+Two reviews (correctness, hardware) check `NATIVE.md`, and a last step
+applies their findings. Then the owner reviews it.
+
+If the run was interrupted: the research files that exist are complete
+reports; rerun only the missing ones. `NATIVE.md` is final only after the
+revision step.
 
 ## Related work outside this directory
 
 | Item | Where | State |
 | --- | --- | --- |
-| Firmware design for faster extended memory and SHR (`$C069` read bank, lazy SHR mirror, relaxed PSRAM admission, and four more) | A Claude Doc in the owner's account, "vTW Memory Fast Path: Design". Its source material is [`firmware/`](firmware/). | Awaiting the owner's review. Nothing implemented. |
-| Estimated effect of those changes on the existing port | Measured event counts in the model, costs derived from the RTL | +20% to +30% from firmware alone; up to about +50% with software changes |
+| Firmware design for faster extended memory and SHR (zero-page bank pair enabled at `$C069`, lazy SHR mirror, relaxed PSRAM admission, and four more) | A Claude Doc in the owner's account, "vTW Memory Fast Path: Design". Its source material is [`firmware/`](firmware/); the zero-page pair is in `firmware/zpbank-spec.md` and `zpbank-review.md`. | Awaiting the owner's review, 29 open questions. Nothing implemented. |
+| Effect of those changes on the existing port | `a2vm`'s cost model (milestone 3) | +32% frames a second from firmware alone; about +54% if the port also stops writing `$C073` before its memory API call |
 | Firmware source | [hasseily/appletini-one](https://github.com/hasseily/appletini-one), `origin/main` at F1.2.1 | 21 of its 30 testbenches run under Verilator without Vivado, with a behavioural `LUT6` model |
 | Existing Doom port | [`demos/doom`](../../doom/README.md), branch `claude/iigs-doom-port` | 4.03 FPS measured on hardware, E1M1 idle, TURBO |
 

@@ -1,0 +1,92 @@
+{
+  "format": "a2vm-costs-1",
+  "about": [
+    "The cost model of a2vm (tools/a2vm/cost.h): what each bus access costs on the Appletini in TURBO mode, in fabric clocks unless the name says otherwise.",
+    "Every value is derived from the firmware source, appletini-one origin/main (F1.2.1, commit be2ea4f), or from the firmware documents in docs/firmware/ of this port; 'source' gives the file and line. Paths without a directory are under hdl/apple/ of appletini-one; 'core_top' is hdl/apple/vtw_core_top.sv.",
+    "None of these values has been measured on the card (milestone 0 will): they are derived from the RTL and the documents, as docs/MILESTONES.md 3.1 asks.",
+    "The one parameter that may be calibrated is turbo_extra, the effective TURBO rate for code in fast memory. It is NOT calibrated here: its value is the RTL's, 0 extra clocks, checked against the TURBO benchmark of README_TURBO.md (tests/test_a2vm_cost.py reproduces its 436 clocks)."
+  ],
+  "common": {
+    "fabric_mhz": {"value": 133.333333, "source": "apple_bus_wrapper.sv:170 ('~2.1 us at 133.333 MHz'); scripts/create_project.tcl:155 (FCLK0 133 MHz)"},
+    "line_us": {"value": 64.0, "source": "apple_video_standard_detect.sv:7 (PAL: 912 dots / 14.25 MHz = 64.000 us). The hardware measurement of the existing port is PAL (demos/doom/docs/STATUS.md, v12). 65 Apple cycles a line: 131.28 fabric clocks a cycle, as ps_sources/frontend/config_menu_help.c:142 says ('131 fabric clocks per cycle')"},
+    "lines": {"value": 312, "source": "hdl/video2/video_timing_gen.sv:38 (PAL frame = 312 lines); config_menu_help.c:142"},
+    "vbl_line": {"value": 192, "source": "config_menu_help.c:142 ('Both begin vertical blank at scanner line 192')"},
+
+    "turbo_hit": {"value": 2, "source": "README_TURBO.md:59-61 ('A cache hit takes two fabric clocks'); core_top:1949-1953 (X_CAPTURE to X_TURBO_DONE), :1243-1244 (turbo_complete), :1968-1969. Checked: the benchmark of hdl/sim/tb_vtw_turbo.sv:717-747 makes 218 accesses a warm pass and takes 436 clocks (README_TURBO.md:32-35)"},
+    "turbo_read_miss": {"value": 4, "source": "core_top:1249-1251 (a shadow read miss issues from X_TURBO_DONE), :1971, :2114-2123: X_CAPTURE, X_TURBO_DONE, X_MEM_CAPTURE, X_MEM_DONE; the word is filled at X_MEM_CAPTURE (:1214-1215)"},
+    "turbo_write_miss": {"value": 5, "source": "core_top:1971 (miss to X_ROUTE), :2040-2041, :2114-2123: X_CAPTURE, X_TURBO_DONE, X_ROUTE, X_MEM_CAPTURE, X_MEM_DONE; the page entry is filled at X_ROUTE (:1212-1213)"},
+    "posted_write": {"value": 6, "source": "lazy-mirror-spec.md section 6, confirmed by lazy-mirror-review.md section 2: X_CAPTURE, X_TURBO_DONE, X_ROUTE, X_POST_STALL, X_MEM_CAPTURE, X_MEM_DONE (core_top:2037-2038, :2105-2123); a video write never takes a fast page entry (:1218-1219)"},
+    "turbo_extra": {"value": 0, "calibratable": true, "calibrated": false, "source": "The free parameter of MILESTONES.md 3.1: extra clocks an access to fast memory, for anything the path above misses. Left at 0: the RTL path reproduces the 436 clocks of README_TURBO.md:32-35 exactly"},
+
+    "rw_hit": {"value": 5, "source": "cache-plan.md section 2 ('Hit 5 clocks' in TURBO), confirmed by cache-review.md (1); core_top:1952-1953, :1970-1971, :2027-2028, :2045-2052: X_CAPTURE, X_TURBO_DONE, X_ROUTE, X_RW_LOOKUP, X_RW_DONE"},
+    "rw_request": {"value": 4, "source": "core_top:2054-2068: the request is set at the X_RW_LOOKUP edge, after X_CAPTURE, X_TURBO_DONE and X_ROUTE"},
+    "psram_read": {"value": 31, "source": "cache-plan.md section 2: 'From the X_RW_LOOKUP edge that sets rw_req_valid_q to core completion is 31 clocks for a read, if admission is immediate' (psram_driver.sv:228-233, rvalid at E26). A clean miss with the window open is 35 clocks (cache-plan.md section 2, 'about 35')"},
+    "psram_write": {"value": 24, "source": "cache-plan.md section 2 (psram_driver.sv:222-225: write rvalid at E18, ready again after E23, back-to-back period 24): the dirty victim's write, before the fill is requested (core_top:2072-2079)"},
+    "admit_offset": {"value": 6, "source": "psram_simple.sv:313-321: the window is armed at addr_en + 3; addr_en is tap 3 of the address phase (apple_bus_wrapper.sv:100)"},
+    "admit_window": {"value": 40, "source": "psram_simple.sv:239 (ADMIT_WINDOW_TAPS = 40); one background admission a bus cycle (psram_simple.sv:228-240, :437-486). A miss that misses the window waits for the next cycle: 'sustained random: one per Apple cycle, about 131 clocks' (cache-plan.md section 2)"},
+    "drain_rmw": {"value": 55, "source": "cache-plan.md section 3 ('RMW is 55 clocks'): a captured aux mirror write (psram_simple.sv:136, :382-390) has priority over the vTW (psram_simple.sv:439-467, cache-review.md F9)"},
+
+    "io_capture": {"value": 1, "source": "core_top:1905-1954 (X_CAPTURE)"},
+    "io_route": {"value": 1, "source": "core_top:1974-2026 (X_ROUTE): a $Cxxx access never takes the TURBO path (:1952-1953)"},
+    "video_wait": {"value": 1, "source": "core_top:1949-1950, :1957-1962 (X_VIDEO_WAIT while the mirror is pending); README_TURBO.md:128-131 ('one fabric wait state')"},
+    "bus_drive_tap": {"value": 8, "source": "apple_bus_wrapper.sv:136 (TAP_DRIVE_ADDR = 8): the bus engine launches at drive_en (vtw_bus_engine.sv:840-880)"},
+    "bus_data_tap": {"value": 59, "source": "apple_bus_wrapper.sv:120 (TAP_DATA_SNAP = 59 after PHI0 rises, half a cycle in): the response (vtw_bus_engine.sv:738-790). 'drive_en to data_en is about 116 clocks' (switches-review.md section 2)"},
+    "bus_done": {"value": 2, "source": "vtw_bus_engine.sv resp_valid_q (registered at data_en), core_top:2125-2160 (X_BUS, X_BUS_DONE). A $C073 write at a random phase: 120-251 clocks (switches-plan.md section 2)"},
+    "status_read": {"value": 1, "source": "core_top:577-580 (xl_c01x_rd), :2001-2008, :2189-2195: $C011-$C01F reads complete privately in X_STATUS_DONE"},
+    "sp_private": {"value": 4, "source": "core_top:674-702 (sp_hit: slot-7 ROM and C8 window, not $CFFF), :2162-2187 (X_SP_ISSUE, X_SP_WAIT, X_SP_DONE); hdl/apple/smartport_card.sv:509-521 (busy one clock, then resp_valid)"},
+    "rom_read": {"value": 2, "source": "globals.sv:290-312 (internal $C100-$CFFF ROM is the ROM route), core_top:2040-2041, :2114-2123 (X_MEM_CAPTURE, X_MEM_DONE)"},
+    "quiet_switch": {"value": 1, "source": "switches-plan.md section 3.2 (a quiet switch completes in X_DEAD: CAPTURE, ROUTE, DEAD, 3 clocks); switches-review.md F8 (4 with the mirror pending)"},
+    "flush_steer_cycles": {"value": 1, "source": "vtw_video_bank_sync.sv:31-36 and :55-80: a flush sets RAMWRT for each bank it drains (SET_RAMWRT) and restores it at the end; one sync cycle a bank"},
+
+    "axi_us": {"value": 0.135, "source": "Fitted, not measured. With every other parameter fixed, the f121 frame of the existing port (E1M1 standing still, tools/a2vm/cost_report.py) matches the 248.0 ms a frame measured on hardware by host time (demos/doom/build/profiles/e1m1-idle-turbo-v12-amem-batch-pal.json) at 0.135 us; a sweep of 0.10 to 0.305 us on 2026-09-30 gave 238.6 ms at 0.10, 243.6 at 0.12, 249.6 at 0.14, 289.8 at 0.305. The copy phases alone match the hardware's (40.5 ms VBL-sampled plus the 6.9 ms a frame that sampling loses during the ARM's holds) at 0.138 us. The only figure in the firmware documents, appletini-one docs/CODE_REVIEW_2026-08-20_MAIN_LAST3.md:255, '~16K added register reads add ~5-16ms' (0.305 to 0.98 us a read), is an estimate the capture does not fit. Milestone 0 measures it"},
+    "axi_write_us": {"value": 0.135, "source": "No figure in the firmware documents; taken equal to a read (an assumption). The fit of axi_us cannot tell reads and writes apart"},
+    "ps_dispatch_us": {"value": 0, "source": "The PS's latency to take a SmartPort request is not in the source. Bound: removing four requests a frame changed nothing measurable (demos/doom/docs/STATUS.md, 'v12 hardware result: no measured batching gain'), so it is well under 1 ms. The AXI reads that pop the request are counted (amem_request_axi)"},
+    "amem_chunk": {"value": 504, "source": "ps_sources/frontend/memory_api.h:17 (MEMORY_API_COPY_CHUNK); memory_api.c:166-184"},
+    "amem_request_axi": {"value": 4, "source": "An estimate: the status and control reads of the dispatch (smartport_card.sv exec_pending, MEM_SP_STATUS), plus one read per 4 bytes of the request, added by the model"},
+    "amem_begin_axi": {"value": 7, "source": "memory_api_hw.c:109-127 (hw_begin): hw_available 2 reads (:45-52), RAMWORKS_ENABLE 1, hw_session 3 (:70-82), RW_FLUSH 1; then the REQ write"},
+    "amem_poll_axi": {"value": 4, "source": "memory_api_hw.c:129-143: each poll of the hold reads RW_FLUSH and hw_session (3)"},
+    "amem_end_axi": {"value": 7, "source": "memory_api_hw.c:317-343 (hw_end: hw_held 4, ADDR 1, READ4_STATUS 1) and :94-107 (hw_release: 1 poll read); writes: ADDR and RELEASE"},
+    "amem_dma_axi": {"value": 13, "source": "memory_api_hw.c:149-174 (hw_held 4 before, 4 after) and ps_sources/lib/psdma.c:98-128 (keep_running 4, STATUS 1); plus 3 register writes (psdma.c:121-126). The transfer itself: one PSRAM line an Apple cycle (psram_simple.sv:228-240)"},
+    "amem_dma_poll_axi": {"value": 5, "source": "psdma.c:130-141: each poll is keep_running (4 reads) and STATUS (1); the last poll after completion is counted"},
+    "amem_read_word_axi": {"value": 12, "source": "memory_api_hw.c:176-218 (hw_shadow_read), per 4 bytes: ready poll (hw_held 4 + READ4_STATUS 1), READ4 write, busy poll (hw_held 4 + status 1), DATA read: 11 reads and 1 write"},
+    "amem_read_setup_axi": {"value": 5, "source": "memory_api_hw.c:183-186: hw_held (4), READ4_STATUS (1), and the ADDR write"},
+    "amem_write_word_axi": {"value": 6, "source": "memory_api_hw.c:254-272 (hw_shadow_write), per 4 bytes: hw_held 4 + DATA4_STATUS 1, then the DATA4 write"},
+    "amem_write_setup_axi": {"value": 11, "source": "memory_api_hw.c:241-244 (hw_held 4, DATA4_STATUS 1, ADDR write) and :220-232 (the final hw_shadow_wait: DATA4_STATUS 1, hw_held 4, ADDR 1)"},
+    "amem_write_byte_axi": {"value": 11, "source": "memory_api_hw.c:246-252, :275-281: an unaligned byte is hw_held (4), a DATA write and hw_shadow_wait (6)"}
+  },
+  "profiles": {
+    "f121": {
+      "description": "F1.2.1 as it is (appletini-one origin/main).",
+      "params": {
+        "caches_survive": {"value": 0, "source": "core_top:1206-1211: any change of the translation state invalidates both TURBO caches"},
+        "rw_lines": {"value": 1, "source": "core_top:1032-1060: one 8-byte write-allocate line"},
+        "relaxed_admission": {"value": 0, "source": "psram_simple.sv:437: one admission a bus cycle, inside the 40-clock window"},
+        "quiet_switches": {"value": 0, "source": "globals.sv:300-304: every $C0xx access is a bus cycle"},
+        "read_bank": {"value": 0, "source": "no $C069 register in F1.2.1 (read-bank-spec.md section 1)"},
+        "lazy_shr": {"value": 0, "source": "vtw_video_policy.sv:25-31: aux graphics are always active mirror pages"},
+        "keep_lazy": {"value": 0, "source": "no lazy class"}
+      }
+    },
+    "fastpath": {
+      "description": "F1.2.1 with the seven changes of the firmware design, as docs/firmware/ describes them (the design document itself, 'vTW Memory Fast Path: Design', was not read for this model; the list below is taken from the corrected summaries of the reviews in docs/firmware/).",
+      "changes": [
+        "1. Relaxed PSRAM admission while the vTW owns the bus (cache-review.md, corrected summary, stage 1): relaxed_admission = 1.",
+        "2. A small fully associative RamWorks line cache, 16 lines of 8 bytes, write-back (cache-review.md, corrected summary, stage 2): rw_lines = 16.",
+        "3. TURBO caches that survive mapping changes, checked against the physical page (switches-plan.md 3.1, switches-review.md section 4 stage 1): caches_survive = 1.",
+        "4. Quiet switches for RAMRD, ALTZP, $C08x and $C071/$C073, with a reconciler that replays them before a non-quiet access, flushing aux mirror bytes before a bank replay (switches-review.md section 4, rules O1, O2, O4 of switches-plan.md 3.4): quiet_switches = 1.",
+        "5. A lazy mirror class for SHR writes while SHR is selected, flushed by a $C029 write that leaves SHR, a physical $C071/$C073 write, or a hold without KEEP_LAZY (lazy-mirror-review.md section 3): lazy_shr = 1, keep_lazy = 1.",
+        "6. The private read bank $C069 with its barrier exemption (read-bank-review.md section 2): read_bank = 1. The existing port never writes $C069, so it changes nothing there.",
+        "7. $C071/$C073 in vtw_is_bank_steer (rwbank-review.md 'Independent fix, ship first'): an ordering fix in classic modes, no cost in TURBO."
+      ],
+      "params": {
+        "caches_survive": {"value": 1, "source": "switches-review.md section 4, stage 1"},
+        "rw_lines": {"value": 16, "source": "cache-review.md, corrected summary, stage 2 (8-16 lines, fully associative)"},
+        "relaxed_admission": {"value": 1, "source": "cache-review.md, corrected summary, stage 1; cache-plan.md section 3 (a sustained miss about 36 clocks)"},
+        "quiet_switches": {"value": 1, "source": "switches-review.md section 4, stages 2-3"},
+        "read_bank": {"value": 1, "source": "read-bank-review.md section 2"},
+        "lazy_shr": {"value": 1, "source": "lazy-mirror-review.md section 3"},
+        "keep_lazy": {"value": 1, "source": "lazy-mirror-review.md F4 (KEEP_LAZY when no destination is in the lazy range)"}
+      }
+    }
+  }
+}

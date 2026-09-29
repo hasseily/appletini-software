@@ -47,6 +47,10 @@
  *   --trace-near BANK  a bank (hex) whose data is not far (repeatable)
  *   --trace-stack-split ADDR
  *                      S at or below ADDR (hex) is the second stack
+ *   --trace-samples FILE
+ *                      write samples of the recorded instructions there
+ *   --trace-sample-every N
+ *                      one instruction in N (default 499)
  *
  * The final state is JSON: why the run ended, time, registers, a hash of
  * all RAM, the soft switches, the text page, and the counts of
@@ -386,6 +390,13 @@ static int trace_option(trace_config *c, const char *arg, char *value)
         if (split > 0xffff)
             fail("--trace-stack-split takes a 16-bit address");
         c->stack_split = (uint16_t)split;
+    } else if (!strcmp(arg, "--trace-samples"))
+        c->sample_path = value;
+    else if (!strcmp(arg, "--trace-sample-every")) {
+        uint64_t every = number(value, 10);
+        if (!every || every > UINT32_MAX)
+            fail("--trace-sample-every takes a count from 1");
+        c->sample_every = (uint32_t)every;
     } else
         return 0;
     return 1;

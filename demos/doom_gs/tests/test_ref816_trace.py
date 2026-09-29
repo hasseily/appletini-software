@@ -209,12 +209,83 @@ class TracedProgram(unittest.TestCase):
             self.assertEqual(frame.heat[(work, 0x030305)], (1, 4))
             self.assertEqual(sum(c for c, _ in frame.heat.values()), 33)
 
+    def test_opcodes_and_widths(self):
+        work, inner = self.phase('work'), self.phase('inner')
+        for frame in self.trace.frames:
+            ops = frame.ops
+            self.assertEqual(sum(ops.values()), 33)
+            # the nop at 0350 once with 8-bit A (mx 2) and once with 16
+            # (mx 0), the patched one at 0340 with 16
+            self.assertEqual(ops[(work, 0xea, 0b10)], 1)
+            self.assertEqual(ops[(work, 0xea, 0b00)], 2)
+            self.assertEqual(ops[(work, 0x8f, 0b10)], 4)    # sta long
+            self.assertEqual(ops[(inner, 0xaf, 0b00)], 1)
+            self.assertEqual(ops[(inner, 0x60, 0b00)], 1)
+            # the ops agree with the heat by phase
+            for phase in (work, inner):
+                self.assertEqual(
+                    sum(c for (p, _, _), c in ops.items() if p == phase),
+                    sum(c for (p, _), (c, _) in frame.heat.items()
+                        if p == phase))
+
+    def test_code_pages(self):
+        # jsl frame enters page $0302, its rtl page $0300 again, jsl work
+        # page $0303, where inner is too, and its rtl $0300: three pages,
+        # which the model's 16 slots keep from the first frame on
+        other, setup = self.phase('other'), self.phase('setup')
+        work = self.phase('work')
+        frames = self.trace.frames
+        self.assertEqual(frames[0].code, {setup: (1, 1), other: (2, 0),
+                                          work: (1, 1)})
+        for frame in frames[1:]:
+            self.assertEqual(frame.code, {setup: (1, 0), other: (2, 0),
+                                          work: (1, 0)})
+
     def test_widths(self):
         widths = self.trace.widths
         # M set (8-bit A) then clear; X clear throughout; D and DBR 0
         self.assertEqual(widths[0x030350], {'mx': {0b10, 0b00}, 'd': {0},
                                             'dbr': {0}})
         self.assertEqual(widths[0x030305]['mx'], {0b10})
+
+    def test_samples(self):
+        path = self.directory / 'test.samples'
+        self.run_machine(trace_options(self.directory / 'samples.trace') +
+                         ['--cycles', '5000', '--trace-samples', path,
+                          '--trace-sample-every', '1'])
+        lines = path.read_text().splitlines()
+        self.assertEqual(lines[0], 'ref816-samples 1')
+        samples, current = [], None
+        for line in lines[1:-1]:
+            words = line.split()
+            if words[0] == 's':
+                current = {'phase': int(words[1]), 'pc': int(words[2], 16),
+                           'p': [], 'r': [], 'w': []}
+                samples.append(current)
+            elif words[0] == 'p':
+                current['p'] = [int(w, 16) for w in words[1:]]
+            elif words[0] in 'rw':
+                current[words[0]].append((int(words[1], 16),
+                                          int(words[2], 16), words[3]))
+            else:
+                self.assertEqual(words[0], 'a')
+                current['after'] = int(words[1], 16)
+        # every instruction from the start of the first recorded frame:
+        # those of the frames, and of the one the end of the run cut
+        self.assertEqual(lines[-1], 'end %d 0' % len(samples))
+        self.assertEqual(len(samples),
+                         self.trace.end.instructions -
+                         self.trace.frames[0].start.instructions)
+        stores = [x for x in samples if x['pc'] == 0x030311]
+        self.assertGreaterEqual(len(stores), len(self.trace.frames))
+        for x in stores:
+            self.assertEqual(x['phase'], self.phase('work'))
+            self.assertEqual(x['r'], [(0x030311 + i, b, 'program') for i, b
+                                      in enumerate(WORK[0x11:0x15])])
+            self.assertEqual(x['w'], [(0x020000, 0x55, 'data')])
+            self.assertEqual(x['after'], 0x030315)
+            # the write to $01:2001 and the read of $7F:0000 before it
+            self.assertEqual(x['p'][:2], [0x012001, 0xe12000])
 
     def test_tracing_changes_nothing(self):
         untraced = self.run_machine(['--cycles', '5000'])
@@ -359,7 +430,7 @@ class TraceFile(unittest.TestCase):
         'cost 0 4 10', 'cost 2 6 20', 'enters 2 3', 'firmware 1 5',
         'access 2 data 7F 3 1', 'lines 7F 1 1 1 0 0 0', 'switches 2 5',
         'stack 2 3FF0 -', 'screen 2 0 4 2', 'heat 2 030300 6 3',
-        'unclosed 0',
+        'op 2 E2 2 6', 'code 2 9 1', 'unclosed 0',
         'smc 0 030317 030340 2', 'smc-mixed 1', 'jumps 2 4',
         'width 030300 mx 2', 'width 030300 d 900', 'width 030300 dbr 2',
         'end 120 240 320', ''])
@@ -381,6 +452,8 @@ class TraceFile(unittest.TestCase):
         self.assertEqual(frame.stack, {2: (0x3ff0, None)})
         self.assertEqual(frame.screen, {2: (0, 4, 2)})
         self.assertEqual(frame.heat, {(2, 0x030300): (6, 3)})
+        self.assertEqual(frame.ops, {(2, 0xe2, 2): 6})
+        self.assertEqual(frame.code, {2: (9, 1)})
         self.assertEqual(t.smc, [tracefile.Smc(0, 0x030317, 0x030340, 2)])
         self.assertEqual((t.smc_mixed, t.jumps), (1, {2: 4}))
         self.assertEqual(t.widths, {0x030300: {'mx': {2}, 'd': {0x900},
@@ -394,6 +467,10 @@ class TraceFile(unittest.TestCase):
                 ('ref816-trace 1\ncost 0 1 2\nend 1 2 3\n', 'before any'),
                 ('ref816-trace 1\nbogus\nend 1 2 3\n', 'unknown record'),
                 ('ref816-trace 1\nwidth 000000 q 1\nend 1 2 3\n', 'kind'),
+                ('ref816-trace 1\nframe 0 1 2 3 4 5 6\nop 0 EA 8 1\n'
+                 'end 1 2 3\n', 'widths'),
+                ('ref816-trace 1\nframe 0 1 2 3 4 5 6\nop 0 EA 1\n'
+                 'end 1 2 3\n', 'op has'),
                 ('ref816-trace 1\nphase 0 other\n', 'cut short')):
             with self.assertRaisesRegex(ValueError, message):
                 tracefile.parse(text)

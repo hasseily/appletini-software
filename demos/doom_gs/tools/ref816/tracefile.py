@@ -44,6 +44,11 @@ class Frame:
         self.screen: Dict[int, Tuple[int, int, int]] = {}
         # (phase, address): (count, length)
         self.heat: Dict[Tuple[int, int], Tuple[int, int]] = {}
+        # (phase, opcode, mx): instructions, mx = E << 2 | M << 1 | X
+        self.ops: Dict[Tuple[int, int, int], int] = {}
+        # phase: program fetches that entered another page, and those
+        # the model of the interpreter's code cache missed
+        self.code: Dict[int, Tuple[int, int]] = {}
         self.unclosed = 0
 
     @property
@@ -115,7 +120,8 @@ def parse(text: str) -> Trace:
                               Counts(*numbers[4:7]))
                 trace.frames.append(frame)
             elif kind in ('cost', 'enters', 'firmware', 'access', 'lines',
-                          'switches', 'stack', 'screen', 'heat', 'unclosed'):
+                          'switches', 'stack', 'screen', 'heat', 'op',
+                          'code', 'unclosed'):
                 if frame is None:
                     raise ValueError('%s before any frame' % kind)
                 _frame_line(frame, kind, args)
@@ -170,6 +176,17 @@ def _frame_line(frame: Frame, kind: str, args: List[str]) -> None:
     elif kind == 'heat':
         frame.heat[(int(args[0]), int(args[1], 16))] = (int(args[2]),
                                                         int(args[3]))
+    elif kind == 'op':
+        if len(args) != 4:
+            raise ValueError('op has a phase, an opcode, widths and a count')
+        opcode, mx = int(args[1], 16), int(args[2])
+        if opcode > 0xff or mx > 7:
+            raise ValueError('no opcode %s or widths %s' % (args[1], args[2]))
+        frame.ops[(int(args[0]), opcode, mx)] = int(args[3])
+    elif kind == 'code':
+        if len(args) != 3:
+            raise ValueError('code has a phase and two counts')
+        frame.code[int(args[0])] = (int(args[1]), int(args[2]))
     else:
         frame.unclosed = int(args[0])
 

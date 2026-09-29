@@ -5,7 +5,10 @@ to an enhanced Apple //e with an Appletini card. Upstream is a complete game,
 about 82,000 lines of 65816 assembly. The Appletini's accelerator is a W65C02S,
 so every instruction has to be translated, interpreted or rewritten.
 
-**Status: planning and tooling. Nothing runs on the Apple yet.**
+**Status: planning and tooling. Nothing runs on the Apple yet.** Since
+2026-09-30 the plan is a native 65C02 rewrite that keeps upstream's SHR
+techniques, with music from the WAD's MUS songs on the Phasor. Progress and
+the next steps are in [`docs/MILESTONES.md`](docs/MILESTONES.md).
 
 It is separate from the existing port in [`demos/doom`](../doom/README.md),
 which is a different engine written for cc65.
@@ -14,13 +17,17 @@ which is a different engine written for cc65.
 
 | Path | Contents |
 | --- | --- |
-| `docs/ARCHITECTURE.md` | Draft architecture: a virtual 65816 machine on the 65C02, with an interpreter for cold code, translated regions, and hand-written kernels for the hot loops. Not yet reviewed by the project owner. |
+| `docs/MILESTONES.md` | The handoff brief: status, ground rules, results of each milestone, the next steps |
+| `docs/ARCHITECTURE.md` | The earlier draft architecture: a virtual 65816 machine on the 65C02. Superseded as the end state by the native rewrite; its facts and verification sections still hold. |
+| `docs/INTERPRETER.md` | Measured cost of the 65816 interpreter of milestone 3, by opcode and by game phase |
 | `docs/PROFILE.md` | Measured profiles of the game on the reference machine: instructions and cycles by phase, memory accesses by kind and bank, code heat, register widths, self-modification, stack and screen, and the architecture's performance assumptions measured. Written by `tools/ref816/profile816.py`. |
 | `docs/design-proposals/` | The three independent proposals the architecture was drawn from, each with a correctness critique and a hardware critique |
 | `docs/research/` | Reports on upstream's renderer and platform layer, on the Appletini hardware, and on the existing port |
 | `docs/firmware/` | Plans and adversarial reviews for Appletini firmware changes that would speed up software like this. They are proposals; none is implemented. |
 | `tools/` | Host tools (Python 3, standard library only): the fetch script, the front end and the assembler and linker for upstream's sources (`tools/v816/`) |
 | `tools/ref816/` | The reference machine (C11): a 65816 core and its test harness, and a minimal IIgs that runs the release image |
+| `tools/a2vm/` | The target model (C11): a W65C02S core, the //e with 128 RamWorks banks, the memory API, and a cost model of the Appletini's TURBO mode for F1.2.1 and for the firmware design, checked against a hardware capture |
+| `src/vm/` | A 65816 interpreter in 65C02 assembly (ca65), measured in milestone 3; kept as a tool, not part of the game |
 | `tests/` | Unit tests: `python3 -m unittest discover -s tests` |
 
 ## Image match

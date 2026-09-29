@@ -62,6 +62,14 @@
  *                                          and those that changed the byte
  *     heat PHASE ADDRESS COUNT LENGTH      instructions executed at ADDRESS
  *                                          and their length in bytes
+ *     op PHASE OPCODE MX COUNT             instructions by opcode (hex) and
+ *                                          the widths they ran with, MX =
+ *                                          E << 2 | M << 1 | X (decimal)
+ *     code PHASE CHANGES MISSES            program fetches that left the
+ *                                          256-byte page of the one before,
+ *                                          and those whose page was not
+ *                                          among the last TRACE_CODE_SLOTS
+ *                                          pages entered that way (below)
  *     unclosed COUNT                       phases still open when the next
  *                                          frame started (then closed)
  *   smc FRAME WRITER TARGET COUNT          writes in a recorded frame by
@@ -84,6 +92,35 @@
  *
  * CLOCK is in master clocks; an instruction is an opcode fetch (MVN and
  * MVP fetch theirs again for each byte), as in iigs.h.
+ *
+ * The code records model the code page cache of the interpreter of
+ * src/vm (src/vm/README.md, "The code cache"): TRACE_CODE_SLOTS pages,
+ * looked up when a fetch enters a page other than the current one, and
+ * on a miss filled in turn (the oldest fill is replaced). It counts
+ * every fetch the way the interpreter makes it, whatever the phase, and
+ * is kept over the whole run, so that the first recorded frame starts
+ * with the cache the game left.
+ *
+ * Samples. With a sample file, every sample_every-th instruction of the
+ * recorded frames (counted over all of them; the frame that the end of
+ * the run cuts short is recorded too) is written there whole, so that
+ * another machine can run it again (tools/a2vm/game816.c):
+ *
+ *   ref816-samples 1
+ *   s PHASE PC A X Y S D DBR P E           an instruction: its phase, then
+ *                                          the registers before it (PC with
+ *                                          its bank)
+ *   p ADDRESS...                           the last accesses before it that
+ *                                          were not program fetches, the
+ *                                          latest first (up to 8)
+ *   r ADDRESS VALUE SPACE                  each read it made, in order, and
+ *   w ADDRESS VALUE SPACE                  each write (SPACE as for access)
+ *   a PC A X Y S D DBR P E STATE           the registers after it
+ *   end COUNT SKIPPED                      the samples written, and those
+ *                                          left out for having more than
+ *                                          64 accesses
+ *
+ * Addresses and registers are hexadecimal; PHASE, E and STATE decimal.
  */
 #ifndef TRACE_H
 #define TRACE_H
@@ -95,6 +132,8 @@
 enum {
     TRACE_MAX_PHASES = 16,
     TRACE_MAX_ENTRIES = 64,
+    TRACE_SAMPLE_EVERY = 499,
+    TRACE_CODE_SLOTS = 16,      /* src/vm/vm.s, NSLOT */
     TRACE_OTHER = 0,            /* the phase outside all others */
     TRACE_INTERRUPT = 1
 };
@@ -110,6 +149,8 @@ typedef struct {
     uint8_t entry_phase[TRACE_MAX_ENTRIES];
     uint8_t near[256];          /* 1 for a bank whose data is not far */
     uint16_t stack_split;
+    const char *sample_path;    /* NULL: no samples */
+    uint32_t sample_every;      /* 0: TRACE_SAMPLE_EVERY */
 } trace_config;
 
 typedef struct trace trace;

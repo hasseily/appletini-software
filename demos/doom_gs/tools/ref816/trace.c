@@ -17,6 +17,8 @@ enum {
     W_MX = 0, W_D = 1, W_DBR = 2,
 
     STACK_DEPTH = 64,           /* phases open at once */
+    SAMPLE_ACCESSES = 64,       /* accesses a sampled step may have */
+    SAMPLE_PREVIOUS = 8,        /* accesses before it that it lists */
     MAX_SMC_FRAME = 0xffff,
     NO_STACK = 0x10000,         /* no S seen */
     SCREEN_START = 0x2000, SCREEN_END = 0x9d00,         /* in bank $E1 */
@@ -153,6 +155,10 @@ typedef struct {
                                                    changed */
     uint64_t unclosed;
     table heat;                 /* phase << 24 | pc: count, length */
+    /* instructions by phase, opcode and the widths they ran with
+       (E << 2 | M << 1 | X) */
+    uint64_t ops[TRACE_MAX_PHASES][256][8];
+    uint64_t code[TRACE_MAX_PHASES][2];         /* changes, misses */
 } frame;
 
 struct trace {
@@ -167,7 +173,7 @@ struct trace {
 
     /* The CPU after the last step: the state before this one. */
     uint32_t pc;
-    uint16_t s, d;
+    uint16_t s, d, a, x, y;
     uint8_t p, e, dbr;
     uint64_t cycles, instructions;
     uint64_t firmware_cycles;   /* charged by the machine's traps */
@@ -195,6 +201,24 @@ struct trace {
     table smc;                  /* frame << 48 | writer << 24 | target */
     uint64_t smc_mixed;
     uint64_t jumps[TRACE_MAX_PHASES];
+
+    /* Samples: the accesses of this step, and the last accesses before
+       it that were not program fetches (a ring, `previous_at` next). */
+    FILE *samples;
+    uint32_t sample_every;
+    uint64_t sample_count, samples_written, samples_skipped;
+    struct { uint32_t address; uint8_t value, kind, write; }
+        step_access[SAMPLE_ACCESSES];
+    unsigned step_accesses;
+    int step_overflow;
+    uint32_t previous[SAMPLE_PREVIOUS];
+    unsigned previous_count, previous_at;
+
+    /* The model of the interpreter's code page cache: the page of the
+       last program fetch, and the pages filled, in turn. */
+    uint32_t code_page;
+    uint32_t code_slot[TRACE_CODE_SLOTS];
+    unsigned code_next;
 };
 
 static const unsigned LINE_SHIFT[3] = { 3, 6, 8 };
@@ -345,6 +369,16 @@ static void write_frame(trace *t)
                 (unsigned)(heat[i].key >> 24), heat[i].key & 0xffffff,
                 heat[i].count, heat[i].extra);
     free(heat);
+    for (unsigned p = 0; p < phases; p++)
+        for (unsigned op = 0; op < 256; op++)
+            for (unsigned mx = 0; mx < 8; mx++)
+                if (f->ops[p][op][mx])
+                    fprintf(out, "op %u %02X %u %" PRIu64 "\n", p, op, mx,
+                            f->ops[p][op][mx]);
+    for (unsigned p = 0; p < phases; p++)
+        if (f->code[p][0])
+            fprintf(out, "code %u %" PRIu64 " %" PRIu64 "\n", p,
+                    f->code[p][0], f->code[p][1]);
     fprintf(out, "unclosed %" PRIu64 "\n", f->unclosed);
     t->frames++;
 }
@@ -478,13 +512,52 @@ static void check_interrupt(trace *t, uint8_t space)
     }
 }
 
+/* An access of this step, for a sample. */
+static void sample_access(trace *t, uint32_t address, uint8_t value,
+                          int write)
+{
+    if (!t->samples)
+        return;
+    if (t->step_accesses == SAMPLE_ACCESSES) {
+        t->step_overflow = 1;
+        return;
+    }
+    t->step_access[t->step_accesses].address = address;
+    t->step_access[t->step_accesses].value = value;
+    t->step_access[t->step_accesses].kind = (uint8_t)kind_of(t, address);
+    t->step_access[t->step_accesses++].write = (uint8_t)write;
+}
+
+/* A program fetch, in the model of the code page cache. */
+static void code_fetch(trace *t, uint32_t address)
+{
+    uint32_t page = address >> 8;
+    unsigned i;
+    if (page == t->code_page)
+        return;
+    t->code_page = page;
+    for (i = 0; i < TRACE_CODE_SLOTS && t->code_slot[i] != page; i++)
+        ;
+    if (i == TRACE_CODE_SLOTS) {
+        t->code_slot[t->code_next] = page;
+        t->code_next = (t->code_next + 1) % TRACE_CODE_SLOTS;
+    }
+    if (t->recording) {
+        t->now->code[t->phase][0]++;
+        if (i == TRACE_CODE_SLOTS)
+            t->now->code[t->phase][1]++;
+    }
+}
+
 static uint8_t traced_read(void *context, uint32_t address)
 {
     trace *t = context;
     uint8_t value = t->read(t->context, address);
     uint8_t space = t->m->cpu.space;
 
+    sample_access(t, address, value, 0);
     if (space == CPU816_PROGRAM) {
+        code_fetch(t, address);
         t->program_bytes++;
         executed(t, address);
     } else
@@ -513,6 +586,7 @@ static uint32_t screen_byte(const trace *t, uint32_t address, int *shadowed)
 static void traced_write(void *context, uint32_t address, uint8_t value)
 {
     trace *t = context;
+    sample_access(t, address, value, 1);
     check_interrupt(t, t->m->cpu.space);
     if (!t->recording) {
         t->write(t->context, address, value);
@@ -574,6 +648,9 @@ static void account(trace *t, uint64_t instructions, uint64_t cycles,
     if (s < f->stack[t->phase][low])
         f->stack[t->phase][low] = s;
     if (instructions) {
+        /* the widths before the step are those the instruction ran with */
+        unsigned mx = (unsigned)t->e << 2 | (t->p >> 4 & 3);
+        f->ops[t->phase][t->m->opcode][mx] += instructions;
         slot *h = table_at(&f->heat, (uint64_t)t->phase << 24 | opcode_pc);
         if (h) {
             h->count += instructions;
@@ -589,6 +666,9 @@ static void snapshot(trace *t)
     t->pc = (uint32_t)c->pbr << 16 | c->pc;
     t->s = c->s;
     t->d = c->d;
+    t->a = c->a;
+    t->x = c->x;
+    t->y = c->y;
     t->p = c->p;
     t->e = c->e;
     t->dbr = c->dbr;
@@ -597,6 +677,55 @@ static void snapshot(trace *t)
     t->firmware_cycles = t->m->counts.firmware_cycles;
     t->program_bytes = 0;
     t->interrupt = 0;
+    t->step_accesses = 0;
+    t->step_overflow = 0;
+}
+
+/* Write the instruction of this step as a sample (see trace.h). */
+static void write_sample(trace *t)
+{
+    FILE *out = t->samples;
+    const cpu816 *c = &t->m->cpu;
+    fprintf(out, "s %u %06" PRIX32 " %04X %04X %04X %04X %04X %02X %02X %u\n",
+            t->phase, t->pc, t->a, t->x, t->y, t->s, t->d, t->dbr, t->p,
+            t->e);
+    fputc('p', out);
+    for (unsigned i = 0; i < t->previous_count; i++)
+        fprintf(out, " %06" PRIX32, t->previous[(t->previous_at +
+                                                  SAMPLE_PREVIOUS - 1 - i) %
+                                                 SAMPLE_PREVIOUS]);
+    fputc('\n', out);
+    for (unsigned i = 0; i < t->step_accesses; i++)
+        fprintf(out, "%c %06" PRIX32 " %02X %s\n",
+                t->step_access[i].write ? 'w' : 'r',
+                t->step_access[i].address, t->step_access[i].value,
+                KIND_NAMES[t->step_access[i].kind]);
+    fprintf(out, "a %06" PRIX32 " %04X %04X %04X %04X %04X %02X %02X %u %u\n",
+            (uint32_t)c->pbr << 16 | c->pc, c->a, c->x, c->y, c->s, c->d,
+            c->dbr, c->p, c->e, (unsigned)c->state);
+    t->samples_written++;
+}
+
+/* The sample of this step, if it is one, then its accesses into the
+   ring of previous ones. */
+static void sample_step(trace *t, uint64_t instructions)
+{
+    if (!t->samples)
+        return;
+    if (t->recording && instructions == 1 &&
+        ++t->sample_count % t->sample_every == 0) {
+        if (t->step_overflow)
+            t->samples_skipped++;
+        else
+            write_sample(t);
+    }
+    for (unsigned i = 0; i < t->step_accesses; i++)
+        if (t->step_access[i].kind != K_PROGRAM) {
+            t->previous[t->previous_at] = t->step_access[i].address;
+            t->previous_at = (t->previous_at + 1) % SAMPLE_PREVIOUS;
+            if (t->previous_count < SAMPLE_PREVIOUS)
+                t->previous_count++;
+        }
 }
 
 static void after_step(void *context)
@@ -613,6 +742,7 @@ static void after_step(void *context)
 
     if (instructions)
         record_widths(t, m->opcode_pc);
+    sample_step(t, instructions);
     if (t->recording) {
         if (firmware) {
             t->now->firmware[0]++;
@@ -729,10 +859,23 @@ trace *trace_open(iigs *m, const trace_config *c)
         free_trace(t);
         return NULL;
     }
+    if (c->sample_path) {
+        if (!(t->samples = fopen(c->sample_path, "w"))) {
+            fclose(t->out);
+            free_trace(t);
+            return NULL;
+        }
+        fputs("ref816-samples 1\n", t->samples);
+        t->sample_every = c->sample_every ? c->sample_every
+                                          : TRACE_SAMPLE_EVERY;
+    }
     for (unsigned i = 0; i < c->entry_count; i++)
         set_bit(t->entry_bits, c->entries[i]);
     t->armed = c->from == NULL;
     t->last_far_bank = -1;
+    t->code_page = UINT32_MAX;
+    for (unsigned i = 0; i < TRACE_CODE_SLOTS; i++)
+        t->code_slot[i] = UINT32_MAX;
     write_header(t);
 
     t->read = m->cpu.read;
@@ -794,6 +937,12 @@ int trace_close(trace *t)
     free(smc);
     free(widths);
     ok = !fclose(out) && ok;
+    if (t->samples) {
+        fprintf(t->samples, "end %" PRIu64 " %" PRIu64 "\n",
+                t->samples_written, t->samples_skipped);
+        ok = !ferror(t->samples) && ok;
+        ok = !fclose(t->samples) && ok;
+    }
 
     m->cpu.read = t->read;
     m->cpu.write = t->write;

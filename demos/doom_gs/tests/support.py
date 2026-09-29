@@ -281,3 +281,27 @@ def ref816_build():
     if result.returncode:
         raise AssertionError('make failed:\n' + result.stdout)
     return out, result.stdout
+
+
+_a2vm_built = []
+
+
+def a2vm_build():
+    """Build everything of tools/a2vm (the vector harness, the self test
+    and the bench) once, from scratch, into a directory of their own under
+    build/, removed when the tests end. Returns (directory, what the
+    compiler said)."""
+    if not _a2vm_built:
+        BUILD.mkdir(exist_ok=True)
+        out = Path(tempfile.mkdtemp(prefix='test-a2vm-', dir=str(BUILD)))
+        atexit.register(shutil.rmtree, str(out), True)
+        result = subprocess.run(
+            ['make', '-B', '-C', str(ROOT / 'tools' / 'a2vm'),
+             'OUT=%s' % out, 'all'],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            universal_newlines=True)
+        _a2vm_built.extend([out, result])
+    out, result = _a2vm_built
+    if result.returncode:
+        raise AssertionError('make failed:\n' + result.stdout)
+    return out, result.stdout

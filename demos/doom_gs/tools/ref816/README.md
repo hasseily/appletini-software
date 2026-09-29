@@ -211,9 +211,17 @@ banks of `--trace-near`), the lowest S above and below
 `--trace-stack-split`, the writes that reach the super hi-res screen and
 those that changed it, the instructions executed at each address, the
 entries of each phase, and the cycles of the machine's firmware traps,
-which run no instruction of the game and belong to no phase. Over the
-whole run it gives every write to a byte that runs as code, and
-the (M, X), D and DBR values each instruction address ran with.
+which run no instruction of the game and belong to no phase; the
+instructions by opcode and by the widths (E, M, X) they ran with; and, in
+a model of the code page cache of the interpreter of `src/vm` (16 pages
+filled in turn), the program fetches that entered another page and those
+that missed. Over the whole run it gives every write to a byte that runs
+as code, and the (M, X), D and DBR values each instruction address ran
+with. With `--trace-samples FILE` it also writes one instruction of the
+recorded frames in `--trace-sample-every N` (499 by default) whole, with
+its registers, every byte it read and wrote and the registers after it,
+so that `tools/a2vm/game816` can run it again on the interpreter
+(`tools/a2vm/interpreter_report.py`, which writes `docs/INTERPRETER.md`).
 
 A phase (`--trace-phase NAME=ADDR`) starts with a call to one of its
 entries and ends when the CPU is back after that call with S as it was;
