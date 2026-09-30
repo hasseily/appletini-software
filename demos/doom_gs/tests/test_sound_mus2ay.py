@@ -4,6 +4,7 @@ hand-made songs, then invariants and the design's figures on the WAD's
 
 import struct
 import unittest
+from collections import Counter
 
 import support  # noqa: F401  (puts tools/ on the path)
 from sound import genmidi, mus, mus2ay, player, report, tables
@@ -60,8 +61,70 @@ def score(*events):
     return make_mus(out + [0x60])
 
 
-def convert(lump):
-    return mus2ay.convert(mus.parse(lump), INSTRUMENTS)
+# A song with what the WAD's songs never use: a note of volume 0,
+# expression, system events 10, 11 and 14 (on a melodic channel and on
+# channel 15), and a carrier level (score() pairs: the delay after, the
+# event). test_sound_decoders checks the converter on it too.
+EDGE_CASES = (
+    (0, [0x40, 0, 4]),                   # program 4: level 10
+    (0, [0x40, 5, 90]),                  # expression 90
+    (0, [0x10, 0x80 | 60, 100]),         # 60, velocity 100
+    (0, [0x10, 64]),                     # 64, velocity 100 again
+    (0, [0x11, 0x80 | 50, 70]),
+    (0, [0x1f, 0x80 | 36, 110]),         # a drum
+    (2, [0x20, 90]),                     # bend channel 0
+    (0, [0x10, 0x80 | 64, 0]),           # 64 at volume 0: off
+    (1, [0x40, 3, 60]),                  # volume of channel 0
+    (1, [0x30, 14]),                     # reset: expression, bend
+    (1, [0x31, 11]),                     # all notes off, channel 1
+    (0, [0x11, 0x80 | 52, 127]),
+    (1, [0x3f, 10]),                     # all sounds off, drums
+    (1, [0x30, 10]),                     # all sounds off, channel 0
+    (0, [0x10, 0x80 | 67, 80]),
+    (0, [0x4f, 3, 50]),                  # drum channel volume
+    (2, [0x1f, 0x80 | 42, 127]),
+    (1, [0x3f, 14]))                     # reset on channel 15
+
+
+def convert(lump, gain=0):
+    """The converter at a song gain of 0 by default: the tests of the
+    loudness law, the stream and the voices check the attenuations as
+    the law gives them; the class Gain tests the song gain."""
+    return mus2ay.convert(mus.parse(lump), INSTRUMENTS, gain=gain)
+
+
+def note_attenuations(song_file):
+    """[(tick, voice, note or drum recipe, attenuation)] of every note on
+    and drum hit of a stream, the attenuation being the one the player
+    holds for it (a short note on keeps the voice's)."""
+    att = {}
+    out = []
+    for tick, c, v, ops in player.decode_stream(song_file.stream):
+        if c in (player.NOTE_ATT, player.NOTE_ATT_ENV):
+            att[v] = ops[1]
+        elif c == player.ATTENUATION:
+            att[v] = ops[0]
+        if c <= player.NOTE_ATT_ENV:
+            out.append((tick, v, ops[0], att.get(v, 0)))
+        elif c == player.DRUM_HIT:
+            out.append((tick, v, ops[0] | 0x100, ops[1]))
+    return out
+
+
+def check_gained(test, plain, shipped, gain):
+    """note_attenuations of a song at gain 0 (`plain`) and at `gain`: the
+    same notes and hits on the same voices at the same ticks, each at its
+    gain-0 attenuation less the gain when that sounds; a silent one (80)
+    stays silent or, when its terms add up to 80 or more without one
+    being silent, sounds at 80 - gain to 79."""
+    test.assertEqual([x[:3] for x in shipped], [x[:3] for x in plain])
+    for (t, v, n, a), (_, _, _, b) in zip(plain, shipped):
+        if a < tables.ATT_MAX:
+            test.assertEqual(b, max(0, a - gain), (t, v, n))
+        else:
+            test.assertTrue(b == tables.ATT_MAX or
+                            tables.ATT_MAX - gain <= b < tables.ATT_MAX,
+                            (t, v, n, b))
 
 
 def commands(song_file):
@@ -323,6 +386,158 @@ class Updates(unittest.TestCase):
                          (1, 1, 0, 0))
 
 
+class Gain(unittest.TestCase):
+    """The song gain: its statistic, the boost, the cap, the clamp at 0,
+    silence kept, a quiet sum gained rather than muted, drums gained in
+    attenuation (not in balance: a loud hit goes to the chip's envelope),
+    and the gained attenuations in the stream."""
+
+    def probe(self, lump):
+        converter = mus2ay.Converter(mus.parse(lump), INSTRUMENTS)
+        converter.convert()
+        return converter.loudness
+
+    def test_attenuation(self):
+        att = mus2ay.attenuation
+        self.assertEqual(att((5,), 10), 0)               # clamped at 0
+        self.assertEqual(att((30,), 10), 20)
+        self.assertEqual(att((79,), 24), 55)
+        self.assertEqual(att((12,)), 12)
+        self.assertEqual(att((8, 15, 0, 24)), 47)       # the sum of terms
+        # a sum of 80 or more: silent at gain 0, gained from the sum
+        self.assertEqual(att((40, 40)), tables.ATT_MAX)
+        self.assertEqual(att((40, 40), 21), 59)
+        self.assertEqual(att((60, 50), 30), tables.ATT_MAX)
+        self.assertEqual(att((60, 40), 30), 70)
+        self.assertEqual(att((50, 50), 10), tables.ATT_MAX)
+        # one term silent by itself (a value of 12 or less, volume 0):
+        # silent whatever the gain
+        self.assertEqual(tables.ATTENUATION_OF_VALUE[12], tables.ATT_MAX)
+        self.assertLess(tables.ATTENUATION_OF_VALUE[13], tables.ATT_MAX)
+        self.assertEqual(att((0, 0, tables.ATT_MAX, 0), 24), tables.ATT_MAX)
+        self.assertEqual(att((tables.ATT_MAX,), 24), tables.ATT_MAX)
+
+    def test_statistic(self):
+        # 1% of the held time at 2, the rest at 10: the 99th percentile
+        # is 2; half a percent at 2: it is 10
+        loud = mus2ay.loud_attenuation
+        self.assertEqual(loud(Counter({2: 1, 10: 99})), 2)
+        self.assertEqual(loud(Counter({2: 1, 10: 199})), 10)
+        self.assertEqual(loud(Counter({2: 1, 10: 199}), 0.995), 2)
+        self.assertEqual(loud(Counter({2: 1, 10: 199}), 0.5), 10)
+        # silent attenuations and empty entries do not count
+        self.assertEqual(loud(Counter({0: 0, 10: 5, 80: 1000})), 10)
+        self.assertIsNone(loud(Counter({80: 10})))
+        self.assertIsNone(loud(Counter()))
+
+    def test_boost_and_cap(self):
+        gain = mus2ay.song_gain
+        self.assertEqual((mus2ay.PERCENTILE, mus2ay.BOOST, mus2ay.CAP),
+                         (0.99, 6, 24))
+        self.assertEqual(gain(Counter({10: 100})), 16)          # 10 + 6
+        self.assertEqual(gain(Counter({10: 100}), boost=0), 10)
+        self.assertEqual(gain(Counter({30: 100})), 24)          # capped
+        self.assertEqual(gain(Counter({30: 100}), cap=40), 36)
+        self.assertEqual(gain(Counter({0: 100})), 6)            # boost only
+        self.assertEqual(gain(Counter()), 6)                    # no notes
+
+    def test_held_time_weights_and_one_stray_loud_note(self):
+        # 60 at velocity 127 (0 units) held 2 ticks, then 62 at velocity
+        # 100 (8 units) held 400: the loud note is 0.5% of the held time,
+        # so the statistic is 8 and the gain 8 + 6 = 14; both notes are
+        # clamped at 0
+        lump = score((2, [0x10, 0x80 | 60, 127]), (0, [0x00, 60]),
+                     (400, [0x10, 0x80 | 62, 100]), (0, [0x00, 62]))
+        self.assertEqual(self.probe(lump), Counter({0: 2, 8: 400}))
+        song_file, stats = mus2ay.convert(mus.parse(lump), INSTRUMENTS)
+        self.assertEqual(stats['gain'], 14)
+        self.assertEqual([a for _, _, _, a in note_attenuations(song_file)],
+                         [0, 0])
+        # held 10 ticks it is 2.4% of the time: the statistic is 0, the
+        # gain the boost alone, and 62 is 2 units down
+        lump = score((10, [0x10, 0x80 | 60, 127]), (0, [0x00, 60]),
+                     (400, [0x10, 0x80 | 62, 100]), (0, [0x00, 62]))
+        song_file, stats = mus2ay.convert(mus.parse(lump), INSTRUMENTS)
+        self.assertEqual(stats['gain'], 6)
+        self.assertEqual([a for _, _, _, a in note_attenuations(song_file)],
+                         [0, 2])
+
+    def test_volume_changes_split_the_held_time(self):
+        # velocity 127 held 100 ticks, the channel volume at 64 (24 units)
+        # from tick 40; a note shorter than a tick counts 1
+        lump = score((40, [0x10, 0x80 | 60, 127]), (60, [0x40, 3, 64]),
+                     (0, [0x00, 60]), (0, [0x10, 0x80 | 62, 127]),
+                     (0, [0x00, 62]))
+        self.assertEqual(self.probe(lump), Counter({0: 40, 24: 61}))
+
+    def test_cap_and_drums_gained_in_attenuation(self):
+        # melody at velocity 20 (64 units): gain 64 + 6, capped at 24; a
+        # drum at velocity 64 (24 units) goes to 0, a drum at 20 to 40,
+        # the melody's gain in attenuation. Not in balance: the first hit,
+        # soft at gain 0 (24 > HW_DRUM_ATT), now plays on the chip's
+        # envelope from full level, and a hit already there could not get
+        # louder (report.peak_changes measures this by song)
+        lump = score((0, [0x10, 0x80 | 60, 20]), (0, [0x1f, 0x80 | 36, 64]),
+                     (100, [0x1f, 0x80 | 42, 20]), (0, [0x00, 60]))
+        song_file, stats = mus2ay.convert(mus.parse(lump), INSTRUMENTS)
+        self.assertEqual(stats['gain'], 24)
+        self.assertEqual([(v, a) for _, v, _, a in
+                          note_attenuations(song_file)],
+                         [(0, 40), (7, 0), (8, 40)])
+        self.assertEqual(stats['soft drum hits'], 1)
+        # at gain 0 both hits are soft
+        self.assertEqual(convert(lump)[1]['soft drum hits'], 2)
+
+    def test_silence_stays_silent(self):
+        # channel volume 0: 80 units whatever the gain, and no sounding
+        # note, so the gain is the boost
+        lump = score((0, [0x40, 3, 0]), (10, [0x10, 60]), (0, [0x00, 60]))
+        song_file, stats = mus2ay.convert(mus.parse(lump), INSTRUMENTS)
+        self.assertEqual(stats['gain'], mus2ay.BOOST)
+        self.assertEqual(note_attenuations(song_file)[0][3], tables.ATT_MAX)
+        self.assertEqual(stats['silent notes'], 1)
+
+    def test_a_quiet_sum_is_gained_not_muted(self):
+        # velocity 127 while the channel volume falls: 40 (40 units) with
+        # expression 40 (40 units) sums to 80, silent at gain 0; with a
+        # gain of 20 it is 60, an audible level, not muted. Volume 0 mutes
+        # it whatever the gain.
+        lump = score((0, [0x40, 5, 40]), (0, [0x40, 3, 40]),
+                     (10, [0x10, 0x80 | 60, 127]), (10, [0x40, 3, 0]),
+                     (10, [0x00, 60]))
+        for gain, first, last in ((0, 80, None), (20, 60, 80)):
+            song_file, stats = convert(lump, gain)
+            self.assertEqual(note_attenuations(song_file)[0][3], first)
+            changes = [ops[0] for _, c, _, ops in
+                       player.decode_stream(song_file.stream)
+                       if c == player.ATTENUATION]
+            self.assertEqual(changes, [last] if last else [])
+            self.assertEqual(stats['silent notes'], int(first == 80))
+
+    def test_a_fixed_gain(self):
+        lump = score((10, [0x10, 0x80 | 60, 64]), (0, [0x00, 60]))
+        for gain, want in ((0, 24), (10, 14), (30, 0)):
+            song_file, stats = convert(lump, gain)
+            self.assertEqual(stats['gain'], gain)
+            self.assertEqual(note_attenuations(song_file)[0][3], want)
+
+    def test_the_stream_holds_the_gained_attenuations(self):
+        # the edge-case song of test_sound_decoders: every note on and
+        # drum hit carries its gain-0 attenuation less the gain, the same
+        # voices and notes; a volume change is sent when the gained level
+        # moves (test_sound_decoders checks each attenuation against its
+        # terms, silent sums included)
+        lump = score(*EDGE_CASES)
+        plain, plain_stats = convert(lump)
+        song_file, stats = mus2ay.convert(mus.parse(lump), INSTRUMENTS)
+        gain = stats['gain']
+        self.assertGreater(gain, 0)
+        check_gained(self, note_attenuations(plain),
+                     note_attenuations(song_file), gain)
+        for key in ('notes', 'drum hits', 'steals', 'drum steals', 'cuts'):
+            self.assertEqual(stats[key], plain_stats[key], key)
+
+
 # The design's figures (build/native-design/sound/summary50.md, the
 # tables of docs/research/native-sound.md 3.3 and 4.2), native12, the only
 # layout since the 6-voice fallback was removed (NATIVE.md 15.1, row 11):
@@ -339,22 +554,54 @@ DESIGN = {
 }
 METRICS = ('steals', 'drum steals', 'writes/s', 'p99')
 DESIGN_STREAM_BYTES = {'native12': 141293}
+# Excesses over DESIGN of the songs as shipped, accepted:
+# {song: {metric: (figure allowed, the reason)}}.
+_LOUDER = ('the song gain (2026-09-30), for the owner\'s "Volume is a '
+           'little low": louder notes cross more AY levels as they fade '
+           'and more drum hits start on the envelope; the bus cost stays '
+           'inside the design\'s range (test_the_song_gain)')
+DESIGN_WITH_GAIN = {
+    'D_E1M2': {'p99': (15, _LOUDER)},
+    'D_E1M3': {'writes/s': (104, _LOUDER)},
+    'D_E1M5': {'writes/s': (55, _LOUDER)},
+    'D_E1M6': {'p99': (17, _LOUDER)},
+    'D_E1M7': {'writes/s': (50, _LOUDER)},
+    'D_E1M9': {'writes/s': (129, _LOUDER)},
+    'D_VICTOR': {'p99': (15, _LOUDER)},
+}
+# The song gains of mus2ay.convert, attenuation units of 0.5 dB, in
+# mus.UPSTREAM_SONGS order (tools/sound/README.md, "The song gain").
+SONG_GAINS = dict(zip(mus.UPSTREAM_SONGS,
+                      (17, 14, 21, 17, 15, 18, 14, 21, 14, 14, 6, 12, 14)))
+# The design's range of the music's bus cost, ms a second (native-sound.md
+# 4.2: "music costs 11.5 to 27.5 ms a second" on F1.2.1 with window 512;
+# 0.39 to 1.20 with FW-S1).
+DESIGN_MS_F121 = 27.5
+DESIGN_MS_FWS1 = 1.20
 
 
 @needs_wad
 class AllSongs(unittest.TestCase):
+    """The WAD's songs as shipped (each with its song gain), and at gain 0
+    (`plain`), the loudness the design's figures were measured at."""
+
     @classmethod
     def setUpClass(cls):
         wad = mus.Wad.open()
         instruments = mus2ay.load_instruments(wad)
         cls.results = {}
+        cls.plain = {}
         layout = tables.NATIVE12.name
         for name in mus.UPSTREAM_SONGS:
             song = wad.song(name)
-            song_file, stats = mus2ay.convert(song, instruments)
-            init, bursts = player.run(song_file, tables.PAL_NATIVE)
-            cls.results[layout, name] = (song, song_file, stats, init,
+            for results, gain in ((cls.results, None), (cls.plain, 0)):
+                song_file, stats = mus2ay.convert(song, instruments, gain)
+                init, bursts = player.run(song_file, tables.PAL_NATIVE)
+                results[layout, name] = (song, song_file, stats, init,
                                          bursts)
+            probe = mus2ay.Converter(song, instruments)
+            probe.convert()
+            cls.plain[layout, name] += (probe.loudness,)
 
     def test_stream_is_well_formed(self):
         for (layout, name), (song, song_file, stats, _, _) in \
@@ -421,20 +668,60 @@ class AllSongs(unittest.TestCase):
                                 if p.want[c][8 + ch]]
                     self.assertTrue(set(sounding) <= music)
 
-    def test_against_the_design(self):
-        for (layout, name), (_, _, stats, _, bursts) in self.results.items():
-            machine = tables.PAL_NATIVE
+    def check_design(self, results, allowed):
+        machine = tables.PAL_NATIVE
+        for (layout, name), result in results.items():
+            stats, bursts = result[2], result[4]
             b = report.burst_stats(bursts, machine)
             got = dict(zip(METRICS, (stats['steals'], stats['drum steals'],
                                      round(b['writes_s']), b['p99_busy'])))
             for metric, design in zip(METRICS, DESIGN[layout][name]):
+                limit = allowed.get(name, {}).get(metric, (design,))[0]
                 with self.subTest(layout=layout, song=name, metric=metric):
-                    self.assertLessEqual(got[metric], design)
+                    self.assertLessEqual(got[metric], limit)
         for layout, total in DESIGN_STREAM_BYTES.items():
             got = sum(len(r[1].stream) for (lay, _), r in
-                      self.results.items() if lay == layout)
+                      results.items() if lay == layout)
             self.assertLessEqual(got, total)
 
+    def test_against_the_design(self):
+        """The songs as shipped, each with its song gain, against the
+        design's figures, with no exception but the accepted ones
+        (DESIGN_WITH_GAIN): the gain raises writes a second in D_E1M3,
+        D_E1M5, D_E1M7 and D_E1M9 and the p99 of bursts in D_E1M2, D_E1M6
+        and D_VICTOR above the design's (tools/sound/README.md, "The song
+        gain")."""
+        self.check_design(self.results, DESIGN_WITH_GAIN)
+
+    def test_against_the_design_at_gain_0(self):
+        """The converter's rules at the loudness the design's figures were
+        measured at: the songs at gain 0, byte for byte those of the
+        converter before the gain."""
+        self.check_design(self.plain, {})
+
+    def test_the_song_gain(self):
+        """Each shipped song: its gain (pinned in SONG_GAINS) is the
+        statistic's plus the boost, within the cap; every note and drum
+        hit holds its gain-0 attenuation less the gain (check_gained); the
+        voices are the same (steals, drum steals, release cuts); and the
+        bus cost stays inside the design's range."""
+        machine = tables.PAL_NATIVE
+        for key, (_, song_file, stats, _, bursts) in self.results.items():
+            _, plain, plain_stats, _, _, loudness = self.plain[key]
+            with self.subTest(song=key[1]):
+                gain = stats['gain']
+                self.assertEqual(gain, SONG_GAINS[key[1]])
+                loud = mus2ay.loud_attenuation(loudness)
+                self.assertEqual(gain, min(mus2ay.CAP, loud + mus2ay.BOOST))
+                check_gained(self, note_attenuations(plain),
+                             note_attenuations(song_file), gain)
+                for count in ('notes', 'drum hits', 'steals', 'drum steals',
+                              'release cuts', 'max voices', 'lost offs'):
+                    self.assertEqual(stats[count], plain_stats[count], count)
+                b = report.burst_stats(bursts, machine)
+                self.assertLessEqual(b['f121_ms'], DESIGN_MS_F121)
+                self.assertLessEqual(b['fws1_ms'], DESIGN_MS_FWS1)
+        self.assertEqual(set(SONG_GAINS), set(mus.UPSTREAM_SONGS))
 
 if __name__ == '__main__':
     unittest.main()

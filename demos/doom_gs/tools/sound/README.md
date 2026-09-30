@@ -48,7 +48,7 @@ python3 tools/sound/mus2mid.py D_E1M1 build/sound/D_E1M1.mid    # MIDI
 | `mus2mid.py`, `midi.py` | The second decoder: MUS to a standard MIDI file, and a MIDI reader. It shares no MUS-reading code with `mus.py` |
 | `genmidi.py` | GENMIDI: carrier envelope, level, note offset, fixed note |
 | `tables.py` | Machines, clocks, the voice layout, period, bend, level and volume tables, tempo |
-| `mus2ay.py` | The converter: MUS to a song file |
+| `mus2ay.py` | The converter: MUS to a song file, each song with its gain (`--gain`, `--percentile`, `--boost`, `--cap`; "The song gain") |
 | `player.py` | The model of the 65C02 player: the specification and S2's oracle |
 | `ayrender.py` | AY register writes to WAV, after the card's YM2149 core and mixer |
 | `report.py` | All songs: the tables below, song files and WAVs |
@@ -162,8 +162,12 @@ product is up to 20 bits, so the 65C02 needs 3 bytes for it, and the
 added 1024 rounds to the nearest period. `$7v` is only sent for MUS
 system event 10 (all sounds off), which the WAD's songs do not use.
 The tables below give each song's size and bytes a second of music (44
-to 165). All 13 songs are 135,903 bytes of stream (137,151 bytes
+to 155). All 13 songs are 135,880 bytes of stream (137,128 bytes
 of song files), against 245,179 bytes of MUS.
+
+The attenuations in the stream include the song's gain (below, "The
+song gain"): the player applies no gain of its own, and the format is
+unchanged.
 
 ### The player
 
@@ -202,39 +206,77 @@ run on 2026-09-30. Each song is played once to its end (no loop) plus one
 second. "Writes/interrupt" is over all interrupts; "p99 of bursts" over the
 interrupts that write something (the design report's measure). Costs use
 native-sound.md 2.3: on F1.2.1, 504 us a burst and 40.4 us a write; with
-the proposed FW-S1, 8.4 us a write.
+the proposed FW-S1, 8.4 us a write. The songs are as shipped, each with
+its song gain. The loudness table compares gain 0 and as shipped: "Loud
+notes at" is the attenuation of the song's loud notes at gain 0, the
+statistic the gain rests on; "Clamped" the share of the melodic held
+note time whose attenuation is below the gain, so that it plays at
+attenuation 0 (level 15) and loses its dynamics; then, over the first
+60 s, the loudest level of a melodic voice, the mean AY level of the
+melodic voices that sound and of all the music voices that sound (a
+drum on the chip's envelope counts the envelope's level, 15 down to 0
+over its recipe's decay: the player leaves such a voice at `$10` until
+its next hit), and "Interrupts at 15", of the interrupts with a melodic
+voice sounding, those whose loudest melodic voice is at 15. The two drum
+columns are over the whole song: the share of hits on the chip's
+envelope, and "Drums against melody", the mean change of a drum hit's
+peak less the mean change of a melodic note's, in dB at the AY's levels
+(`report.peak_changes`; 0 would keep the balance of gain 0).
 
 <!-- report:begin (python3 tools/sound/report.py --update-readme) -->
 Native mode, 12 voices (7 melodic, 2 drums, 3 effects left free), PAL //e: interrupts at 50.080 Hz, 2 or 3 MUS ticks each.
 
 | Song | MUS bytes | Seconds | Events | Notes | Drum hits | Voices used (most held) | Steals | Drum steals | Release cuts | Stream bytes | Stream B/s | File bytes | Writes/s | Writes/interrupt mean | p99 | p99 of bursts | Max | F1.2.1 ms/s | FW-S1 ms/s |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| D_E1M1 | 17283 | 96.0 | 5826 | 1630 | 702 | 7 (5) | 0 | 133 | 40 | 15868 | 165 | 15972 | 122 | 2.43 | 15 | 16 | 25 | 23.3 | 1.02 |
-| D_E1M2 | 36776 | 155.4 | 10847 | 804 | 1232 | 7 (7) | 8 | 276 | 670 | 12790 | 82 | 12868 | 87 | 1.73 | 11 | 12 | 20 | 21.9 | 0.73 |
-| D_E1M3 | 19276 | 272.0 | 7507 | 2341 | 1408 | 7 (4) | 0 | 5 | 2259 | 13976 | 51 | 14030 | 92 | 1.84 | 9 | 9 | 19 | 24.3 | 0.77 |
-| D_E1M4 | 18216 | 170.7 | 6270 | 1895 | 1210 | 7 (6) | 0 | 92 | 279 | 12976 | 76 | 13100 | 111 | 2.21 | 18 | 19 | 23 | 23.8 | 0.93 |
-| D_E1M5 | 9830 | 164.0 | 3270 | 1460 | 4 | 7 (6) | 0 | 0 | 1447 | 7224 | 44 | 7262 | 47 | 0.93 | 9 | 10 | 17 | 12.8 | 0.39 |
-| D_E1M6 | 9456 | 84.0 | 3332 | 1071 | 554 | 7 (5) | 0 | 32 | 1018 | 7132 | 85 | 7280 | 138 | 2.76 | 14 | 15 | 20 | 27.0 | 1.16 |
-| D_E1M7 | 8591 | 150.9 | 2835 | 1110 | 226 | 7 (7) | 0 | 4 | 1093 | 6742 | 45 | 6838 | 49 | 0.97 | 7 | 7 | 23 | 15.7 | 0.41 |
-| D_E1M8 | 59535 | 152.0 | 18113 | 355 | 522 | 7 (6) | 0 | 43 | 151 | 9560 | 63 | 9642 | 41 | 0.82 | 8 | 11 | 19 | 11.0 | 0.35 |
-| D_E1M9 | 21266 | 137.4 | 7766 | 2620 | 1185 | 7 (7) | 2 | 272 | 1678 | 15798 | 115 | 15920 | 120 | 2.40 | 20 | 21 | 27 | 22.0 | 1.01 |
-| D_INTER | 29082 | 201.4 | 9884 | 3250 | 1682 | 7 (7) | 52 | 212 | 1312 | 22210 | 110 | 22352 | 118 | 2.35 | 18 | 19 | 26 | 23.9 | 0.99 |
-| D_INTRO | 1485 | 6.9 | 498 | 60 | 50 | 7 (7) | 7 | 4 | 46 | 636 | 93 | 740 | 57 | 1.13 | 9 | 12 | 33 | 15.4 | 0.48 |
-| D_VICTOR | 13752 | 192.0 | 4532 | 1506 | 748 | 7 (7) | 3 | 60 | 1482 | 10553 | 55 | 10649 | 75 | 1.49 | 11 | 13 | 20 | 19.7 | 0.63 |
-| D_INTROA | 631 | 6.9 | 214 | 10 | 48 | 7 (7) | 0 | 0 | 0 | 438 | 64 | 498 | 56 | 1.11 | 5 | 6 | 33 | 14.8 | 0.47 |
-| All | 245179 | | | | | | | | | 135903 | | 137151 | | | | | | | |
+| D_E1M1 | 17283 | 96.0 | 5826 | 1630 | 702 | 7 (5) | 0 | 133 | 40 | 14912 | 155 | 15016 | 117 | 2.33 | 16 | 17 | 25 | 22.5 | 0.98 |
+| D_E1M2 | 36776 | 155.4 | 10847 | 804 | 1232 | 7 (7) | 8 | 276 | 670 | 13508 | 87 | 13586 | 79 | 1.58 | 14 | 15 | 27 | 19.3 | 0.66 |
+| D_E1M3 | 19276 | 272.0 | 7507 | 2341 | 1408 | 7 (4) | 0 | 5 | 2259 | 13976 | 51 | 14030 | 104 | 2.08 | 10 | 11 | 20 | 25.2 | 0.87 |
+| D_E1M4 | 18216 | 170.7 | 6270 | 1895 | 1210 | 7 (6) | 0 | 92 | 279 | 12629 | 74 | 12753 | 118 | 2.36 | 19 | 19 | 28 | 24.6 | 0.99 |
+| D_E1M5 | 9830 | 164.0 | 3270 | 1460 | 4 | 7 (6) | 0 | 0 | 1447 | 7305 | 45 | 7343 | 55 | 1.10 | 9 | 10 | 16 | 15.0 | 0.46 |
+| D_E1M6 | 9456 | 84.0 | 3332 | 1071 | 554 | 7 (5) | 0 | 32 | 1018 | 7104 | 85 | 7252 | 125 | 2.50 | 16 | 17 | 25 | 25.3 | 1.05 |
+| D_E1M7 | 8591 | 150.9 | 2835 | 1110 | 226 | 7 (7) | 0 | 4 | 1093 | 6677 | 44 | 6773 | 50 | 0.99 | 7 | 7 | 23 | 15.6 | 0.42 |
+| D_E1M8 | 59535 | 152.0 | 18113 | 355 | 522 | 7 (6) | 0 | 43 | 151 | 11252 | 74 | 11334 | 46 | 0.93 | 8 | 11 | 19 | 11.8 | 0.39 |
+| D_E1M9 | 21266 | 137.4 | 7766 | 2620 | 1185 | 7 (7) | 2 | 272 | 1678 | 15470 | 113 | 15592 | 129 | 2.57 | 21 | 22 | 29 | 23.3 | 1.08 |
+| D_INTER | 29082 | 201.4 | 9884 | 3250 | 1682 | 7 (7) | 52 | 212 | 1312 | 21416 | 106 | 21558 | 113 | 2.26 | 18 | 19 | 27 | 23.1 | 0.95 |
+| D_INTRO | 1485 | 6.9 | 498 | 60 | 50 | 7 (7) | 7 | 4 | 46 | 642 | 94 | 746 | 57 | 1.13 | 11 | 12 | 33 | 15.3 | 0.48 |
+| D_VICTOR | 13752 | 192.0 | 4532 | 1506 | 748 | 7 (7) | 3 | 60 | 1482 | 10551 | 55 | 10647 | 76 | 1.51 | 13 | 15 | 23 | 19.6 | 0.64 |
+| D_INTROA | 631 | 6.9 | 214 | 10 | 48 | 7 (7) | 0 | 0 | 0 | 438 | 64 | 498 | 54 | 1.07 | 5 | 5 | 35 | 15.6 | 0.45 |
+| All | 245179 | | | | | | | | | 135880 | | 137128 | | | | | | | |
 
-NTSC //e (59.923 Hz), native mode: writes/s and p99 of bursts per song: D_E1M1 124/16, D_E1M2 91/11, D_E1M3 94/9, D_E1M4 112/18, D_E1M5 48/10, D_E1M6 146/15, D_E1M7 51/7, D_E1M8 42/11, D_E1M9 125/21, D_INTER 123/18, D_INTRO 60/12, D_VICTOR 77/12, D_INTROA 60/6.
+NTSC //e (59.923 Hz), native mode: writes/s and p99 of bursts per song: D_E1M1 118/17, D_E1M2 80/15, D_E1M3 105/10, D_E1M4 121/19, D_E1M5 57/10, D_E1M6 130/16, D_E1M7 52/7, D_E1M8 48/11, D_E1M9 134/21, D_INTER 119/18, D_INTRO 59/12, D_VICTOR 79/15, D_INTROA 57/4.
+
+Loudness: the song gain (percentile 0.99 of the melodic note time, boost +3.0 dB, cap +12.0 dB); the AY levels of the first 60 s (PAL) and the drums over the whole song, at gain 0 and as shipped.
+
+| Song | Loud notes at | Gain | Clamped | Loudest level | Mean level, melodic | Mean level, all | Interrupts at 15 | Hits on the envelope | Drums against melody |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| D_E1M1 | -5.5 dB | +8.5 dB | 87% | 12 to 15 | 9.3 to 12.0 | 8.8 to 11.2 | 0% to 88% | 56% to 95% | -2.2 dB |
+| D_E1M2 | -4.0 dB | +7.0 dB | 55% | 12 to 15 | 8.1 to 10.1 | 7.8 to 9.9 | 0% to 85% | 0% to 85% | +2.8 dB |
+| D_E1M3 | -7.5 dB | +10.5 dB | 68% | 11 to 15 | 6.1 to 8.3 | 6.2 to 8.3 | 0% to 10% | 51% to 92% | -5.2 dB |
+| D_E1M4 | -5.5 dB | +8.5 dB | 25% | 12 to 15 | 8.2 to 10.9 | 8.1 to 10.3 | 0% to 55% | 79% to 99% | -6.4 dB |
+| D_E1M5 | -4.5 dB | +7.5 dB | 32% | 12 to 15 | 6.4 to 6.9 | 6.4 to 6.9 | 0% to 78% | 100% to 100% | -7.4 dB |
+| D_E1M6 | -6.0 dB | +9.0 dB | 25% | 11 to 15 | 6.4 to 7.6 | 6.3 to 7.7 | 0% to 57% | 8% to 84% | +0.1 dB |
+| D_E1M7 | -4.0 dB | +7.0 dB | 48% | 13 to 15 | 8.4 to 10.7 | 8.3 to 10.6 | 0% to 66% | 16% to 76% | +0.8 dB |
+| D_E1M8 | -7.5 dB | +10.5 dB | 35% | 11 to 15 | 7.8 to 11.2 | 7.7 to 11.2 | 0% to 73% | 57% to 81% | -4.1 dB |
+| D_E1M9 | -4.0 dB | +7.0 dB | 21% | 13 to 15 | 9.1 to 11.8 | 9.2 to 11.2 | 0% to 84% | 94% to 99% | -6.1 dB |
+| D_INTER | -4.0 dB | +7.0 dB | 61% | 12 to 15 | 10.0 to 12.7 | 9.5 to 11.4 | 0% to 52% | 72% to 98% | -4.0 dB |
+| D_INTRO | 0.0 dB | +3.0 dB | 10% | 15 to 15 | 8.5 to 9.6 | 8.2 to 9.2 | 0% to 0% | 14% to 26% | +0.2 dB |
+| D_VICTOR | -3.0 dB | +6.0 dB | 3% | 13 to 15 | 6.5 to 8.2 | 6.5 to 8.2 | 0% to 3% | 12% to 36% | -0.4 dB |
+| D_INTROA | -4.0 dB | +7.0 dB | 68% | 12 to 15 | 9.3 to 11.4 | 8.9 to 10.9 | 0% to 78% | 12% to 38% | +1.0 dB |
 <!-- report:end -->
 
 ### Against the design
 
 native-sound.md's figures come from its prototype (`summary50.md`, 50 Hz
-exactly). `tests/test_sound_mus2ay.py` checks every song against them on
-the PAL machine the tables above use, with no exception: steals, drum
-steals, writes a second and p99 writes of a burst, each at or below the
-design's figure as `summary50.md` prints it (whole numbers), and the
-stream bytes.
+exactly), which had no song gain. `tests/test_sound_mus2ay.py` checks
+every song against them on the PAL machine: steals, drum steals, writes
+a second and p99 writes of a burst, each at or below the design's figure
+as `summary50.md` prints it (whole numbers), and the stream bytes. It
+checks the songs as shipped (`AllSongs.test_against_the_design`), with
+no exception but the 7 figures the song gain raised (`DESIGN_WITH_GAIN`;
+"The song gain" below), and at gain 0
+(`test_against_the_design_at_gain_0`, the songs as they were before the
+gain, byte for byte). The figures of this section are at gain 0, where
+every song passes.
 
 - **Steals.** Equal in all 13 songs (0 in 8; D_INTER 52 of 3,250
   notes, D_INTRO 7). Drum steals equal or lower (D_E1M6 32 against 33,
@@ -263,6 +305,168 @@ stream bytes.
   (17) and D_E1M8 (19). The largest burst depends on where the interrupts
   fall: at an exact 50 Hz D_E1M8's is 16. The largest of all is 33 writes
   (D_INTRO and D_INTROA, their first chord), as in the design.
+
+### The song gain
+
+The owner's first run of the music disk on the card (2026-09-30,
+`docs/results/music-card-2026-09-30.md`): "Volume is a little low but
+music sounds great". At gain 0 the songs' loudest melodic notes reach
+level 11 to 13 of the AY's 15 (D_INTRO 15), and in the first 60 s no
+song but D_INTRO has a melodic voice at 15 in any interrupt: the songs
+seldom play at velocity, volume and expression 127, the only full level
+of the General MIDI law.
+
+`mus2ay.convert` gives each song a gain, in attenuation units of 0.5 dB,
+taken off every note's and every drum hit's attenuation:
+
+- **The statistic** (`loud_attenuation`). A first pass of the converter
+  at gain 0 counts the melodic notes' held time (note on to note off, a
+  steal, a cut or the end; split at each volume or expression change; a
+  note held less than a tick counts one tick) by attenuation. The loud
+  notes' attenuation is the smallest a such that the notes at a or
+  louder are held for at least 1% of that time (`PERCENTILE`, 0.99), so
+  that one stray loud note does not set it.
+- **The gain** (`song_gain`): that attenuation, which brings the loud
+  notes to 0 (level 15), plus `BOOST` (6 units, +3 dB), at most `CAP` (24
+  units, +12 dB).
+- **Applied** (`attenuation`): the sum of the law's terms (velocity,
+  volume, expression, carrier level) less the gain, 0 to 80. A note is
+  silent (80) only when one term is silent by itself, a value of 12 or
+  less (volume 0 included), so that a channel at volume 0 stays mute (the
+  WAD's songs have such notes). A sum of 40 dB or more whose terms all
+  sound is gained like any other: a volume fade keeps fading below the
+  level it reached at gain 0 instead of cutting to silence (67 notes of
+  D_E1M8, D_E1M2, D_E1M6 and D_INTRO sound now that were silent at gain 0,
+  and the volume fades of held notes go on below the level at which they
+  used to cut; six song files changed with this rule).
+- **The clamp.** With the boost, the loud notes and every note up to 3
+  dB quieter play at attenuation 0 (level 15): that note time loses its
+  dynamics. The loudness table's "Clamped" gives its share of each song's
+  melodic held note time: 3% (D_VICTOR) to 87% (D_E1M1), and more than
+  half in D_E1M1, D_E1M3, D_INTROA, D_INTER and D_E1M2. `--boost 0`
+  clamps only the loud notes' 1% (and the gains fall by 3 dB); the owner
+  chooses.
+- **Drums** take the same gain in attenuation, but not in balance with
+  the melody. A hit of attenuation 12 or less (`tables.HW_DRUM_ATT`)
+  plays on the chip's envelope from full level, so a hit already there
+  cannot get louder, and a soft hit that the gain brings to 12 or less
+  jumps to full level. At gain 0 most hits of D_E1M4, D_E1M5 (4 hits in
+  all), D_E1M9 and D_INTER are already on the envelope (72% to 100%), so
+  their drums fall back 4.0 to 7.4 dB against the melody; D_E1M2's hits were all soft and
+  its drums gain 2.8 dB on the melody ("Drums against melody", -7.4 to
+  +2.8 dB by song). Whether that sounds right is for the owner's ear; a
+  separate drum gain is the alternative.
+- The stream carries the gained attenuations; the player and the song
+  file's format do not change. The counts report `gain`. `mus2ay.py
+  --gain N` fixes one gain for every song (0: the songs as before), and
+  `--percentile`, `--boost` and `--cap` change the rule.
+
+The gains run from +3.0 dB (D_INTRO, whose loud notes are already at
+full level) to +10.5 dB (D_E1M3 and D_E1M8); no song reaches the cap. The
+loudness table above gives each song's gain and levels. In the renders
+(the first 60 s, or the whole song and one second, PAL; the card's mix before the DC blocker; the RMS is
+of both channels about their mean, in dB below the sum that saturates):
+
+| Song | Gain | RMS, gain 0 | RMS, shipped | Change | Mix peak, of saturation |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| D_E1M1 | +8.5 dB | -25.5 dB | -19.3 dB | +6.2 dB | 41% to 71% |
+| D_E1M2 | +7.0 dB | -27.9 dB | -21.7 dB | +6.2 dB | 25% to 58% |
+| D_E1M3 | +10.5 dB | -31.5 dB | -24.8 dB | +6.7 dB | 26% to 48% |
+| D_E1M4 | +8.5 dB | -26.4 dB | -20.1 dB | +6.3 dB | 35% to 66% |
+| D_E1M5 | +7.5 dB | -30.4 dB | -25.0 dB | +5.4 dB | 16% to 32% |
+| D_E1M6 | +9.0 dB | -29.8 dB | -22.1 dB | +7.7 dB | 29% to 59% |
+| D_E1M7 | +7.0 dB | -25.0 dB | -19.4 dB | +5.6 dB | 42% to 66% |
+| D_E1M8 | +10.5 dB | -28.1 dB | -19.4 dB | +8.7 dB | 33% to 72% |
+| D_E1M9 | +7.0 dB | -24.8 dB | -19.9 dB | +4.9 dB | 43% to 68% |
+| D_INTER | +7.0 dB | -24.0 dB | -19.3 dB | +4.7 dB | 46% to 69% |
+| D_INTRO | +3.0 dB | -23.7 dB | -20.6 dB | +3.1 dB | 42% to 54% |
+| D_VICTOR | +6.0 dB | -31.7 dB | -25.9 dB | +5.8 dB | 23% to 41% |
+| D_INTROA | +7.0 dB | -23.3 dB | -18.3 dB | +5.0 dB | 44% to 83% |
+
+- **The mix never saturates**, before or after: 0 saturated samples in
+  the 13 renders. D_INTROA comes closest, 83% of the sum
+  that saturates (2,048).
+- **The RMS rises less than the gain** where the loudest notes are
+  clamped at level 15, and the AY's levels are coarse at the top (15 to
+  14 is 1.5 dB, 14 to 13 is 1.5 dB, 13 to 12 is 2.0 dB). The mean level
+  of the voices that sound rises less still (D_E1M5 6.4 to 6.9): release
+  tails that were below level 1 now sound at levels 1 to 3 and count. The
+  RMS is the measure of loudness; the mean levels are not (a level is a
+  step of 1.5 to 3 dB, and a drum's level follows its envelope).
+- **The WAVs are now at the card's scale** (`ayrender.LISTENING_GAIN` 1,
+  was 2): at +6 dB the 16-bit output of D_E1M1, D_E1M9, D_INTER and
+  D_INTROA clipped (10 to 72 samples each). So the new WAVs sound 6 dB
+  less than the gain says against the old ones; the card has no such
+  factor.
+
+**What the gain moves in the design's figures** (PAL, gain 0 to shipped,
+the design's `summary50.md` figure in brackets; F1.2.1 is the burst cost
+of native-sound.md 2.3):
+
+| Song | Writes/s | p99 of bursts | Largest burst | F1.2.1 ms/s | Soft drum hits |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| D_E1M1 | 122 to 117 [134] | 16 to 17 [18] | 25 to 25 | 23.3 to 22.5 | 308 to 36 |
+| D_E1M2 | 87 to 79 [91] | 12 to **15** [12] | 20 to 27 | 21.9 to 19.3 | 1,232 to 185 |
+| D_E1M3 | 92 to **104** [97] | 9 to 11 [11] | 19 to 20 | 24.3 to 25.2 | 684 to 106 |
+| D_E1M4 | 111 to 118 [124] | 19 to 19 [20] | 23 to 28 | 23.8 to 24.6 | 250 to 12 |
+| D_E1M5 | 47 to **55** [47] | 10 to 10 [10] | 17 to 16 | 12.8 to 15.0 | 0 to 0 |
+| D_E1M6 | 138 to 125 [143] | 15 to **17** [15] | 20 to 25 | 27.0 to 25.3 | 510 to 87 |
+| D_E1M7 | 49 to **50** [49] | 7 to 7 [7] | 23 to 23 | 15.7 to 15.6 | 190 to 54 |
+| D_E1M8 | 41 to 46 [47] | 11 to 11 [11] | 19 to 19 | 11.0 to 11.8 | 225 to 98 |
+| D_E1M9 | 120 to **129** [125] | 21 to 22 [22] | 27 to 29 | 22.0 to 23.3 | 77 to 6 |
+| D_INTER | 118 to 113 [132] | 19 to 19 [22] | 26 to 27 | 23.9 to 23.1 | 463 to 31 |
+| D_INTRO | 57 to 57 [64] | 12 to 12 [12] | 33 to 33 | 15.4 to 15.3 | 43 to 37 |
+| D_VICTOR | 75 to 76 [77] | 13 to **15** [13] | 20 to 23 | 19.7 to 19.6 | 659 to 475 |
+| D_INTROA | 56 to 54 [59] | 6 to 5 [6] | 33 to **35** | 14.8 to 15.6 | 42 to 30 |
+
+In bold, what is now above the design: writes a second in D_E1M3,
+D_E1M5, D_E1M7 and D_E1M9; the p99 of bursts in D_E1M2, D_E1M6 and
+D_VICTOR; the largest burst of all, 35 in D_INTROA against 33. Steals,
+drum steals, release cuts and the voices are the same at every gain
+(the allocation does not look at loudness; the tests check it). The
+stream is about the same size (135,880 bytes against 135,903): more notes
+share an attenuation of 0, so more note ons take the short form, but
+D_E1M8 grows (9,560 to 11,252 bytes) and D_E1M2 too (12,790 to 13,508),
+their volume fades now sending levels below the gain-0 silence. Two
+causes of the writes:
+
+- **Levels.** A voice writes its level register each interrupt its
+  level changes. A louder note crosses more of the AY's 16 levels on its
+  way down (decay, release), so it writes more. D_E1M5, with 4 drum hits
+  in the song, moves by this alone: 47 to 55 writes a second, its level
+  writes 5,509 to 6,962 in the song.
+- **Drums on the envelope generator.** A hit of attenuation 12 or less
+  (-6 dB) uses the chip's envelope generator (`tables.HW_DRUM_ATT`); the
+  gain moves most hits there (soft hits 4,683 to 1,157 in the 13 songs).
+  Such a hit writes the envelope period (R11, R12) when it differs, R13
+  always, and the level `$10` once, then nothing while it decays; a soft
+  hit writes its level at each interrupt of its decay. So a song with
+  many hits can write less a second (D_E1M2 87 to 79, D_E1M6 138 to 125),
+  while the interrupt of a hit writes more: the bursts at hits grow. In
+  the bursts at or above the p99, the envelope registers went from 0 to
+  5.2 writes a burst in D_E1M2, 0.2 to 3.9 in D_E1M6 and 1.3 to 3.1 in
+  D_VICTOR, the other registers about the same.
+
+**How the tests bound it.** The design's figures stay the test of the
+songs that ship (`AllSongs.test_against_the_design`), with the 7 figures
+in bold above accepted in `DESIGN_WITH_GAIN` in
+`tests/test_sound_mus2ay.py`, one entry a song and figure with its
+reason (accepted 2026-09-30 for the owner's "Volume is a little low";
+the owner can refuse them, which means a smaller gain). Why they are
+accepted: those figures exist to bound the player's cost, and the gain
+leaves that inside the design's range: at most 12 more writes and 3.6 more bursts a
+second, 2.2 ms a second more on F1.2.1 (D_E1M5, 12.8 to 15.0; a burst
+costs its 504 us tail), and every song's F1.2.1 burst cost at most 27.5
+ms a second and FW-S1 at most 1.20, the top of native-sound.md 4.2's
+range (11.8 to 25.3 and 0.39 to 1.08). The converter's rules are also
+checked at gain 0 against the design, where every song passes
+(`test_against_the_design_at_gain_0`). `AllSongs.test_the_song_gain`
+checks each song's gain (pinned: `SONG_GAINS`), that it is the
+statistic's plus the boost, that every note and drum hit carries its
+gain-0 attenuation less the gain (a silent sum of audible terms may
+sound, at 80 less the gain or above), that the voices are the same, and
+the bus cost above. `test_sound_decoders.py` checks every attenuation of
+the shipped songs against its terms, from the second decoder.
 
 ### Departures from native-sound.md
 
@@ -304,6 +508,10 @@ stream bytes.
   drum decays 0.5% faster.
 - **No 6-voice fallback.** The design's mb6 layout for a card in
   Mockingboard mode is gone (NATIVE.md 15.1, row 11).
+- **Song gain.** The design had none; each song is now scaled so that its
+  loud notes reach level 15 ("The song gain"). Seven figures of the
+  shipped songs are above the design's, accepted in `DESIGN_WITH_GAIN`
+  because the bus cost stays inside the design's range.
 
 ## What needs the owner's ear
 
@@ -320,9 +528,21 @@ The renders are the first time anyone hears this. To judge:
 - **Drums** (`mus2ay.DRUMS`): a hand-made first guess per GM note (tone
   note, noise period, decay). The kick is a fixed 55 Hz tone with no
   pitch sweep. Hits of -6 dB and louder use the envelope generator.
+- **Drums against the melody after the song gain.** The gain moves the
+  drums' balance by song, -7.4 dB (D_E1M5) to +2.8 dB (D_E1M2) ("The
+  song gain", "Drums"): in D_E1M3, D_E1M4, D_E1M5, D_E1M8, D_E1M9 and
+  D_INTER the drums fall back 4 dB or more, in D_E1M2 they come forward. Whether the
+  drums now sit right, and whether a separate drum gain is wanted, is
+  for the owner to say.
 - **Loudness.** Velocity, volume and expression follow 40 log10(v/127);
-  DMX's own curve is not known here. The mix never saturates (0 saturated
-  samples in the 13 renders); the WAVs are 6 dB above the card's scale.
+  DMX's own curve is not known here. Each song has a gain of +3 to +10.5
+  dB so that its loud notes reach level 15 ("The song gain"); on the
+  card the owner found the songs a little quiet before it. The boost (+3
+  dB over the loud notes) clamps 3% to 87% of a song's melodic note time
+  at level 15, where it loses its dynamics ("Clamped"); `--boost 0` keeps
+  more dynamics for 3 dB less. The owner chooses the boost. The mix never
+  saturates (0 saturated samples in the 13 renders, at most 83% of the
+  saturating sum); the WAVs are at the card's scale.
 - **Pitch bend range** is taken as +-2 semitones (D_E1M1's guitars).
 - **Timing.** Notes move to the next interrupt (at most 20 ms late on
   PAL); a note shorter than an interrupt still sounds for one.
@@ -360,7 +580,7 @@ Volume `MUSIC`, 219,136 bytes (428 blocks):
 | --- | --- | ---: | --- |
 | `MUSIC.SYSTEM` | SYS, `$2000` | 14,080 | The program (below): `$2000-$3FFF` its code, `$4000-$56FF` the card image `$E900-$FFFF` |
 | `PRODOS` | SYS | 17,128 | ProDOS 2.4.3, with its boot blocks, from `ProDOS_2_4_3.po` |
-| `E1M1.AY` ... `E1M9.AY`, `INTER.AY`, `INTRO.AY`, `VICTOR.AY`, `INTROA.AY` | BIN, `$1000` | 498 to 22,352 | The 13 song files, converted by `mus2ay.py` at build time, in upstream's song order (`mus.UPSTREAM_SONGS`): keys A to M |
+| `E1M1.AY` ... `E1M9.AY`, `INTER.AY`, `INTRO.AY`, `VICTOR.AY`, `INTROA.AY` | BIN, `$1000` | 498 to 21,558 | The 13 song files, converted by `mus2ay.py` at build time, in upstream's song order (`mus.UPSTREAM_SONGS`): keys A to M |
 | `PROFILE.TXT` | TXT | 2,504 | The Doom configuration profile: the key and how to install it (below) |
 
 `DOOM_PROFILE.TXT`, written beside the disk image (`build/sound/` by
@@ -564,7 +784,11 @@ arithmetic. The check also requires rows 17-23 of the test's screen to
 read exactly what the measured values give (`aytime_rows`: the write's
 and the tail's microseconds, the expected 40.4 or 40.2 us, 504.1 or 501.7
 us and 31.5 or 31.4 us, the verdict). Results of the shipped build
-(`build/sound/MUSIC.hdv`, SHA-1 `500c6ea9`), 2026-09-30:
+(`build/sound/MUSIC.hdv`, SHA-1 `500c6ea9`), 2026-09-30; the build
+with the song gain (SHA-1 `0adc5554`, the same program, other song
+files) gave the same four rows, and so does the build after the review
+of the gain (SHA-1 `1344e6cf`, six song files changed by the attenuation
+rule, "The song gain"), 2026-09-30:
 
 | Variant | A write, cycles (AY log) | us | Tail, cycles | us | Verdict |
 | --- | ---: | ---: | ---: | ---: | --- |
@@ -606,16 +830,29 @@ code falls against the bus clock.
 
 ## Open problems
 
-- **Nothing of S3 has run on the card.** The owner tests at milestone 12;
-  the disk, the timing test and the profile are ready for it.
+- **The disk has run on the card once** (2026-09-30,
+  `docs/results/music-card-2026-09-30.md`): PAL found, a write 40.4 us,
+  the tail 32.2 cycles under the Doom profile, the music "a little low
+  but sounds great", the quit to ProDOS fine. The song gain answers the
+  volume; the disk with it (`1344e6cf`) has not run on the card.
+- **The shipped songs exceed the design** in 7 figures, accepted in
+  `DESIGN_WITH_GAIN` ("The song gain", "How the tests bound it"): writes
+  a second in D_E1M3, D_E1M5, D_E1M7 and D_E1M9, the p99 of bursts in
+  D_E1M2, D_E1M6 and D_VICTOR. If the owner refuses them, the gain
+  changes.
 - The timing test's expected FW-S1 figure (8.4 us) is the design's; a2vm
   gives 9.1 us from its bus-cycle timing, which milestone 0 measures.
 - The PAL/NTSC choice rests on VIA-A's timer 1 counting Apple bus cycles
   (`hdl/apple/via6522.v:334-352`, `mockingboard.sv:86`: `sss_en`); V
   switches by hand if the card's count differs.
 - Quit restores ProDOS's language card from RamWorks bank 14 and calls
-  ProDOS's QUIT; on a2vm the card's bytes come back exactly, but the MLI
-  is a trap there, so ProDOS's own restart after the quit is untested.
+  ProDOS's QUIT; on a2vm the card's bytes come back exactly (the MLI is a
+  trap there), and on the card the owner found the exit to ProDOS fine.
+- The song gain is chosen by a statistic, not by ear: D_E1M3, D_INTRO and
+  D_VICTOR have few interrupts at level 15 (9.5%, 0.3%, 3.1%) because
+  their loudest 1% is well above the rest. `--percentile` and `--boost`
+  change it for all songs; the boost's clamp and the drums' balance
+  ("The song gain") wait for the owner's ear.
 - S2 used a2vm's per-write AY log (`--ay-log`) and the slot-4 slowdown in
   its cost model (native-sound.md 5.2); both exist now
   (`tools/a2vm/README.md`).

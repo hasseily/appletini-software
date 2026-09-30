@@ -34,6 +34,28 @@ not have to:
   note attenuation. A volume or expression change is sent to a voice
   holding a note of the channel only when it changes the AY level of that
   attenuation.
+- Song gain. The songs peak below the AY's full level (at gain 0 the
+  loudest notes of all but D_INTRO reach level 11 to 13 of 15), so each
+  song gets a gain, taken off every note's and every drum hit's
+  attenuation (attenuation(): the sum of the law's terms less the gain,
+  0 to 80; silent when one term is silent by itself, a value of 12 or
+  less, so that a channel at volume 0 stays mute while a fade keeps
+  sounding). The stream carries the gained attenuations, so the player
+  does not know about the gain. The gain (song_gain) puts the song's
+  loudest melodic notes at attenuation 0 (level 15): the attenuation at
+  the PERCENTILE (0.99) of the melodic notes' held time, ordered from
+  quiet to loud, so that the loudest 1% of the note time sets it and one
+  stray loud note does not; then BOOST (6 units, +3 dB) more, all capped
+  at CAP (24 units, +12 dB). The boost clamps: every note up to 3 dB
+  quieter than the loud notes plays at attenuation 0 too, and loses its
+  dynamics (clamped_share). Drum hits take the same gain in attenuation,
+  but not in what the player does with it: a hit of attenuation 12 or
+  less (tables.HW_DRUM_ATT) plays on the chip's envelope from full
+  level, so the gain cannot make it louder, and a soft hit the gain
+  brings to 12 or less jumps to full level. The drums' balance against
+  the melody therefore moves, by song (report.py's loudness table).
+  convert() finds the gain with a first pass at gain 0 and converts
+  again with it; the counts report it as 'gain' (0.5 dB units).
 - Instruments. Each program used gets a software envelope from its
   GENMIDI carrier (genmidi.py): attack, decay and release steps a tick,
   the sustain level, and whether the level is held while the key is down.
@@ -52,6 +74,7 @@ import argparse
 import math
 import sys
 from collections import Counter
+from fractions import Fraction
 from pathlib import Path
 
 if __package__ in (None, ''):
@@ -63,6 +86,11 @@ BUILD_SOUND = mus.ROOT / 'build' / 'sound'
 TICK_MS = 1000.0 / tables.TICK_HZ
 MAX_WAIT = 126
 PENDING_OFF_TICKS = 3      # a release can start up to one interrupt late
+
+# The song gain (song_gain), attenuation units of 0.5 dB.
+PERCENTILE = 0.99          # of the melodic note time, quiet to loud
+BOOST = 6                  # +3 dB over the percentile's note
+CAP = 24                   # at most +12 dB in all
 
 # Drum recipes: GM drum note -> (tone note or 0, noise period or 0, decay
 # in ms). Hand-made first guesses, to tune by ear.
@@ -144,6 +172,61 @@ def release_ticks(envelope):
     return -(-(tables.ATT_MAX << 8) // envelope[2])
 
 
+def attenuation(terms, gain=0):
+    """A note's or drum hit's attenuation (0-80) from the General MIDI
+    law's terms (velocity, channel volume, expression and, for a melodic
+    note, the carrier level, each in 0.5 dB units) less the song gain:
+    silent (80) when one term is silent by itself (80, a value of 12 or
+    less, volume 0 included), else the sum less the gain, 0 to 80. The
+    gain is taken off the uncapped sum, so a note whose terms add up to
+    40 dB or more still sounds once the gain brings it back above 80."""
+    if any(t >= tables.ATT_MAX for t in terms):
+        return tables.ATT_MAX
+    return max(0, min(tables.ATT_MAX, sum(terms) - gain))
+
+
+def loud_attenuation(loudness, percentile=PERCENTILE):
+    """The attenuation of the song's loud notes: of `loudness`, a Counter
+    {attenuation: ticks the melodic notes are held at it}, the smallest
+    attenuation a such that the notes at a or louder are held for at
+    least 1 - percentile of the time of the notes that sound (below 80).
+    None when no note sounds."""
+    sounding = sorted(a for a, t in loudness.items()
+                      if a < tables.ATT_MAX and t > 0)
+    if not sounding:
+        return None
+    # exact: 0.99 is 99/100, so 1% of 100 ticks is 1 tick, not a float
+    # a little over it
+    share = 1 - Fraction(percentile).limit_denominator(1000000)
+    tail = share * sum(loudness[a] for a in sounding)
+    held = 0
+    for att in sounding:
+        held += loudness[att]
+        if held >= tail:
+            return att
+    return sounding[-1]
+
+
+def song_gain(loudness, percentile=PERCENTILE, boost=BOOST, cap=CAP):
+    """The song gain in attenuation units: the loud notes' attenuation
+    (loud_attenuation) brought to 0, then `boost` more, at most `cap`
+    and at least 0. A song with no melodic note sounding gets `boost`."""
+    loud = loud_attenuation(loudness, percentile)
+    return max(0, min(cap, (loud or 0) + boost))
+
+
+def clamped_share(loudness, gain):
+    """Of `loudness` (a Counter {attenuation at gain 0: ticks melodic notes
+    are held at it}), the share of the sounding held time whose
+    attenuation is below `gain`: it plays at attenuation 0 after the
+    gain, as loud as the loud notes, and loses its dynamics. 0.0 when no
+    note sounds."""
+    sounding = sum(t for a, t in loudness.items() if a < tables.ATT_MAX)
+    if not sounding:
+        return 0.0
+    return sum(t for a, t in loudness.items() if a < gain) / sounding
+
+
 class _Voice:
     def __init__(self, index):
         self.index = index
@@ -159,14 +242,23 @@ class _Voice:
         self.bend = None
         self.vel_att = 0         # parts of the note attenuation
         self.level_att = 0
+        self.raw = None          # held: its attenuation before the gain
+        self.since = 0           # held: the tick `raw` was set
+        self.held = 0            # held: ticks counted for the note so far
 
 
 class Converter:
-    """One song. convert() returns (SongFile, Counter)."""
+    """One song, at a given song gain (attenuation units taken off every
+    note and drum hit, attenuation()). convert() returns (SongFile, Counter);
+    afterwards `loudness` is a Counter {attenuation before the gain:
+    ticks melodic notes were held at it}, a note held for less than a
+    tick counting 1 (it sounds for at least one interrupt)."""
 
-    def __init__(self, song, instruments):
+    def __init__(self, song, instruments, gain=0):
         self.song = song
         self.instruments = instruments
+        self.gain = gain
+        self.loudness = Counter()
         self.layout = layout = tables.NATIVE12
         self.machine = tables.PAL_NATIVE
         nm = len(layout.melodic)
@@ -198,13 +290,35 @@ class Converter:
 
     # -- helpers ----------------------------------------------------------
 
-    def channel_att(self, chan):
-        return (tables.ATTENUATION_OF_VALUE[self.volume[chan]]
-                + tables.ATTENUATION_OF_VALUE[self.expression[chan]])
+    def channel_terms(self, chan):
+        """The channel's terms of a note attenuation: volume, expression."""
+        return (tables.ATTENUATION_OF_VALUE[self.volume[chan]],
+                tables.ATTENUATION_OF_VALUE[self.expression[chan]])
+
+    def terms(self, voice, chan):
+        """The terms of the voice's note attenuation."""
+        return (voice.vel_att, voice.level_att) + self.channel_terms(chan)
+
+    def raw_att(self, voice, chan):
+        """The note attenuation before the song gain (the statistic's)."""
+        return attenuation(self.terms(voice, chan))
 
     def note_att(self, voice, chan):
-        return min(tables.ATT_MAX, voice.vel_att + voice.level_att
-                   + self.channel_att(chan))
+        return attenuation(self.terms(voice, chan), self.gain)
+
+    def hold(self, voice, raw):
+        """Count the held time of the voice's note at its attenuation so
+        far, then hold it at `raw` from now (None: the note ends)."""
+        if voice.raw is not None:
+            ticks = self.now - voice.since
+            voice.held += ticks
+            if raw is None and voice.held == 0:
+                ticks = 1
+            self.loudness[voice.raw] += ticks
+        voice.raw = raw
+        voice.since = self.now
+        if raw is None:
+            voice.held = 0
 
     def envelope(self, program):
         if program not in self.env_index:
@@ -232,12 +346,15 @@ class Converter:
         voice = next((v for v in self.voices if v.key == key), None)
         if voice is None:
             voice = self.allocate(env, played, self.chan_bend[chan])
+        else:
+            self.hold(voice, None)          # its earlier note ends
         voice.key = key
         voice.chan = chan
         voice.on_tick = self.now
         voice.vel_att = tables.ATTENUATION_OF_VALUE[velocity]
         # the carrier level, 0.75 dB a step = 1.5 units, rounded half up
         voice.level_att = (3 * instrument.level + 1) // 2
+        self.hold(voice, self.raw_att(voice, chan))
         natt = self.note_att(voice, chan)
         if natt >= tables.ATT_MAX:
             self.stats['silent notes'] += 1
@@ -286,6 +403,7 @@ class Converter:
         victim = min(victims, key=lambda v: (-per_channel[v.key[0]],
                                              v.on_tick, v.index))
         victim.key = None
+        self.hold(victim, None)
         return victim
 
     def note_off(self, chan, note):
@@ -297,6 +415,7 @@ class Converter:
 
     def release(self, voice):
         voice.key = None
+        self.hold(voice, None)
         voice.free_tick = (self.now + PENDING_OFF_TICKS
                            + release_ticks(self.envelopes[voice.env]))
         self.emit(0x30 | voice.index)
@@ -320,8 +439,8 @@ class Converter:
         ms = recipe[2]
         voice.free_tick = self.now + max(1, int(math.ceil(ms / TICK_MS / 2)))
         voice.end_tick = self.now + max(1, int(math.ceil(ms / TICK_MS)))
-        natt = min(tables.ATT_MAX, tables.ATTENUATION_OF_VALUE[velocity]
-                   + self.channel_att(mus.PERCUSSION))
+        natt = attenuation((tables.ATTENUATION_OF_VALUE[velocity],)
+                           + self.channel_terms(mus.PERCUSSION), self.gain)
         self.emit(0x60 | voice.index, self.drum_index[note], natt)
         self.stats['drum hits'] += 1
         if natt > tables.HW_DRUM_ATT:
@@ -348,6 +467,7 @@ class Converter:
         if chan == mus.PERCUSSION:
             return
         for voice in self.voices_of(chan):
+            self.hold(voice, self.raw_att(voice, chan))
             natt = self.note_att(voice, chan)
             if tables.LEVEL[natt] != tables.LEVEL[voice.natt]:
                 voice.natt = natt
@@ -378,6 +498,7 @@ class Converter:
                        (v.key is not None or v.free_tick > self.now)]
             for voice in cut:
                 voice.key = None
+                self.hold(voice, None)
                 voice.free_tick = voice.end_tick = self.now
                 self.emit(0x70 | voice.index)
                 self.stats['cuts'] += 1
@@ -430,12 +551,21 @@ class Converter:
                                bytes(self.out))
         self.stats['max voices'] = self.max_voices
         self.stats['voices used'] = len(self.used)
+        self.stats['gain'] = self.gain
         return song, self.stats
 
 
-def convert(song, instruments):
-    """(SongFile, Counter of counts) of a mus.Song."""
-    return Converter(song, instruments).convert()
+def convert(song, instruments, gain=None, percentile=PERCENTILE,
+            boost=BOOST, cap=CAP):
+    """(SongFile, Counter of counts) of a mus.Song. With gain None the
+    song gain is song_gain(percentile, boost, cap) of a first pass at gain
+    0; else `gain` (attenuation units). The counts' 'gain' is the one
+    applied."""
+    if gain is None:
+        probe = Converter(song, instruments)
+        probe.convert()
+        gain = song_gain(probe.loudness, percentile, boost, cap)
+    return Converter(song, instruments, gain).convert()
 
 
 def song_file_name(name):
@@ -452,18 +582,32 @@ def main(argv=None):
     parser.add_argument('songs', nargs='*')
     parser.add_argument('--out', default=str(BUILD_SOUND))
     parser.add_argument('--wad', default=str(mus.WAD_PATH))
+    parser.add_argument('--gain', type=int, default=None,
+                        help='song gain in 0.5 dB units for every song '
+                        '(default: each song its own, song_gain)')
+    parser.add_argument('--percentile', type=float, default=PERCENTILE,
+                        help='of the melodic note time, quiet to loud, '
+                        'brought to full level (default %(default)s)')
+    parser.add_argument('--boost', type=int, default=BOOST,
+                        help='0.5 dB units over it (default %(default)s)')
+    parser.add_argument('--cap', type=int, default=CAP,
+                        help='largest song gain, 0.5 dB units (default '
+                        '%(default)s)')
     args = parser.parse_args(argv)
     wad = mus.Wad.open(args.wad)
     instruments = load_instruments(wad)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     for name in args.songs or wad.songs():
-        song_file, stats = convert(wad.song(name), instruments)
+        song_file, stats = convert(wad.song(name), instruments, args.gain,
+                                   args.percentile, args.boost, args.cap)
         data = song_file.to_bytes()
         path = out / song_file_name(name)
         path.write_bytes(data)
-        print('%-9s %6d bytes  %s' % (name, len(data), ', '.join(
-            '%s %d' % item for item in sorted(stats.items()))))
+        print('%-9s %6d bytes  gain %+.1f dB  %s' % (
+            name, len(data), stats['gain'] * tables.ATT_UNIT_DB,
+            ', '.join('%s %d' % item for item in sorted(stats.items())
+                      if item[0] != 'gain')))
     return 0
 
 

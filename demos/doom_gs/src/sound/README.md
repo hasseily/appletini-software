@@ -250,56 +250,68 @@ write with FW-S1), and "4.2" the design's table, where it has the song.
 <!-- cost:begin -->
 | Song | Seconds | Bursts/s | Writes/s | F1.2.1, window 512: ms/s (in the IRQ) | formula | 4.2 | window 32: ms/s (in the IRQ) | formula | 4.2 | FW-S1: ms/s (in the IRQ) | formula | 4.2 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| D_E1M1 | 97.0 | 36.5 | 121.5 | 25.78 (8.88) | 23.30 | 23.90 | 8.79 (8.65) | 6.06 | 6.60 | 4.03 (3.91) | 1.02 | 1.12 |
-| D_E1M2 | 156.4 | 36.6 | 86.5 | 24.06 (7.18) | 21.93 | - | 7.03 (6.94) | 4.65 | - | 3.43 (3.35) | 0.73 | - |
-| D_E1M3 | 273.0 | 40.7 | 92.1 | 26.49 (7.74) | 24.26 | 25.60 | 7.52 (7.45) | 5.00 | 5.30 | 3.62 (3.55) | 0.77 | 0.81 |
-| D_E1M4 | 171.7 | 38.4 | 110.9 | 25.89 (8.20) | 23.82 | - | 8.03 (7.94) | 5.69 | - | 3.59 (3.51) | 0.93 | - |
-| D_E1M5 | 165.0 | 21.6 | 46.5 | 15.01 (5.06) | 12.77 | 12.90 | 4.95 (4.87) | 2.56 | 2.60 | 2.97 (2.91) | 0.39 | 0.39 |
-| D_E1M6 | 85.0 | 42.5 | 138.1 | 29.58 (9.89) | 27.02 | 27.50 | 9.76 (9.66) | 6.92 | 7.10 | 4.34 (4.25) | 1.16 | 1.20 |
-| D_E1M7 | 151.9 | 27.3 | 48.8 | 17.91 (5.39) | 15.73 | - | 5.20 (5.12) | 2.83 | - | 3.05 (2.99) | 0.41 | - |
-| D_E1M8 | 153.0 | 18.5 | 41.1 | 12.98 (4.43) | 10.96 | 11.50 | 4.39 (4.31) | 2.24 | 2.50 | 2.67 (2.60) | 0.35 | 0.40 |
-| D_E1M9 | 138.4 | 33.9 | 120.3 | 24.35 (8.71) | 21.97 | - | 8.54 (8.43) | 5.93 | - | 3.94 (3.84) | 1.01 | - |
-| D_INTER | 202.4 | 38.0 | 117.8 | 26.01 (8.52) | 23.89 | 24.70 | 8.33 (8.23) | 5.95 | 6.50 | 3.72 (3.63) | 0.99 | 1.11 |
-| D_INTRO | 7.8 | 26.0 | 56.6 | 18.12 (5.72) | 15.39 | - | 5.90 (5.56) | 3.10 | - | 3.34 (3.16) | 0.48 | - |
-| D_INTROA | 7.8 | 24.8 | 55.8 | 17.34 (5.45) | 14.78 | - | 5.66 (5.33) | 3.04 | - | 3.16 (2.99) | 0.47 | - |
-| D_VICTOR | 193.0 | 33.1 | 74.6 | 22.09 (6.84) | 19.71 | - | 6.66 (6.58) | 4.06 | - | 3.53 (3.47) | 0.63 | - |
+| D_E1M1 | 97.0 | 35.2 | 116.7 | 24.88 (8.64) | 22.46 | 23.90 | 8.48 (8.35) | 5.83 | 6.60 | 3.93 (3.81) | 0.98 | 1.12 |
+| D_E1M2 | 156.4 | 32.0 | 78.9 | 21.43 (6.74) | 19.29 | - | 6.55 (6.46) | 4.19 | - | 3.31 (3.23) | 0.66 | - |
+| D_E1M3 | 273.0 | 41.7 | 104.0 | 27.47 (8.27) | 25.23 | 25.60 | 8.05 (7.97) | 5.51 | 5.30 | 3.71 (3.65) | 0.87 | 0.81 |
+| D_E1M4 | 171.7 | 39.3 | 118.3 | 26.64 (8.56) | 24.60 | - | 8.32 (8.23) | 6.02 | - | 3.62 (3.55) | 0.99 | - |
+| D_E1M5 | 165.0 | 25.3 | 55.3 | 17.16 (5.55) | 14.97 | 12.90 | 5.40 (5.32) | 3.03 | 2.60 | 3.06 (3.00) | 0.46 | 0.39 |
+| D_E1M6 | 85.0 | 40.2 | 125.0 | 27.80 (9.21) | 25.31 | 27.50 | 9.07 (8.96) | 6.32 | 7.10 | 4.12 (4.03) | 1.05 | 1.20 |
+| D_E1M7 | 151.9 | 27.0 | 49.7 | 17.82 (5.42) | 15.64 | - | 5.22 (5.14) | 2.86 | - | 3.05 (2.98) | 0.42 | - |
+| D_E1M8 | 153.0 | 19.8 | 46.5 | 13.88 (4.71) | 11.85 | 11.50 | 4.67 (4.58) | 2.50 | 2.50 | 2.73 (2.66) | 0.39 | 0.40 |
+| D_E1M9 | 138.4 | 35.9 | 128.9 | 25.65 (9.13) | 23.30 | - | 8.93 (8.82) | 6.34 | - | 4.01 (3.92) | 1.08 | - |
+| D_INTER | 202.4 | 36.7 | 113.3 | 25.16 (8.28) | 23.09 | 24.70 | 8.06 (7.96) | 5.73 | 6.50 | 3.63 (3.54) | 0.95 | 1.11 |
+| D_INTRO | 7.8 | 25.7 | 56.6 | 17.99 (5.71) | 15.26 | - | 5.89 (5.54) | 3.10 | - | 3.33 (3.15) | 0.48 | - |
+| D_INTROA | 7.8 | 26.6 | 53.6 | 18.09 (5.38) | 15.59 | - | 5.58 (5.25) | 3.01 | - | 3.12 (2.95) | 0.45 | - |
+| D_VICTOR | 193.0 | 32.9 | 75.8 | 22.00 (6.89) | 19.63 | - | 6.70 (6.62) | 4.10 | - | 3.53 (3.47) | 0.64 | - |
 <!-- cost:end -->
 
-The run of 2026-09-30, after the 6-voice layout was removed, took 14
-minutes at 4 jobs under `nice -n 10` on an Apple M3 Pro (39 runs of a2vm
-with the counting loop, and 3 without a song). The player in the card is
-byte for byte the build measured before; the figures moved by at most
-0.03 ms a second, from the test driver's own loop (its "no music" check
-before each refill).
+The run of 2026-09-30 is of the song files with the converter's song
+gain (`tools/sound/README.md`, "The song gain"): about 30 minutes at 2
+jobs under `nice -n 10` on an Apple M3 Pro (39 runs of a2vm with the
+counting loop, and 3 without a song). The six songs whose files the
+review of the gain changed (its attenuation rule: a sum of audible terms
+is gained, not muted; D_E1M2, D_E1M5, D_E1M6, D_E1M8, D_INTRO and
+D_INTROA) were measured again the same day (21 runs, about 10 minutes
+at 2 jobs); the other rows are unchanged. The player is the same; the
+songs are louder, which moves their writes and bursts. Before the gain
+the player cost 13.0 to 29.6 ms a second with window 512, 4.4 to 9.8
+with window 32 and 2.7 to 4.3 with FW-S1; with it, 13.9 to 27.8, 4.7 to
+9.1 and 2.7 to 4.1. By song, window 512: D_E1M5 15.01 to 17.16 (more
+level writes and bursts), D_E1M3 26.49 to 27.47, D_E1M9 24.35 to 25.65,
+D_E1M8 12.98 to 13.88; D_E1M6 29.58 to 27.80 and D_E1M2 24.06 to 21.43
+(loud drums on the envelope generator write no level while they
+decay).
 
 **Against native-sound.md 4.2.** With the default window (512) the
-player costs 13.0 to 29.6 ms a second (1.3% to 3.0% of the machine).
-The design's six songs: D_E1M1 +7.9%,
-D_E1M3 +3.5%, D_E1M6 +7.6%, D_INTER +5.3% against its table, within the
-10% its section 5.2 asks for; **D_E1M5 +16% and D_E1M8 +13% are not**.
-The formula column shows why: on this player's own counts, the design's
-arithmetic (bursts x 504 us + writes x 40.4 us) gives 2.0 to 2.7 ms a
-second less than measured in every song. That is the player's computing, which
+player costs 13.9 to 27.8 ms a second (1.4% to 2.8% of the machine).
+The design's six songs: D_E1M1 +4.1%, D_E1M3 +7.3%, D_E1M6 +1.1%,
+D_INTER +1.9% against its table, within the 10% its section 5.2 asks
+for; **D_E1M5 +33% and D_E1M8 +21% are not** (+16% and +13% before the
+gain). The formula column shows why: on this player's own counts, the
+design's arithmetic (bursts x 504 us + writes x 40.4 us) gives 2.0 to 2.7
+ms a second less than measured in every song. That is the player's computing, which
 the design estimated (about 2,500 cycles an interrupt, 2 ms a second,
 native-sound.md 4.2) but left out of its table; it weighs most in the
 quiet songs. Measured on the AY log's cycle counts (60 s of D_E1M1,
 D_E1M8 and D_INTER): 3,000
 to 3,700 cycles an interrupt on average without the writes, 4,700 to
 11,500 at the 99th percentile, 14,200 at most (D_E1M1, whose guitars bend
-a lot: each bend is a 125-byte multiply). The burst and tail parts agree
-with the design: the formula is 1% to 5% below its table, because S1's
-player writes a little less than the design's prototype.
+a lot: each bend is a 125-byte multiply; measured before the song gain,
+which does not change the computing). The burst and tail parts: the
+formula is 8% below the design's table to 3% above it in five of the six
+songs; in D_E1M5 it is 16% above, the song gain's extra level writes and
+bursts (the design's prototype had no gain).
 
-With **window 32** the cost is 4.4 to 9.8 ms a second, against
-2.5 to 7.1 in the design: the tail has gone, so the computing (about 2.1
-to 2.9 ms a second at 50 Hz) is now a third to a half of it. With
-**FW-S1**, 2.7 to 4.3 ms a second against 0.39 to 1.20: nearly all of it
+With **window 32** the cost is 4.7 to 9.1 ms a second, against
+2.5 to 7.1 in the design: the tail has gone, so the computing (about 2.2
+to 2.8 ms a second at 50 Hz) is now a third to a half of it. With
+**FW-S1**, 2.7 to 4.1 ms a second against 0.39 to 1.20: nearly all of it
 is computing and the interrupt itself. The design's FW-S1 column counts
 only the writes. So after FW-S1 the next saving is in the player's own
 code (the envelope pass over every voice each tick, the 42-register flush
 compare), not in the bus.
 
-"In the IRQ" is 29% to 35% of the F1.2.1 cost and nearly all of the
+"In the IRQ" is 30% to 36% of the F1.2.1 cost and nearly all of the
 FW-S1 cost: with the default window most of the time is the 504 us tail
 that the main loop runs at 1 MHz after each burst.
 
