@@ -33,3 +33,33 @@ a2vm run, which adds the runner's per-run work.
 - Frames with fuzz: 11-40% slower than a2vm, about 1 us more per fuzz
   pixel. demo-10 and demo-11 fail milestone 5's 25% acceptance. The cause
   is under investigation (`build/fuzz-timing/`).
+
+## Second run: the fuzz fix (`build/fuzz-timing/REPLAY-defer.hdv`)
+
+The same frames, with the fuzz records drawn after each strip in one
+RAMRD window (`docs/results/fuzz-timing-2026-09-30.md`, section 5b).
+**Every CRC matched again.** Card ms, first run against this one:
+
+| Frame | First run | Fuzz deferred | Predicted |
+| --- | ---: | ---: | --- |
+| demo-01 | 34.3 | 34.3 | unchanged |
+| demo-02 | 33.7 | 33.7 | unchanged |
+| demo-03 | 30.0 | 30.0 | unchanged |
+| demo-04 | 27.5 | 27.5 | unchanged |
+| demo-05 | 29.3 | 29.3 | unchanged |
+| demo-06 | 31.8 | 33.1 | a2vm's run of the same disk: +1 VBL count |
+| demo-07 | 32.5 | 33.7 | a2vm: +2 VBL counts |
+| demo-08 | 29.3 | 26.8 | about 26-28 |
+| demo-09 | 25.0 | 23.1 | about 21-23 |
+| demo-10 | 48.1 | 36.2 | about 33-35 |
+| demo-11 | 49.3 | 36.2 | about 34-36 |
+| e1m3-1 | 30.0 | 30.0 | unchanged |
+| still-1..3 | 18.1 | 19.3 | a2vm: +2 VBL counts |
+
+- The fix works as predicted: the fuzz frames lose 1.9 to 13.1 ms. Every
+  frame is now within 25% of a2vm, so milestone 5's timing acceptance is met.
+- The +1.2 ms on still-1..3 and demo-06/07 is the runner's resolution, not
+  the replay: it counts VBLs over 32 runs (0.625 ms a count) and subtracts
+  a second VBL-counted loop. a2vm running the same disk predicts the same
+  +2 counts (26 to 28 standing still); its unquantised harness gives +0.1 ms.
+  The adopted runner will use 200 runs and print both loops.
