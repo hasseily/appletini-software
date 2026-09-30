@@ -20,6 +20,13 @@ was used.
 | `sound.inc` | Addresses, the model's constants, the song file's |
 | `sound.cfg` | ld65's map for the tests: the player in the main language card, the driver and the probe at `$0800` |
 | `Makefile` | Builds the player into `build/sound65` |
+| `music.s` | MUSIC.SYSTEM of the music disk (milestone S3): boot (mouse card, RamWorks, `snd_probe`, the 13 songs into RamWorks, ProDOS's card saved), the text screen, the keys, the song clock, the quit (the chips reset, ProDOS's card back, the Phasor back in Mockingboard mode, ProDOS's QUIT); not part of the game |
+| `aytime.s` | The AY timing test of S3 (key T): a register write and the slow-window tail measured by VBL counts, with the expected values beside them |
+| `music.cfg` | ld65's map for MUSIC.SYSTEM: the program at `$2000-$3FFF`, the player's card image at `$4000-$56FF` for `$E900-$FFFF`, where `docs/MEMORY_MAP.md` 4.2 puts it in the game |
+
+The last three files are milestone S3's; `tools/sound/musicdisk.py`
+builds them into the disk `build/sound/MUSIC.hdv` and checks it on a2vm
+(`tools/sound/README.md`, "The music disk").
 
 There is one voice layout, native12: 7 melodic and 2 drum voices on the 4
 AY chips of the card in native mode, 3 voices left for the effects

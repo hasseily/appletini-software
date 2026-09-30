@@ -54,6 +54,7 @@ python3 tools/sound/mus2mid.py D_E1M1 build/sound/D_E1M1.mid    # MIDI
 | `report.py` | All songs: the tables below, song files and WAVs |
 | `tables65.py` | S2: the player's tables as ca65 source (`build/sound65/tables.inc`), from `tables.py` |
 | `run65.py` | S2: the 65C02 player (`src/sound`) on a2vm against `player.py`, its sizes and its cost (`src/sound/README.md`) |
+| `musicdisk.py` | S3: the music disk `build/sound/MUSIC.hdv` (MUSIC.SYSTEM from `src/sound/music.s`, `aytime.s`, `music.cfg` and the S2 player; the 13 songs; the Doom profile) and its checks on a2vm (below, "The music disk") |
 
 ## Facts checked in the HDL
 
@@ -329,8 +330,292 @@ The renders are the first time anyone hears this. To judge:
   warmth stages (`mockingboard.sv:422-480`; warmth defaults to 8), and
   any analog filtering after the card.
 
+## The music disk (milestone S3)
+
+The card run of the music: `build/sound/MUSIC.hdv`, a bootable ProDOS
+volume, for the owner to boot on the Appletini (NATIVE.md 13, S3: "a timed
+loop of AY writes confirms 40.4 us a write and the 504 us tail (window 512
+and 32); a disk plays every song; the owner listens").
+
+```
+python3 tools/sound/musicdisk.py                        # the disk
+nice -n 10 python3 tools/sound/musicdisk.py --check     # and the a2vm checks
+python3 -m unittest discover -s tests -p 'test_sound_disk.py'
+```
+
+It needs `DOOM1.WAD` (`tools/fetch_upstream.py`), cc65 2.18 and the
+existing port's disk writer (`demos/doom/tools/build_disk.py`, with
+appletini-one's `software/ProDOS_2_4_3.po`; `APPLETINI_ROOT` if
+appletini-one is not next to appletini-software). The checks run at most 2
+a2vm runs at a time (`--jobs`), each bounded in time and file size
+(`tools/ref816/bounded.py`), in a `build/tmp-musicdisk-*` directory
+removed at the end (`--keep DIR` keeps them). All of `--check` takes
+about 4 s; the tests about 10 s.
+
+### What is on the disk
+
+Volume `MUSIC`, 219,136 bytes (428 blocks):
+
+| File | Type | Bytes | What |
+| --- | --- | ---: | --- |
+| `MUSIC.SYSTEM` | SYS, `$2000` | 14,080 | The program (below): `$2000-$3FFF` its code, `$4000-$56FF` the card image `$E900-$FFFF` |
+| `PRODOS` | SYS | 17,128 | ProDOS 2.4.3, with its boot blocks, from `ProDOS_2_4_3.po` |
+| `E1M1.AY` ... `E1M9.AY`, `INTER.AY`, `INTRO.AY`, `VICTOR.AY`, `INTROA.AY` | BIN, `$1000` | 498 to 22,352 | The 13 song files, converted by `mus2ay.py` at build time, in upstream's song order (`mus.UPSTREAM_SONGS`): keys A to M |
+| `PROFILE.TXT` | TXT | 2,504 | The Doom configuration profile: the key and how to install it (below) |
+
+`DOOM_PROFILE.TXT`, written beside the disk image (`build/sound/` by
+default; `--out` moves both), is the same text, to copy beside
+`MUSIC.hdv` on the SD card, where the Appletini menu's file browser opens
+text files.
+
+### MUSIC.SYSTEM
+
+Sources: `src/sound/music.s` (boot, screen, keys, quit), `aytime.s` (the
+timing test), `music.cfg` (the map), with the S2 player unchanged
+(`player.s`, `irq.s`, `probe.s`). The player sits where
+`docs/MEMORY_MAP.md` 4.2 puts it in the game, so the card run tests the
+game's placement and IRQ contract: zero page `$D8-$F6`, ring
+`$E000-$E402`, write lists `$E480-$E4FF`, state `$E500-$E736`, code and
+tables `$E900-$F504` (3,077 of the map's 4,096 bytes), the IRQ vector at
+`$FFFE` (`snd_vbl`); `$D000` bank 1 selected, and the interrupt never
+reads `$D000-$DFFF`. The program's own data is in main `$1000-$1FFF` and
+its zero page at `$18`, outside the video pages, so the timing test's
+stores leave nothing in the card's mirror; no CPU store reaches
+`$0878-$087F` or `$4078-$407F` (rule 8; the tool checks the file's bytes
+at `$4078`).
+
+The boot, under ProDOS with interrupts masked: the text screen (40
+columns, SHR off); the mouse card in slot 2 (its ID bytes; none: "NO MOUSE
+CARD IN SLOT 2", a key, ProDOS's QUIT); RamWorks banks 1-14 distinct
+(else "THE SONGS NEED RAMWORKS BANKS 1-14"); `snd_probe`; with music, the
+13 songs into banks 1-13 at `$1000` (each file's length checked against
+the tool's); ProDOS's language card (both `$D000` banks and `$E000-$FFFF`)
+saved in bank 14; the card image installed; `snd_init`; the mouse card's
+VBL interrupt on; then **PAL or NTSC**: VIA-A's timer 1 counts Apple bus
+cycles, 20,280 over one VBL on a PAL //e (312 lines of 65 cycles) and
+17,030 on NTSC, and the program takes the nearer (the count is on the
+screen; V switches by hand). With music the first song starts, looping.
+
+The screen:
+
+```
+DOOM GS: THE MUSIC ON THE PHASOR
+PAL //E: TIMER 1 COUNTS 20280 A VBL
+PHASOR IN NATIVE MODE, 4 AY CHIPS
+
+ A D_E1M1   1:36     H D_E1M8   2:32
+ B D_E1M2   2:35     I D_E1M9   2:17
+ C D_E1M3   4:32     J D_INTER  3:21
+ D D_E1M4   2:51     K D_INTRO  0:07
+ E D_E1M5   2:44     L D_VICTOR 3:12
+ F D_E1M6   1:24     M D_INTROA 0:07
+ G D_E1M7   2:31
+
+PLAYING D_E1M2   0:01   OF 2:35   LOOP
+
+A-M PLAY  N NEXT  P PREVIOUS  SPACE STOP
+R LOOP OR ALL  V PAL OR NTSC  Q QUIT
+T AY TIMING TEST
+```
+
+(the a2vm run's screen; the playing song's letter is in inverse). Each
+song's length is its MUS length. The clock counts 50 or 60 VBLs a second,
+so on PAL (50.08 Hz) it gains 0.16%.
+
+| Key | What |
+| --- | --- |
+| A to M | Play that song from its start (lower case too) |
+| SPACE | Stop: the next interrupt silences the voices |
+| N or right arrow, P or left arrow | The next or previous song |
+| R | Loop (each song loops, the default) or ALL (each song once; 50 VBLs after its end, the next) |
+| V | PAL or NTSC tables and tempo; the playing song starts again on them |
+| T | The AY timing test (below); it stops the music |
+| Q or ESC | Quit: the chips reset, ProDOS's card put back from bank 14, the Phasor back in Mockingboard mode (its power-on mode, for the next program), ProDOS's QUIT |
+
+**No music.** When `snd_probe` answers `SND_NO_MUSIC` (a Mockingboard, or
+the Phasor with its Mockingboard only option on), no song is loaded and
+the screen says:
+
+```
+NO MUSIC. THE CARD IN SLOT 4 DID NOT
+SWITCH TO THE PHASOR'S NATIVE MODE: IT
+HAS 2 AY CHIPS, AND THE MUSIC NEEDS 4.
+IT IS A MOCKINGBOARD, OR THE PHASOR
+WITH ITS MOCKINGBOARD ONLY OPTION ON.
+IN THE APPLETINI MENU: PHASOR IN SLOT 4
+ON, MOCKINGBOARD ONLY OFF; THEN REBOOT.
+
+T AY TIMING TEST  V PAL OR NTSC  Q QUIT
+```
+
+The timing test still runs (on the first AY of VIA-A).
+
+### The AY timing test (key T)
+
+native-sound.md 2.3 expects an AY register write of the burst loop (41
+cycles) to take 40.4 us, and the slow window after a burst's last write to
+run 512 cycles at 1 MHz (504 us) by default, 32 (31.5 us) with the Doom
+profile, none with FW-S1 (8.4 us a write). The test measures both by VBL
+counts, in about 2 seconds: three phases of 32 frames; in each frame,
+right after the VBL, a burst of K writes (R8 of chip 0 = 0, silent) with
+the player's own 41-cycle loop, then a loop of 13 cycles that counts its
+turns until the next VBL. K is 0 (the reference, all TURBO), 16 and 208.
+The turns a burst costs give its time in bus cycles, D = (cF - c) / cF x
+the frame; a write is (D2 - D1) / 192; what is left of D1 after its 16
+writes is the window at 1 MHz less what TURBO would have run in it, from
+which the window in cycles follows (`aytime.s` gives the arithmetic). It
+prints, with the expected values beside:
+
+```
+AY TIMING, PAL (1,015,625 HZ)
+A WRITE 40.4 US, EXPECTED 40.4
+TAIL 513.1 CYCLES = 505.2 US
+EXPECTED 512 = 504.1 US: DEFAULT
+      OR  32 = 31.5 US: DOOM PROFILE
+SO THE WINDOW IS 512: THE DEFAULT
+(FW-S1: A WRITE ABOUT 8.4 US, NO TAIL)
+```
+
+The verdict line reads 512 for 504-520 cycles, 32 for 28-36, "PORT WRITES
+ARE NOT SLOWED: FW-S1" when a write takes under 20 bus cycles, and
+"ANOTHER WINDOW THAN 512 OR 32" otherwise. On NTSC the expected values are
+40.2 us, 501.7 us and 31.4 us (a bus cycle of 979.9 ns, 984.6 ns on PAL).
+
+**For the owner:** boot the disk and press T once with the default setup
+(expect about 40.4 us and 504 us), then install the Doom profile (below),
+boot again, press T (expect 40.4 us and about 31.5 us). The measured tail
+is the window plus the rest of the instruction it ends in and the first
+write's bus cycle: on a2vm up to 1.3 cycles over the setting (below).
+
+### The Doom configuration profile
+
+The owner's decision (NATIVE.md 15.1, row 2): ship a Doom profile with
+`vtw.slowdown.cycles=32`. Read in appletini-one F1.2.1
+(`ps_sources/frontend`):
+
+- A profile is a folder `0:/profiles/NAME/` on the card's SD volume
+  holding `appletini_cfg.txt` (`profile_manager.h:9-10`,
+  `profile_manager.c:165-168`), in the same `key=value` format as the
+  main `0:/appletini_cfg.txt` (`config_menu.c:939-975`, `:3796-3812`).
+- Loading one (Profiles tab, "Choose profile", `config_menu_profiles.c:259`)
+  runs `config_menu_load_profile_settings` (`config_menu.c:4377-4410`):
+  **every setting is reset to its default first** (`:4307-4309`,
+  `config_menu_reset_settings_only` `:4179-4272`), then the file's keys
+  apply; TURBO is off unless the file says `vtw.turbo.enabled=ON`
+  (`:4311-4312`); the result is saved as `0:/appletini_cfg.txt`
+  (`:4401`), so it holds after a reboot. The video standard and the
+  ONE//e state are global and never taken from a profile (`:4323-4327`).
+- `vtw.slowdown.cycles` takes 1-65,535 as written (`:3550-3552`); the
+  menu's presets are 256-65,535 (`:84-86`) and a step of the window in
+  the menu replaces a value that is not a preset with the next preset
+  (`:4694-4717`). With the Phasor on, slot 4 is always in the slowdown
+  mask and a window of 0 becomes 512 (`:4669-4692`).
+- "Save As" (Profiles tab) creates the folder and writes every current
+  setting into its `appletini_cfg.txt` (`config_menu_profiles.c:437-457`,
+  `config_menu.c:4353-4367`).
+
+So a file with the one key would turn off the Phasor, the mouse card,
+RamWorks and TURBO. The profile is made from the working setup and
+edited:
+
+1. Boot into the Appletini menu with the setup DOOM needs: TURBO on,
+   RamWorks on, the mouse card in slot 2, the Phasor in slot 4 on and its
+   Mockingboard only option off.
+2. Profiles tab: Save As, name `DOOM`. This writes
+   `0:/profiles/DOOM/appletini_cfg.txt`.
+3. On the SD volume (the card in a computer, or the menu's USB or FTP SD
+   sharing), change that file's line `vtw.slowdown.cycles=512` to
+   `vtw.slowdown.cycles=32`. Check `phasor.slot4.enabled=ON`,
+   `phasor.mockingboard.only=OFF`, `slot2.card=MOUSE`,
+   `vtw.turbo.enabled=ON` while there.
+4. Profiles tab: Choose profile, `DOOM`; the status line says `LOADED
+   PROFILE DOOM`. Between steps 2 and 4, change no bezel or video ROM
+   setting: the menu also writes those into the selected profile, with
+   the window it holds, 512 (`config_menu.c:6745-6750`, `:7019-7021`).
+5. Do not step the slowdown window in the menu afterwards.
+
+Undo: choose another profile, or set the line back to 512 and choose
+`DOOM` again. `PROFILE.TXT` on the disk and `DOOM_PROFILE.TXT` beside it
+say the same. The key is: `vtw.slowdown.cycles=32`.
+
+### Checks on a2vm
+
+`musicdisk.py --check` (and `tests/test_sound_disk.py`) runs the disk's
+own MUSIC.SYSTEM on a2vm: the MLI trap serves the disk's files (as
+`tools/native/disk.py --check`), the exact W65C02S core, the cost model on
+the model's clock with the Phasor's slowdown (`f121+phasor`), and every
+interrupt held to the game's contract (`--irq-bounds
+00D8-01FF,C0A0-C0AF,C400-C4FF,E000-FFFF`, MEMORY_MAP rule 2). Keys are
+a2vm input events at the Nth visit of `mus_service`, the main loop's
+once-a-VBL service. Results of 2026-09-30:
+
+| Check | Result |
+| --- | --- |
+| songs | The probe says music; the 13 files in banks 1-13 byte for byte; timer 1 counts 20,280 cycles a VBL (PAL); A from the boot, then B to M by key, 20.0 s each: 13,043 interrupts, every interrupt's AY writes and every start's first burst equal `player.py`'s (run65's comparison, `RingPlayer` for the ring), each start at the VBL of its key, the chips' registers at the end equal the model's shadow; 990 VBLs into D_INTROA the status row reads exactly `PLAYING D_INTROA 0:19   OF 0:07   LOOP` (the clock at 50 VBLs a second) |
+| keys | `b` (lower case), SPACE, N, P, M, right arrow (M to A), left arrow (A to M), V (NTSC tables), R (play all), K: starts at interrupts 2, 51, 251, 351, 401, 421, 441, 451, 561 and 1022 (D_E1M1, D_E1M2, D_E1M3, D_E1M2, D_INTROA, D_E1M1, D_INTROA, D_INTROA on NTSC tables, D_INTRO, then D_VICTOR by itself 49 interrupts after D_INTRO's end); the stop's silence; all equal the model. T 100 VBLs into D_VICTOR: the music stops at that VBL (interrupt 1122), the test's 7,168 writes and nothing else, the status row `STOPPED D_VICTOR 0:01   OF 3:12   ALL` (the NTSC clock, 60 VBLs a second); then ESC quits as Q does |
+| quit | `q` while A plays: `snd_init`'s resets the last AY events, the chips at 0, the card's former contents (a random pattern loaded before the boot) back byte for byte, the Phasor back in Mockingboard mode, ProDOS's QUIT (ESC in `keys` is checked the same way) |
+| nomusic | `--phasor-mb-only`: the no-music screen, one MLI call (the QUIT: no song file opened), a song key changes nothing on the screen (no message on the last row), no AY event but the probe's and the two `snd_init`s' resets, the card still in Mockingboard mode |
+| aytime | Below |
+
+The timing test on a2vm, against the model (the variants of
+`costs/appletini.json`); "AY log" is the mean spacing of the 208-write
+bursts in a2vm's own log, an independent check of the program's
+arithmetic. The check also requires rows 17-23 of the test's screen to
+read exactly what the measured values give (`aytime_rows`: the write's
+and the tail's microseconds, the expected 40.4 or 40.2 us, 504.1 or 501.7
+us and 31.5 or 31.4 us, the verdict). Results of the shipped build
+(`build/sound/MUSIC.hdv`, SHA-1 `500c6ea9`), 2026-09-30:
+
+| Variant | A write, cycles (AY log) | us | Tail, cycles | us | Verdict |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `f121+phasor` (window 512), PAL | 41.013 (41.000) | 40.4 | 513.0 | 505.1 | 512 |
+| `+window32`, PAL | 41.012 (41.000) | 40.4 | 33.0 | 32.5 | 32 |
+| `+fws1`, PAL | 9.230 (9.246) | 9.1 | none | - | FW-S1 |
+| `f121+phasor+ntsc` (window 512) | 41.014 (41.000) | 40.2 | 513.2 | 502.9 | 512 |
+
+The build before the quit's `bit PHASOR_MB` (3 bytes more in `music.s`,
+which moves `aytime.s`'s loops) gave 513.1, 31.9, 513.3 cycles of tail and
+an FW-S1 write of 9.256 (AY log 9.268): the figures move with where the
+code falls against the bus clock.
+
+- **A write** is the design's 41 cycles within 0.05%.
+- **The tail** is the window from 0.1 cycles under to 1.3 over, by the
+  build. What moves it, from the model (`tools/a2vm/README.md`, "The
+  slot-4 slowdown"): an instruction that began at 1 MHz keeps its cycles
+  when the window closes inside it (up to 2 more cycles of the spin
+  loop), and the burst's first write is one bus cycle of 0.93 to 1.93
+  where the arithmetic counts 1; the program's formula leaves both out.
+  The check accepts the setting from 0.5 cycles under to 3 over.
+- **FW-S1**: a write takes 9 or 10 bus cycles by its alignment to the
+  bus (6 bus accesses; 9.25 to 9.27 on average in long bursts, by the
+  build), 9.1 us against the design's "about 8.4 us"; a burst costs 4 to
+  5 us more than its writes by that alignment (3.8 and 4.6 us in the two
+  builds), not a window.
+- The comparisons can fail (`PlantedBugs`): copies of `music.s` whose
+  keys start the wrong song, whose PAL clock counts 60 VBLs a second,
+  whose song keys run without music (the player refuses the song and the
+  last row says so), or whose quit leaves the Phasor in native mode, and
+  copies of `aytime.s` whose burst loop takes 43 cycles or whose
+  microseconds are divided by 99,000,000 in place of 100,000,000, are
+  caught; an unchanged copy passes. By hand, `EXPECTED` computed from
+  43,000 mc and the tail's microseconds taken from the write time were
+  caught too (rows 18 and 19).
+- A run that passes its time limit is reported as a failure, and the
+  builds (`make`, `ca65`, `ld65`) run under `bounded.run` with a time
+  limit.
+
 ## Open problems
 
+- **Nothing of S3 has run on the card.** The owner tests at milestone 12;
+  the disk, the timing test and the profile are ready for it.
+- The timing test's expected FW-S1 figure (8.4 us) is the design's; a2vm
+  gives 9.1 us from its bus-cycle timing, which milestone 0 measures.
+- The PAL/NTSC choice rests on VIA-A's timer 1 counting Apple bus cycles
+  (`hdl/apple/via6522.v:334-352`, `mockingboard.sv:86`: `sss_en`); V
+  switches by hand if the card's count differs.
+- Quit restores ProDOS's language card from RamWorks bank 14 and calls
+  ProDOS's QUIT; on a2vm the card's bytes come back exactly, but the MLI
+  is a trap there, so ProDOS's own restart after the quit is untested.
 - S2 used a2vm's per-write AY log (`--ay-log`) and the slot-4 slowdown in
   its cost model (native-sound.md 5.2); both exist now
   (`tools/a2vm/README.md`).
