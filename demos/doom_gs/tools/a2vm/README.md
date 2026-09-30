@@ -672,11 +672,13 @@ first data strobe after the previous cycle's end plus `slow_done` (1
 clock); I/O keeps its bus-cycle timing, which already ends at a strobe.
 A hit reloads the window after its own cycle. An idle skip (`--idle`)
 uses the window up as the skipped cycles would have. **FW-S1**
-(`slowdown_via_exempt`, native-sound.md 4.4, a proposal): writes to a
-VIA's ORB, ORA, DDRB, DDRA, IFR, IER and ORA without handshake open no
-window; reads, writes to the timers, SR, ACR and PCR, writes with address
-bit 5 or 6 set (they also reach the SSI-263, `mockingboard.sv:100-103`)
-and the mode switch still do. `tests/test_sound_player65.py` checks the
+(`slowdown_via_exempt`, a proposal, `docs/firmware/fws1-spec.md` as
+`fws1-review.md` corrects it): writes to a VIA's ORB and ORA without
+handshake (registers 0 and F) open no window; reads, writes to every other
+register (the review found that exempt IFR, IER and ORA writes cause a
+second interrupt in TURBO), writes with address bit 5 or 6 set (they also
+reach the SSI-263, `mockingboard.sv:100-103`) and the mode switch still
+do. `tests/test_sound_player65.py` checks the
 window at its edges (exactly 512 or 32 slow cycles, then TURBO; a hit
 inside the window reloads it), the regions, FW-S1's exemptions, and that
 f121 and fastpath have no window.

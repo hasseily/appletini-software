@@ -76,7 +76,7 @@
     "fws1": {
       "description": "Firmware request FW-S1 of native-sound.md 4.4: writes to the VIA registers ORB, ORA, DDRB, DDRA, IFR, IER and ORA without handshake do not open the window; reads, and writes to the timers, SR, ACR, PCR, the SSI-263 and the mode switch still do.",
       "params": {
-        "slowdown_via_exempt": {"value": 1, "source": "docs/research/native-sound.md 4.4 (FW-S1). The VIA registers are the low 4 address bits (mockingboard.sv:73-80 decode); addresses with bit 5 or 6 set also write the SSI-263 (mockingboard.sv:100-103) and stay hits"}
+        "slowdown_via_exempt": {"value": 1, "source": "FW-S1 as docs/firmware/fws1-review.md corrects it: writes to ORB and ORA without handshake (registers 0 and F) only; exempt IFR, IER or ORA writes caused a second interrupt in the review's simulation. The VIA registers are the low 4 address bits (mockingboard.sv:73-80 decode); addresses with bit 5 or 6 set also write the SSI-263 (mockingboard.sv:100-103) and stay hits"}
       }
     },
     "ntsc": {

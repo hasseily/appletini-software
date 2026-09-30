@@ -60,8 +60,8 @@ def score(*events):
     return make_mus(out + [0x60])
 
 
-def convert(lump, layout='native12'):
-    return mus2ay.convert(mus.parse(lump), INSTRUMENTS, layout)
+def convert(lump):
+    return mus2ay.convert(mus.parse(lump), INSTRUMENTS)
 
 
 def commands(song_file):
@@ -105,8 +105,9 @@ class Envelopes(unittest.TestCase):
         # = 1269.5 -> 1270; soft step 80 x 256 / 22.4 ticks = 914
         self.assertEqual(mus2ay.drum_recipe(36, tables.PAL_NATIVE),
                          (33, 0, 1270, 914))
-        self.assertEqual(mus2ay.drum_recipe(36, tables.PAL_MOCKINGBOARD),
-                         (33, 0, 635, 914))
+        # on NTSC the same 160 ms: 0.16 x 2040968 / 256 = 1275.6 -> 1276
+        self.assertEqual(mus2ay.drum_recipe(36, tables.NTSC_NATIVE),
+                         (33, 0, 1276, 914))
         self.assertEqual(mus2ay.drum_recipe(99, tables.PAL_NATIVE)[:2],
                          (0, 3))
 
@@ -191,27 +192,25 @@ class Allocation(unittest.TestCase):
                if c <= 2]
         self.assertEqual(ons, [0, 1, 1])
 
-    def test_mb6_takes_the_voice_idle_the_longest(self):
-        # the case above in mb6: the design's rule, so the new 62 goes to
-        # voice 2, never used, not to voice 1 that holds its pitch
-        events = [(0, [0x10, 60]), (5, [0x10, 62]), (0, [0x00, 60]),
-                  (10, [0x00, 62]), (1, [0x10, 62])]
-        ons = [v for _, c, v, _ in commands(convert(score(*events),
-                                                    'mb6')[0]) if c <= 2]
-        self.assertEqual(ons, [0, 1, 2])
-
     def test_steal_keeps_the_bass_on_the_lowest_voice(self):
-        # mb6: channel 1 plays 40 on voice 1 at tick 0; voice 0 is freed
-        # and channel 0 plays 40 on it at tick 6; channel 2 holds 50 on
-        # voice 2. A fourth note steals: of the two basses the one on
-        # voice 0 is kept, and each channel holds one voice, so the
-        # oldest other note goes: 40 of channel 1, voice 1.
-        events = [(0, [0x10, 60]), (1, [0x11, 40]), (1, [0x00, 60]),
-                  (4, [0x12, 50]), (0, [0x10, 40]), (1, [0x13, 70])]
-        song_file, stats = convert(score(*events), 'mb6')
+        # at tick 0 channel 0 plays 60 on voice 0 and channel 1 plays 40
+        # on voice 1; 60 is released at tick 1 and voice 0 is free again
+        # at tick 5. Then, at tick 5, channels 2-6 (program 4, another
+        # envelope, so voice 0 is not preferred) take 50-54 on voices 2-6,
+        # and channel 0 plays 40 on voice 0, the last idle one. An eighth
+        # note, at tick 6, steals: of the two basses the one on voice 0 is
+        # kept although it is newer, and each channel holds one voice, so
+        # the oldest other note goes: 40 of channel 1, voice 1.
+        events = [(0, [0x40 | c, 0, 4]) for c in range(2, 7)]
+        events += [(0, [0x10, 60]), (1, [0x11, 40]), (4, [0x00, 60])]
+        events += [(0, [0x10 | c, 48 + c]) for c in range(2, 7)]
+        events += [(1, [0x10, 40]), (0, [0x17, 70])]
+        song_file, stats = convert(score(*events))
         ons = [(v, ops[0]) for _, c, v, ops in commands(song_file) if c <= 2]
-        self.assertEqual(ons, [(0, 60), (1, 40), (2, 50), (0, 40), (1, 70)])
+        self.assertEqual(ons, [(0, 60), (1, 40), (2, 50), (3, 51), (4, 52),
+                               (5, 53), (6, 54), (0, 40), (1, 70)])
         self.assertEqual(stats['steals'], 1)
+        self.assertEqual(stats['release cuts'], 0)
 
     def test_drums(self):
         # three hits at one tick on two drum voices: the third steals the
@@ -223,9 +222,6 @@ class Allocation(unittest.TestCase):
         self.assertEqual(stats['drum steals'], 1)
         self.assertEqual([d[:2] for d in song_file.drums],
                          [(33, 0), (0, 1), (50, 6)])
-        song_file, _ = convert(score(*events), 'mb6')
-        self.assertEqual({v for _, c, v, _ in commands(song_file)
-                          if c == 6}, {3})
 
     def test_idle_drum_voice_with_the_same_recipe_is_preferred(self):
         # bass drum on voice 7, closed hi-hat on voice 8; 20 ticks later
@@ -328,7 +324,8 @@ class Updates(unittest.TestCase):
 
 
 # The design's figures (build/native-design/sound/summary50.md, the
-# tables of docs/research/native-sound.md 3.3 and 4.2), native12 then mb6:
+# tables of docs/research/native-sound.md 3.3 and 4.2), native12, the only
+# layout since the 6-voice fallback was removed (NATIVE.md 15.1, row 11):
 # steals, drum steals, writes/s, p99 writes of a burst.
 DESIGN = {
     'native12': {
@@ -339,17 +336,9 @@ DESIGN = {
         'D_E1M9': (2, 272, 125, 22), 'D_INTER': (52, 216, 132, 22),
         'D_INTRO': (7, 4, 64, 12), 'D_VICTOR': (3, 60, 77, 13),
         'D_INTROA': (0, 0, 59, 6)},
-    'mb6': {
-        'D_E1M1': (290, 447, 81, 12), 'D_E1M2': (76, 699, 37, 8),
-        'D_E1M3': (33, 324, 40, 8), 'D_E1M4': (326, 598, 72, 14),
-        'D_E1M5': (494, 0, 23, 6), 'D_E1M6': (389, 296, 94, 12),
-        'D_E1M7': (422, 6, 35, 7), 'D_E1M8': (148, 203, 24, 7),
-        'D_E1M9': (1426, 756, 60, 14), 'D_INTER': (899, 887, 88, 15),
-        'D_INTRO': (13, 27, 38, 8), 'D_VICTOR': (795, 299, 48, 11),
-        'D_INTROA': (4, 24, 35, 5)},
 }
 METRICS = ('steals', 'drum steals', 'writes/s', 'p99')
-DESIGN_STREAM_BYTES = {'native12': 141293, 'mb6': 126506}
+DESIGN_STREAM_BYTES = {'native12': 141293}
 
 
 @needs_wad
@@ -359,20 +348,19 @@ class AllSongs(unittest.TestCase):
         wad = mus.Wad.open()
         instruments = mus2ay.load_instruments(wad)
         cls.results = {}
-        for layout in ('native12', 'mb6'):
-            machine = tables.LAYOUT_MACHINES[layout][0]
-            for name in mus.UPSTREAM_SONGS:
-                song = wad.song(name)
-                song_file, stats = mus2ay.convert(song, instruments, layout)
-                init, bursts = player.run(song_file, machine)
-                cls.results[layout, name] = (song, song_file, stats, init,
-                                             bursts)
+        layout = tables.NATIVE12.name
+        for name in mus.UPSTREAM_SONGS:
+            song = wad.song(name)
+            song_file, stats = mus2ay.convert(song, instruments)
+            init, bursts = player.run(song_file, tables.PAL_NATIVE)
+            cls.results[layout, name] = (song, song_file, stats, init,
+                                         bursts)
 
     def test_stream_is_well_formed(self):
         for (layout, name), (song, song_file, stats, _, _) in \
                 self.results.items():
             with self.subTest(layout=layout, song=name):
-                lay = tables.LAYOUTS[layout]
+                lay = tables.NATIVE12
                 nm = len(lay.melodic)
                 data = song_file.to_bytes()
                 self.assertEqual(player.SongFile.from_bytes(data).stream,
@@ -401,7 +389,7 @@ class AllSongs(unittest.TestCase):
     def test_register_writes_are_in_range(self):
         for (layout, name), (_, _, _, init, bursts) in self.results.items():
             with self.subTest(layout=layout, song=name):
-                lay = tables.LAYOUTS[layout]
+                lay = tables.NATIVE12
                 owned = tables.owned_registers(lay)
                 for chip, reg, value in init:
                     self.assertIn(chip, lay.chips)
@@ -422,10 +410,10 @@ class AllSongs(unittest.TestCase):
     def test_at_most_the_layout_voices_sound(self):
         for (layout, name), (_, song_file, _, _, _) in self.results.items():
             with self.subTest(layout=layout, song=name):
-                machine = tables.LAYOUT_MACHINES[layout][0]
+                machine = tables.PAL_NATIVE
                 p = player.Player(song_file, machine)
                 p.reset()
-                lay = tables.LAYOUTS[layout]
+                lay = tables.NATIVE12
                 music = set(tables.voices(lay))
                 for _ in range(int(60 * tables.vbl_hz(machine))):
                     p.interrupt()
@@ -435,7 +423,7 @@ class AllSongs(unittest.TestCase):
 
     def test_against_the_design(self):
         for (layout, name), (_, _, stats, _, bursts) in self.results.items():
-            machine = tables.LAYOUT_MACHINES[layout][0]
+            machine = tables.PAL_NATIVE
             b = report.burst_stats(bursts, machine)
             got = dict(zip(METRICS, (stats['steals'], stats['drum steals'],
                                      round(b['writes_s']), b['p99_busy'])))

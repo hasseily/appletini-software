@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """MUS to a song file of AY voice commands for the Phasor.
 
-Usage:  python3 tools/sound/mus2ay.py [SONG ...] [--layout native12|mb6]
-                [--out DIR] [--wad FILE]
+Usage:  python3 tools/sound/mus2ay.py [SONG ...] [--out DIR] [--wad FILE]
 
-Writes DIR/SONG.<layout>.ay (default DIR: build/sound) and prints the
-converter's counts. The design is docs/research/native-sound.md section 3;
-tools/sound/README.md has the file format and what departs from the
-design.
+Writes DIR/SONG.native12.ay (default DIR: build/sound) and prints the
+converter's counts. native12 (tables.py) is the only voice layout: the
+music plays with the card in native mode, 12 voices on 4 AY chips. The
+design is docs/research/native-sound.md section 3; tools/sound/README.md
+has the file format and what departs from the design.
 
 What the converter decides on the host, so that the 65C02 player does
 not have to:
@@ -17,10 +17,9 @@ not have to:
   voice (its release over); else the voice whose release ends first (a
   "release cut"); else a steal: the lowest sounding note (the bass) is
   kept, and the oldest note of the channel that holds the most voices is
-  taken. Among idle voices, native12 prefers one that already holds the
-  note's pitch, then one with the note's envelope, then the one idle the
-  longest; mb6 takes the one idle the longest, the design's rule
-  (IDLE_SAME_PITCH_FIRST says why). Drums take an idle drum voice, else
+  taken. Among idle voices, one that already holds the note's pitch is
+  preferred, then one with the note's envelope, then the one idle the
+  longest (allocate() says why). Drums take an idle drum voice, else
   the one of the oldest hit (a "drum steal"; a hit counts as over
   when it has decayed by 20 dB, half its decay time); of idle drum voices,
   one that last played the same recipe is preferred, as it needs no
@@ -64,16 +63,6 @@ BUILD_SOUND = mus.ROOT / 'build' / 'sound'
 TICK_MS = 1000.0 / tables.TICK_HZ
 MAX_WAIT = 126
 PENDING_OFF_TICKS = 3      # a release can start up to one interrupt late
-
-# Which idle voice a note takes. With 7 melodic voices, preferring an idle
-# voice that already holds the pitch saves tone writes: 158,353 writes
-# for the 13 songs on PAL against 162,548 with the design's plain
-# longest-idle rule (D_E1M1 122 a second against 132), and 135,903 stream
-# bytes against 139,183. With 3 voices the choice mostly decides which
-# note a later steal takes: the design's rule keeps mb6 at or below the
-# design's steals in every song, where the preference gives D_E1M2 83
-# steals against the design's 76 (measured 2026-09-30).
-IDLE_SAME_PITCH_FIRST = {'native12': True, 'mb6': False}
 
 # Drum recipes: GM drum note -> (tone note or 0, noise period or 0, decay
 # in ms). Hand-made first guesses, to tune by ear.
@@ -140,8 +129,9 @@ def envelope_of(instrument):
 
 def drum_recipe(note, machine):
     """(tone, noise, envelope period, soft step) of a GM drum note; the
-    envelope period is for the layout's PAL PSG clock: the envelope
-    generator's one-shot decay lasts 256 x period / clock."""
+    envelope period is for `machine`'s PSG clock (the converter uses the
+    PAL one): the envelope generator's one-shot decay lasts 256 x period
+    / clock."""
     tone, noise, ms = DRUMS.get(note, DEFAULT_DRUM)
     period = int(math.floor(ms / 1000.0 * tables.psg_clock(machine) / 256
                             + 0.5))
@@ -172,13 +162,13 @@ class _Voice:
 
 
 class Converter:
-    """One song, one layout. convert() returns (SongFile, Counter)."""
+    """One song. convert() returns (SongFile, Counter)."""
 
-    def __init__(self, song, instruments, layout):
+    def __init__(self, song, instruments):
         self.song = song
         self.instruments = instruments
-        self.layout = layout
-        self.machine = tables.LAYOUT_MACHINES[layout.name][0]
+        self.layout = layout = tables.NATIVE12
+        self.machine = tables.PAL_NATIVE
         nm = len(layout.melodic)
         self.voices = [_Voice(i) for i in range(nm)]
         self.drum_voices = [_Voice(nm + i) for i in range(len(layout.drums))]
@@ -268,10 +258,13 @@ class Converter:
         self.max_voices = max(self.max_voices, held)
 
     def allocate(self, env, played, bend):
-        """A voice for a new note. Among idle voices, in native12 the one
-        that needs the fewest register writes and stream bytes: same pitch
-        (no tone write), then same envelope, then the one idle the
-        longest; in mb6 the one idle the longest. Among releasing voices,
+        """A voice for a new note. Among idle voices, the one that needs
+        the fewest register writes and stream bytes: same pitch (no tone
+        write), then same envelope, then the one idle the longest. With 7
+        melodic voices this saves tone writes: 158,353 writes for the 13
+        songs on PAL against 162,548 with the design's plain longest-idle
+        rule (D_E1M1 122 a second against 132), and 135,903 stream bytes
+        against 139,183 (measured 2026-09-30). Among releasing voices,
         the release that ends first. A steal keeps the lowest note (of
         equal ones, the one on the lowest voice) and takes the oldest note
         of the channel holding the most voices."""
@@ -280,11 +273,8 @@ class Converter:
         idle = [v for v in self.voices
                 if v.key is None and v.free_tick <= self.now]
         if idle:
-            if IDLE_SAME_PITCH_FIRST[self.layout.name]:
-                return min(idle, key=lambda v: (pitch_differs(v),
-                                                v.env != env, v.free_tick,
-                                                v.index))
-            return min(idle, key=lambda v: (v.free_tick, v.index))
+            return min(idle, key=lambda v: (pitch_differs(v), v.env != env,
+                                            v.free_tick, v.index))
         releasing = [v for v in self.voices if v.key is None]
         if releasing:
             self.stats['release cuts'] += 1
@@ -443,11 +433,14 @@ class Converter:
         return song, self.stats
 
 
-def convert(song, instruments, layout):
-    """(SongFile, Counter of counts) of a mus.Song on a layout."""
-    if isinstance(layout, str):
-        layout = tables.LAYOUTS[layout]
-    return Converter(song, instruments, layout).convert()
+def convert(song, instruments):
+    """(SongFile, Counter of counts) of a mus.Song."""
+    return Converter(song, instruments).convert()
+
+
+def song_file_name(name):
+    """The song file of a song: SONG.native12.ay."""
+    return '%s.%s.ay' % (name, tables.NATIVE12.name)
 
 
 def load_instruments(wad):
@@ -457,8 +450,6 @@ def load_instruments(wad):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('songs', nargs='*')
-    parser.add_argument('--layout', default='native12',
-                        choices=sorted(tables.LAYOUTS))
     parser.add_argument('--out', default=str(BUILD_SOUND))
     parser.add_argument('--wad', default=str(mus.WAD_PATH))
     args = parser.parse_args(argv)
@@ -467,9 +458,9 @@ def main(argv=None):
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     for name in args.songs or wad.songs():
-        song_file, stats = convert(wad.song(name), instruments, args.layout)
+        song_file, stats = convert(wad.song(name), instruments)
         data = song_file.to_bytes()
-        path = out / ('%s.%s.ay' % (name, args.layout))
+        path = out / song_file_name(name)
         path.write_bytes(data)
         print('%-9s %6d bytes  %s' % (name, len(data), ', '.join(
             '%s %d' % item for item in sorted(stats.items()))))

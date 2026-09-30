@@ -4,14 +4,14 @@
 Usage:  python3 tools/sound/report.py [--render] [--update-readme]
                 [--seconds 60] [--jobs N] [--wad FILE]
 
-Converts every song of the WAD for both layouts, runs the player model on
-a PAL machine (native12 in native mode, mb6 in Mockingboard mode) and on
-an NTSC one, and prints Markdown tables. --update-readme writes them
-between the report markers of tools/sound/README.md. --render also writes
-build/sound/SONG.wav (native12, PAL, stereo with the menu's default pans)
-for the first --seconds seconds of each song, or the whole song and one
-second of release when it is shorter, and the song files
-build/sound/SONG.native12.ay and SONG.mb6.ay.
+Converts every song of the WAD (layout native12, the only one), runs the
+player model on a PAL and an NTSC machine in native mode, and prints
+Markdown tables. --update-readme writes them between the report markers
+of tools/sound/README.md. --render also writes build/sound/SONG.wav (PAL,
+stereo with the menu's default pans) for the first --seconds seconds of
+each song, or the whole song and one second of release when it is
+shorter, and the song files build/sound/SONG.native12.ay, with at most
+--jobs (default 4) renders at a time.
 
 Bus cost columns use native-sound.md 2.3: on F1.2.1 (slot-4 slowdown
 window 512) a burst costs a 504 us tail and a write 40.4 us; with the
@@ -66,10 +66,10 @@ def burst_stats(bursts, machine):
     }
 
 
-def song_stats(song, instruments, layout, machines):
+def song_stats(song, instruments, machines):
     """Converter counts and, for each machine, burst statistics over the
     whole song (no loop) and one second after its end."""
-    song_file, counts = mus2ay.convert(song, instruments, layout)
+    song_file, counts = mus2ay.convert(song, instruments)
     out = {'counts': counts, 'file': song_file,
            'stream_bytes': len(song_file.stream),
            'file_bytes': len(song_file.to_bytes())}
@@ -88,9 +88,8 @@ def collect(wad):
         c = song.counts()
         row = {'name': name, 'bytes': song.size, 'seconds': song.seconds,
                'events': len(song.events), 'on': c['on']}
-        for layout in ('native12', 'mb6'):
-            row[layout] = song_stats(song, instruments, layout,
-                                     tables.LAYOUT_MACHINES[layout])
+        row['native12'] = song_stats(song, instruments,
+                                     (tables.PAL_NATIVE, tables.NTSC_NATIVE))
         rows.append(row)
     return rows
 
@@ -134,24 +133,6 @@ def tables_markdown(rows):
             '%s %.0f/%d' % (r['name'], r['native12']['ntsc-native']
                             ['writes_s'], r['native12']['ntsc-native']
                             ['p99_busy']) for r in rows)))
-    add('')
-    add('Fallback, Mockingboard mode, 6 voices (3 melodic, 1 drum, 2 '
-        'effects left free), PAL //e:')
-    add('')
-    add('| Song | Steals | Drum steals | Release cuts | Stream bytes | '
-        'Writes/s | Writes/interrupt mean | p99 | p99 of bursts | Max |')
-    add('| --- |' + ' ---: |' * 9)
-    total_mb = 0
-    for r in rows:
-        s = r['mb6']
-        c = s['counts']
-        b = s['pal-mockingboard']
-        add('| %s | %d | %d | %d | %d | %.0f | %.2f | %d | %d | %d |' % (
-            r['name'], c['steals'], c['drum steals'], c['release cuts'],
-            s['stream_bytes'], b['writes_s'], b['mean'], b['p99'],
-            b['p99_busy'], b['max']))
-        total_mb += s['stream_bytes']
-    add('| All | | | | %d | | | | | |' % total_mb)
     return '\n'.join(lines)
 
 
@@ -184,7 +165,7 @@ def main(argv=None):
     parser.add_argument('--render', action='store_true')
     parser.add_argument('--update-readme', action='store_true')
     parser.add_argument('--seconds', type=float, default=60.0)
-    parser.add_argument('--jobs', type=int, default=0)
+    parser.add_argument('--jobs', type=int, default=4)
     parser.add_argument('--out', default=str(mus2ay.BUILD_SOUND))
     args = parser.parse_args(argv)
     wad = mus.Wad.open(args.wad)
@@ -199,13 +180,12 @@ def main(argv=None):
         out.mkdir(parents=True, exist_ok=True)
         jobs = []
         for r in rows:
-            for layout in ('native12', 'mb6'):
-                (out / ('%s.%s.ay' % (r['name'], layout))).write_bytes(
-                    r[layout]['file'].to_bytes())
+            (out / mus2ay.song_file_name(r['name'])).write_bytes(
+                r['native12']['file'].to_bytes())
             seconds = min(args.seconds, r['seconds'] + 1.0)
             jobs.append((r['name'], r['native12']['file'].to_bytes(),
                          seconds, str(out)))
-        workers = args.jobs or min(len(jobs), multiprocessing.cpu_count())
+        workers = max(1, min(args.jobs, len(jobs)))
         with multiprocessing.Pool(workers) as pool:
             for name, seconds, peak, clipped in pool.imap(render_song, jobs):
                 print('%s/%s.wav: %.1f s, peak %d, %d saturated samples'

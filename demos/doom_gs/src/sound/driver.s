@@ -23,19 +23,22 @@
 ; A refused start stops at drv_halt with A = snd_error.
 ;
 ; drv_probe, written by run65.py: 1 runs snd_probe (probe.s) first and
-; keeps its answer in drv_found; a card of the other layout than this
-; build's stops at drv_halt with A = $10 + the layout found.
+; keeps its answer in drv_found: SND_MUSIC ($00) or SND_NO_MUSIC ($01),
+; the driver's "no music" report (drv_found stays $FF with no probe).
+; With SND_NO_MUSIC the driver does what the game does on a card that
+; cannot switch to native mode: it calls snd_init, then runs on without
+; music. The player is never started: START and STOP actions are skipped
+; and snd_refill is never called; the VBL interrupt still counts VBLs.
 
         .setcpu "65C02"
         .include "sound.inc"
-        .include "tables.inc"
 
         .import snd_probe, snd_init, snd_start, snd_stop, snd_refill
         .import snd_song_bank, snd_song_addr, snd_song_flags, snd_song_matt
         .importzp vbl_count
         .export drv_start, drv_idle, drv_count, drv_halt
         .export drv_mode, drv_probe, drv_found, drv_actions, drv_counter
-        .export drv_seen
+        .export drv_seen, drv_music
 
 ACT_START       = 1
 ACT_STOP        = 2
@@ -48,6 +51,7 @@ drv_seen:       .res 2          ; the VBL count the loop has served
 drv_counter:    .res 4
 aptr:           .res 2          ; the next action
 gate:           .res 1
+drv_music:      .res 1          ; 0: snd_probe answered SND_NO_MUSIC
 
         .segment "DRVDATA"
 drv_mode:       .byte   0
@@ -74,6 +78,7 @@ drv_start:
         stz     drv_counter+3
         lda     #1
         sta     gate
+        sta     drv_music
         lda     #<drv_actions
         sta     aptr
         lda     #>drv_actions
@@ -84,10 +89,8 @@ drv_start:
         beq     @init
         jsr     snd_probe
         sta     drv_found
-        cmp     #LAYOUT_ID
-        beq     @init
-        ora     #$10                    ; the card has the other layout
-        jmp     drv_halt
+        bcc     @init
+        stz     drv_music               ; no music: the player never starts
 @init:  jsr     snd_init
         jsr     actions
         cli
@@ -124,6 +127,7 @@ service:
         cli
         jsr     actions
         lda     gate
+        and     drv_music
         beq     :+
         jsr     snd_refill
 :       rts
@@ -144,6 +148,8 @@ actions:
 @due:   lda     (aptr)
         cmp     #ACT_START
         bne     @stop
+        lda     drv_music
+        beq     @next                   ; no music: no song starts
         ldy     #3
         lda     (aptr),y
         sta     snd_song_bank
@@ -164,6 +170,8 @@ actions:
         bra     @next
 @stop:  cmp     #ACT_STOP
         bne     @gate
+        lda     drv_music
+        beq     @next
         jsr     snd_stop
         bra     @next
 @gate:  cmp     #ACT_GATE_OFF

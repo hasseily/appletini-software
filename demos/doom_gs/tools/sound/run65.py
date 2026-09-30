@@ -2,11 +2,11 @@
 """The 65C02 music player (src/sound) on a2vm, against tools/sound/player.py.
 
 Usage:
-  python3 tools/sound/run65.py [SONG ...] [--layout native12|mb6|both]
-          [--seconds S] [--ntsc] [--no-loop] [--jobs N] [--keep DIR]
-      Play each song (default: all 13, both layouts, 60 s, PAL, looping)
-      on a2vm with the mouse card's VBL interrupt and compare the AY
-      writes of every interrupt with player.py's.
+  python3 tools/sound/run65.py [SONG ...] [--seconds S] [--ntsc]
+          [--no-loop] [--jobs N] [--keep DIR]
+      Play each song file build/sound/SONG.native12.ay (default: all 13,
+      60 s, PAL, looping) on a2vm with the mouse card's VBL interrupt and
+      compare the AY writes of every interrupt with player.py's.
   python3 tools/sound/run65.py --sizes
       The player's code and data against native-sound.md 4.3.
   python3 tools/sound/run65.py --cost [SONG ...] [--seconds S] [--jobs N]
@@ -15,19 +15,21 @@ Usage:
       on: window 512, window 32, FW-S1), each song played once to its end
       plus one second (or S seconds of it): the table of
       src/sound/README.md.
+  --jobs N runs at most N a2vm runs at a time (default 4, the ground
+  rules' limit; run the tool under nice -n 10).
 
-What a run is. src/sound/Makefile assembles the player and its test
-driver (src/sound/driver.s). This tool writes an a2vm image: the player in
-the main language card ($E000-$FFFF, with the IRQ vector at $FFFE), the
-driver at $0800 with its parameters (drv_mode, drv_actions), each song
-file in a RamWorks bank of its own at $1000. a2vm runs it on the exact
-W65C02S core with the cost model on the model's clock (--cost-timed; the
-PAL frame, or NTSC with the ntsc variant), the slot-4 slowdown on (the
-phasor variant), --ay-log, and --irq-bounds: an interrupt that reads or
-writes outside the zero page, the stack, the mouse card, the Phasor and
-the language card ends the run (the IRQ contract, native-sound.md 4.3).
-The driver starts the song, then serves each VBL interrupt: its actions,
-then snd_refill.
+What a run is. src/sound/Makefile assembles the player (the voice layout
+native12, the only one) and its test driver (src/sound/driver.s). This
+tool writes an a2vm image: the player in the main language card
+($E000-$FFFF, with the IRQ vector at $FFFE), the driver at $0800 with its
+parameters (drv_mode, drv_actions), each song file in a RamWorks bank of
+its own at $1000. a2vm runs it on the exact W65C02S core with the cost
+model on the model's clock (--cost-timed; the PAL frame, or NTSC with the
+ntsc variant), the slot-4 slowdown on (the phasor variant), --ay-log, and
+--irq-bounds: an interrupt that reads or writes outside the zero page,
+the stack, the mouse card, the Phasor and the language card ends the run
+(the IRQ contract, native-sound.md 4.3). The driver starts the song, then
+serves each VBL interrupt: its actions, then snd_refill.
 
 The AY log is grouped as the machine ran: the writes and chip resets
 before the first interrupt (snd_init's resets, the start's first burst),
@@ -37,6 +39,17 @@ first burst). A comparison needs every group equal, write for write and
 in order: chip, register, value; a chip reset is expected only from
 snd_init (and snd_probe), before everything else. At the end of the run
 the chips' registers (state.json) must be the model's shadow.
+
+The probe. With `probe` the driver runs snd_probe first. On the Phasor it
+answers SND_MUSIC and the run goes on as above; with `mb_only` (a2vm
+--phasor-mb-only, the Phasor locked to Mockingboard mode) it answers
+SND_NO_MUSIC: the driver keeps the answer in drv_found, calls snd_init,
+and never starts the player (its song actions are ignored), as the game
+runs with no music on a card that cannot switch to native mode. A run
+can start with the player's state in the card's $D000 bank already
+written (`card`: the garbage a real machine holds at power-on, which
+snd_init must clear) and can end early at any of the labels `stop_at`
+(a call the no-music driver must never make).
 
 The oracle. For a song played from its start, player.Player itself:
 reset() is the first group, and interrupt() k is the burst of interrupt
@@ -52,7 +65,6 @@ at the next interrupt and ends the player. Standard library only.
 import argparse
 import copy
 import json
-import os
 import shutil
 import struct
 import subprocess
@@ -75,11 +87,12 @@ A2VM = BUILD / 'a2vm' / 'a2vm'
 SRC = ROOT / 'src' / 'sound'
 README = SRC / 'README.md'
 
-LAYOUT_NAMES = ('native12', 'mb6')
+LAYOUT = tables.NATIVE12      # the only voice layout
 SONG_BANK0 = 1              # the first song's RamWorks bank
 SONG_ADDRESS = 0x1000
 MAIN_BASE = 0x0800
 LC_BASE = 0xE000
+LC_BSS_BASE = 0xD000        # the card's bank 2: ring, write lists, state
 
 START, STOP, GATE_OFF, GATE_ON = 1, 2, 3, 4
 # The IRQ contract (native-sound.md 4.3): the zero page and the stack, the
@@ -88,16 +101,19 @@ IRQ_BOUNDS = '0000-01FF,C0A0-C0AF,C400-C4FF,D000-FFFF'
 # The chip resets of snd_init in the AY log: ORB 0 on VIA-A (chips 0 and
 # 1), then on VIA-B (chips 2 and 3); a2vm logs both chips of a VIA.
 INIT_RESETS = (('reset', 0), ('reset', 1), ('reset', 2), ('reset', 3))
-# snd_probe's (probe.s) events: VIA-A's chips reset, R0 of chip 0 = $55,
-# R0 of chip 1 = $AA (on chip 0 when the card is locked to Mockingboard
-# mode), the chips reset again.
+# snd_probe's (probe.s) events, keyed by mb_only: VIA-A's chips reset, R0
+# of chip 0 = $55, R0 of chip 1 = $AA (on chip 0 when the card is locked
+# to Mockingboard mode), the chips reset again.
 PROBE_EVENTS = {
     False: (('reset', 0), ('reset', 1), (0, 0, 0x55), (1, 0, 0xAA),
             ('reset', 0), ('reset', 1)),
     True: (('reset', 0), ('reset', 1), (0, 0, 0x55), (0, 0, 0xAA),
            ('reset', 0), ('reset', 1))}
-PROBE_HALT = 0x10               # drv_halt's A: $10 + the layout found
-PHASOR_MODE = {'native12': 5, 'mb6': 0}     # a2vm's phasor.mode at the end
+# snd_probe's answer (sound.inc), in the driver's drv_found
+SND_MUSIC, SND_NO_MUSIC = 0, 1
+# a2vm's phasor.mode: native (four AYs), or the Mockingboard mode a card
+# locked to it keeps
+NATIVE_MODE, MOCKINGBOARD_MODE = 5, 0
 MAX_ACTIONS = 32
 SONG_LOOP, SONG_NTSC = 0x01, 0x80
 IDLE_MODE, COUNT_MODE = 0, 1
@@ -112,7 +128,7 @@ def have_cc65():
 
 
 def build(out=OUT, source=SRC):
-    """Assemble both layouts with src/sound/Makefile (or the Makefile of a
+    """Assemble the player with src/sound/Makefile (or the Makefile of a
     copy of the sources in `source`) into `out`. Returns what make said;
     raises RuntimeError when it fails or when ca65 or ld65 warns (the
     ground rules: builds with no warnings)."""
@@ -165,11 +181,10 @@ def segments(map_path):
 
 
 class Player65:
-    """One assembled layout: its files and labels."""
+    """The assembled player: its files and labels."""
 
-    def __init__(self, layout, out=OUT):
-        self.layout = layout
-        self.dir = Path(out) / layout
+    def __init__(self, out=OUT):
+        self.dir = Path(out)
         self.labels = read_labels(self.dir / 'sound.lbl')
         self.lc = (self.dir / 'sound.lc').read_bytes()
         self.main = (self.dir / 'sound.main').read_bytes()
@@ -210,10 +225,9 @@ def cost_profile(ntsc=False, variants=('phasor',), profile='f121'):
 class Run:
     """The result of one a2vm run: the AY log's groups, the end state."""
 
-    def __init__(self, directory, labels, layout=None):
+    def __init__(self, directory, labels):
         self.directory = Path(directory)
         self.labels = labels
-        self.layout = layout
         self.state = json.loads((self.directory / 'state.json').read_text())
         self.events = read_log(self.directory / 'ay.log')
         self.main, self.bursts, self.times, self.partial = group(self.events)
@@ -233,10 +247,16 @@ class Run:
 
 def run(p65, songs, actions, seconds, directory, ntsc=False,
         variants=('phasor',), mode=IDLE_MODE, a2vm=A2VM, snapshot=False,
-        profile='f121', probe=False, mb_only=False):
+        profile='f121', probe=False, mb_only=False, card=None,
+        stop_at=()):
     """Run the driver with `actions` for `seconds` of machine time. With
     `probe` the driver runs snd_probe first; with `mb_only` the card is
-    locked to Mockingboard mode (a2vm --phasor-mb-only)."""
+    locked to Mockingboard mode (a2vm --phasor-mb-only), so the probe
+    answers SND_NO_MUSIC and the driver starts no song. `card` (bytes)
+    is loaded at $D000 in the main language card's bank 2, where the
+    player keeps its ring, write lists and state, before the run; a2vm
+    starts that RAM at zero. The run ends early (RuntimeError) when the
+    65C02 reaches any of the labels in `stop_at`."""
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     labels = p65.labels
@@ -253,6 +273,10 @@ def run(p65, songs, actions, seconds, directory, ntsc=False,
         image.extend(data)
 
     record(2, 0, LC_BASE, p65.lc)
+    if card is not None:
+        if len(card) > LC_BASE - LC_BSS_BASE:
+            raise ValueError('the card data is more than $D000-$DFFF')
+        record(2, 0, LC_BSS_BASE, bytes(card))
     record(0, 0, MAIN_BASE, bytes(main))
     for index, data in enumerate(songs):
         record(1, SONG_BANK0 + index, SONG_ADDRESS, bytes(data))
@@ -274,6 +298,8 @@ def run(p65, songs, actions, seconds, directory, ntsc=False,
             '--irq-bounds', IRQ_BOUNDS,
             '--stop-pc', '%X' % labels['drv_halt'],
             '--stop-pc', '%X' % labels['snd_crash']]
+    for label in stop_at:
+        args += ['--stop-pc', '%X' % labels[label]]
     if mb_only:
         args.append('--phasor-mb-only')
     if mode == IDLE_MODE:
@@ -289,7 +315,7 @@ def run(p65, songs, actions, seconds, directory, ntsc=False,
         if state.exists():
             halt = json.loads(state.read_text()).get('halt', '')
         raise RuntimeError('a2vm failed: %s\n%s' % (halt, result.stdout))
-    out = Run(directory, labels, p65.layout)
+    out = Run(directory, labels)
     if out.state['end'] != 'cycles':
         raise RuntimeError('the run ended early (%s at $%04X, A=$%02X)'
                            % (out.state['end'], out.state['pc'],
@@ -498,12 +524,11 @@ class RingPlayer(player.Player):
             self.rpos += length
 
 
-def machine_of(layout, ntsc):
-    pal, ntsc_machine = tables.LAYOUT_MACHINES[layout]
-    return ntsc_machine if ntsc else pal
+def machine_of(ntsc):
+    return tables.NTSC_NATIVE if ntsc else tables.PAL_NATIVE
 
 
-def expected(layout, songs, actions, count):
+def expected(songs, actions, count):
     """(main, bursts) the driver and the player should write for
     `actions`, over `count` interrupts, with RingPlayer as the player."""
     main, bursts = [[]], []
@@ -514,7 +539,7 @@ def expected(layout, songs, actions, count):
         while pending and pending[0][1] <= n:
             kind, _, bank, _, flags, matt = pending.pop(0)
             if kind == START:
-                machine = machine_of(layout, bool(flags & SONG_NTSC))
+                machine = machine_of(bool(flags & SONG_NTSC))
                 p = RingPlayer(songs[bank - SONG_BANK0], machine,
                                loop=bool(flags & SONG_LOOP),
                                music_attenuation=matt)
@@ -555,7 +580,8 @@ def player_py(song, machine, count, loop=True, matt=0):
 
 
 def init_events(probe=False, mb_only=False):
-    """The chip resets and writes the driver makes before snd_start."""
+    """The chip resets and writes the driver makes before snd_start (with
+    no music, all it makes): the probe's, then snd_init's."""
     return (PROBE_EVENTS[mb_only] if probe else ()) + INIT_RESETS
 
 
@@ -593,12 +619,12 @@ def first_difference(got, want):
                                              want[len(got):])[:3])
 
 
-def final_difference(result, model):
+def final_difference(result, model, mode=NATIVE_MODE):
     """None when the chips' registers at the end of the run (a2vm's
     state.json, phasor.ay) are what `model` (a player.Player or
     RingPlayer after the interrupts compared, or None when no song
-    started) holds in its shadow, the chips outside the layout all 0, and
-    the card in its layout's mode; else the difference. When the run
+    started) holds in its shadow, the chips it does not hold all 0, and
+    the card in `mode` (a2vm's phasor.mode); else the difference. When the run
     ended inside an interrupt, what that interrupt wrote must begin the
     model's next burst, and counts."""
     want = [[0] * 16 for _ in range(4)]
@@ -617,26 +643,24 @@ def final_difference(result, model):
         if phasor['ay'][chip] != want[chip]:
             return 'at the end chip %d holds %s, expected %s' % (
                 chip, phasor['ay'][chip], want[chip])
-    if phasor['mode'] != PHASOR_MODE[result.layout]:
+    if phasor['mode'] != mode:
         return 'at the end the card is in mode %d, expected %d' % (
-            phasor['mode'], PHASOR_MODE[result.layout])
+            phasor['mode'], mode)
     return None
 
 
 def compare_song(p65, song_path, seconds, directory, ntsc=False, loop=True,
-                 a2vm=A2VM, variants=('phasor',), probe=False,
-                 mb_only=False):
-    """Play one song file from its start and compare every interrupt with
-    player.py, then the chips' registers at the end with its shadow.
-    Returns (difference or None, interrupts compared)."""
+                 a2vm=A2VM, variants=('phasor',), probe=False):
+    """Play one song file from its start (after snd_probe with `probe`)
+    and compare every interrupt with player.py, then the chips' registers
+    at the end with its shadow. Returns (difference or None, interrupts
+    compared)."""
     data = Path(song_path).read_bytes()
     song = player.SongFile.from_bytes(data)
-    if song.layout.name != p65.layout:
-        raise ValueError('%s is a %s song' % (song_path, song.layout.name))
     result = run(p65, [data], [start_action(0, 0, loop=loop, ntsc=ntsc)],
                  seconds, directory, ntsc=ntsc, a2vm=a2vm, variants=variants,
-                 probe=probe, mb_only=mb_only)
-    machine = machine_of(p65.layout, ntsc)
+                 probe=probe)
+    machine = machine_of(ntsc)
     count = len(result.bursts)
     nominal = int(seconds * tables.vbl_hz(machine))
     if abs(count - nominal) > 1:
@@ -645,7 +669,7 @@ def compare_song(p65, song_path, seconds, directory, ntsc=False, loop=True,
     init, bursts, model = player_model(song, machine, count, loop=loop)
     difference = compare(result.main, result.bursts,
                          [init] + [[] for _ in bursts], bursts,
-                         init_events(probe, mb_only))
+                         init_events(probe))
     return difference or final_difference(result, model), count
 
 
@@ -675,17 +699,14 @@ CARD_DATA = ('SNDRING', 'SNDLIST', 'SNDBSS')
 
 
 def sizes(out=OUT):
-    """[(layout, {segment: size, 'PAD': the alignment gaps between the
-    card's data segments})]."""
-    rows = []
-    for layout in LAYOUT_NAMES:
-        seg = segments(Path(out) / layout / 'sound.map')
-        row = {name: seg.get(name, (0, 0))[1] for name, *_ in BUDGET}
-        spans = [seg[name] for name in CARD_DATA]
-        extent = max(s + n for s, n in spans) - min(s for s, _ in spans)
-        row['PAD'] = extent - sum(n for _, n in spans)
-        rows.append((layout, row))
-    return rows
+    """[('Bytes', {segment: size, 'PAD': the alignment gaps between the
+    card's data segments})]: one column, the player's one build."""
+    seg = segments(Path(out) / 'sound.map')
+    row = {name: seg.get(name, (0, 0))[1] for name, *_ in BUDGET}
+    spans = [seg[name] for name in CARD_DATA]
+    extent = max(s + n for s, n in spans) - min(s for s, _ in spans)
+    row['PAD'] = extent - sum(n for _, n in spans)
+    return [('Bytes', row)]
 
 
 def sizes_table(out=OUT):
@@ -748,51 +769,48 @@ def song_seconds(song, machine):
     return len(bursts) / tables.vbl_hz(machine)
 
 
-def measure(layouts, names, work, jobs=4, a2vm=A2VM, out=OUT,
-            seconds=None):
+def measure(names, work, jobs=4, a2vm=A2VM, out=OUT, seconds=None):
     """The player's cost for each song file (each played once, not
     looping, or `seconds` of it) under the three settings of VARIANTS:
-    [((song, layout), {label: row})]. Its time is what it takes from the
+    [(song, {label: row})]. Its time is what it takes from the
     main loop: 1 - (the loop's count with the song) / (the count with no
     song over the same time), the interrupt entry, the acknowledge and the
     VBL count being in both runs. 'in the IRQ' is the part spent between
     the interrupts' entries and RTIs, the rest being the slow window's
     tail and the refills."""
     fabric = costs.parameters('f121')['fabric_mhz'] * 1e6
+    machine = machine_of(False)
     tasks = []
-    for layout in layouts:
-        machine = machine_of(layout, False)
+    for label, variants in VARIANTS:
+        tasks.append((None, label, variants, BASE_SECONDS))
+    for path in song_files(names):
+        song = player.SongFile.from_bytes(path.read_bytes())
+        span = seconds or song_seconds(song, machine)
         for label, variants in VARIANTS:
-            tasks.append((layout, None, label, variants, BASE_SECONDS))
-        for path in song_files(names, layout):
-            song = player.SongFile.from_bytes(path.read_bytes())
-            span = seconds or song_seconds(song, machine)
-            for label, variants in VARIANTS:
-                tasks.append((layout, path, label, variants, span))
-    tasks.sort(key=lambda t: -t[4])
-    players = {layout: Player65(layout, out) for layout in layouts}
+            tasks.append((path, label, variants, span))
+    tasks.sort(key=lambda t: -t[3])
+    p65 = Player65(out)
 
     def one(task):
-        layout, path, label, variants, span = task
+        path, label, variants, span = task
         name = path.name.split('.')[0] if path else 'none'
-        directory = Path(work) / ('%s-%s-%s' % (name, layout,
-                                               '+'.join(variants)))
+        directory = Path(work) / ('%s-%s' % (name, '+'.join(variants)))
         songs = [path.read_bytes()] if path else []
         actions = [start_action(0, 0, loop=False)] if path else []
-        return task, counted(players[layout], songs, actions, span,
-                             directory, variants, a2vm)
+        return task, counted(p65, songs, actions, span, directory, variants,
+                             a2vm)
 
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         done = list(pool.map(one, tasks))
-    base = {(t[0], t[2]): r for t, r in done if t[1] is None}
+    base = {t[1]: r for t, r in done if t[0] is None}
     results = {}
-    for (layout, path, label, variants, span), r in done:
+    for (path, label, variants, span), r in done:
         if path is None:
             continue
-        b = base[(layout, label)]
+        b = base[label]
         rate = b['count'] / BASE_SECONDS
         irq_each = b['irq'] / b['interrupts']
-        key = (path.name.split('.')[0], layout)
+        key = path.name.split('.')[0]
         results.setdefault(key, {})[label] = {
             'seconds': span,
             'ms_per_s': 1000.0 * (1.0 - r['count'] / (rate * span)),
@@ -800,18 +818,17 @@ def measure(layouts, names, work, jobs=4, a2vm=A2VM, out=OUT,
                                       r['interrupts']) / fabric / span,
             'bursts_per_s': r['bursts'] / span,
             'writes_per_s': r['writes'] / span}
-    order = [(p.name.split('.')[0], layout) for layout in layouts
-             for p in song_files(names, layout)]
+    order = [p.name.split('.')[0] for p in song_files(names)]
     return [(key, results[key]) for key in order]
 
 
 def cost_table(results):
-    lines = ['| Song | Layout | Seconds | Bursts/s | Writes/s | ' +
+    lines = ['| Song | Seconds | Bursts/s | Writes/s | ' +
              ' | '.join('%s: ms/s (in the IRQ) | formula | 4.2' % label
                         for label, _ in VARIANTS) + ' |',
-             '| --- | --- | ---: | ---: | ---: | ' + ' | '.join(
+             '| --- | ---: | ---: | ---: | ' + ' | '.join(
                  '---: | ---: | ---:' for _ in VARIANTS) + ' |']
-    for (name, layout), rows in results:
+    for name, rows in results:
         first = rows[VARIANTS[0][0]]
         cells = []
         for i, (label, _) in enumerate(VARIANTS):
@@ -819,12 +836,12 @@ def cost_table(results):
             per_write, tail = DESIGN_COSTS[i]
             formula = (r['bursts_per_s'] * tail +
                        r['writes_per_s'] * per_write) / 1000.0
-            table = DESIGN_TABLE.get(name) if layout == 'native12' else None
+            table = DESIGN_TABLE.get(name)
             cells.append('%.2f (%.2f) | %.2f | %s' % (
                 r['ms_per_s'], r['irq_ms_per_s'], formula,
                 '%.2f' % table[i] if table else '-'))
-        lines.append('| %s | %s | %.1f | %.1f | %.1f | %s |' % (
-            name, layout, first['seconds'], first['bursts_per_s'],
+        lines.append('| %s | %.1f | %.1f | %.1f | %s |' % (
+            name, first['seconds'], first['bursts_per_s'],
             first['writes_per_s'], ' | '.join(cells)))
     return '\n'.join(lines)
 
@@ -840,24 +857,23 @@ def update_readme(marker, text):
 
 # ---------------------------------------------------------------------------
 
-def song_files(names, layout):
+def song_files(names):
+    """build/sound/SONG.native12.ay of each name, or every song file."""
     if not names:
         names = [p.name.split('.')[0]
-                 for p in sorted(SONGS.glob('*.%s.ay' % layout))]
-    return [SONGS / ('%s.%s.ay' % (n, layout)) for n in names]
+                 for p in sorted(SONGS.glob('*.%s.ay' % LAYOUT.name))]
+    return [SONGS / ('%s.%s.ay' % (n, LAYOUT.name)) for n in names]
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     parser.add_argument('songs', nargs='*')
-    parser.add_argument('--layout', default='both',
-                        choices=('native12', 'mb6', 'both'))
     parser.add_argument('--seconds', type=float)
     parser.add_argument('--ntsc', action='store_true')
     parser.add_argument('--no-loop', action='store_true')
     parser.add_argument('--sizes', action='store_true')
     parser.add_argument('--cost', action='store_true')
-    parser.add_argument('--jobs', type=int, default=os.cpu_count() or 4)
+    parser.add_argument('--jobs', type=int, default=4)
     parser.add_argument('--update-readme', action='store_true')
     parser.add_argument('--keep', help='keep the runs in this directory')
     args = parser.parse_args(argv)
@@ -870,12 +886,11 @@ def main(argv=None):
         if args.update_readme:
             update_readme('sizes', text)
         return 0
-    layouts = LAYOUT_NAMES if args.layout == 'both' else (args.layout,)
     work = Path(args.keep) if args.keep else Path(
         tempfile.mkdtemp(prefix='run65-', dir=str(BUILD)))
     try:
         if args.cost:
-            results = measure(layouts, args.songs, work / 'cost', args.jobs,
+            results = measure(args.songs, work / 'cost', args.jobs,
                               seconds=args.seconds)
             text = cost_table(results)
             print(text)
@@ -884,11 +899,8 @@ def main(argv=None):
             return 0
         seconds = args.seconds or (20.0 if args.ntsc else 60.0)
         failures = 0
-        jobs = []
-        for layout in layouts:
-            p65 = Player65(layout)
-            for path in song_files(args.songs, layout):
-                jobs.append((p65, path))
+        p65 = Player65()
+        jobs = [(p65, path) for path in song_files(args.songs)]
 
         def one(job):
             p65, path = job

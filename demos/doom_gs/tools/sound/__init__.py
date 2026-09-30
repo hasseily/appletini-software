@@ -11,7 +11,7 @@ Modules:
   midi      a minimal standard MIDI file reader, for the second decoder
   genmidi   the GENMIDI instrument bank: carrier envelopes, note offsets
   tables    the tables the 65C02 player shares with the host: periods,
-            bend multipliers, levels, tempo, voice layouts
+            bend multipliers, levels, tempo, the voice layout (native12)
   mus2ay    the converter: MUS to a song file of AY voice commands
   player    the model of the 65C02 player: song file to AY register writes
   ayrender  AY register writes to a WAV file, after the Phasor's HDL

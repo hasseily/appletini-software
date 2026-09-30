@@ -21,7 +21,8 @@ voice commands. The player also has tables that depend on the machine,
 not on the song (tables.py): the note periods for the PSG clock, the
 bend magnitudes, the attenuation-to-level table and the tempo.
 
-State (NV voices: the layout's melodic voices, then its drum voices):
+State (NV voices: the layout's melodic voices, then its drum voices; the
+layout is native12, tables.py, the only one):
 
     pos        u16  stream position
     wait       u8   ticks until the next commands
@@ -117,7 +118,7 @@ class SongFile:
         version, ident, ne, nd, length, loop = HEADER.unpack_from(data)
         if version != FORMAT_VERSION:
             raise SongFileError('song file version %d' % version)
-        if ident not in tables.LAYOUT_BY_IDENT:
+        if ident != tables.NATIVE12.ident:
             raise SongFileError('unknown layout %d' % ident)
         at = HEADER.size
         envelopes = []
@@ -132,8 +133,7 @@ class SongFile:
         if len(stream) != length or at + length != len(data):
             raise SongFileError('stream length %d does not match the file'
                                 % length)
-        return cls(tables.LAYOUT_BY_IDENT[ident], envelopes, drums, stream,
-                   loop)
+        return cls(tables.NATIVE12, envelopes, drums, stream, loop)
 
 
 def decode_stream(stream):

@@ -8,7 +8,8 @@ Appletini's HDL (FW/ = the appletini-one-main firmware snapshot):
   second pulse in Phasor native mode: FW/hdl/apple/mockingboard.sv:262
   ("psg_clock = via_bus_clock || psg_ce_extra_q") and :542-549 ("The
   Phasor native mode doubles the PSG clock"). So the PSG clock is the bus
-  clock in Mockingboard mode and twice it in native mode.
+  clock in Mockingboard mode and twice it in native mode, the only mode
+  the music plays in.
 - Tone: a /8 prescaler (FW/hdl/apple/YM2149.sv:139-162) and a counter
   that toggles the output every P prescaled ticks (:203-226): the tone is
   clock / (16 P). P = 0 silences a channel whose tone is on (:218-220).
@@ -37,12 +38,11 @@ CYCLES_PER_WRITE = 41          # one AY register write in the burst loop
 
 Machine = namedtuple('Machine', 'name bus_hz vbl_cycles psg_multiplier')
 
+# The music plays only with the card in native mode (NATIVE.md 15.1, row
+# 11: no 6-voice fallback), so these are the only machines.
 PAL_NATIVE = Machine('pal-native', 1015625, 312 * 65, 2)
 NTSC_NATIVE = Machine('ntsc-native', 1020484, 262 * 65, 2)
-PAL_MOCKINGBOARD = Machine('pal-mockingboard', 1015625, 312 * 65, 1)
-NTSC_MOCKINGBOARD = Machine('ntsc-mockingboard', 1020484, 262 * 65, 1)
-MACHINES = {m.name: m for m in (PAL_NATIVE, NTSC_NATIVE, PAL_MOCKINGBOARD,
-                                NTSC_MOCKINGBOARD)}
+MACHINES = {m.name: m for m in (PAL_NATIVE, NTSC_NATIVE)}
 
 
 def psg_clock(machine):
@@ -54,11 +54,14 @@ def vbl_hz(machine):
 
 
 # ---------------------------------------------------------------------------
-# Voice layouts. A voice is (chip, channel). Chips 0 and 1 are the first
+# The voice layout. A voice is (chip, channel). Chips 0 and 1 are the first
 # and second AY behind VIA-A ($C41x), chips 2 and 3 behind VIA-B ($C48x),
-# the numbering of the Bilestoad, Bosconian and Pinball drivers. In
-# Mockingboard mode only chips 0 and 2 exist. A drum voice owns the noise
-# period (R6) and the envelope registers (R11-R13) of its chip.
+# the numbering of the Bilestoad, Bosconian and Pinball drivers; all four
+# exist in the card's native mode. A drum voice owns the noise period (R6)
+# and the envelope registers (R11-R13) of its chip. There is one layout,
+# native12: the 6-voice fallback for a card in Mockingboard mode was
+# removed on 2026-09-30 (NATIVE.md 15.1, row 11). Its id is byte 1 of a
+# song file.
 # ---------------------------------------------------------------------------
 
 Layout = namedtuple('Layout', 'name ident melodic drums effects chips')
@@ -69,16 +72,6 @@ NATIVE12 = Layout(
     drums=((1, 2), (2, 2)),
     effects=((3, 0), (3, 1), (3, 2)),
     chips=(0, 1, 2, 3))
-MB6 = Layout(
-    'mb6', 1,
-    melodic=((0, 0), (0, 1), (2, 0)),
-    drums=((0, 2),),
-    effects=((2, 1), (2, 2)),
-    chips=(0, 2))
-LAYOUTS = {NATIVE12.name: NATIVE12, MB6.name: MB6}
-LAYOUT_BY_IDENT = {NATIVE12.ident: NATIVE12, MB6.ident: MB6}
-LAYOUT_MACHINES = {'native12': (PAL_NATIVE, NTSC_NATIVE),
-                   'mb6': (PAL_MOCKINGBOARD, NTSC_MOCKINGBOARD)}
 
 
 def voices(layout):

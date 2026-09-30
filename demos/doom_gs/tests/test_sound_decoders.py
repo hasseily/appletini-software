@@ -124,18 +124,18 @@ def carrier_att(instrument):
     return math.floor(instrument.level * 1.5 + 0.5)
 
 
-def check_converter(test, lump, name, layout, instruments):
+def check_converter(test, lump, name, instruments):
     """The converter's stream for one lump against the second decoder's
     events: every note on (tick, note, attenuation, envelope), note off,
     pitch bend, attenuation change, cut and drum hit (tick, recipe,
     attenuation) is what the MUS events ask for, at their tick."""
     A = tables.ATTENUATION_OF_VALUE
     events = midi_events(lump)
-    song_file, stats = mus2ay.Converter(mus.parse(lump, name), instruments,
-                                        tables.LAYOUTS[layout]).convert()
-    machine = tables.LAYOUT_MACHINES[layout][0]
+    song_file, stats = mus2ay.Converter(mus.parse(lump, name),
+                                        instruments).convert()
+    machine = tables.PAL_NATIVE
     stream = stream_by_tick(song_file)
-    n_melodic = len(tables.LAYOUTS[layout].melodic)
+    n_melodic = len(tables.NATIVE12.melodic)
 
     def loud(chan):
         return A[volume[chan]] + A[expression[chan]]
@@ -320,13 +320,10 @@ class ConverterAgainstSecondDecoderHandMade(unittest.TestCase):
             (0, [0x4f, 3, 50]),                  # drum channel volume
             (2, [0x1f, 0x80 | 42, 127]),
             (1, [0x3f, 14]))                     # reset on channel 15
-        for layout in ('native12', 'mb6'):
-            with self.subTest(layout=layout):
-                stats = check_converter(self, lump, 'hand-made', layout,
-                                        INSTRUMENTS)
-                self.assertEqual(stats['cuts'], 2)
-                self.assertEqual(stats['released by 11'], 1)
-                self.assertEqual(stats['notes'], 5)
+        stats = check_converter(self, lump, 'hand-made', INSTRUMENTS)
+        self.assertEqual(stats['cuts'], 2)
+        self.assertEqual(stats['released by 11'], 1)
+        self.assertEqual(stats['notes'], 5)
 
 
 @needs_wad
@@ -336,19 +333,13 @@ class ConverterAgainstSecondDecoder(unittest.TestCase):
         cls.wad = mus.Wad.open()
         cls.instruments = mus2ay.load_instruments(cls.wad)
 
-    def check(self, name, layout):
-        check_converter(self, self.wad.lump(name), name, layout,
-                        self.instruments)
+    def check(self, name):
+        check_converter(self, self.wad.lump(name), name, self.instruments)
 
     def test_native12(self):
         for name in mus.UPSTREAM_SONGS:
             with self.subTest(song=name):
-                self.check(name, 'native12')
-
-    def test_mb6(self):
-        for name in mus.UPSTREAM_SONGS:
-            with self.subTest(song=name):
-                self.check(name, 'mb6')
+                self.check(name)
 
 if __name__ == '__main__':
     unittest.main()

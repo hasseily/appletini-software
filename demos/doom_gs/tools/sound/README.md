@@ -27,9 +27,9 @@ python3 -m unittest discover -s tests -p 'test_sound_*.py'
 
 `report.py --render` writes, for each of the 13 songs, in `build/sound/`:
 `SONG.wav` (native mode, PAL, stereo with the menu's default pans, the
-first 60 s or the whole song and one second of release, 44,100 Hz),
-`SONG.native12.ay` and `SONG.mb6.ay` (song files). It takes about 11 s on
-8 cores.
+first 60 s or the whole song and one second of release, 44,100 Hz) and
+`SONG.native12.ay` (the song file). It renders 4 songs at a time
+(`--jobs`, the ground rules' limit); run it under `nice -n 10`.
 
 One song at a time:
 
@@ -47,12 +47,12 @@ python3 tools/sound/mus2mid.py D_E1M1 build/sound/D_E1M1.mid    # MIDI
 | `mus.py` | WAD directory, upstream's song list, the MUS parser (first decoder) |
 | `mus2mid.py`, `midi.py` | The second decoder: MUS to a standard MIDI file, and a MIDI reader. It shares no MUS-reading code with `mus.py` |
 | `genmidi.py` | GENMIDI: carrier envelope, level, note offset, fixed note |
-| `tables.py` | Machines, clocks, voice layouts, period, bend, level and volume tables, tempo |
+| `tables.py` | Machines, clocks, the voice layout, period, bend, level and volume tables, tempo |
 | `mus2ay.py` | The converter: MUS to a song file |
 | `player.py` | The model of the 65C02 player: the specification and S2's oracle |
 | `ayrender.py` | AY register writes to WAV, after the card's YM2149 core and mixer |
 | `report.py` | All songs: the tables below, song files and WAVs |
-| `tables65.py` | S2: the player's tables as ca65 source (`build/sound65/LAYOUT/tables.inc`), from `tables.py` |
+| `tables65.py` | S2: the player's tables as ca65 source (`build/sound65/tables.inc`), from `tables.py` |
 | `run65.py` | S2: the 65C02 player (`src/sound`) on a2vm against `player.py`, its sizes and its cost (`src/sound/README.md`) |
 
 ## Facts checked in the HDL
@@ -99,14 +99,19 @@ python3 tools/sound/mus2mid.py D_E1M1 build/sound/D_E1M1.mid    # MIDI
   latch, `$0E/$16` write, `$0C/$14` idle for the first/second AY of a VIA;
   data through ORA without handshake. Chips 0 and 1 are the first and
   second AY behind VIA-A, 2 and 3 behind VIA-B; in Mockingboard mode only
-  0 and 2 exist. The tools use these chip numbers.
+  0 and 2 exist, so a card that cannot switch to native mode has no
+  music (`src/sound/README.md`, "No music"). The tools use these chip
+  numbers.
 
-## Voice layouts
+## Voice layout
+
+There is one layout, native12, with the card in native mode. The 6-voice
+fallback for Mockingboard mode (mb6 in native-sound.md) was removed on
+2026-09-30 (NATIVE.md 15.1, row 11): no tool, song file or test uses it.
 
 | Layout | Melodic voices (0-) | Drum voices | Left for effects |
 | --- | --- | --- | --- |
 | native12 (native mode) | chip 0 A, B, C; chip 1 A, B; chip 2 A, B (7) | chip 1 C, chip 2 C (2) | chip 3 A, B, C |
-| mb6 (fallback, Mockingboard mode) | chip 0 A, B; chip 2 A (3) | chip 0 C (1) | chip 2 B, C |
 
 A drum voice owns its chip's noise period (R6) and envelope (R11-R13).
 Voice numbers in the stream are the melodic voices, then the drums.
@@ -118,13 +123,13 @@ All numbers little-endian.
 | Offset | Size | Field |
 | --- | --- | --- |
 | 0 | 1 | format version, 1 |
-| 1 | 1 | layout: 0 native12, 1 mb6 |
+| 1 | 1 | layout: 0 (native12); any other value is refused |
 | 2 | 1 | NE, envelopes |
 | 3 | 1 | ND, drum recipes |
 | 4 | 2 | stream length |
 | 6 | 2 | loop offset in the stream (0: the start) |
 | 8 | 8 NE | envelopes: attack step (2), decay step (2), release step (2), sustain (1), flags (1: bit 0 = the level holds while the key is down) |
-| | 6 ND | drum recipes: tone note (1, 0 none), noise period (1, 0 none), envelope period for a loud hit (2, at the layout's PAL PSG clock), soft decay step (2) |
+| | 6 ND | drum recipes: tone note (1, 0 none), noise period (1, 0 none), envelope period for a loud hit (2, at the PAL PSG clock of native mode), soft decay step (2) |
 | | length | the stream |
 
 Steps are in 1/256 of an attenuation unit a tick; an attenuation unit is
@@ -157,8 +162,7 @@ added 1024 rounds to the nearest period. `$7v` is only sent for MUS
 system event 10 (all sounds off), which the WAD's songs do not use.
 The tables below give each song's size and bytes a second of music (44
 to 165). All 13 songs are 135,903 bytes of stream (137,151 bytes
-of song files) in native12 and 125,815 in mb6, against 245,179 bytes of
-MUS.
+of song files), against 245,179 bytes of MUS.
 
 ### The player
 
@@ -186,7 +190,7 @@ mouse-card VBL interrupt:
    ascending order, write each register that differs from the shadow, and
    R13 when a hit restarted the envelope.
 
-The first burst (`Player.reset`) writes R0-R12 of every chip of the layout:
+The first burst (`Player.reset`) writes R0-R12 of the four chips:
 periods and levels 0, mixer `$38`. The 65C02 player must produce the same
 writes in the same order after every interrupt; S2 compares them.
 
@@ -220,53 +224,27 @@ Native mode, 12 voices (7 melodic, 2 drums, 3 effects left free), PAL //e: inter
 | All | 245179 | | | | | | | | | 135903 | | 137151 | | | | | | | |
 
 NTSC //e (59.923 Hz), native mode: writes/s and p99 of bursts per song: D_E1M1 124/16, D_E1M2 91/11, D_E1M3 94/9, D_E1M4 112/18, D_E1M5 48/10, D_E1M6 146/15, D_E1M7 51/7, D_E1M8 42/11, D_E1M9 125/21, D_INTER 123/18, D_INTRO 60/12, D_VICTOR 77/12, D_INTROA 60/6.
-
-Fallback, Mockingboard mode, 6 voices (3 melodic, 1 drum, 2 effects left free), PAL //e:
-
-| Song | Steals | Drum steals | Release cuts | Stream bytes | Writes/s | Writes/interrupt mean | p99 | p99 of bursts | Max |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| D_E1M1 | 290 | 447 | 671 | 14523 | 79 | 1.57 | 11 | 12 | 14 |
-| D_E1M2 | 76 | 699 | 723 | 10373 | 35 | 0.70 | 6 | 8 | 14 |
-| D_E1M3 | 33 | 324 | 2305 | 13535 | 38 | 0.76 | 7 | 7 | 13 |
-| D_E1M4 | 326 | 598 | 925 | 14231 | 72 | 1.45 | 13 | 13 | 15 |
-| D_E1M5 | 494 | 0 | 963 | 6333 | 21 | 0.42 | 5 | 6 | 9 |
-| D_E1M6 | 389 | 296 | 633 | 7065 | 91 | 1.82 | 11 | 12 | 14 |
-| D_E1M7 | 422 | 6 | 681 | 6453 | 34 | 0.68 | 6 | 6 | 12 |
-| D_E1M8 | 148 | 203 | 81 | 5221 | 23 | 0.46 | 5 | 7 | 10 |
-| D_E1M9 | 1426 | 756 | 931 | 14534 | 58 | 1.16 | 12 | 13 | 15 |
-| D_INTER | 899 | 887 | 1454 | 22483 | 86 | 1.72 | 14 | 14 | 16 |
-| D_INTRO | 13 | 27 | 44 | 471 | 27 | 0.53 | 5 | 8 | 16 |
-| D_VICTOR | 795 | 299 | 707 | 10166 | 46 | 0.92 | 8 | 10 | 15 |
-| D_INTROA | 4 | 24 | 1 | 427 | 32 | 0.64 | 3 | 5 | 17 |
-| All | | | | 125815 | | | | | |
 <!-- report:end -->
 
 ### Against the design
 
 native-sound.md's figures come from its prototype (`summary50.md`, 50 Hz
-exactly). `tests/test_sound_mus2ay.py` checks every song and both layouts
-against them on the PAL machine the tables above use, with no exception:
-steals, drum steals, writes a second and p99 writes of a burst, each at
-or below the design's figure as `summary50.md` prints it (whole numbers),
-and the stream bytes of each layout.
+exactly). `tests/test_sound_mus2ay.py` checks every song against them on
+the PAL machine the tables above use, with no exception: steals, drum
+steals, writes a second and p99 writes of a burst, each at or below the
+design's figure as `summary50.md` prints it (whole numbers), and the
+stream bytes.
 
-- **Steals.** native12: equal in all 13 songs (0 in 8; D_INTER 52 of 3,250
+- **Steals.** Equal in all 13 songs (0 in 8; D_INTER 52 of 3,250
   notes, D_INTRO 7). Drum steals equal or lower (D_E1M6 32 against 33,
-  D_INTER 212 against 216). mb6: equal in all 13 songs, with the design's
-  idle-voice rule (below).
-- **Writes a second.** native12: at or below the design in all 13 songs
+  D_INTER 212 against 216).
+- **Writes a second.** At or below the design in all 13 songs
   (D_E1M1 122 against 134, D_INTER 118 against 132; 158,353 writes for
   the 13 songs). Main reasons: an idle voice that already holds the note's
   pitch is preferred (no tone write), an idle drum voice that last played
   the same recipe is preferred (no tone, noise, mixer or envelope period
   writes), and a drum voice's hits in one interrupt are latched so that
-  only the last one writes registers. mb6: at or below in all 13 songs;
-  D_E1M4 is 72.47 against the prototype's 71.77 before rounding (72 both
-  rounded). The difference is an attack the prototype skips: when a steal
-  gives a voice two notes in one tick and the first has an instant attack,
-  the prototype starts the second from full level, where this player
-  starts its attack from the level the voice had (the first note never
-  sounded), so Synth Brass 2 ramps up over a few interrupts.
+  only the last one writes registers.
 - **p99 writes of a burst.** At or below the design in all 13 songs.
   D_E1M8 is 11: 23 of its 2,823 bursts have 12 writes or more, and the
   99th percentile allows 29. It was 12 before the drum-voice preference,
@@ -279,8 +257,7 @@ and the stream bytes of each layout.
   `summary50.md`. Many figures here equal the design's (the rules are
   the same), and a figure at its limit can cross it with the rate or a
   tie-break. Run at an exact 50 Hz, as `summary50.md` was, every figure
-  of both layouts is still at or below the design except mb6 D_E1M4's
-  writes a second, 72.54, which rounds to 73.
+  is still at or below the design.
 - **Largest burst.** One more than the design in D_E1M2 (20), D_E1M5
   (17) and D_E1M8 (19). The largest burst depends on where the interrupts
   fall: at an exact 50 Hz D_E1M8's is 16. The largest of all is 33 writes
@@ -298,11 +275,10 @@ and the stream bytes of each layout.
 - **GENMIDI's note offset and fixed notes are applied** (the design left
   the note offset out): Rock Organ, Cello, Tremolo Strings, Kalimba,
   Melodic Tom and Reverse Cymbal play an octave lower, as DMX plays them.
-- **Voice choice.** Among idle voices, native12 takes one with the same
-  pitch, then the same envelope, then the longest idle (158,353 writes
-  for the 13 songs against 162,548 with the design's longest idle alone);
-  mb6 takes the longest idle, the design's rule (with the same-pitch
-  preference D_E1M2 had 83 steals against the design's 76). The rest is
+- **Voice choice.** Among idle voices, the converter takes one with the
+  same pitch, then the same envelope, then the longest idle (158,353
+  writes for the 13 songs against 162,548 with the design's longest idle
+  alone). The rest is
   the design's: the same channel and note reuse their voice; else the
   release that ends first; else steal, keeping the bass (of two equal
   lowest notes, the one on the lower voice, as the prototype does) and
@@ -323,8 +299,10 @@ and the stream bytes of each layout.
 - **Player start.** The mixer starts at `$38` (tones on, noises off), as
   the Bilestoad driver does, so a tone-only drum needs no mixer write.
 - **The first note of each voice sends its bend** (2 bytes a voice a song).
-- **Drum envelope periods** are stored for the layout's PAL clock; on
-  NTSC a loud drum decays 0.5% faster.
+- **Drum envelope periods** are stored for the PAL clock; on NTSC a loud
+  drum decays 0.5% faster.
+- **No 6-voice fallback.** The design's mb6 layout for a card in
+  Mockingboard mode is gone (NATIVE.md 15.1, row 11).
 
 ## What needs the owner's ear
 
@@ -361,7 +339,6 @@ The renders are the first time anyone hears this. To judge:
   refill and the underrun rule (silence, hold position) of native-sound.md
   4.3 are modelled by `run65.RingPlayer` (S2), which the 65C02 player is
   tested against, not by `player.py` itself.
-- Effects (S4) are not here. In mb6, chip 2's mixer (R7) is shared with
-  the effect voices and will have to be composed from both.
+- Effects (S4) are not here; they get chip 3.
 - Upstream's `tools/dmxmus.py` was not used as an extra oracle; the second
   decoder is `mus2mid.py` with `midi.py`.

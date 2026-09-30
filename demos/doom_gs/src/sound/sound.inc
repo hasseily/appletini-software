@@ -61,6 +61,10 @@ DRUM_SIZE       = 6             ; tone, noise, envelope period (2), step (2)
 MAX_ENVELOPES   = 20            ; the card's room for a song's tables:
 MAX_DRUMS       = 23            ; 160 + 138 bytes (native-sound.md 4.3: <= 300)
 
+; ---- snd_probe's answer (probe.s): A, and carry set with no music ---------
+SND_MUSIC       = 0             ; native mode, 4 chips: the music plays
+SND_NO_MUSIC    = 1             ; the card cannot switch: no music
+
 ; ---- snd_start's arguments and results ------------------------------------
 SONG_LOOP       = $01           ; snd_song_flags: loop at the end
 SONG_NTSC       = $80           ; snd_song_flags: NTSC tables and tempo

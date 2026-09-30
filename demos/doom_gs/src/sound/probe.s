@@ -1,28 +1,31 @@
-; snd_probe: how many AY chips the card in slot 4 has, so that the boot
-; code can pick the player's layout (docs/research/native-sound.md 5,
-; item 2: "the probe must find 2 chips and select mb6").
+; snd_probe: can the card in slot 4 play the music? The music needs the
+; Phasor's native mode, 4 AY chips (the layout native12); a card that
+; cannot switch to it has no music: the game runs without music and says
+; so (NATIVE.md 15.1, row 11: no 6-voice fallback).
 ;
 ; It asks for the Phasor's native mode ($C0C8, then $C0C5), resets the
 ; chips behind VIA-A, writes register 0 of chip 0 ($55), then register 0
 ; of chip 1 ($AA), and reads register 0 of chip 0 back (The Bilestoad's
 ; method, bilestoad/src/sound.s). A Phasor in native mode has two chips
-; behind each VIA, so chip 0 keeps $55: 4 chips, native12. A Mockingboard,
+; behind each VIA, so chip 0 keeps $55: 4 chips, music. A Mockingboard,
 ; or the Appletini's Phasor locked to Mockingboard mode (its audio_control
 ; bit 26, mockingboard.sv:38-41), ignores the mode switch and the chip
-; selects, so the second write lands on chip 0: $AA, 2 chips, mb6.
+; selects, so the second write lands on chip 0: $AA, 2 chips, no music.
 ;
-; Returns A = the layout's id (tables.py: 0 native12, 1 mb6). The chips
-; behind VIA-A are left reset, the card in the mode it accepted; snd_init
-; then sets the card up for the layout. Main loop, once, before snd_init.
-; It is boot code, not part of the player in the card.
+; Returns carry clear and A = SND_MUSIC (sound.inc) when the card is in
+; native mode: the boot code calls snd_init, and the game may call
+; snd_start. Otherwise carry set and A = SND_NO_MUSIC: the game says it
+; has no music and never calls snd_start (nor snd_refill or snd_stop, which
+; would do nothing); it still calls snd_init once, which leaves the player
+; stopped, so the VBL interrupt counts its VBLs and snd_tick returns at
+; once. The chips behind VIA-A are left reset, the card in the mode it
+; accepted. Main loop, once, before snd_init. It is boot code, not part of
+; the player in the card.
 
         .setcpu "65C02"
         .include "sound.inc"
 
         .export snd_probe
-
-PROBE_NATIVE12  = 0
-PROBE_MB6       = 1
 
         .segment "SNDBOOT"
 
@@ -60,11 +63,14 @@ snd_probe:
         stz     VIA_A_ORB               ; the chips reset again
         lda     #ORB_IDLE0
         sta     VIA_A_ORB
-        lda     #PROBE_NATIVE12
         cpx     #$55
-        beq     :+
-        lda     #PROBE_MB6
-:       rts
+        bne     @none
+        lda     #SND_MUSIC              ; chip 0 kept $55: 4 chips
+        clc
+        rts
+@none:  lda     #SND_NO_MUSIC           ; $AA reached chip 0: 2 chips
+        sec
+        rts
 
 ; register 0 of a chip of VIA-A = X; A = its latch ORB, Y = its write ORB
 probe_write:

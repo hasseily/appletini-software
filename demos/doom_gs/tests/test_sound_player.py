@@ -33,7 +33,11 @@ class Tables(unittest.TestCase):
     def test_psg_clock_doubles_in_native_mode(self):
         self.assertEqual(tables.psg_clock(PAL), 2031250)
         self.assertEqual(tables.psg_clock(NTSC), 2040968)
-        self.assertEqual(tables.psg_clock(tables.PAL_MOCKINGBOARD), 1015625)
+        self.assertEqual(tables.psg_clock(PAL), 2 * PAL.bus_hz)
+        # the music plays only in native mode: no 6-voice fallback in
+        # Mockingboard mode (NATIVE.md 15.1, row 11)
+        self.assertEqual(sorted(tables.MACHINES),
+                         ['ntsc-native', 'pal-native'])
 
     def test_period_table_formula(self):
         for machine in tables.MACHINES.values():
@@ -52,8 +56,7 @@ class Tables(unittest.TestCase):
         self.assertEqual(table[69], 289)       # 2031250 / 7040 = 288.5
         self.assertEqual(table[24], 3882)      # C1, the lowest that fits
         self.assertEqual(table[23], table[35])  # raised by an octave
-        self.assertEqual(tables.period_table(tables.PAL_MOCKINGBOARD)[69],
-                         144)
+        self.assertEqual(table[81], 144)       # A5: 2031250 / 14080 = 144.3
 
     def test_pitch_error_of_the_melodic_range(self):
         clock = tables.psg_clock(PAL)
@@ -99,9 +102,9 @@ class Tables(unittest.TestCase):
                 self.assertEqual(got, min(4095, max(1, want)))
                 self.assertLessEqual(abs(got - exact),
                                      0.5 + period / 4096 + 1e-9)
-        # A4 in Mockingboard mode (period 144) two semitones down: 144 x
-        # 251 / 2048 = 17.65 -> 18, period 162, 391.8 Hz for G4's 392.0
-        # (truncating gave 161, 394.3 Hz, 10 cents sharp)
+        # A5 (period 144) two semitones down: 144 x 251 / 2048 = 17.65
+        # -> 18, period 162, 783.7 Hz for G5's 784.0 (truncating gave 161,
+        # 788.5 Hz, 10 cents sharp)
         self.assertEqual(tables.bent_period(144, 0), 162)
 
     def test_ay_levels_from_the_hdl_table(self):
@@ -162,9 +165,9 @@ class Tables(unittest.TestCase):
         owned = tables.owned_registers(tables.NATIVE12)
         self.assertEqual(owned[0], (0, 1, 2, 3, 4, 5, 7, 8, 9, 10))
         self.assertEqual(owned[1], tuple(range(14)))
+        self.assertEqual(owned[2], (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+                                    12, 13))
         self.assertNotIn(3, owned)
-        owned = tables.owned_registers(tables.MB6)
-        self.assertEqual(owned[2], (0, 1, 7, 8))
 
 
 class SongFiles(unittest.TestCase):
@@ -204,9 +207,6 @@ class HandComputed(unittest.TestCase):
         _, init, _ = bursts(song([0x81, 0xff]), 0)
         self.assertEqual(init, [(chip, reg, 0x38 if reg == 7 else 0)
                                 for chip in range(4) for reg in range(13)])
-        _, init, _ = bursts(song([0x81, 0xff], layout=tables.MB6), 0,
-                            machine=tables.PAL_MOCKINGBOARD)
-        self.assertEqual([w[0] for w in init], [0] * 13 + [2] * 13)
 
     def test_note_then_release(self):
         # tick 0: A4 (period 289 = $121) at full level; tick 3: note off;

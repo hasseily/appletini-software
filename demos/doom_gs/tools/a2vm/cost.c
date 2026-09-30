@@ -797,9 +797,11 @@ static void access_write(a2vm_cost *c, a2vm *m, uint16_t address,
    instruction_turbo_q is taken at the opcode fetch, :1250, so an
    instruction that started slow keeps all its cycles). The caches are
    still filled on the way (turbo_map_fill and turbo_byte_fill, :1212-1215:
-   X_ROUTE and X_MEM_CAPTURE, in any mode). FW-S1 (native-sound.md 4.4,
-   a proposal, not in F1.2.1) exempts writes to the VIA registers ORB,
-   ORA, DDRB, DDRA, IFR, IER and ORA without handshake. */
+   X_ROUTE and X_MEM_CAPTURE, in any mode). FW-S1 (a proposal, not in
+   F1.2.1; docs/firmware/fws1-spec.md as corrected by fws1-review.md)
+   exempts writes to the VIA registers ORB and ORA without handshake
+   (0 and F) only: exempt writes to IFR, IER or ORA would release the
+   card's IRQ in TURBO and cause a second interrupt. */
 
 static int slowdown_hit(const a2vm_cost *c, uint16_t a, int write)
 {
@@ -808,7 +810,7 @@ static int slowdown_hit(const a2vm_cost *c, uint16_t a, int write)
         return 0;
     if (c->p.slowdown_via_exempt && write && iosel && !(a & 0x60)) {
         unsigned reg = a & 15;      /* not an SSI-263 write (addr bits 5-6) */
-        if (reg <= 3 || reg >= 13)
+        if (reg == 0 || reg == 15)
             return 0;
     }
     return 1;
