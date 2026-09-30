@@ -33,7 +33,7 @@ Rendering: the tone is averaged over each output sample (a box filter:
 the fraction of the sample's prescaled ticks the tone is high), noise and
 envelope are sampled. A DC blocker at about 3 Hz takes out the card's
 unipolar offset. The output is 16-bit PCM at 44,100 Hz, stereo by
-default, at the card's scale (--gain, default 1). Standard
+default, with a gain of 2 over the card's scale (--gain). Standard
 library only.
 """
 
@@ -50,11 +50,9 @@ from sound import tables  # noqa: E402
 
 SAMPLE_RATE = 44100
 DC_POLE = 0.9995
-LISTENING_GAIN = 1.0       # the card's own scale; one gain for all songs
-                           # keeps their relative loudness. It was 2 (+6
-                           # dB) before the converter's song gain; with
-                           # the songs at full level that clipped the 16-
-                           # bit output of 4 renders (10 to 72 samples)
+LISTENING_GAIN = 2.0       # +6 dB over the card's own scale, so that the
+                           # renders are not too quiet; one gain for all
+                           # songs keeps their relative loudness
 
 # Pan of each (chip, channel), chips numbered as tables.py does. The
 # HDL's pan word runs psg0 (VIA-A first AY), psg1 (VIA-B first AY), psg2

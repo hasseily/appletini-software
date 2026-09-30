@@ -124,34 +124,21 @@ def carrier_att(instrument):
     return math.floor(instrument.level * 1.5 + 0.5)
 
 
-def check_converter(test, lump, name, instruments, gain=None):
-    """The converter's stream for one lump, as shipped (the song gain of
-    mus2ay.convert, or `gain`), against the second decoder's events: every
-    note on (tick, note, attenuation, envelope), note off, pitch bend,
-    attenuation change, cut and drum hit (tick, recipe, attenuation) is
-    what the MUS events ask for, at their tick. An attenuation is the sum
-    of the General MIDI law's terms less the song gain the converter
-    reports, 0 to 80, and 80 (silent) when one term is 80 by itself (a
-    value of 12 or less, volume 0 included)."""
+def check_converter(test, lump, name, instruments):
+    """The converter's stream for one lump against the second decoder's
+    events: every note on (tick, note, attenuation, envelope), note off,
+    pitch bend, attenuation change, cut and drum hit (tick, recipe,
+    attenuation) is what the MUS events ask for, at their tick."""
     A = tables.ATTENUATION_OF_VALUE
     events = midi_events(lump)
-    song_file, stats = mus2ay.convert(mus.parse(lump, name), instruments,
-                                      gain)
-    song_gain = stats['gain']
-    if gain is not None:
-        test.assertEqual(song_gain, gain)
+    song_file, stats = mus2ay.Converter(mus.parse(lump, name),
+                                        instruments).convert()
     machine = tables.PAL_NATIVE
     stream = stream_by_tick(song_file)
     n_melodic = len(tables.NATIVE12.melodic)
 
     def loud(chan):
-        return (A[volume[chan]], A[expression[chan]])
-
-    def att(*terms):
-        """The stream's attenuation of the law's terms."""
-        if max(terms) >= tables.ATT_MAX:
-            return tables.ATT_MAX
-        return min(tables.ATT_MAX, max(0, sum(terms) - song_gain))
+        return A[volume[chan]] + A[expression[chan]]
 
     # The second decoder's view, tick by tick.
     program = [0] * 16
@@ -160,7 +147,7 @@ def check_converter(test, lump, name, instruments, gain=None):
     expression = [127] * 16
     on = defaultdict(Counter)        # tick -> (note, att, envelope)
     origin = defaultdict(set)        # (tick, note, att, envelope) ->
-    #                                  (channel, (velocity, carrier att))
+    #                                  (channel, velocity + carrier att)
     drums = defaultdict(Counter)     # tick -> (recipe, att)
     offs = defaultdict(Counter)      # tick -> mapped notes released
     bends = defaultdict(set)         # (tick, chan) -> values allowed
@@ -173,12 +160,12 @@ def check_converter(test, lump, name, instruments, gain=None):
     for tick, kind, chan, a, b in events:
         if kind == 'on' and chan == 15:
             recipe = mus2ay.drum_recipe(a, machine)
-            drums[tick][recipe, att(A[b], *loud(15))] += 1
+            drums[tick][recipe, min(tables.ATT_MAX, A[b] + loud(15))] += 1
         elif kind == 'on':
             ins = instruments[program[chan]]
             n = expected_note(ins, a)
-            base = (A[b], carrier_att(ins))
-            key = (n, att(*base, *loud(chan)),
+            base = A[b] + carrier_att(ins)
+            key = (n, min(tables.ATT_MAX, base + loud(chan)),
                    mus2ay.envelope_of(ins))
             on[tick][key] += 1
             origin[(tick,) + key].add((chan, base))
@@ -275,7 +262,7 @@ def check_converter(test, lump, name, instruments, gain=None):
                     test.assertTrue(any(t == tick for t, _ in louds),
                                     '%s volume at tick %d' % (name, tick))
                 else:
-                    allowed = {att(*base, *x)
+                    allowed = {min(tables.ATT_MAX, base + x)
                                for x in louds.get((tick, chan), ())}
                     test.assertIn(ops[0], allowed, '%s attenuation at '
                                   'tick %d' % (name, tick))
@@ -286,7 +273,8 @@ def check_converter(test, lump, name, instruments, gain=None):
             for v in voice_held:
                 c, base = voice_origin[v]
                 if c == chan:
-                    want = att(*base, *loud_at_end[tick, chan])
+                    want = min(tables.ATT_MAX,
+                               base + loud_at_end[tick, chan])
                     test.assertEqual(tables.LEVEL[voice_att[v]],
                                      tables.LEVEL[want],
                                      '%s level of voice %d at tick %d'
@@ -312,15 +300,30 @@ class ConverterAgainstSecondDecoderHandMade(unittest.TestCase):
     (on a melodic channel and on channel 15), and a carrier level."""
 
     def test_edge_cases(self):
-        from test_sound_mus2ay import EDGE_CASES, INSTRUMENTS, score
-        lump = score(*EDGE_CASES)
-        for gain in (None, 0, 30):
-            with self.subTest(gain=gain):
-                stats = check_converter(self, lump, 'hand-made',
-                                        INSTRUMENTS, gain)
-                self.assertEqual(stats['cuts'], 2)
-                self.assertEqual(stats['released by 11'], 1)
-                self.assertEqual(stats['notes'], 5)
+        from test_sound_mus2ay import INSTRUMENTS, score
+        lump = score(
+            (0, [0x40, 0, 4]),                   # program 4: level 10
+            (0, [0x40, 5, 90]),                  # expression 90
+            (0, [0x10, 0x80 | 60, 100]),         # 60, velocity 100
+            (0, [0x10, 64]),                     # 64, velocity 100 again
+            (0, [0x11, 0x80 | 50, 70]),
+            (0, [0x1f, 0x80 | 36, 110]),         # a drum
+            (2, [0x20, 90]),                     # bend channel 0
+            (0, [0x10, 0x80 | 64, 0]),           # 64 at volume 0: off
+            (1, [0x40, 3, 60]),                  # volume of channel 0
+            (1, [0x30, 14]),                     # reset: expression, bend
+            (1, [0x31, 11]),                     # all notes off, channel 1
+            (0, [0x11, 0x80 | 52, 127]),
+            (1, [0x3f, 10]),                     # all sounds off, drums
+            (1, [0x30, 10]),                     # all sounds off, channel 0
+            (0, [0x10, 0x80 | 67, 80]),
+            (0, [0x4f, 3, 50]),                  # drum channel volume
+            (2, [0x1f, 0x80 | 42, 127]),
+            (1, [0x3f, 14]))                     # reset on channel 15
+        stats = check_converter(self, lump, 'hand-made', INSTRUMENTS)
+        self.assertEqual(stats['cuts'], 2)
+        self.assertEqual(stats['released by 11'], 1)
+        self.assertEqual(stats['notes'], 5)
 
 
 @needs_wad
