@@ -3,12 +3,15 @@
 acceptance item 4).
 
 Usage:  python3 tools/a2vm/cost_report.py [--frames 20] [--out DIR]
-            [--markdown FILE] [--no-sensitivity]
+            [--markdown FILE] [--no-sensitivity] [--a2vm PATH]
 
 Runs the existing port's banked build (demos/doom, tools/a2vm/doom.py) on
 a2vm with the exact W65C02S core, the memory API and no input (E1M1,
-standing still), on the cost model's clock ("timed"), once per profile of
-tools/a2vm/costs/appletini.json. The first frame loads the level; the
+standing still), on the cost model's clock ("timed"), once under each of
+the profiles f121 and fastpath of tools/a2vm/costs/appletini.json (the
+pair profiles f121zp and fastzp arm the zero-page pair, which the
+existing port never enables, so on it they are f121's and fastpath's;
+tests/test_a2vm_cost.py checks that). The first frame loads the level; the
 report covers the --frames frames after it. For each profile it gives
 the time per frame (mean, median, range) and per phase (the phases the
 port's profiling build marks with its profile_stage byte), and compares
@@ -24,6 +27,11 @@ latency (axi_us), the parameter the copy phases depend on. axi_us is
 fitted to the hardware measurement, so the frame total is not an
 independent check; the phases that do not copy are.
 
+Every run is bounded (the ground rules): a2vm stops at FRAME_CYCLES a
+frame (--cycles), and a wall-time limit kills it. --a2vm names the
+machine to run (default build/a2vm/a2vm, which `make costreport`
+builds; the tests pass the one they built from the source).
+
 Writes OUT/cost-report.json and prints the tables as Markdown.
 Standard library only.
 """
@@ -38,8 +46,19 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.path.append(str(HERE.parent))
 import costs  # noqa: E402
 import doom  # noqa: E402
+from ref816 import bounded  # noqa: E402
+
+# The bound of a run: cycles a frame (a frame of the port takes at most
+# 8.5e7 on a2vm with any profile; the first, which loads the level, is
+# counted with the others) and host seconds.
+FRAME_CYCLES = 200000000
+RUN_SECONDS = 1200
+
+# The profiles this report runs (the others are the pair's, above).
+REPORTED = ('f121', 'fastpath')
 
 PHASES = ('idle', 'game_copy', 'game_tics', 'packet', 'debug',
           'render_copy', 'setup', 'walls', 'planes', 'things', 'masked',
@@ -96,14 +115,15 @@ def hardware_per_frame():
 
 
 def run(build, profile, out, frames, core='w65c02s', timed=True,
-        parameters=None):
-    """One run of the port; the report's lines after the first frame."""
+        parameters=None, a2vm=None):
+    """One run of the port on `a2vm` (default doom.A2VM); the report's
+    lines after the first frame."""
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     image = out / 'fast.img'
     image.write_bytes(build.image())
-    command = [str(doom.A2VM), '--rom', str(doom.DEFAULT_ROM), '--speed',
-               'turbo', '--core', core, '--amem']
+    command = [str(a2vm or doom.A2VM), '--rom', str(doom.DEFAULT_ROM),
+               '--speed', 'turbo', '--core', core, '--amem']
     command += build.fast_arguments(image) + build.hook_arguments()
     command += build.cost_arguments(profile, out, timed)
     if parameters:
@@ -114,11 +134,16 @@ def run(build, profile, out, frames, core='w65c02s', timed=True,
                      if not line.startswith(key + ' ')]
             text = '\n'.join(lines + ['%s %r' % (key, value)]) + '\n'
         path.write_text(text)
-    command += ['--boundaries', str(frames + 1), '--state',
-                str(out / 'state.json')]
-    result = subprocess.run(command, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT,
-                            universal_newlines=True)
+    command += ['--boundaries', str(frames + 1),
+                '--cycles', str((frames + 1) * FRAME_CYCLES),
+                '--state', str(out / 'state.json')]
+    try:
+        result = bounded.run(command, timeout=RUN_SECONDS,
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT,
+                             universal_newlines=True)
+    except subprocess.TimeoutExpired:
+        raise SystemExit('a2vm did not finish in %d s' % RUN_SECONDS)
     if result.returncode:
         raise SystemExit('a2vm failed:\n' + result.stdout)
     lines = (out / 'cost.jsonl').read_text().splitlines()
@@ -126,6 +151,9 @@ def run(build, profile, out, frames, core='w65c02s', timed=True,
     if len(rows) != frames + 1:
         raise SystemExit('%d frames reported, not %d' % (len(rows), frames + 1))
     state = json.loads((out / 'state.json').read_text())
+    if state['end'] != 'boundaries':
+        raise SystemExit('the run ended at %s, not at frame %d'
+                         % (state['end'], frames + 1))
     return rows[1:], state
 
 
@@ -251,7 +279,10 @@ def main(argv=None):
                         default=doom.ROOT / 'build' / 'a2vm' / 'cost')
     parser.add_argument('--markdown', type=Path)
     parser.add_argument('--no-sensitivity', action='store_true')
+    parser.add_argument('--a2vm', type=Path, default=doom.A2VM,
+                        help='the machine (default %(default)s)')
     arguments = parser.parse_args(argv)
+    a2vm = arguments.a2vm
     build = doom.Build()
     out = arguments.out
     out.mkdir(parents=True, exist_ok=True)
@@ -261,14 +292,15 @@ def main(argv=None):
                   hardware=dict(ms_per_frame=HARDWARE_MS,
                                 phases_ms=HARDWARE_PHASES_MS,
                                 counters_per_frame=hardware_per_frame()))
-    for profile in costs.profiles():
+    for profile in REPORTED:
         mhz = costs.parameters(profile)['fabric_mhz']
-        rows, state = run(build, profile, out / profile, arguments.frames)
+        rows, state = run(build, profile, out / profile, arguments.frames,
+                          a2vm=a2vm)
         s = summary(rows, mhz)
         s['host_seconds'] = state['host_seconds']
         report['profiles'][profile] = s
     rows, _ = run(build, 'f121', out / 'compat', arguments.frames,
-                  core='py65', timed=False)
+                  core='py65', timed=False, a2vm=a2vm)
     report['compatibility'] = summary(rows, costs.parameters('f121')
                                       ['fabric_mhz'])
     f121, fast = report['profiles']['f121'], report['profiles']['fastpath']
@@ -282,7 +314,8 @@ def main(argv=None):
             else:
                 rows, _ = run(build, 'f121', out / ('axi-%g' % value),
                               arguments.frames, parameters=dict(
-                                  axi_us=value, axi_write_us=value))
+                                  axi_us=value, axi_write_us=value),
+                              a2vm=a2vm)
                 s = summary(rows, costs.parameters('f121')['fabric_mhz'])
             runs.append(dict(axi_us=value, mean_ms=s['mean_ms'],
                              copy_ms=s['phases_ms']['game_copy'] +

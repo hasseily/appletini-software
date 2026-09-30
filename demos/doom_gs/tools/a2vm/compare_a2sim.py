@@ -58,8 +58,14 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.path.append(str(HERE.parent))
 import doom  # noqa: E402
 import shot  # noqa: E402
+from ref816 import bounded  # noqa: E402
+
+# The wall-time bound of an a2vm run (a2vm itself stops at --cycles, or
+# at its default limit); files are bounded at 1 GiB each.
+A2VM_SECONDS = 1800
 
 DEFAULT_INPUT = """\
 boundary 1 hold 87
@@ -277,9 +283,13 @@ class Comparison:
         state = self.work / ('state.json' if snapshots else 'state-bare.json')
         command = self.a2vm_command(snapshots, path) + ['--state', str(state)]
         started = time.perf_counter()
-        result = subprocess.run(command, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT,
-                                universal_newlines=True)
+        try:
+            result = bounded.run(command, timeout=A2VM_SECONDS,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT,
+                                 universal_newlines=True)
+        except subprocess.TimeoutExpired:
+            raise SystemExit('a2vm did not finish in %d s' % A2VM_SECONDS)
         wall = time.perf_counter() - started
         if result.returncode:
             raise SystemExit('a2vm failed:\n' + result.stdout)

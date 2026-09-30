@@ -51,10 +51,30 @@ enum {
  *            of implied, indexed, read-modify-write, stack, branch and
  *            decimal instructions, the discarded fetch of interrupt
  *            entry, and the cycles of WAI and STP. Every dummy cycle is a
- *            read: the 65C02 has no dummy writes. */
+ *            read: the 65C02 has no dummy writes.
+ *
+ * The flag EA marks the cycles of the Appletini core's six "data_ea"
+ * states (w65c02_core.sv:1049-1069; docs/firmware/zpbank-review.md,
+ * finding 7), the only cycles whose address is an instruction's
+ * effective address in memory:
+ *   DATA_EA   ST_MEM_READ, ST_RMW_READ (reads) and ST_MEM_WRITE,
+ *             ST_RMW_WRITE (writes)
+ *   DUMMY_EA  ST_RMW_MODIFY (the read-modify-write's second read) and
+ *             ST_DECIMAL_EXTRA (the decimal cycle of ADC and SBC)
+ * Every other cycle is not EA: opcode and operand fetches, dummy reads
+ * of PC, the same-page STA a,X / a,Y false read of its target
+ * (ST_INDEX_DUMMY), zero-page pointers, the zero-page reads of BBR and
+ * BBS, JMP (a) and (a,X) pointers, stack cycles and vectors. The
+ * zero-page bank pair (a2vm.h) redirects only EA cycles.
+ * CPU65C02_BASE_KIND gives the kind without the flag. */
 typedef enum {
-    CPU65C02_OPCODE, CPU65C02_OPERAND, CPU65C02_DATA, CPU65C02_DUMMY
+    CPU65C02_OPCODE, CPU65C02_OPERAND, CPU65C02_DATA, CPU65C02_DUMMY,
+    CPU65C02_EA = 4,
+    CPU65C02_DATA_EA = CPU65C02_DATA | CPU65C02_EA,
+    CPU65C02_DUMMY_EA = CPU65C02_DUMMY | CPU65C02_EA
 } cpu65c02_kind;
+
+#define CPU65C02_BASE_KIND(kind) ((kind) & 3)
 
 typedef enum {
     CPU65C02_RUNNING,

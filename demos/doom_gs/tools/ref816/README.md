@@ -28,6 +28,13 @@ run, byte for byte. The machine reads no host clock and nothing random.
 | `refimage.py` | Memory images: read, write, and a sparse memory |
 | `lists.py` | Upstream's column records (`lists.inc`) decoded from memory |
 | `capture.py` | Captures of the record replay (`R_DrawLists`) at the frames of milestone 5, into `build/captures/` |
+| `points.c`, `points.h` | Points of a run (a routine's entry, a frame, a cycle count, with hits, a note and a memory test), for `--dump-at` and `--poke-file` |
+| `inject.c`, `inject.h` | Pokes at points (`--poke-file`) and lumps placed in the game's WAD (`--wad`, `--lump`) |
+| `calllog.c`, `calllog.h` | The call log (`--call-log`): each call of chosen routines, registers and declared memory at entry and return |
+| `dumps.py` | Dump streams read back, points written with symbols, and the check against the two-run method |
+| `calls.py` | Call logs read back, routines written with symbols, and a command that logs routines through a script or a demo |
+| `lumps.py` | DEMO1 and DEMO2 of `DOOM1.WAD` placed as DEMO3, and the title loop played to a demo's end |
+| `divscan.py` | The scan for division by zero over the coverage scripts and the three demos |
 
 Build and check:
 
@@ -395,3 +402,224 @@ of unknown kind or a list that does not reach its end.
 loading options on hand-made routines; `tests/test_ref816_capture.py`
 captures three E1M1 frames and two demo frames and checks the manifest,
 the `--call` oracle, and a run on a poisoned screen.
+
+## Points, dumps, pokes and call logs
+
+These are for milestone 6 (`docs/NATIVE.md` section 11, "Tool
+additions"): many states and many calls from one run, instead of a rerun
+from power-on for each. None of them changes the run: a run with them
+ends with the RAM, the marks and the screen dumps of the same run
+without them (tests of each below), except for the memory a poke or a
+lump writes on purpose.
+
+### Points
+
+A point is KEY=VALUE items separated by commas (`points.h`). The first
+says what it is:
+
+| First item | The point |
+| --- | --- |
+| `pc=ADDR` | each time the CPU reaches ADDR (hex, PBR and PC), before the instruction there, as `--mark` |
+| `frame=SET` | the start of each video frame of SET: its first instruction boundary, after the steps of the input due then (as `--frames` and `--shot-frame`) |
+| `cycle=SET` | for each N of SET, the first instruction boundary at which the CPU has made N cycles or more (as `--cycles`) |
+
+Then, in any order: `hits=SET` (pc only: which arrivals, from 1; default
+all), `after=NOTE` (only once the input's note NOTE has come),
+`if=ADDR:SIZE:TEST:VALUE` (only when the 1-, 2- or 4-byte value at ADDR
+passes `eq`, `ne`, `lt`, `le`, `gt` or `ge` VALUE, unsigned) and, for
+dumps, `ranges=R+R...` (a bank `BB`, banks `BB-BB`, or `ADDR:LEN`; all
+RAM by default, in the order of `--dump-ram`). SET is `N`, `N-M`,
+`N-M/K`, `N-/K` or `all`. An arrival that fails `after` or `if` is not
+a hit, so `pc=03CEB7,after=cap,hits=1` is the first `G_Ticker` after the
+note `cap`, and `pc=03CEB7,if=02C6AF:4:ge:1200,hits=1` the first
+`G_Ticker` at gametic 1200 or later. `dumps.resolve` writes the
+addresses of `pc`, `if` and `ranges` from symbols of the link map
+(`pc=G_Ticker,if=_g_gametic:4:ge:1200`).
+
+### --dump-at and the dump stream
+
+    ref816 ... --dump-at POINT [--dump-at POINT ...] --dump-stream FILE
+
+dumps memory each time a point fires, into one stream (`-` for stdout,
+with `--state`): a line of JSON, `{"format": "ref816-dump-stream 1",
+"points": [...]}`; for each dump a line of JSON followed by its bytes;
+and a last line `{"end": REASON, "dumps": N}`. A dump's line has `dump`
+(from 1), `point` (the index of its `--dump-at`, from 0), `hit` (the
+arrival, or the frame or cycle count the point fired for), `note` (the
+last note of the input), `frame`, `clock`, `cycles`, `instructions`,
+`cpu` and `switches` as the final state has them, `peek` (the `--peek`
+ranges at that moment, such as the gametic), `ranges` (`[address,
+length]` each) and `bytes`, the length of what follows. `dumps.read`
+yields the dumps of a file or a pipe one at a time; `dumps.Stream` reads
+a whole file.
+
+**Bounds.** A dump of all RAM is 8.5 MB, and a point such as `cycle=all`
+or `pc=ADDR` without `hits=` fires thousands of times a second. The stream
+may grow to `--dump-limit BYTES` (default 1 GiB) and hold `--dump-max N`
+dumps (default: no count). A dump that would pass either is not written:
+the stream ends with `{"end": "dump-limit"}` or `{"end": "dump-max"}`
+and the run fails with status 2 and a message naming the point. Every
+frame and cycle point moves on past the moment it fired for, and every
+turn of the run's loop makes progress; the machine checks both and fails
+(status 2) rather than dump or poke again at one moment for ever (on
+2026-09-30 a planted bug in `points.c` that broke the first wrote a
+90 GB stream before these checks existed).
+
+**Check (milestone 6, acceptance 1).** `python3 tools/ref816/dumps.py
+--verify` makes the six captures of `docs/research/native-verification.md`
+section 3.1 both ways: the two-run method (a run with `--mark` for the
+entries, then a run to the cycle count of the first entry after the note
+`cap` with `--cycles` and `--dump-ram`), and one run of each script
+with `--dump-at pc=ROUTINE,after=cap,hits=1` for `G_Ticker` and
+`R_DrawLists`. All six dumps are equal byte for byte, all 8,519,680 bytes
+of RAM, with the registers, cycles and instructions of the two-run
+method, and the cycle counts are those of the section (172,980,261 and
+172,583,162 for E1M1; 404,818,326 and 405,384,889 for E1M3; 261,613,133
+and 262,188,510 for the demo). About 15 s. `tests/test_ref816_dump.py`
+runs it, and checks hits, frames, cycles, notes, tests, ranges and the
+stream format on a hand-made loop, each against the two-run method.
+
+### --poke-file
+
+    ref816 ... --poke-file FILE
+
+writes memory at points of the run. A line of the file is `POINT ADDR
+DATA` (`#` starts a comment): DATA is hex bytes, or `@PATH`, the bytes of
+a file (relative to the poke file). The bytes go into RAM as `--load`
+puts them: no I/O and no shadowing. At a moment where several fire, the
+pokes come first, in the order of their lines, then the dumps. A pc
+point writes before the instruction at its address runs.
+
+### --wad, --lump and lumps.py
+
+    ref816 ... --wad 100000 --lump DEMO3:7E0000:build/ref816/lumps/DEMO1.lmp
+
+puts the bytes of the file at `$7E:0000` and points the directory entry
+`DEMO3` of the game's WAD in RAM (at `MM_WAD`, `$10:0000`) there: offset
+`$7E0000 - $100000`, the file's size. The release's resident WAD names
+DEMO3 only, and DEMO3 at `$10:8984` is followed by `M_DOOM` and
+`TEXTURE1`, so DEMO1 (20,118 bytes) and DEMO2 (15,358) cannot go over it;
+the title loop asks for "demo3" by name, so a lump placed under that
+entry plays in its place. The machine refuses a name the directory has
+not exactly once, a place outside RAM or across a 64 KB bank (upstream
+uses lumps in place, never across banks), and a place that is not all
+zero.
+
+`python3 tools/ref816/lumps.py DEMO1` prints the options (`--dest` for
+another place); `--play` runs the title loop with the lump to the demo's
+end (`lumps.demo_script`) and reports the tics it lasted. Measured:
+DEMO1 plays E1M5 for 5,026 tics and DEMO2 E1M3 for 3,836 tics, the
+counts of their lumps, to their end marker, without a problem. The
+default place, bank `$7E`: upstream's level loader takes its window
+banks below `MM_MUSBANK` (`$6A`) and the songs follow it; at the end of
+all four coverage scripts, banks `$79-$7F` hold only the two bytes of the
+loader's memory probe at `$bb:8000`. `tests/test_ref816_inject.py`
+checks that DEMO3 placed at `$7E:0000` under its own entry gives the
+release's run mark for mark, with the same screen dumps, and that DEMO1
+starts E1M5.
+
+### --call-log
+
+    ref816 ... --call-log ROUTINE [--call-log ROUTINE ...] --call-log-file FILE
+
+logs every call of each ROUTINE, `ADDR[,KEY=VALUE...]` (`calllog.h`):
+
+| Key | Meaning |
+| --- | --- |
+| `name=NAME` | its name in the log |
+| `in=R+R...`, `out=R+R...`, `mem=R+R...` | memory read at the entry, at the return, or both: `ADDR:LEN`, `d+OFF:LEN` (bank 0, D + OFF, the direct page) or `s+OFF:LEN` (bank 0, S + OFF after the call instruction: `s+1:3` is a JSL's return address); d and s addresses are fixed at the entry |
+| `jumps=1` | a JMP or JML that lands on ADDR is a call too (thinker functions, entered by `JML [dp]`) |
+| `entry=1` | log the entry only: no return, no out |
+| `hits=`, `after=`, `if=` | which calls, as for points (`if` at the entry) |
+
+A call starts after the JSR, JSL or JSR (a,x) (or, with `jumps=1`, the
+jump) that reaches ADDR, and returns at the first RTS, RTL, RTI or
+firmware trap after which S is above S at the entry. An interrupt inside
+a call returns with S at or below it, so it does not end the call; calls
+made inside interrupts are logged like the others, with `irq` above 0.
+
+The log may grow to `--call-log-limit BYTES` (default 1 GiB): the line
+that passes it is the last, and the run fails with status 2.
+
+**Format** (`ref816-call-log 1`, JSON lines). The first line lists the
+routines: index, name, entry, jumps, entry_only, and their in and out
+ranges (`{"base": "abs"|"d"|"s", "offset", "length"}`). Then a line for
+each call, written when it returns (a callee before its caller), or at
+its entry with `entry=1`:
+
+    {"call": 12, "routine": 0, "hit": 3, "from": 205847, "via": "jsl",
+     "parent": 0, "depth": 0, "irq": 0, "frame": 6357,
+     "cycles": 303834455, "instructions": 79176734,
+     "in": {"pc": 353192, "a": 12954, "x": 65498, "y": 65498, "s": 16365,
+            "d": 2304, "dbr": 2, "p": 128, "e": 0,
+            "mem": ["6ddb0200"]},
+     "out": {"exit": "rtl", "pc": 205851, "a": 65125, "x": 65427, ...,
+             "cycles": 303834863, "instructions": 79176861,
+             "interrupts": 0, "mem": []},
+     "returned": true}
+
+`call` numbers the logged calls from 1 in the order of their entries;
+`hit` is the routine's own count (as `hits=` counts); `from` is the
+address of the calling instruction; `via` is `jsr`, `jsl`, `jsr_x`,
+`jmp`, `jml`, `jmp_ind`, `jmp_x` or `jml_ind`; `parent` is the innermost
+logged call open at the entry (0 for none) and `depth` how many are
+open; `irq` counts the interrupts open. `frame`, `cycles` and
+`instructions` are the machine's at the entry; those of `out` at the
+return, interrupts included. `mem` is a hex string a range. A call still
+open when the run ends has `"returned": false` and `"exit": null`, with
+the registers of the end; an `entry=1` line has `"out": null`. The last
+line is `{"end": true, "calls": N, "arrivals": [...]}`, the calls of each
+routine that passed `after` and `if`, logged or not. The log uses the
+step hook, so it goes with neither `--trace`, `--call` nor `--capture`.
+
+**Routine oracles from real play.** `calls.py` writes routines with
+symbols, and ranges of the direct page as the game's code writes them:
+`dp:SYMBOL:LEN` is D plus SYMBOL's offset from the base of the direct
+page (the section `ztiny`; `.tiny` in `tools/v816/expr.py`). For
+example, upstream's `FixedMul` takes a in X:C and b in `_Dp[0-3]` and
+returns X:C (`m_fixed65.s`):
+
+    python3 tools/ref816/calls.py title "FixedMul,in=dp:_Dp:4"
+    python3 tools/ref816/calls.py DEMO1 "FixedMul,in=dp:_Dp:4" \
+        "P_AproxDistance,in=dp:_Dp:4"
+
+log each call's registers and `_Dp[0-3]` at the entry and the registers
+at the return, through the title script or the whole of DEMO1, into
+`build/ref816/calls/`. `calls.calls(path)` yields each call with its
+memory as bytes. Declare what a routine reads beyond its registers with
+`in=`, and what it writes with `out=`, from its source's header comment;
+the test `test_fixed_mul_is_exact_on_every_call_of_the_title_demo`
+checks every logged `FixedMul` of the title demo against the exact
+product, as an example. Never log the outputs of the vendor runtime's
+routines (`cal_integer.s`): the owner ruled out testing them as black
+boxes; `divscan.py` logs their entries only (`entry=1`).
+
+### Division by zero: divscan.py
+
+    python3 tools/ref816/divscan.py [--jobs 2] [--runs title,DEMO1,...]
+
+runs the four coverage scripts and the title loop to the end of each of
+the three demos (DEMO1 and DEMO2 placed by `lumps.py`) with a call log of
+the game's five integer divides, entries only, and reports every call
+with a zero divisor, by call site and source line, into
+`build/ref816/divscan/report.json`. The routines and where each takes its
+divisor come from the game's own call sites, never from `cal_integer.s`:
+`_UDivMod16`, `_Div16` and `_Mod16` take the dividend in A and the
+divisor in X (`i_viigs65.s:1371-1373`, `p_floor65.s:1222-1224`,
+`p_enemy65.s:592-594`); `_UDivMod32` and `_Div32` take them in `_Dp[0-3]`
+and `_Dp[4-7]` (`g_game65.s:808-816`, `s_sound65.s:643-647`). A call site
+is placed on its line through the nearest label of the link map and the
+count of JSL instructions to the routine after it (`--sites` prints the
+46 sites of the sources, all found in the image). The tests forbid the
+scan to open `cal_integer.s`.
+
+**Result, 2026-09-30:** 50,753 calls from the game's code, at 31 of the
+46 call sites, and **no zero divisor**, in title (3,691 calls), newgame
+(3,807), viewsize (3,859), tour (6,485), DEMO1 (15,296), DEMO2 (9,432)
+and DEMO3 (8,183); D was `$0900` at every call, and no call came from
+inside the vendor runtime. The 15 sites no run reached:
+`p_floor65.s:1224`, `r_wall65.s:1585`, `g_game65.s:1356`,
+`g_game65.s:1397`, `r_iigs65.s:410`, `r_iigs65.s:1134` (the slow paths
+of `R_PointToAngle3` and its older twin), `f_finale65.s:187`, the six of
+`m_menu65.s` (the benchmark) and `am_map65.s:2694` and `:2714` (the
+automap's clipping). About 25 s with 2 jobs.

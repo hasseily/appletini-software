@@ -83,6 +83,10 @@ class Build(unittest.TestCase):
         self.assertIn('all checks passed', result.stdout)
         # The one opcode where the core leaves the datasheet is named.
         self.assertIn('opcode 5c takes 4 cycles', result.stdout)
+        # Every opcode, in both decimal modes, against the Appletini
+        # core's data_ea states (the zero-page pair redirects only those).
+        self.assertIn('data_ea: 512 opcode and decimal-mode cases classed '
+                      "as the core's states", result.stdout)
 
     def test_bench_runs_agree(self):
         out, _ = support.a2vm_build()

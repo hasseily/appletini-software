@@ -87,12 +87,66 @@
  *
  * --trace does not go with --call or --capture (they share the hooks).
  *
+ * Points, pokes and logs (points.h, inject.h, calllog.h):
+ *
+ *   --dump-at POINT    dump memory each time POINT fires: pc=ADDR,
+ *                      frame=SET or cycle=SET, with hits=, after=, if=
+ *                      and ranges= (points.h); repeatable
+ *   --dump-stream FILE where the dumps go, one after the other ("-" for
+ *                      stdout, with --state): a line of JSON a dump, then
+ *                      its bytes (the format is below)
+ *   --dump-limit BYTES the largest the stream may grow (default 1 GiB,
+ *                      1073741824; 0x for hex)
+ *   --dump-max N       the most dumps it may hold (default: no count)
+ *                      A dump that would pass either is not written: the
+ *                      stream ends with {"end": "dump-limit"} or
+ *                      {"end": "dump-max"} and the run fails (status 2)
+ *   --poke-file FILE   write memory at points of the run: lines of POINT
+ *                      ADDR DATA (inject.h); repeatable
+ *   --call-log ROUTINE log every call of ROUTINE: ADDR with name=, in=,
+ *                      out=, mem=, jumps=, entry=, hits=, after=, if=
+ *                      (calllog.h); repeatable
+ *   --call-log-file FILE
+ *                      where the call log goes
+ *   --call-log-limit BYTES
+ *                      the largest the call log may grow (default 1 GiB);
+ *                      a line that passes it ends the run with an error
+ *                      (status 2)
+ *   --wad ADDR        the game's WAD in RAM (hex), for --lump
+ *   --lump NAME:DEST:FILE
+ *                      put FILE at DEST (hex) and point the WAD's entry
+ *                      NAME there, before the run (inject.h); repeatable
+ *
+ * --call-log does not go with --trace, --call or --capture (the step
+ * hook). At a moment where several fire, the pokes come first, in the
+ * order given, then the dumps, in the order of the --dump-at options.
+ *
+ * The dump stream starts with a line
+ *   {"format": "ref816-dump-stream 1", "points": ["POINT", ...]}
+ * then, for each dump, a line
+ *   {"dump": N, "point": I, "hit": H, "note": "...", "frame": F,
+ *    "clock": C, "cycles": Y, "instructions": T, "cpu": {...},
+ *    "switches": {...}, "peek": {...}, "ranges": [[ADDR, LEN], ...],
+ *    "bytes": B}
+ * followed by the B bytes of the ranges in order: N counts the dumps
+ * from 1, I is the index of the --dump-at (from 0), H the arrival (pc) or
+ * the frame or cycle count the point fired for, "note" the last note of
+ * the input, and cpu, switches and peek (the --peek ranges now) as in the
+ * final state. The last line is {"end": "REASON", "dumps": N}.
+ *
+ * Every frame or cycle point moves on past the moment it fired for, and
+ * each turn of the run's loop makes progress; the machine checks both and
+ * fails (status 2) rather than dump or poke again at the same moment.
+ *
  * The final state is JSON: why the run ended, time, registers, a hash of
  * all RAM, the soft switches, the text page, and the counts of
  * everything the machine met that it does not model.
  */
+#include "calllog.h"
 #include "footprint.h"
 #include "iigs.h"
+#include "inject.h"
+#include "points.h"
 #include "program.h"
 #include "trace.h"
 
@@ -105,9 +159,14 @@
 
 /* The cycles a --call may run without --frames or --cycles. */
 #define CALL_CYCLES 1000000000u
+/* The default bounds of the dump stream and the call log, in bytes. */
+#define STREAM_LIMIT ((uint64_t)1 << 30)
+/* Bytes kept free under --dump-limit for the stream's last line. */
+#define END_RESERVE 128u
 
 enum {
     MAX_LIST = 256,
+    MAX_POINTS = 64,
     SHOT_START = 0x2000, SHOT_LENGTH = 0x8000,
     HEADER = 32,
     TEXT_ROWS = 24, TEXT_COLUMNS = 40
@@ -126,6 +185,13 @@ typedef struct {
     const char *path;
     int image;                  /* --load-image: the records of an image */
 } file_range;
+
+/* A --lump: the entry's name, where the bytes go, the file. */
+typedef struct {
+    char name[9];
+    uint32_t dest;
+    const char *path;
+} lump_option;
 
 /* A --reg: which register, and its value. */
 typedef struct {
@@ -154,7 +220,33 @@ typedef struct {
     footprint_config footprint; /* --call and --capture */
     trace_config trace;         /* trace.path is NULL without --trace */
     int trace_options;          /* --trace-* options given */
+    point dumps[MAX_POINTS];    /* --dump-at */
+    const char *dump_texts[MAX_POINTS];
+    unsigned dump_count;
+    const char *dump_stream;
+    uint64_t dump_limit, dump_max;
+    const char *poke_files[MAX_LIST];
+    unsigned poke_file_count;
+    calllog_routine routines[CALLLOG_ROUTINES];     /* --call-log */
+    unsigned routine_count;
+    const char *call_log;
+    uint64_t call_log_limit;
+    int have_wad;
+    uint32_t wad;
+    lump_option lumps[MAX_LIST];
+    unsigned lump_count;
 } options;
+
+/* What happens at points of the run: the pokes, the dumps, the call
+   log, and the last note of the input. */
+typedef struct {
+    poke_list pokes;
+    FILE *stream;
+    uint64_t dumps;
+    uint64_t stream_bytes;      /* written to the stream so far */
+    calllog *log;
+    char note[PROGRAM_NAME];
+} extras;
 
 /* How the run ended. */
 typedef struct {
@@ -291,6 +383,21 @@ static void load_files(iigs *m, const options *o)
         uint8_t *data = read_file(r->path, &length);
         if (!iigs_load(m, r->address, data, length))
             fail("--load %s: outside RAM", r->path);
+        free(data);
+    }
+}
+
+/* --lump, after the loads. */
+static void place_lumps(iigs *m, const options *o)
+{
+    char error[512];
+    for (unsigned i = 0; i < o->lump_count; i++) {
+        const lump_option *l = &o->lumps[i];
+        size_t length;
+        uint8_t *data = read_file(l->path, &length);
+        if (!lump_place(m, o->wad, l->name, l->dest, data, length, error,
+                        sizeof error))
+            fail("%s", error);
         free(data);
     }
 }
@@ -482,6 +589,222 @@ static void write_state(const iigs *m, const options *o, const ending *end,
     fputs("  ]\n}\n", out);
 }
 
+/* ---- dumps ---- */
+
+/* A line of the stream, made in memory so that its length is known
+   before it is written. */
+typedef struct {
+    char *data;
+    size_t length, capacity;
+} text;
+
+static void add_text(text *t, const char *format, ...)
+{
+    for (;;) {
+        va_list arguments;
+        va_start(arguments, format);
+        size_t room = t->capacity - t->length;
+        int n = vsnprintf(t->data ? t->data + t->length : NULL, room, format,
+                          arguments);
+        va_end(arguments);
+        if (n < 0)
+            fail("cannot format a dump's header");
+        if ((size_t)n < room) {
+            t->length += (size_t)n;
+            return;
+        }
+        size_t capacity = t->capacity ? 2 * t->capacity : 4096;
+        while (capacity - t->length <= (size_t)n)
+            capacity *= 2;
+        char *grown = realloc(t->data, capacity);
+        if (!grown)
+            fail("out of memory");
+        t->data = grown;
+        t->capacity = capacity;
+    }
+}
+
+static void json_text(text *out, const char *value)
+{
+    add_text(out, "\"");
+    for (; *value; value++)
+        if (*value == '"' || *value == '\\' || (unsigned char)*value < 0x20)
+            add_text(out, "\\u%04x", (unsigned char)*value);
+        else
+            add_text(out, "%c", *value);
+    add_text(out, "\"");
+}
+
+static void stream_header(extras *x, const options *o)
+{
+    text line = { NULL, 0, 0 };
+    add_text(&line, "{\"format\": \"ref816-dump-stream 1\", \"points\": [");
+    for (unsigned i = 0; i < o->dump_count; i++) {
+        if (i)
+            add_text(&line, ", ");
+        json_text(&line, o->dump_texts[i]);
+    }
+    add_text(&line, "]}\n");
+    if (line.length + END_RESERVE > o->dump_limit)
+        fail("--dump-limit %" PRIu64 " is too small for the stream's first "
+             "line", o->dump_limit);
+    fwrite(line.data, 1, line.length, x->stream);
+    x->stream_bytes += line.length;
+    free(line.data);
+}
+
+/* The stream's last line. */
+static void stream_end(extras *x, const char *reason)
+{
+    int n = fprintf(x->stream, "{\"end\": \"%s\", \"dumps\": %" PRIu64 "}\n",
+                    reason, x->dumps);
+    if (n > 0)
+        x->stream_bytes += (uint64_t)n;
+}
+
+/* The bytes of `length` from `address` (all in RAM: points.c checked). */
+static void dump_range(FILE *out, const iigs *m, uint32_t address,
+                       uint32_t length)
+{
+    while (length) {
+        uint32_t chunk = IIGS_BANK - (address & 0xffff);
+        if (chunk > length)
+            chunk = length;
+        unsigned bank = address >> 16;
+        const uint8_t *data = bank < IIGS_RAM_BANKS ? m->ram + address
+            : m->mega + (address - 0xe00000u);
+        fwrite(data, 1, chunk, out);
+        address += chunk;
+        length -= chunk;
+    }
+}
+
+/* Dump for the --dump-at `index`, unless the dump would pass --dump-max
+   or --dump-limit: then the stream ends and the run fails. */
+static void write_dump(extras *x, const iigs *m, const options *o,
+                       unsigned index)
+{
+    const point *p = &o->dumps[index];
+    const cpu816 *c = &m->cpu;
+    FILE *out = x->stream;
+    text h = { NULL, 0, 0 };
+    add_text(&h, "{\"dump\": %" PRIu64 ", \"point\": %u, \"hit\": %" PRIu64
+             ", \"note\": ", x->dumps + 1, index, point_hit(p));
+    json_text(&h, x->note);
+    add_text(&h, ", \"frame\": %" PRIu64 ", \"clock\": %" PRIu64
+             ", \"cycles\": %" PRIu64 ", \"instructions\": %" PRIu64,
+             m->frame, iigs_clock(m), c->cycles, m->instructions);
+    add_text(&h, ", \"cpu\": {\"pc\": %" PRIu32 ", \"a\": %u, \"x\": %u, "
+             "\"y\": %u, \"s\": %u, \"d\": %u, \"dbr\": %u, \"p\": %u, "
+             "\"e\": %u}", (uint32_t)c->pbr << 16 | c->pc, c->a, c->x, c->y,
+             c->s, c->d, c->dbr, c->p, c->e);
+    add_text(&h, ", \"switches\": {\"shadow\": %u, \"speed\": %u, "
+             "\"newvideo\": %u, \"border\": %u, \"text\": %u, "
+             "\"inten\": %u, \"vgc_int\": %u}", m->shadow, m->speed,
+             m->newvideo, m->border, m->text, m->inten, m->vgc_int);
+    add_text(&h, ", \"peek\": {");
+    for (unsigned i = 0; i < o->peek_count; i++) {
+        add_text(&h, "%s\"%06" PRIX32 "\": \"", i ? ", " : "",
+                 o->peeks[i].address);
+        for (uint32_t j = 0; j < o->peeks[i].length; j++)
+            add_text(&h, "%02x", iigs_peek(m, o->peeks[i].address + j));
+        add_text(&h, "\"");
+    }
+    add_text(&h, "}, \"ranges\": [");
+    if (!p->range_count)
+        add_text(&h, "[0, %u], [%u, %u]", IIGS_RAM_BANKS * IIGS_BANK,
+                 0xe00000u, 2 * IIGS_BANK);
+    for (unsigned i = 0; i < p->range_count; i++)
+        add_text(&h, "%s[%" PRIu32 ", %" PRIu32 "]", i ? ", " : "",
+                 p->range_address[i], p->range_length[i]);
+    add_text(&h, "], \"bytes\": %" PRIu64 "}\n", point_dump_bytes(p));
+
+    uint64_t bytes = h.length + point_dump_bytes(p);
+    if (x->dumps >= o->dump_max) {
+        stream_end(x, "dump-max");
+        fail("--dump-at %s: dump %" PRIu64 " would pass --dump-max %" PRIu64
+             " (frame %" PRIu64 ", cycle %" PRIu64 "); the stream ends there",
+             o->dump_texts[index], x->dumps + 1, o->dump_max, m->frame,
+             c->cycles);
+    }
+    if (x->stream_bytes + bytes + END_RESERVE > o->dump_limit) {
+        stream_end(x, "dump-limit");
+        fail("--dump-at %s: dump %" PRIu64 " (%" PRIu64 " bytes) would take "
+             "the stream past --dump-limit %" PRIu64 " bytes (frame %" PRIu64
+             ", cycle %" PRIu64 "); the stream ends there",
+             o->dump_texts[index], x->dumps + 1, bytes, o->dump_limit,
+             m->frame, c->cycles);
+    }
+    x->dumps++;
+    x->stream_bytes += bytes;
+    fwrite(h.data, 1, h.length, out);
+    free(h.data);
+    if (!p->range_count) {
+        dump_range(out, m, 0, IIGS_RAM_BANKS * IIGS_BANK);
+        dump_range(out, m, 0xe00000u, 2 * IIGS_BANK);
+    }
+    for (unsigned i = 0; i < p->range_count; i++)
+        dump_range(out, m, p->range_address[i], p->range_length[i]);
+}
+
+/* The machine stopped between instructions (at a breakpoint at `pc`
+   when `at_break`): the pokes, then the dumps, that fire now. */
+static void at_points(iigs *m, options *o, extras *x, int at_break,
+                      uint32_t pc)
+{
+    for (size_t i = 0; i < x->pokes.count; i++) {
+        poke *p = &x->pokes.pokes[i];
+        if (point_fires(&p->when, m, at_break && p->when.pc == pc))
+            poke_apply(m, p);
+    }
+    for (unsigned i = 0; i < o->dump_count; i++)
+        if (point_fires(&o->dumps[i], m, at_break && o->dumps[i].pc == pc))
+            write_dump(x, m, o, i);
+}
+
+/* The first frame and cycle at which a point of `o` or `x` is due. */
+static uint64_t points_due(const options *o, const extras *x, int frames)
+{
+    uint64_t due = UINT64_MAX, next;
+    for (size_t i = 0; i < x->pokes.count; i++) {
+        const point *p = &x->pokes.pokes[i].when;
+        next = frames ? point_due_frame(p) : point_due_cycle(p);
+        due = next < due ? next : due;
+    }
+    for (unsigned i = 0; i < o->dump_count; i++) {
+        next = frames ? point_due_frame(&o->dumps[i])
+                      : point_due_cycle(&o->dumps[i]);
+        due = next < due ? next : due;
+    }
+    return due;
+}
+
+/* After at_points: every frame and cycle point is next due after now
+   (points.h: a point moves on past the moment it fired for). A point
+   due now would stop the next iigs_run before any instruction and fire
+   again at the same moment, for ever. */
+static void check_points_move_on(const options *o, const extras *x,
+                                 const iigs *m)
+{
+    uint64_t frame = points_due(o, x, 1), cycle = points_due(o, x, 0);
+    if ((frame != UINT64_MAX && frame <= m->frame) ||
+        (cycle != UINT64_MAX && cycle <= m->cpu.cycles))
+        fail("a point is due again at frame %" PRIu64 ", cycle %" PRIu64
+             " where it fired (internal error: points.c)", m->frame,
+             m->cpu.cycles);
+}
+
+static void notes(options *o, extras *x, const char *name)
+{
+    snprintf(x->note, sizeof x->note, "%s", name);
+    for (size_t i = 0; i < x->pokes.count; i++)
+        point_note(&x->pokes.pokes[i].when, name);
+    for (unsigned i = 0; i < o->dump_count; i++)
+        point_note(&o->dumps[i], name);
+    if (x->log)
+        calllog_note(x->log, name);
+}
+
 /* ---- the command line ---- */
 
 static void add(uint64_t *list, unsigned *count, uint64_t value)
@@ -569,6 +892,8 @@ static void parse(int argc, char **argv, options *o)
 {
     memset(o, 0, sizeof *o);
     o->frames = o->cycles = UINT64_MAX;
+    o->dump_limit = o->call_log_limit = STREAM_LIMIT;
+    o->dump_max = UINT64_MAX;
     o->shot_dir = ".";
     trace_config_init(&o->trace, NULL);
     for (int i = 1; i < argc; i++) {
@@ -666,6 +991,51 @@ static void parse(int argc, char **argv, options *o)
                 fail("--capture-hit takes a call from 1, at most %d of them",
                      FOOTPRINT_MAX_HITS);
             o->footprint.hits[o->footprint.hit_count++] = hit;
+        } else if (!strcmp(arg, "--dump-at")) {
+            char error[512];
+            if (o->dump_count == MAX_POINTS)
+                fail("at most %d --dump-at", MAX_POINTS);
+            if (!point_parse(&o->dumps[o->dump_count], value, POINT_FOR_DUMP,
+                             error, sizeof error))
+                fail("--dump-at %s", error);
+            o->dump_texts[o->dump_count++] = value;
+        } else if (!strcmp(arg, "--dump-stream"))
+            o->dump_stream = value;
+        else if (!strcmp(arg, "--dump-limit"))
+            o->dump_limit = number(value, 0);
+        else if (!strcmp(arg, "--dump-max"))
+            o->dump_max = number(value, 0);
+        else if (!strcmp(arg, "--call-log-limit"))
+            o->call_log_limit = number(value, 0);
+        else if (!strcmp(arg, "--poke-file")) {
+            if (o->poke_file_count == MAX_LIST)
+                fail("at most %d of each option", MAX_LIST);
+            o->poke_files[o->poke_file_count++] = value;
+        } else if (!strcmp(arg, "--call-log")) {
+            char error[512];
+            if (o->routine_count == CALLLOG_ROUTINES)
+                fail("at most %d --call-log", CALLLOG_ROUTINES);
+            if (!calllog_parse(&o->routines[o->routine_count++], value,
+                               error, sizeof error))
+                fail("%s", error);
+        } else if (!strcmp(arg, "--call-log-file"))
+            o->call_log = value;
+        else if (!strcmp(arg, "--wad")) {
+            o->wad = (uint32_t)address(value, arg);
+            o->have_wad = 1;
+        } else if (!strcmp(arg, "--lump")) {
+            char *first = strchr(argv[i], ':');
+            char *second = first ? strchr(first + 1, ':') : NULL;
+            if (!first || !second || !second[1] || first == argv[i] ||
+                first - argv[i] > 8 || o->lump_count == MAX_LIST)
+                fail("--lump takes NAME:DEST:FILE, NAME of 1 to 8 "
+                     "characters");
+            lump_option *l = &o->lumps[o->lump_count++];
+            memset(l->name, 0, sizeof l->name);
+            memcpy(l->name, argv[i], (size_t)(first - argv[i]));
+            *second = 0;
+            l->dest = (uint32_t)address(first + 1, arg);
+            l->path = second + 1;
         } else
             fail("unknown option %s", arg);
     }
@@ -689,6 +1059,19 @@ static void parse(int argc, char **argv, options *o)
         fail("--mark needs --marks");
     if (o->trace_options && !o->trace.path)
         fail("the --trace-* options need --trace");
+    if (!o->dump_count != !o->dump_stream)
+        fail("--dump-at and --dump-stream go together");
+    if (o->dump_stream && !strcmp(o->dump_stream, "-") && !o->state)
+        fail("--dump-stream - needs --state");
+    if (!o->routine_count != !o->call_log)
+        fail("--call-log and --call-log-file go together");
+    if (!o->call_log_limit)
+        fail("--call-log-limit takes a size from 1");
+    if (o->routine_count && (o->trace.path || o->call ||
+                             o->footprint.capture_dir))
+        fail("--call-log does not go with --trace, --call or --capture");
+    if (o->lump_count && !o->have_wad)
+        fail("--lump needs --wad");
 }
 
 static int compare_u64(const void *a, const void *b)
@@ -726,7 +1109,7 @@ static void log_line(FILE *marks, const char *kind, const char *what,
 
 /* Do the steps of the input due now; one that ends the run puts the
    reason in `end`. `tracer` may be NULL. */
-static void input(program *p, iigs *m, const options *o, FILE *marks,
+static void input(program *p, iigs *m, options *o, extras *x, FILE *marks,
                   trace *tracer, footprint *calls, ending *end)
 {
     for (;;) {
@@ -745,6 +1128,7 @@ static void input(program *p, iigs *m, const options *o, FILE *marks,
                 trace_note(tracer, s->name);
             if (calls)
                 footprint_note(calls, s->name);
+            notes(o, x, s->name);
             break;
         case PROGRAM_STOP:
             end->reason = "stop";
@@ -774,6 +1158,7 @@ int main(int argc, char **argv)
     iigs_set_cpu_hz(&m, o.cpu_hz);
     load_image(&m, o.image);
     load_files(&m, &o);
+    place_lumps(&m, &o);
     set_registers(&m, &o);
     m.stop_on_fault = o.stop_on_fault;
     for (unsigned i = 0; i < o.stop_pc_count; i++)
@@ -782,6 +1167,26 @@ int main(int argc, char **argv)
     for (unsigned i = 0; i < o.mark_pc_count; i++)
         if (!iigs_set_break(&m, (uint32_t)o.mark_pcs[i]))
             fail("out of memory");
+    extras x;
+    memset(&x, 0, sizeof x);
+    for (unsigned i = 0; i < o.poke_file_count; i++)
+        if (!pokes_read(&x.pokes, o.poke_files[i], error, sizeof error))
+            fail("%s", error);
+    for (size_t i = 0; i < x.pokes.count; i++)
+        if (x.pokes.pokes[i].when.kind == POINT_PC &&
+            !iigs_set_break(&m, x.pokes.pokes[i].when.pc))
+            fail("out of memory");
+    for (unsigned i = 0; i < o.dump_count; i++)
+        if (o.dumps[i].kind == POINT_PC &&
+            !iigs_set_break(&m, o.dumps[i].pc))
+            fail("out of memory");
+    if (o.dump_stream) {
+        x.stream = strcmp(o.dump_stream, "-") ? fopen(o.dump_stream, "wb")
+                                              : stdout;
+        if (!x.stream)
+            fail("cannot write %s", o.dump_stream);
+        stream_header(&x, &o);
+    }
 
     uint8_t *disk = NULL;
     size_t disk_length = 0;
@@ -806,23 +1211,37 @@ int main(int argc, char **argv)
     if ((o.call || o.footprint.capture_dir) &&
         !(calls = footprint_open(&m, &o.footprint)))
         fail("out of memory");
+    if (o.routine_count &&
+        !(x.log = calllog_open(&m, o.routines, o.routine_count, o.call_log,
+                               error, sizeof error)))
+        fail("%s", error);
+    if (x.log)
+        calllog_set_limit(x.log, o.call_log_limit);
 
     qsort(o.shot_frames, o.shot_frame_count, sizeof(uint64_t), compare_u64);
     qsort(o.shot_cycles, o.shot_cycle_count, sizeof(uint64_t), compare_u64);
     unsigned next_frame_shot = 0, next_cycle_shot = 0;
     ending end = { NULL, 0, 0 };
 
-    /* The input's steps at frame 0 come before any instruction. */
-    input(&p, &m, &o, marks, tracer, calls, &end);
+    /* The input's steps at frame 0 come before any instruction, and so
+       do the points of frame 0 and cycle 0. */
+    input(&p, &m, &o, &x, marks, tracer, calls, &end);
+    at_points(&m, &o, &x, 0, 0);
+    check_points_move_on(&o, &x, &m);
     while (!end.reason) {
-        uint64_t frame_stop = minimum(minimum(
+        uint64_t before_cycles = m.cpu.cycles, before_frame = m.frame;
+        uint64_t before_instructions = m.instructions;
+        uint64_t frame_stop = minimum(minimum(minimum(
             o.frames, upcoming(o.shot_frames, o.shot_frame_count,
-                               next_frame_shot)), program_due(&p));
-        uint64_t cycle_stop = minimum(
+                               next_frame_shot)), program_due(&p)),
+            points_due(&o, &x, 1));
+        uint64_t cycle_stop = minimum(minimum(
             o.cycles, upcoming(o.shot_cycles, o.shot_cycle_count,
-                               next_cycle_shot));
+                               next_cycle_shot)), points_due(&o, &x, 0));
         iigs_stop why = iigs_run(&m, cycle_stop, frame_stop);
         uint32_t pc = (uint32_t)m.cpu.pbr << 16 | m.cpu.pc;
+        if (x.log && calllog_problem(x.log))
+            fail("%s", calllog_problem(x.log));
 
         if (why == IIGS_BREAK && listed(o.mark_pcs, o.mark_pc_count, pc)) {
             char where[8];
@@ -841,7 +1260,9 @@ int main(int argc, char **argv)
         } else if (why == IIGS_REQUEST && calls && footprint_returned(calls))
             end.reason = "return";
         else
-            input(&p, &m, &o, marks, tracer, calls, &end);
+            input(&p, &m, &o, &x, marks, tracer, calls, &end);
+        at_points(&m, &o, &x, why == IIGS_BREAK, pc);
+        check_points_move_on(&o, &x, &m);
         while (next_frame_shot < o.shot_frame_count &&
                o.shot_frames[next_frame_shot] <= m.frame)
             numbered_shot(&m, o.shot_dir, "frame",
@@ -854,10 +1275,29 @@ int main(int argc, char **argv)
             end.reason = "frames";
         if (!end.reason && m.cpu.cycles >= o.cycles)
             end.reason = "cycles";
+        /* A turn that ran nothing and stopped at a limit that is not the
+           run's own would repeat for ever: something is due now that
+           nothing above moved on. */
+        if (!end.reason && why == IIGS_LIMIT && m.cpu.cycles == before_cycles &&
+            m.frame == before_frame && m.instructions == before_instructions)
+            fail("the run makes no progress at frame %" PRIu64 ", cycle %"
+                 PRIu64 " (internal error: a stop is due now)", m.frame,
+                 m.cpu.cycles);
     }
 
     if (tracer && !trace_close(tracer))
         fail("cannot write %s", o.trace.path);
+    if (x.log) {
+        const char *problem = calllog_close(x.log);
+        if (problem)
+            fail("%s", problem);
+    }
+    if (x.stream) {
+        stream_end(&x, end.reason);
+        if (ferror(x.stream) || (x.stream != stdout && fclose(x.stream)) ||
+            (x.stream == stdout && fflush(stdout)))
+            fail("cannot write %s", o.dump_stream);
+    }
     log_line(marks, "end", "-", &m);
     if (marks && fclose(marks))
         fail("cannot write %s", o.marks);
@@ -886,6 +1326,7 @@ int main(int argc, char **argv)
         write_file(o.disk_out, disk, disk_length);
     }
     free(disk);
+    pokes_free(&x.pokes);
     program_free(&p);
     iigs_free(&m);
     return 0;

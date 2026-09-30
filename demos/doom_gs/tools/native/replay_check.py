@@ -35,8 +35,13 @@ a byte in at least one run. Checked:
     layout.py ALLOWED_MAIN, ALLOWED_AUX0, and the stack from $01C0 up to
     the driver's S, $01EF: the caller's frame above it is checked too;
     the language card must come back whole: its row-block patches are
-    restored); a store of the value already there cannot be seen this way
-    (a2vm has no write log);
+    restored);
+  * no stray writes, by a2vm's write log (--write-log, tools/native/
+    a2run.py stray_ranges): no CPU write during a call into main or aux
+    bank 0 outside those ranges, or into aux banks 1-127, whatever its
+    value, so a store of the value already there is seen too (the
+    language card is left to the snapshots: the replay patches and
+    restores its row blocks there);
   * the soft switches and S after each call are those before it;
   * the replay's SHR writes (a2vm's shr_writes) equal the screen stores
     upstream makes for the frame (tools/native/loader.py screen_stores:
@@ -150,14 +155,36 @@ def check_run(run: a2run.Run, batches: int, truth: bytes,
                 k, before.state['sp'], after.state['sp']))
     out['stray_writes'] = stray
     out['stray_first'] = shown[:8]
+    logged = logged_strays(run, batches)
+    if logged is not None:
+        out['stray_logged'] = len(logged)
+        out['stray_logged_first'] = logged[:8]
     out['switch_changes'] = switches
     out['shr_writes'] = shr
     out['stores_expected'] = stores
     out['other_video_writes'] = other_video
     out['ms'] = round(run.replay_ms(), 3) if run.cost else None
     out['ok'] = (out['differing_bytes'] == 0 and stray == 0 and
+                 not out.get('stray_logged') and
                  not switches and other_video == 0 and
                  (stores is None or shr == stores))
+    return out
+
+
+def logged_strays(run: a2run.Run, batches: int) -> Optional[List[str]]:
+    """The writes of the write log (a2run.stray_ranges) made during a call
+    of the replay, from the snapshot before it to the one after it, by
+    the machine's clock; None when the run has no log."""
+    if run.writes is None:
+        return None
+    windows = [(k, run.snapshots['before%d' % k].state['cycles'],
+                run.snapshots['after%d' % k].state['cycles'])
+               for k in range(batches)]
+    out = []
+    for w in run.writes:
+        for k, start, end in windows:
+            if start <= w.clock <= end:
+                out.append('call %d: %s' % (k, w.describe()))
     return out
 
 
@@ -184,7 +211,8 @@ def check_frame(directory: Path, out: Path, build: loader.Build,
         captured_screen = loader.screen_bytes(capture)
         truth = (directory / 'screen-after.bin').read_bytes()
         run = a2run.run(image, build.labels, work / 'captured', batches,
-                        snapshots=True, profile='f121')
+                        snapshots=True, profile='f121',
+                        write_log=a2run.stray_ranges())
         result['captured'] = check_run(run, batches, truth, stores)
 
         poison = poisoned(captured_screen)
@@ -195,7 +223,8 @@ def check_frame(directory: Path, out: Path, build: loader.Build,
         image_p = work / 'poisoned.img'
         image_p.write_bytes(package_p.image)
         run = a2run.run(image_p, build.labels, work / 'poisoned', batches,
-                        snapshots=True, profile='f121')
+                        snapshots=True, profile='f121',
+                        write_log=a2run.stray_ranges())
         result['poisoned'] = check_run(run, batches, poison_truth, stores)
         result['poisoned']['truth_changed_from_poison'] = sum(
             1 for i in range(L.PIXELS) if poison_truth[i] != poison[i])
@@ -266,8 +295,8 @@ def line(r: Dict) -> str:
         return '%-10s ERROR %s' % (r['name'], r['error'])
     c, p = r['captured'], r['poisoned']
     return ('%-15s %s  records %4d (%5d B, %d batch%s, %d strip%s)  '
-            'differing %d / %d  stray %d / %d  stores %d / %d of %d  '
-            'f121 %6.2f ms  fastpath %6.2f ms' % (
+            'differing %d / %d  stray %d / %d (logged %d / %d)  '
+            'stores %d / %d of %d  f121 %6.2f ms  fastpath %6.2f ms' % (
                 r['name'], 'ok  ' if r['ok'] else 'FAIL',
                 sum(r['records'][k] for k in ('K_TEX', 'K_FILL', 'K_TEXC',
                                               'K_FUZZ', 'K_OVL')),
@@ -277,6 +306,7 @@ def line(r: Dict) -> str:
                 's' if r['records']['strips'] > 1 else '',
                 c.get('differing_bytes', -1), p.get('differing_bytes', -1),
                 c.get('stray_writes', -1), p.get('stray_writes', -1),
+                c.get('stray_logged', -1), p.get('stray_logged', -1),
                 c.get('shr_writes', -1), p.get('shr_writes', -1),
                 r['records'].get('screen_stores', -1),
                 r['ms_f121'] or 0.0, r['ms_fastpath'] or 0.0))
@@ -340,6 +370,7 @@ def main(argv=None) -> int:
             for run in ('captured', 'poisoned'):
                 for text in (r.get(run, {}).get('first', []) +
                              r.get(run, {}).get('stray_first', []) +
+                             r.get(run, {}).get('stray_logged_first', []) +
                              r.get(run, {}).get('switch_changes', [])):
                     print('    %s: %s' % (run, text))
                 if r.get(run, {}).get('other_video_writes'):

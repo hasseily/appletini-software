@@ -96,8 +96,22 @@
         "relaxed_admission": {"value": 0, "source": "psram_simple.sv:437: one admission a bus cycle, inside the 40-clock window"},
         "quiet_switches": {"value": 0, "source": "globals.sv:300-304: every $C0xx access is a bus cycle"},
         "read_bank": {"value": 0, "source": "no $C069 register in F1.2.1 (read-bank-spec.md section 1)"},
+        "zp_pair": {"value": 0, "source": "no zero-page bank pair in F1.2.1 (zpbank-spec.md section 0: it is a proposal); a $C069 write is an ordinary bus cycle with no effect (onee_motherboard_io.sv:250-277, zpbank-spec.md 2.2)"},
         "lazy_shr": {"value": 0, "source": "vtw_video_policy.sv:25-31: aux graphics are always active mirror pages"},
         "keep_lazy": {"value": 0, "source": "no lazy class"}
+      }
+    },
+    "f121zp": {
+      "description": "F1.2.1 with the zero-page bank pair alone, armed (docs/firmware/zpbank-spec.md as corrected by zpbank-review.md; the design document's change 5, main zero page only, NATIVE.md 4.5 and 15.1). Every other parameter is f121's: no other change of the design is assumed.",
+      "params": {
+        "caches_survive": {"value": 0, "source": "as f121 (core_top:1206-1211); the pair is not part of the translation state the invalidation compares, so it never invalidates (zpbank-spec.md 3.2: :1185 becomes translate_state_from_sss(vsss), whose pair fields are constant 0)"},
+        "rw_lines": {"value": 1, "source": "as f121 (core_top:1032-1060): a redirected access is served through the one line (zpbank-spec.md 3.1: bank 2 or more is xl_is_ramworks, core_top:643-644), 5 clocks on a hit by X_CAPTURE, X_TURBO_DONE, X_ROUTE, X_RW_LOOKUP, X_RW_DONE (zpbank-spec.md section 6)"},
+        "relaxed_admission": {"value": 0, "source": "as f121 (psram_simple.sv:437)"},
+        "quiet_switches": {"value": 0, "source": "as f121 (globals.sv:300-304)"},
+        "read_bank": {"value": 0, "source": "the pair replaces the read-bank register at $C069 (zpbank-spec.md, first line); its $C069 write keeps the X_BUS default, no private serve and no barrier exemption (zpbank-spec.md 2.2)"},
+        "zp_pair": {"value": 1, "source": "zpbank-review.md section 2 (corrected specification): armed when ZPB_ENABLE, vtw_ctrl_q[9] and ramworks_en hold; the kill switch defaults off and a PS profile key turns it on (review finding 3). The profile stands for a firmware with the pair and the key set"},
+        "lazy_shr": {"value": 0, "source": "as f121 (vtw_video_policy.sv:25-31); redirected writes are never posted or mirrored (zpbank-spec.md section 6, core_top:565-566)"},
+        "keep_lazy": {"value": 0, "source": "as f121"}
       }
     },
     "fastpath": {
@@ -117,8 +131,22 @@
         "relaxed_admission": {"value": 1, "source": "cache-review.md, corrected summary, stage 1; cache-plan.md section 3 (a sustained miss about 36 clocks)"},
         "quiet_switches": {"value": 1, "source": "switches-review.md section 4, stages 2-3"},
         "read_bank": {"value": 1, "source": "read-bank-review.md section 2"},
+        "zp_pair": {"value": 0, "source": "fastpath models the read bank of change 6, not the pair (NATIVE.md: the design with the pair is fastzp)"},
         "lazy_shr": {"value": 1, "source": "lazy-mirror-review.md section 3"},
         "keep_lazy": {"value": 1, "source": "lazy-mirror-review.md F4 (KEEP_LAZY when no destination is in the lazy range)"}
+      }
+    },
+    "fastzp": {
+      "description": "The firmware design with the zero-page bank pair in place of the $C069 read bank: fastpath's changes 1-5 and 7, and the pair of docs/firmware/zpbank-spec.md as corrected by zpbank-review.md (the design document's change 5, main zero page only: NATIVE.md 4.5 and 15.1), armed. This is the 'Design + pair' column of NATIVE.md.",
+      "params": {
+        "caches_survive": {"value": 1, "source": "switches-review.md section 4, stage 1 (as fastpath)"},
+        "rw_lines": {"value": 16, "source": "cache-review.md, corrected summary, stage 2 (as fastpath); redirected accesses use the same lines (zpbank-spec.md section 6, 'RamWorks line cache')"},
+        "relaxed_admission": {"value": 1, "source": "cache-review.md, corrected summary, stage 1 (as fastpath); redirected accesses are ordinary line-port traffic of banks 2 or more (zpbank-spec.md section 6)"},
+        "quiet_switches": {"value": 1, "source": "switches-review.md section 4, stages 2-3 (as fastpath); $C069 is not in the quiet set, so its write is reconciled and goes to the bus"},
+        "read_bank": {"value": 0, "source": "the pair replaces the read bank at $C069 (zpbank-spec.md, first line): the write is an ordinary bus cycle (zpbank-spec.md 2.2)"},
+        "zp_pair": {"value": 1, "source": "zpbank-review.md section 2, armed (the PS profile key, review finding 3)"},
+        "lazy_shr": {"value": 1, "source": "lazy-mirror-review.md section 3 (as fastpath)"},
+        "keep_lazy": {"value": 1, "source": "lazy-mirror-review.md F4 (as fastpath)"}
       }
     }
   }

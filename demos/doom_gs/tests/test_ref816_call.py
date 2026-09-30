@@ -49,6 +49,11 @@ def records(code, extra=()):
 
 
 class Machine(unittest.TestCase):
+    # The bounds of every run of the machine (support.run): these
+    # programs run for milliseconds and write a few dumps at most.
+    TIMEOUT = 120
+    MAX_BYTES = 64 << 20
+
     def setUp(self):
         out, _ = support.ref816_build()
         self.machine = out / 'ref816'
@@ -61,8 +66,9 @@ class Machine(unittest.TestCase):
         return path
 
     def run_machine(self, image, *arguments):
-        return subprocess.run(
+        return support.run(
             [str(self.machine), str(image)] + [str(a) for a in arguments],
+            timeout=self.TIMEOUT, max_bytes=self.MAX_BYTES,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             universal_newlines=True)
 

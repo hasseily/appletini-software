@@ -9,7 +9,12 @@ devices, a trap of the ProDOS MLI, and a compatibility mode in which a run
 matches the existing Doom port's model, `demos/doom/tools/a2sim.py`,
 cycle for cycle; stage 3.1c its cost model, the time a run takes on the
 card, access by access, under the firmware as it is (F1.2.1) and with
-the changes of the firmware design (below, "The cost model").
+the changes of the firmware design (below, "The cost model"). Milestone 6
+added what routine tests need (a write log, the lowest S, snapshots of
+chosen ranges, events at the Nth visit of a PC) and the firmware
+design's zero-page bank pair with two profiles, `f121zp` and `fastzp`
+(below, "Milestone 6 additions"). All of it is opt-in: without the new
+options every run is what it was, byte for byte.
 
 | File | What it is |
 | --- | --- |
@@ -20,7 +25,7 @@ the changes of the firmware design (below, "The cost model").
 | `a2vm.h`, `a2vm.c` | The machine: memory map, soft switches, keyboard, game port, mouse card, Phasor, memory API, `a2sim.py`'s timing, interrupt delivery and idle skipping |
 | `prodos.h`, `prodos.c` | The MLI stand-in, `a2sim.py`'s `FakeProDOS` |
 | `cost.h`, `cost.c` | The cost model: every bus access charged in fabric clocks of the Appletini, with its TURBO caches, RamWorks line cache, PSRAM admission, bus cycles, video mirror and memory API |
-| `costs/appletini.json` | The cost parameters, each with its source in the firmware or `docs/firmware/`, and the two profiles `f121` and `fastpath` |
+| `costs/appletini.json` | The cost parameters, each with its source in the firmware or `docs/firmware/`, and the profiles `f121` and `fastpath`, and `f121zp` and `fastzp` with the zero-page pair |
 | `costs.py` | A profile as the "name value" lines `--cost` reads; `PROFILE+VARIANT` adds the variants (the slot-4 slowdown, NTSC) |
 | `cost_report.py` | The report on the existing port: frame and phase times under both profiles, against the hardware measurement |
 | `main.c` | The command line: start-up, runs, input events, snapshots, screen dumps, bus scripts |
@@ -31,7 +36,7 @@ the changes of the firmware design (below, "The cost model").
 | `py65check.c` | The compatibility core on a flat memory, for `py65_diff.py` |
 | `fetch_vectors.py` | Fetches the SingleStepTests WDC 65C02 vectors into `build/vectors/` |
 | `vectors.c` | Runs the vectors and compares state, cycle counts and the bus |
-| `selftest.c` | What the vectors do not cover: IRQ, NMI, BRK, WAI, STP, reset, cycle kinds, `cpu65c02_run`, lengths, datasheet cycles, exhaustive decimal mode |
+| `selftest.c` | What the vectors do not cover: IRQ, NMI, BRK, WAI, STP, reset, cycle kinds, the data_ea classification of every opcode against the Appletini core's states, `cpu65c02_run`, lengths, datasheet cycles, exhaustive decimal mode |
 | `bench.c` | Instructions per second of the core on the host |
 | `vm816.c` | The checks of the 65816 interpreter of `src/vm` on a2vm: the SingleStepTests 65816 vectors, a lockstep with `tools/ref816`'s core on random programs, and a self test ([`src/vm/README.md`](../../src/vm/README.md)); with `--cost`, the cost of each case under a cost profile |
 | `game816.c` | The interpreter on upstream's game, with the game's map: the first contact (the release image from its entry point, in lockstep with `tools/ref816`'s IIgs up to the first I/O access), the game's own instructions sampled by `ref816` run one by one and measured, and the cost of a change of code page |
@@ -58,6 +63,8 @@ The interpreter on the game (`game816`, with the memory image of
 
 `tests/test_a2vm.py` tests the core and its harness; `tests/test_a2vm_machine.py`
 the machine (below); `tests/test_a2vm_cost.py` the cost model;
+`tests/test_a2vm_harness.py` the write log, the lowest S, range snapshots
+and visit events; `tests/test_a2vm_zpbank.py` the zero-page pair;
 `tests/test_interpreter.py` the cost measurements, `game816` and the
 report. They build everything from scratch.
 
@@ -90,6 +97,20 @@ first. Each callback gets the kind of its cycle:
 | `CPU65C02_OPERAND` | The later bytes of the instruction, BRK's signature byte included |
 | `CPU65C02_DATA` | Accesses whose value the instruction uses: operands, pointers, stack pushes and pulls, vectors |
 | `CPU65C02_DUMMY` | Reads whose value the chip ignores: the extra cycles of implied, indexed, read-modify-write, stack, branch and decimal instructions, the discarded fetch of an interrupt entry, and the cycles of WAI and STP |
+
+A flag, `CPU65C02_EA`, marks the cycles of the Appletini core's six
+"data_ea" states (`w65c02_core.sv:1049-1069`), those at an instruction's
+effective address: `CPU65C02_DATA_EA` for `ST_MEM_READ`, `ST_RMW_READ`,
+`ST_MEM_WRITE` and `ST_RMW_WRITE`, `CPU65C02_DUMMY_EA` for `ST_RMW_MODIFY`
+(the read-modify-write's second read) and `ST_DECIMAL_EXTRA` (the decimal
+cycle of ADC and SBC, at `$007F` or `$0000` for their immediate forms).
+Nothing else is EA: opcodes, operands, dummy reads of PC, the same-page
+`STA a,X` false read of its target (`ST_INDEX_DUMMY`), zero-page
+pointers, the zero-page reads of BBR and BBS, JMP `(a)` and `(a,X)`
+pointers, the stack and the vectors. `CPU65C02_BASE_KIND(kind)` gives the
+kind without the flag. The zero-page bank pair redirects only EA cycles;
+`selftest.c` checks the flag on every opcode in both decimal modes
+against a table of the core's decode and states.
 
 The 65C02 makes no dummy writes. The kinds are what the cost model of a
 later stage classes: the Appletini's core, in its TURBO mode, drops dummy
@@ -198,7 +219,7 @@ departures are listed below.
 A test harness may set `write_hook`, an observer of every CPU write (the
 address, the storage byte it reaches, the value); it changes nothing, and
 is NULL in every other run. `vm816.c` uses it to see each write the
-interpreter makes.
+interpreter makes, and `--write-log` to write its log.
 
 Reads and writes go through page tables rebuilt whenever a switch that
 moves memory changes; `$C000-$CFFF` and write-protected language-card
@@ -320,7 +341,8 @@ rendered.
 | `--prodos FILE` | The MLI trap, with the files of FILE, one a line: `NAME TYPE AUX PATH` (hex type and aux), in the order of the volume directory |
 | `--idle PC:vbl` or `PC:line0`, with `:main`, `:invbl`, `:eq=A,B` | An idle loop to skip, and when (ALTZP off; in vertical blanking; the main words at A and B equal) |
 | `--boundary ADDR`, `--boundaries N` | A frame boundary (the CPU at ADDR after a step, ALTZP off), and how many to run |
-| `--cycles N`, `--stop-pc ADDR[:main]` | Other ends of the run |
+| `--cycles N`, `--stop-pc ADDR[:main]` | Other ends of the run. Without `--cycles` a run stops at 20,000,000,000 cycles (about two minutes on the host) with end `cycle-cap` and exit status 3, so that a run whose boundary never comes (a bug) ends; `--cycles none` runs with no limit |
+| `--every-limit N` | At most N snapshots or shots of each `pc ADDR@*` event (default 100, 840 MB of whole-RAM snapshots); the visit after them ends the run with an error (status 2) |
 | `--input FILE` | Input events, below |
 | `--snapshot-dir DIR`, `--snapshot-boundaries`, `--final-snapshot` | Snapshots: `NAME.json` (the state) and `NAME.ram` (main 64 KB, main LC 16 KB, main LC bank 1 4 KB, then the 128 aux banks) |
 | `--state FILE` | The final state, as JSON, with the reason the run ended and its host time |
@@ -332,9 +354,14 @@ rendered.
 
 **Input events**, one a line, `WHEN ACTION`. `WHEN` is `start`,
 `boundary N` (after the Nth boundary's snapshot), `cycle N` (after the
-first step that reaches cycle N) or `pc ADDR[:main]` (the first time the
-CPU is at ADDR after a step). Each event fires once, in the file's order
-among those due. Actions: `key K` (a tap, due now), `hold K`, `release`,
+first step that reaches cycle N) or `pc ADDR[:main][@N|@*]` (the CPU is at
+ADDR after a step, with ALTZP off for `:main`: the first such visit, the
+Nth with `@N`, every one with `@*`). Each event fires once (an `@*` event
+at every visit), in the file's order among those due; several events at
+one PC all fire at their visits, so a routine called K times needs one
+call site, not K (`pc CALL@1 snapshot before1`, `pc CALL@2 snapshot
+before2`, or `pc CALL@* snapshot before`). An `@*` event's snapshots and
+shots are named `NAME-0001`, `NAME-0002`, by visit. Actions: `key K` (a tap, due now), `hold K`, `release`,
 `mouse DX DY` (the PS's delta path), `mouse-to X Y`, `buttons L R`,
 `oa 0|1`, `ca 0|1` (Open and Solid Apple), `snapshot NAME`, `shot NAME`
 (a screen dump for `shot.py`: `A2VMSHR1`, NEWVIDEO, aux bank 0 then main
@@ -348,7 +375,12 @@ VALUE` (storage without side effects; kinds `main`, `aux`, `lc`, `lc1`),
 `hold KEY`, `release`, `mouse DX DY`, `mouse-to X Y`, `buttons L R`,
 `button N VALUE`, `dump FILE` (the RAM, as a snapshot's), `state`,
 `cost` (the model's clock and counters; with the slot-4 slowdown on, also
-`slow_hits`, `slow_cycles`, `slow_clocks` and `slow_left`).
+`slow_hits`, `slow_cycles`, `slow_clocks` and `slow_left`); and for the
+zero-page pair `read-ea ADDR` and `write-ea ADDR VALUE` (a data access at
+an effective address, as the core's `ST_MEM_READ` and `ST_MEM_WRITE`
+make it, which the pair redirects), `zpbank` (its state and counters),
+`zpbank-arm 0|1`, `reset` (the CPU's RESET sequence, which turns the
+pair off; the //e's switches are not reset, as `a2sim.py` has no RES#).
 
 ### The AY log
 
@@ -397,6 +429,145 @@ outside handlers. It only observes: a run that stays inside is unchanged.
 `tools/sound/run65.py` passes `0000-01FF,C0A0-C0AF,C400-C4FF,D000-FFFF`
 (the zero page and stack, the mouse card, the Phasor, the card), which
 also refuses a mapping switch in the handler.
+
+## Milestone 6 additions
+
+Each is opt-in; a run without the option writes the same state, the same
+snapshots and the same cost report as before (`tests/test_a2vm_cost.py`
+checks the existing port under every profile).
+
+### Ranges
+
+`--write-log` and `--snapshot-ranges` take RANGES: items separated by
+commas, each `WHERE[:LO[-HI]]` with hex addresses (the whole of WHERE
+without them), at most 256.
+
+| WHERE | Storage | Addresses |
+| --- | --- | --- |
+| `main` | Main memory | `0000-FFFF` (`C000-FFFF` is never written) |
+| `auxN`, `auxN-M` | RamWorks banks N to M (0-127; 0 is the base aux memory) | `0000-FFFF`; an aux bank's language card is its `C000-FFFF` (bank 2 at `D000`, bank 1 at `C000-CFFF`) |
+| `lc` | Main language card: `$C000-$FFFF` as a2sim's `lc[False]`, bank 2 at `$D000` | `C000-FFFF` |
+| `lc1` | Main language card bank 1 | `D000-DFFF` |
+| `cpu` | The CPU's address, whatever it reaches (I/O, a write-protected card): write log only | `0000-FFFF` |
+
+A storage range holds a write by the byte it reaches (so a write the
+zero-page pair redirects is in `aux5`, not `main`); a `cpu` range by its
+address.
+
+### The write log
+
+`--write-log RANGES` writes a line for every CPU write that reaches the
+ranges, to `--write-log-file FILE` (default `writes.log` in the
+`--snapshot-dir`). It only observes; the state gets `write_logged`, the
+number of lines. `--write-log-limit N` bounds the log at N lines (default
+10,000,000, about 500 MB): the write that would be line N + 1 halts the
+run (end `halt`, exit status 1, the halt naming the limit).
+
+    # a2vm write-log 1 (tools/a2vm/README.md, "The write log")
+    # ranges main:4000-40FF,aux0:4000,cpu:C004-C005
+    # w CLOCK CPU_CYCLES PC ADDRESS STORAGE BANK OFFSET OLD NEW
+    w 12 12 0805 4000 main 0 4000 11 11
+    w 16 16 0808 C005 io - - - 11
+    w 20 20 080B 4000 aux 0 4000 00 11
+
+(The first line is a store of the value already there.) `CLOCK` is the
+machine's clock (the state's `cycles`; with `--cost-timed`
+the cost model's clock, in fabric clocks) before the write, `CPU_CYCLES`
+the core's cycle count, `PC` the instruction's (an interrupt entry's
+pushes carry the interrupted PC), `ADDRESS` the CPU's; then the storage
+the byte is in (`main`, `aux`, `lc`, `lc1`, or `io` for a write that
+reaches none), its bank and offset in that storage (decimal bank, hex
+offset), the value it held and the value written, in hex. Every write is
+logged, the stores of the value already there included: that is what a
+comparison of snapshots cannot see. Bus-script `write` and `write-ea` are
+CPU writes; `poke` and the memory API are not.
+
+`tools/native/replay_check.py` logs the ranges its replay may not write
+(`tools/native/a2run.py` `stray_ranges`) and fails on any line inside a
+call.
+
+### The lowest S
+
+`--lowest-s` adds to the final state (and the final snapshot) the lowest
+S the run reached, the PC of the step that reached it (the instruction,
+or the interrupt entry, that started there), its clock and the number of
+steps; the start's S counts. `--lowest-s-in LO-HI[,LO-HI...]` (hex, at
+most 16) also gives, for each PC range, the lowest S seen before or
+after a step that started inside it: a routine's stack depth, with the
+entry of an interrupt that lands inside it but not the handler's own
+instructions (give the handler's range too).
+
+    "lowest_s": {"s": 248, "pc": 2081, "cycles": 45, "steps": 10,
+                 "ranges": [{"low": 2064, "high": 2069, "s": 250, "pc": 2065,
+                             "cycles": 20, "steps": 4}]},
+
+`s` is `null` for a range never entered.
+
+### Range snapshots
+
+`--snapshot-ranges RANGES` makes every snapshot (at boundaries, at events,
+the final one) `NAME.json` and `NAME.img` in place of `NAME.ram`:
+`NAME.img` is an `A2VMIMG1` image (the format of `--image`) with one
+record for each range and bank, so `--image` loads it back. A full
+snapshot is 8.4 MB; a tic's game state is a few hundred KB.
+
+### The zero-page bank pair
+
+The firmware design's pair (`docs/firmware/zpbank-spec.md` as corrected
+by `zpbank-review.md`; the design document's change 5; `NATIVE.md` 4.5
+and 15.1, main zero page only). It is not in F1.2.1. `--zpbank` arms it
+(the firmware's kill switch on, which a PS profile key does on the
+card); so do the cost profiles `f121zp` and `fastzp`. It needs the exact
+core (`--core w65c02s`: the compatibility core does not class its
+cycles) and 128 RamWorks banks. Armed, nothing changes until a program
+writes `$C069`:
+
+| Rule | Model | Source |
+| --- | --- | --- |
+| Enable | A CPU write of V to `$C069`: `$00` or `$FF` turn the pair off, `$01-$FE` make V the pair's first byte (`zp_rd`) and V+1 its second (`zp_wr`); every such write clears both registers. The write stays an ordinary I/O write (a bus cycle in the cost model); reads of `$C069` are unchanged | review section 2, findings 9; spec 2.2 |
+| Watch | While the pair is on, a CPU write whose byte is main zero page (ALTZP off) to `zp_rd` or `zp_wr` loads that register; a write to aux zero page (ALTZP on, any `$C073` bank) does not; pokes and the memory API never do. The value applies at once (the RTL applies it one edge later; the first data access it can affect is 4 cycles after the write) | review finding 2 (D4 corrected); spec 2.3, 2.4 |
+| Values | 1-126: the `$C073` bank of that number (physical bank value+1); 0 and 127-255 follow the switches | review finding 1 |
+| Redirect | A data_ea cycle (the core's `ST_MEM_READ`, `ST_DECIMAL_EXTRA`, `ST_RMW_READ`, `ST_RMW_MODIFY` for reads, `ST_MEM_WRITE`, `ST_RMW_WRITE` for writes; `CPU65C02_EA` above) to `$0200-$BFFF` goes to the bank of `zp_rd` (reads) or `zp_wr` (writes) when that register is not 0, whatever RAMRD, RAMWRT, 80STORE and PAGE2 say. Never opcodes, operands, dummy PC reads, the same-page `STA a,X` false read, JMP `(a)` and `(a,X)` pointers, vectors, the stack, zero page, `$C000-$FFFF`. A redirected write is never a video write (its bank is PSRAM) | review section 2, findings 7, 8; spec 1.2 (D1), 3.1, 3.4 (D2); `globals.sv:263-269` |
+| `$C071`, `$C073` | Leave the pair alone; a zero direction follows them | spec 3.4 |
+| Reset | Off at power-on, at the CPU's RESET (`reset` bus verb) and when disarmed; kept across everything else (holds, speed changes) | spec section 4, review section 2 |
+
+Counters in the state (`"zpbank"`, only with the pair armed) and in the
+cost report (`zpb_*`): `$C069` writes, register loads, redirected reads
+and writes (bus cycles, the RMW's second read and the decimal cycle
+included), redirected accesses made with the PC in `$C100-$CFFF` or in
+the ROM (a breach of the software contract: firmware running with the
+pair set), and memory API requests made with a register nonzero.
+
+**Cost.** A redirected access is charged as a RamWorks access of its bank
+(5 clocks on a line hit, the path CAPTURE, TURBO_DONE, ROUTE, RW_LOOKUP,
+RW_DONE of spec section 6), never a TURBO cache hit or fill; the pair is
+not part of the translation state, so it never invalidates the TURBO
+caches; the `$C069` write is an ordinary bus cycle (no private serve, no
+barrier exemption: spec 2.2). The profiles:
+
+| Profile | What it is |
+| --- | --- |
+| `f121zp` | F1.2.1 with the pair alone: every parameter f121's, plus `zp_pair` 1. One RamWorks line, so a copy between two banks misses on every byte |
+| `fastzp` | The firmware design with the pair in place of the read bank: fastpath's parameters with `read_bank` 0 and `zp_pair` 1. NATIVE.md's "Design + pair" |
+
+`zp_pair` is the one cost parameter that describes the machine as well
+as its costs: a profile with it arms the pair, and `--zpbank` with a
+profile without it is refused. `cost_report.py` runs `f121` and
+`fastpath` only: the existing port never writes `$C069`, so the pair
+profiles give the same run there (`tests/test_a2vm_cost.py`).
+
+The pair is checked by `tests/test_a2vm_zpbank.py`: the enable, the
+watch, the values, the scope and priority, the reset rules; the review's
+cases (an aux zero-page write does not load the pair, `$FF` disables,
+127-255 follow); the spec's detection probe as a program (present when
+armed, absent otherwise); each of the 74 opcodes that address
+`$0200-$BFFF` through a mode the pair can redirect, reading bank 5 and
+writing bank 9 exactly as the core's data_ea table says; the same-page
+`STA a,X` false read, JMP `(a)` and `(a,X)`, BRK and a read-modify-write
+across two banks; and the cost rules. Not modelled: the RTL's one-edge
+delay of a load (no instruction can see it), a SmartPort call's fallback
+(a2vm's memory API reaches no zero page and ignores the pair, as the
+card's does), the debug register and the feature bit.
 
 ## The comparison with a2sim.py
 
@@ -500,7 +671,9 @@ milestone 0 measures them.
 | A mapping change | Clears both TURBO caches (and every ARM write to the shadow counts as one, as the card's counter does) | the misses that follow |
 | A memory API request | The hold (the mirror and the line flushed first), then the ARM's work as `memory_api_hw.c` does it: AXI register accesses per 4 bytes of fast memory, one PSRAM line an Apple cycle by DMA, in 504-byte chunks | 0.135 us an AXI access, fitted to the hardware (below) |
 
-The model **only observes**: it never changes what the machine does. With
+The model **only observes**: it never changes what the machine does (the
+one exception, `zp_pair` of the pair profiles, arms the zero-page pair:
+"Milestone 6 additions" below). With
 `--cost-timed` its clock becomes the machine's (the PAL video frame,
 `$C019`, the mouse card's VBL interrupt and the idle skips follow it);
 without it the model runs beside a2sim.py's timeline, and
@@ -695,7 +868,7 @@ write the SSI-263.
 
 `tests/test_a2vm_cost.py`:
 
-- the parameter file: every value has a source, both profiles set the
+- the parameter file: every value has a source, every profile sets the
   same parameters, a2vm rejects a missing, unknown or malformed one;
 - the TURBO path against the firmware's benchmark
   (`hdl/sim/tb_vtw_turbo.sv:717-747`, `README_TURBO.md:32-35`): the
@@ -709,9 +882,10 @@ write the SSI-263.
   the quiet switches, the reconciler, the lazy class; the memory API's
   cost per chunk, and its hold flushing the mirror;
 - with the existing port: a run with the model observing matches a run
-  without it (state and all RAM); timed runs are deterministic; the 20
-  frames meet MILESTONES.md 3.1 item 4 and the counters stay within 10%
-  of the card's.
+  without it (state and all RAM), and under the pair profiles a run of
+  the exact core matches the plain one but for the pair's state, all
+  zero; timed runs are deterministic; the 20 frames meet MILESTONES.md
+  3.1 item 4 and the counters stay within 10% of the card's.
 
 ### What the model does not do
 
@@ -725,7 +899,7 @@ write the SSI-263.
 - Slow regions other than slot 4, the Disk II, the USB joystick: off, as
   in the measured setup (the port touches none of them in a frame). The
   slot-4 slowdown of the virtual Phasor is modelled (above) but off in
-  f121 and fastpath.
+  f121, fastpath, f121zp and fastzp.
 - The first access after a mapping change (`turbo_invalidate` still high
   at X_CAPTURE) is charged as a normal miss.
 - Refresh, PHI0 stretching and the long Apple cycle are not modelled: an

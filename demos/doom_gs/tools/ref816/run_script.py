@@ -46,7 +46,8 @@ from typing import Dict, List, NamedTuple, Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ref816 import make_image, marks, script, shot, title  # noqa: E402
+from ref816 import bounded, make_image, marks, script, shot, \
+    title  # noqa: E402
 
 ROOT = make_image.ROOT
 COVERAGE = ROOT / 'coverage'
@@ -258,9 +259,16 @@ class Run:
             options += ['--mark', '%06X' % symbols.address(unit + ':' + name)]
         command = [str(title.MACHINE), str(title.MEMORY), '--disk',
                    str(title.DISK)] + options + list(extra)
-        result = subprocess.run(command, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE,
-                                universal_newlines=True)
+        # bounded (the ground rules): a wall-time limit that kills the
+        # machine, and no file past 1 GiB
+        try:
+            result = bounded.run(command, timeout=bounded.TOOL_TIMEOUT,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE,
+                                 universal_newlines=True)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError('ref816 did not finish in %d s'
+                               % bounded.TOOL_TIMEOUT)
         if result.returncode:
             raise RuntimeError('ref816 failed: ' + result.stderr)
         return json.loads(self.state_path.read_text())
@@ -282,15 +290,18 @@ class Run:
 
 def run(path: Path, cpu_hz: Optional[int] = None, twice: bool = False,
         limit_seconds: float = DEFAULT_LIMIT_SECONDS, runs: Path = RUNS,
-        shots: Path = SHOTS) -> Dict:
+        shots: Path = SHOTS, extra: Sequence[str] = (),
+        name: Optional[str] = None) -> Dict:
     """Run the script at `path` and return its report (also written to
-    RUNS/NAME/report.json)."""
-    name = path.stem
+    RUNS/NAME/report.json). `extra` are more options of the machine, for
+    both runs with --twice; `name` replaces the script's for the
+    directories."""
+    name = name or path.stem
     with open(str(make_image.LINKMAP)) as handle:
         symbols = script.Symbols(json.load(handle))
     program = script.compile_script(path.read_text(), symbols, path.name)
     first = Run(runs / name, shots / name)
-    state = first.execute(program, symbols, cpu_hz, limit_seconds)
+    state = first.execute(program, symbols, cpu_hz, limit_seconds, extra)
     log = marks.read(first.marks_path)
     render = symbols.address(':'.join(RENDER))
     report = {
@@ -310,7 +321,8 @@ def run(path: Path, cpu_hz: Optional[int] = None, twice: bool = False,
     if twice:
         second = Run(runs / (name + '-again'),
                      runs / (name + '-again') / 'shots')
-        again = second.execute(program, symbols, cpu_hz, limit_seconds)
+        again = second.execute(program, symbols, cpu_hz, limit_seconds,
+                               extra)
         same_dumps = all(
             dump.read_bytes() == (second.dumps / dump.name).read_bytes()
             for dump in first.dumps.glob('*.shr'))

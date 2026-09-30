@@ -28,13 +28,22 @@
  *   - with the virtual Phasor enabled (slowdown_slot4, off in f121 and
  *     fastpath), the slot-4 slowdown: after an access to $C400-$C4FF or
  *     $C0C0-$C0CF, slowdown_cycles CPU cycles at 1 MHz, each paced to an
- *     Apple data strobe (README.md, "The slot-4 slowdown").
+ *     Apple data strobe (README.md, "The slot-4 slowdown");
+ *   - with the zero-page bank pair (zp_pair, profiles f121zp and fastzp):
+ *     a redirected access as a RamWorks line access (the page a2vm hands
+ *     the hooks is the redirected bank's), never a TURBO cache hit, fill
+ *     or invalidation (the pair is not part of the translation state the
+ *     caches are checked against, zpbank-spec.md 3.2 and 6), and the
+ *     $C069 write as an ordinary bus cycle (spec 2.2; read_bank is 0 in
+ *     both profiles).
  *
  * Its parameters come from a file of "name value" lines, which
  * tools/a2vm/costs.py writes from a profile of tools/a2vm/costs/appletini.json,
  * where each parameter cites its source.
  *
- * The model only observes: it never changes what the machine does. In
+ * The model only observes: it never changes what the machine does (the
+ * one exception is zp_pair, which says the firmware has the pair, so a2vm
+ * arms it; a program that never writes $C069 runs the same). In
  * "timed" mode its clock is the machine's clock (the VBL, $C019, the
  * mouse interrupt and the idle skips follow it); otherwise it runs beside
  * the machine's own clock, and a compatibility run still matches
@@ -74,6 +83,12 @@ typedef struct {
         quiet_switch;
     int quiet_switches;             /* fastpath */
     int read_bank;                  /* fastpath: $C069 */
+    int zp_pair;                    /* f121zp, fastzp: the firmware has
+                                       the zero-page bank pair, armed (its
+                                       kill switch on); a2vm arms the
+                                       machine's pair (a2vm.h), the one
+                                       parameter that describes the
+                                       machine as well as its costs */
     /* the video mirror */
     unsigned flush_steer_cycles;
     int lazy_shr;                   /* fastpath */
@@ -171,6 +186,9 @@ typedef struct a2vm_cost {
        (instruction_turbo_q of w65c02_core.sv) */
     unsigned slow_left;
     int instr_turbo;
+
+    /* the zero-page pair's counters (a2vm.h) at the last boundary */
+    uint64_t last_zpb[6];
 } a2vm_cost;
 
 /* Read a parameter file ("name value" lines, # comments). Returns 0 and

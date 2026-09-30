@@ -59,6 +59,10 @@ static inline void C02_F(wr_)(cpu65c02 *cpu, uint16_t address, uint8_t value,
     C02_F(wr_)(cpu, (uint16_t)(address), (uint8_t)(value), kind)
 #define DUMMY(address) ((void)RD(address, CPU65C02_DUMMY))
 #define DATA CPU65C02_DATA
+/* The cycles of the core's data_ea states (cpu65c02.h): an access at the
+   instruction's effective address, and the dummy re-reads of it. */
+#define EA CPU65C02_DATA_EA
+#define DUMMY_EA(address) ((void)RD(address, CPU65C02_DUMMY_EA))
 
 /* The next byte of the instruction. */
 static inline uint8_t C02_F(operand_)(cpu65c02 *cpu)
@@ -98,7 +102,9 @@ static inline uint16_t C02_F(absolute_)(cpu65c02 *cpu)
    page; `always` is set for writes and for INC and DEC, which spend it
    every time (table 4-1 note 1, table 7-1). The cycle reads the last
    instruction byte, except that STA on the same page reads its own
-   target, as the NMOS chip does: `sta` selects that. */
+   target, as the NMOS chip does: `sta` selects that. That false read is
+   the core's ST_INDEX_DUMMY, not data_ea (zpbank-review.md, finding 8):
+   a plain DUMMY. */
 static inline uint16_t C02_F(abs_indexed_)(cpu65c02 *cpu, uint8_t index,
                                            int always, int sta)
 {
@@ -218,9 +224,11 @@ static inline void C02_F(compare_)(cpu65c02 *cpu, uint8_t reg, uint8_t m)
 
 /* The decimal cycle of ADC and SBC reads the effective address again;
    for the immediate forms it reads $007F (ADC) or $0000 (SBC), as the
-   Appletini core and the SingleStepTests set do. */
+   Appletini core and the SingleStepTests set do. It is the core's
+   ST_DECIMAL_EXTRA, a data_ea state in both forms (w65c02_core.sv:1049-1052,
+   :1154-1156). */
 #define DECIMAL_CYCLE(address) \
-    do { if (cpu->p & CPU65C02_D) DUMMY(address); } while (0)
+    do { if (cpu->p & CPU65C02_D) DUMMY_EA(address); } while (0)
 
 /* ---- read-modify-write ---- */
 
@@ -285,24 +293,25 @@ static inline uint8_t C02_F(trb_)(cpu65c02 *cpu, uint8_t m)
 }
 
 /* Read, read again (the 65C02 does not write the old value back), then
-   write: three cycles at the effective address. */
+   write: three cycles at the effective address, the core's ST_RMW_READ,
+   ST_RMW_MODIFY and ST_RMW_WRITE. */
 #define RMW(address_expression, operation) \
     do { \
         uint16_t ea_ = address_expression; \
-        uint8_t m_ = RD(ea_, DATA); \
-        DUMMY(ea_); \
+        uint8_t m_ = RD(ea_, EA); \
+        DUMMY_EA(ea_); \
         m_ = C02_F(operation)(cpu, m_); \
-        WR(ea_, m_, DATA); \
+        WR(ea_, m_, EA); \
     } while (0)
 
 /* RMB and SMB: the same cycles as the other zero-page read-modify-writes. */
 #define BIT_RMW(set, bit) \
     do { \
         uint16_t ea_ = ZP(); \
-        uint8_t m_ = RD(ea_, DATA); \
-        DUMMY(ea_); \
+        uint8_t m_ = RD(ea_, EA); \
+        DUMMY_EA(ea_); \
         m_ = (uint8_t)((set) ? m_ | 1u << (bit) : m_ & ~(1u << (bit))); \
-        WR(ea_, m_, DATA); \
+        WR(ea_, m_, EA); \
     } while (0)
 
 /* ---- branches ---- */
@@ -327,7 +336,8 @@ static inline void C02_F(branch_to_)(cpu65c02 *cpu, uint8_t offset)
 
 /* BBR and BBS: the zero-page byte is read twice, then the offset. When
    the branch is taken, the extra cycle and the page-crossing one both
-   read the next instruction's address. */
+   read the next instruction's address. The zero-page reads are the
+   core's ST_BIT_BRANCH_READ and ST_BIT_BRANCH_REPEAT, not data_ea. */
 #define BIT_BRANCH(set, bit) \
     do { \
         uint16_t ea_ = ZP(); \
@@ -420,56 +430,56 @@ static inline void C02_F(execute_)(cpu65c02 *cpu)
     switch (opcode) {
     /* loads */
     case 0xa9: cpu->a = OPERAND(); SET_NZ(cpu->a); break;
-    case 0xa5: cpu->a = RD(ZP(), DATA); SET_NZ(cpu->a); break;
-    case 0xb5: cpu->a = RD(ZPX(), DATA); SET_NZ(cpu->a); break;
-    case 0xad: cpu->a = RD(ABS(), DATA); SET_NZ(cpu->a); break;
-    case 0xbd: cpu->a = RD(ABSX_R(), DATA); SET_NZ(cpu->a); break;
-    case 0xb9: cpu->a = RD(ABSY_R(), DATA); SET_NZ(cpu->a); break;
-    case 0xa1: cpu->a = RD(INDX(), DATA); SET_NZ(cpu->a); break;
-    case 0xb1: cpu->a = RD(INDY_R(), DATA); SET_NZ(cpu->a); break;
-    case 0xb2: cpu->a = RD(IND(), DATA); SET_NZ(cpu->a); break;
+    case 0xa5: cpu->a = RD(ZP(), EA); SET_NZ(cpu->a); break;
+    case 0xb5: cpu->a = RD(ZPX(), EA); SET_NZ(cpu->a); break;
+    case 0xad: cpu->a = RD(ABS(), EA); SET_NZ(cpu->a); break;
+    case 0xbd: cpu->a = RD(ABSX_R(), EA); SET_NZ(cpu->a); break;
+    case 0xb9: cpu->a = RD(ABSY_R(), EA); SET_NZ(cpu->a); break;
+    case 0xa1: cpu->a = RD(INDX(), EA); SET_NZ(cpu->a); break;
+    case 0xb1: cpu->a = RD(INDY_R(), EA); SET_NZ(cpu->a); break;
+    case 0xb2: cpu->a = RD(IND(), EA); SET_NZ(cpu->a); break;
     case 0xa2: cpu->x = OPERAND(); SET_NZ(cpu->x); break;
-    case 0xa6: cpu->x = RD(ZP(), DATA); SET_NZ(cpu->x); break;
-    case 0xb6: cpu->x = RD(ZPY(), DATA); SET_NZ(cpu->x); break;
-    case 0xae: cpu->x = RD(ABS(), DATA); SET_NZ(cpu->x); break;
-    case 0xbe: cpu->x = RD(ABSY_R(), DATA); SET_NZ(cpu->x); break;
+    case 0xa6: cpu->x = RD(ZP(), EA); SET_NZ(cpu->x); break;
+    case 0xb6: cpu->x = RD(ZPY(), EA); SET_NZ(cpu->x); break;
+    case 0xae: cpu->x = RD(ABS(), EA); SET_NZ(cpu->x); break;
+    case 0xbe: cpu->x = RD(ABSY_R(), EA); SET_NZ(cpu->x); break;
     case 0xa0: cpu->y = OPERAND(); SET_NZ(cpu->y); break;
-    case 0xa4: cpu->y = RD(ZP(), DATA); SET_NZ(cpu->y); break;
-    case 0xb4: cpu->y = RD(ZPX(), DATA); SET_NZ(cpu->y); break;
-    case 0xac: cpu->y = RD(ABS(), DATA); SET_NZ(cpu->y); break;
-    case 0xbc: cpu->y = RD(ABSX_R(), DATA); SET_NZ(cpu->y); break;
+    case 0xa4: cpu->y = RD(ZP(), EA); SET_NZ(cpu->y); break;
+    case 0xb4: cpu->y = RD(ZPX(), EA); SET_NZ(cpu->y); break;
+    case 0xac: cpu->y = RD(ABS(), EA); SET_NZ(cpu->y); break;
+    case 0xbc: cpu->y = RD(ABSX_R(), EA); SET_NZ(cpu->y); break;
 
     /* stores */
-    case 0x85: WR(ZP(), cpu->a, DATA); break;
-    case 0x95: WR(ZPX(), cpu->a, DATA); break;
-    case 0x8d: WR(ABS(), cpu->a, DATA); break;
-    case 0x9d: WR(C02_F(abs_indexed_)(cpu, cpu->x, 1, 1), cpu->a, DATA); break;
-    case 0x99: WR(C02_F(abs_indexed_)(cpu, cpu->y, 1, 1), cpu->a, DATA); break;
-    case 0x81: WR(INDX(), cpu->a, DATA); break;
-    case 0x91: WR(C02_F(indirect_indexed_)(cpu, 1), cpu->a, DATA); break;
-    case 0x92: WR(IND(), cpu->a, DATA); break;
-    case 0x86: WR(ZP(), cpu->x, DATA); break;
-    case 0x96: WR(ZPY(), cpu->x, DATA); break;
-    case 0x8e: WR(ABS(), cpu->x, DATA); break;
-    case 0x84: WR(ZP(), cpu->y, DATA); break;
-    case 0x94: WR(ZPX(), cpu->y, DATA); break;
-    case 0x8c: WR(ABS(), cpu->y, DATA); break;
-    case 0x64: WR(ZP(), 0, DATA); break;
-    case 0x74: WR(ZPX(), 0, DATA); break;
-    case 0x9c: WR(ABS(), 0, DATA); break;
-    case 0x9e: WR(C02_F(abs_indexed_)(cpu, cpu->x, 1, 0), 0, DATA); break;
+    case 0x85: WR(ZP(), cpu->a, EA); break;
+    case 0x95: WR(ZPX(), cpu->a, EA); break;
+    case 0x8d: WR(ABS(), cpu->a, EA); break;
+    case 0x9d: WR(C02_F(abs_indexed_)(cpu, cpu->x, 1, 1), cpu->a, EA); break;
+    case 0x99: WR(C02_F(abs_indexed_)(cpu, cpu->y, 1, 1), cpu->a, EA); break;
+    case 0x81: WR(INDX(), cpu->a, EA); break;
+    case 0x91: WR(C02_F(indirect_indexed_)(cpu, 1), cpu->a, EA); break;
+    case 0x92: WR(IND(), cpu->a, EA); break;
+    case 0x86: WR(ZP(), cpu->x, EA); break;
+    case 0x96: WR(ZPY(), cpu->x, EA); break;
+    case 0x8e: WR(ABS(), cpu->x, EA); break;
+    case 0x84: WR(ZP(), cpu->y, EA); break;
+    case 0x94: WR(ZPX(), cpu->y, EA); break;
+    case 0x8c: WR(ABS(), cpu->y, EA); break;
+    case 0x64: WR(ZP(), 0, EA); break;
+    case 0x74: WR(ZPX(), 0, EA); break;
+    case 0x9c: WR(ABS(), 0, EA); break;
+    case 0x9e: WR(C02_F(abs_indexed_)(cpu, cpu->x, 1, 0), 0, EA); break;
 
     /* logic */
 #define LOGIC(base, op) \
     case base + 0x08: cpu->a op OPERAND(); SET_NZ(cpu->a); break; \
-    case base + 0x04: cpu->a op RD(ZP(), DATA); SET_NZ(cpu->a); break; \
-    case base + 0x14: cpu->a op RD(ZPX(), DATA); SET_NZ(cpu->a); break; \
-    case base + 0x0c: cpu->a op RD(ABS(), DATA); SET_NZ(cpu->a); break; \
-    case base + 0x1c: cpu->a op RD(ABSX_R(), DATA); SET_NZ(cpu->a); break; \
-    case base + 0x18: cpu->a op RD(ABSY_R(), DATA); SET_NZ(cpu->a); break; \
-    case base + 0x00: cpu->a op RD(INDX(), DATA); SET_NZ(cpu->a); break; \
-    case base + 0x10: cpu->a op RD(INDY_R(), DATA); SET_NZ(cpu->a); break; \
-    case base + 0x11: cpu->a op RD(IND(), DATA); SET_NZ(cpu->a); break;
+    case base + 0x04: cpu->a op RD(ZP(), EA); SET_NZ(cpu->a); break; \
+    case base + 0x14: cpu->a op RD(ZPX(), EA); SET_NZ(cpu->a); break; \
+    case base + 0x0c: cpu->a op RD(ABS(), EA); SET_NZ(cpu->a); break; \
+    case base + 0x1c: cpu->a op RD(ABSX_R(), EA); SET_NZ(cpu->a); break; \
+    case base + 0x18: cpu->a op RD(ABSY_R(), EA); SET_NZ(cpu->a); break; \
+    case base + 0x00: cpu->a op RD(INDX(), EA); SET_NZ(cpu->a); break; \
+    case base + 0x10: cpu->a op RD(INDY_R(), EA); SET_NZ(cpu->a); break; \
+    case base + 0x11: cpu->a op RD(IND(), EA); SET_NZ(cpu->a); break;
     LOGIC(0x01, |=)
     LOGIC(0x21, &=)
     LOGIC(0x41, ^=)
@@ -479,21 +489,21 @@ static inline void C02_F(execute_)(cpu65c02 *cpu)
 #define ARITH(base, fn, immediate_cycle) \
     case base + 0x08: C02_F(fn)(cpu, OPERAND()); \
         DECIMAL_CYCLE(immediate_cycle); break; \
-    case base + 0x04: { uint16_t ea = ZP(); C02_F(fn)(cpu, RD(ea, DATA)); \
+    case base + 0x04: { uint16_t ea = ZP(); C02_F(fn)(cpu, RD(ea, EA)); \
         DECIMAL_CYCLE(ea); break; } \
-    case base + 0x14: { uint16_t ea = ZPX(); C02_F(fn)(cpu, RD(ea, DATA)); \
+    case base + 0x14: { uint16_t ea = ZPX(); C02_F(fn)(cpu, RD(ea, EA)); \
         DECIMAL_CYCLE(ea); break; } \
-    case base + 0x0c: { uint16_t ea = ABS(); C02_F(fn)(cpu, RD(ea, DATA)); \
+    case base + 0x0c: { uint16_t ea = ABS(); C02_F(fn)(cpu, RD(ea, EA)); \
         DECIMAL_CYCLE(ea); break; } \
     case base + 0x1c: { uint16_t ea = ABSX_R(); \
-        C02_F(fn)(cpu, RD(ea, DATA)); DECIMAL_CYCLE(ea); break; } \
+        C02_F(fn)(cpu, RD(ea, EA)); DECIMAL_CYCLE(ea); break; } \
     case base + 0x18: { uint16_t ea = ABSY_R(); \
-        C02_F(fn)(cpu, RD(ea, DATA)); DECIMAL_CYCLE(ea); break; } \
-    case base + 0x00: { uint16_t ea = INDX(); C02_F(fn)(cpu, RD(ea, DATA)); \
+        C02_F(fn)(cpu, RD(ea, EA)); DECIMAL_CYCLE(ea); break; } \
+    case base + 0x00: { uint16_t ea = INDX(); C02_F(fn)(cpu, RD(ea, EA)); \
         DECIMAL_CYCLE(ea); break; } \
     case base + 0x10: { uint16_t ea = INDY_R(); \
-        C02_F(fn)(cpu, RD(ea, DATA)); DECIMAL_CYCLE(ea); break; } \
-    case base + 0x11: { uint16_t ea = IND(); C02_F(fn)(cpu, RD(ea, DATA)); \
+        C02_F(fn)(cpu, RD(ea, EA)); DECIMAL_CYCLE(ea); break; } \
+    case base + 0x11: { uint16_t ea = IND(); C02_F(fn)(cpu, RD(ea, EA)); \
         DECIMAL_CYCLE(ea); break; }
     ARITH(0x61, adc_, 0x007f)
     ARITH(0xe1, sbc_, 0x0000)
@@ -501,26 +511,26 @@ static inline void C02_F(execute_)(cpu65c02 *cpu)
 
     /* compares */
     case 0xc9: C02_F(compare_)(cpu, cpu->a, OPERAND()); break;
-    case 0xc5: C02_F(compare_)(cpu, cpu->a, RD(ZP(), DATA)); break;
-    case 0xd5: C02_F(compare_)(cpu, cpu->a, RD(ZPX(), DATA)); break;
-    case 0xcd: C02_F(compare_)(cpu, cpu->a, RD(ABS(), DATA)); break;
-    case 0xdd: C02_F(compare_)(cpu, cpu->a, RD(ABSX_R(), DATA)); break;
-    case 0xd9: C02_F(compare_)(cpu, cpu->a, RD(ABSY_R(), DATA)); break;
-    case 0xc1: C02_F(compare_)(cpu, cpu->a, RD(INDX(), DATA)); break;
-    case 0xd1: C02_F(compare_)(cpu, cpu->a, RD(INDY_R(), DATA)); break;
-    case 0xd2: C02_F(compare_)(cpu, cpu->a, RD(IND(), DATA)); break;
+    case 0xc5: C02_F(compare_)(cpu, cpu->a, RD(ZP(), EA)); break;
+    case 0xd5: C02_F(compare_)(cpu, cpu->a, RD(ZPX(), EA)); break;
+    case 0xcd: C02_F(compare_)(cpu, cpu->a, RD(ABS(), EA)); break;
+    case 0xdd: C02_F(compare_)(cpu, cpu->a, RD(ABSX_R(), EA)); break;
+    case 0xd9: C02_F(compare_)(cpu, cpu->a, RD(ABSY_R(), EA)); break;
+    case 0xc1: C02_F(compare_)(cpu, cpu->a, RD(INDX(), EA)); break;
+    case 0xd1: C02_F(compare_)(cpu, cpu->a, RD(INDY_R(), EA)); break;
+    case 0xd2: C02_F(compare_)(cpu, cpu->a, RD(IND(), EA)); break;
     case 0xe0: C02_F(compare_)(cpu, cpu->x, OPERAND()); break;
-    case 0xe4: C02_F(compare_)(cpu, cpu->x, RD(ZP(), DATA)); break;
-    case 0xec: C02_F(compare_)(cpu, cpu->x, RD(ABS(), DATA)); break;
+    case 0xe4: C02_F(compare_)(cpu, cpu->x, RD(ZP(), EA)); break;
+    case 0xec: C02_F(compare_)(cpu, cpu->x, RD(ABS(), EA)); break;
     case 0xc0: C02_F(compare_)(cpu, cpu->y, OPERAND()); break;
-    case 0xc4: C02_F(compare_)(cpu, cpu->y, RD(ZP(), DATA)); break;
-    case 0xcc: C02_F(compare_)(cpu, cpu->y, RD(ABS(), DATA)); break;
+    case 0xc4: C02_F(compare_)(cpu, cpu->y, RD(ZP(), EA)); break;
+    case 0xcc: C02_F(compare_)(cpu, cpu->y, RD(ABS(), EA)); break;
 
     /* BIT: the immediate form changes only Z */
     case 0x89: SET_FLAG(CPU65C02_Z, !(cpu->a & OPERAND())); break;
 #define BIT(expression) \
     do { \
-        uint8_t m_ = RD(expression, DATA); \
+        uint8_t m_ = RD(expression, EA); \
         cpu->p = (uint8_t)((cpu->p & ~(CPU65C02_N | CPU65C02_V | \
                                        CPU65C02_Z)) | \
                            (m_ & (CPU65C02_N | CPU65C02_V)) | \
@@ -616,7 +626,8 @@ static inline void C02_F(execute_)(cpu65c02 *cpu)
         /* JMP (a): the pointer's high byte comes from the next address,
            after a read of the address the NMOS chip would use (the
            pointer's page with the low byte incremented): one more cycle
-           than the 6502 (table 7-1). */
+           than the 6502 (table 7-1). The pointer reads are code space
+           for the zero-page pair (zpbank-spec.md D1): DATA, not EA. */
         uint16_t pointer = ABS(), low;
         low = RD(pointer, DATA);
         DUMMY((pointer & 0xff00) | ((pointer + 1) & 0x00ff));
@@ -713,8 +724,8 @@ static inline void C02_F(execute_)(cpu65c02 *cpu)
     case 0x82: case 0xc2: case 0xe2:
         (void)OPERAND();
         break;
-    case 0x44: (void)RD(ZP(), DATA); break;
-    case 0x54: case 0xd4: case 0xf4: (void)RD(ZPX(), DATA); break;
+    case 0x44: (void)RD(ZP(), EA); break;
+    case 0x54: case 0xd4: case 0xf4: (void)RD(ZPX(), EA); break;
     case 0x5c: case 0xdc: case 0xfc:
         (void)ABS();
         DUMMY(cpu->pc - 1);
@@ -790,6 +801,8 @@ C02_LINKAGE void C02_F(reset)(cpu65c02 *cpu)
 #undef WR
 #undef DUMMY
 #undef DATA
+#undef EA
+#undef DUMMY_EA
 #undef OPERAND
 #undef SET_NZ
 #undef SET_FLAG

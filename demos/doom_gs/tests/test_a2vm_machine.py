@@ -89,9 +89,10 @@ class Workspace(unittest.TestCase):
         """Run a bus script; its output lines."""
         script = self.directory / 'bus.txt'
         script.write_text('\n'.join(lines) + '\n')
-        result = subprocess.run(
+        result = support.run(
             [str(self.out / 'a2vm'), '--rom', str(self.rom)] +
             [str(a) for a in arguments] + ['--bus-script', str(script)],
+            timeout=120, max_bytes=64 << 20,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             universal_newlines=True)
         self.assertEqual(result.returncode, 0, result.stdout)
@@ -867,8 +868,9 @@ class AgainstA2sim(Workspace):
                     loads=[[k, b, a, d.hex()] for k, b, a, d in loads],
                     switches=switches, registers=registers, ops=list(ops),
                     ram=str(ram_a2sim))
-        result = subprocess.run(
+        result = support.run(
             [str(VENV), str(support.ROOT / 'tests' / 'a2sim_driver.py')],
+            timeout=600, max_bytes=64 << 20,
             input=json.dumps(spec), stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, universal_newlines=True)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -941,9 +943,9 @@ class AgainstA2sim(Workspace):
 
     def test_py65_core(self):
         out, _ = support.a2vm_build()
-        result = subprocess.run(
+        result = support.run(
             [str(VENV), str(support.ROOT / 'tools' / 'a2vm' / 'py65_diff.py'),
-             '--py65check', str(out / 'py65check')],
+             '--py65check', str(out / 'py65check')], timeout=600,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             universal_newlines=True)
         self.assertEqual(result.returncode, 0, result.stdout)
@@ -1087,10 +1089,10 @@ class ShortComparison(unittest.TestCase):
 
     def compare(self, *arguments):
         out, _ = support.a2vm_build()
-        result = subprocess.run(
+        result = support.run(
             [str(VENV), str(support.ROOT / 'tools' / 'a2vm' /
                             'compare_a2sim.py'), '--a2vm', str(out / 'a2vm'),
-             '--frames', '0'] + [str(a) for a in arguments],
+             '--frames', '0'] + [str(a) for a in arguments], timeout=1800,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             universal_newlines=True)
         return result

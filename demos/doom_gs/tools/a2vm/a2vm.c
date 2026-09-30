@@ -592,6 +592,8 @@ static int amem_write(a2vm *m, uint16_t address, uint8_t value)
         size_t length = a->input_length;
         a->input_length = 0;
         a->requests++;
+        if (m->zpb.rd || m->zpb.wr)
+            m->zpb.amem++;          /* a firmware call with the pair set */
         a->last_family = value;
         size_t n = a2vm_amem_execute(m, value, a->input, length, reply);
         if (m->halt[0])
@@ -736,6 +738,105 @@ static void lc_switch(a2vm *m, unsigned low, int is_read)
     a2vm_remap(m);
 }
 
+/* ---- the zero-page bank pair (zpbank-spec.md, zpbank-review.md) ----
+
+   The review's corrected specification (zpbank-review.md section 2),
+   with the RTL places the spec cites (appletini-one, F1.2.1):
+
+   - A write to $C069 while the pair is armed sets the pair and clears
+     both registers: $00 or $FF turns it off, $01-$FE makes that byte
+     zp_rd and the next zp_wr. The write stays an ordinary bus cycle (the
+     X_ROUTE branch is not changed, spec 2.2): a2vm's I/O write does
+     nothing else, as a2sim.py's does nothing for $C069. Reads of $C069
+     are unchanged.
+   - While the pair is on, a committed CPU write whose decode is main
+     zero page loads the register its address names; writes to aux zero
+     page (ALTZP) are ignored (review finding 2). The value applies on
+     the next edge (spec 2.4): every write to $00xx is the last cycle of
+     its instruction and the first redirected access comes at least 4
+     cycles later, so a2vm applies it at once.
+   - A stored 1-126 selects that $C073 bank (physical bank value + 1);
+     0 and 127-255 follow the switches (review finding 1).
+   - Only data_ea cycles (cpu65c02.h) to $0200-$BFFF are redirected, by
+     zp_rd for reads and zp_wr for writes, and the redirect wins over
+     RAMRD, RAMWRT, 80STORE and PAGE2 (spec 3.1, D2: the override comes
+     after the 80STORE block of translate_apple_addr, globals.sv:263-269).
+     Redirected banks are PSRAM banks of 2 or more, so a redirected write
+     is never posted, shadowed or counted as a video write (spec 3.1,
+     vtw_core_top.sv:565-569).
+   - Reset (spec section 4, review section 2): off at power-on, on RES#
+     (a2vm_zpbank_reset) and when disarmed; kept across everything else.
+   - The memory API and the pokes of a harness never load it (they do not
+     go through the CPU; the API cannot reach zero page). */
+
+static uint8_t zpb_decode(uint8_t value)
+{
+    return value >= 1 && value <= 126 ? value : 0;
+}
+
+static void zpb_enable(a2vm *m, uint8_t value)
+{
+    m->zpb.enables++;
+    m->zpb.address = value == 0xff ? 0 : value;
+    m->zpb.rd = m->zpb.wr = 0;
+}
+
+/* A committed CPU write to main zero page. */
+static void zpb_watch(a2vm *m, uint16_t address, uint8_t value)
+{
+    if (address == m->zpb.address) {
+        m->zpb.rd = zpb_decode(value);
+        m->zpb.loads++;
+    } else if (address == (uint16_t)(m->zpb.address + 1)) {
+        m->zpb.wr = zpb_decode(value);
+        m->zpb.loads++;
+    }
+}
+
+/* The contract breach of native-memory.md 8.1 item 9: firmware (the slot
+   ROMs or the //e ROM) running while the pair redirects. */
+static int zpb_in_firmware(const a2vm *m)
+{
+    uint16_t pc = m->instruction_pc;
+    return (pc >= 0xc100 && pc < 0xd000) || (pc >= 0xd000 && !m->lc_read);
+}
+
+static inline int zpb_redirects(uint16_t address)
+{
+    return address >= 0x0200 && address < 0xc000;
+}
+
+static uint8_t *zpb_page(a2vm *m, uint8_t bank, uint16_t address)
+{
+    if (zpb_in_firmware(m))
+        m->zpb.firmware++;
+    return m->aux_banks + (size_t)bank * A2VM_BANK_SIZE + (address & 0xff00);
+}
+
+int a2vm_zpbank_arm(a2vm *m, int on, char *error, size_t error_size)
+{
+    if (on && m->core != A2VM_CORE_W65C02S) {
+        snprintf(error, error_size, "the zero-page pair needs the exact "
+                 "core (--core w65c02s): the compatibility core does not "
+                 "class its cycles");
+        return 0;
+    }
+    if (on && m->ramworks_banks != A2VM_MAX_BANKS) {
+        snprintf(error, error_size, "the zero-page pair needs %d RamWorks "
+                 "banks (the card's 8 MB)", A2VM_MAX_BANKS);
+        return 0;
+    }
+    m->zpb.armed = (uint8_t)!!on;
+    if (!on)
+        a2vm_zpbank_reset(m);
+    return 1;
+}
+
+void a2vm_zpbank_reset(a2vm *m)
+{
+    m->zpb.address = m->zpb.rd = m->zpb.wr = 0;
+}
+
 static uint8_t io_read(a2vm *m, uint16_t address)
 {
     unsigned low = address & 0xff;
@@ -800,6 +901,8 @@ static void io_write(a2vm *m, uint16_t address, uint8_t value)
         m->paddle_trigger = (int64_t)a2vm_bus_clock(m);
     else if (low == 0x71 || low == 0x73)
         a2vm_select_bank(m, value);
+    else if (low == 0x69 && m->zpb.armed)
+        zpb_enable(m, value);
     else if (low >= 0x80 && low <= 0x8f)
         lc_switch(m, low, 0);
     else if ((int)(low >> 4) == 8 + m->phasor_slot) {
@@ -893,6 +996,42 @@ static void irq_bounds_check(a2vm *m, uint16_t address, int write)
     halt(m, text);
 }
 
+/* --write-log: one line (README.md, "The write log"). It is the
+   machine's write_hook, which sees every CPU write, with the storage byte
+   it reaches, before the write. */
+static void log_write(a2vm *m, uint16_t address, uint8_t *storage,
+                      uint8_t value)
+{
+    if (!a2vm_in_ranges(m, m->write_ranges, m->write_range_count, address,
+                        storage))
+        return;
+    if (m->write_log_limit && m->write_logged >= m->write_log_limit) {
+        char text[96];
+        snprintf(text, sizeof text, "write-log: %" PRIu64 " lines, the "
+                 "--write-log-limit", m->write_log_limit);
+        halt(m, text);
+        return;
+    }
+    static const char *const names[] = { "main", "aux", "lc", "lc1" };
+    unsigned kind, bank, offset;
+    uint64_t cycles = m->core == A2VM_CORE_PY65 ? m->py65_cycles
+                                                : m->cpu.cycles;
+    fprintf(m->write_log, "w %" PRIu64 " %" PRIu64 " %04X %04X", a2vm_now(m),
+            cycles, m->instruction_pc, address);
+    if (storage && a2vm_locate(m, storage, &kind, &bank, &offset))
+        fprintf(m->write_log, " %s %u %04X %02X %02X\n", names[kind], bank,
+                offset, *storage, value);
+    else
+        fprintf(m->write_log, " io - - - %02X\n", value);
+    m->write_logged++;
+}
+
+void a2vm_start_write_log(a2vm *m, FILE *log)
+{
+    m->write_log = log;
+    m->write_hook = log_write;
+}
+
 static inline uint8_t bus_read(a2vm *m, uint16_t address, int kind)
 {
     if (m->irq_guard)
@@ -944,14 +1083,67 @@ static inline void bus_write(a2vm *m, uint16_t address, uint8_t value,
         a2vm_cost_after_io(m, address, 1, value);
 }
 
+/* The bus with the zero-page pair armed (the machine without it keeps the
+   two functions above, and their speed): a data_ea cycle to $0200-$BFFF
+   goes to the register's bank when it is not 0; a write whose byte is
+   main zero page may load a register. The compatibility core never runs
+   on it (a2vm_zpbank_arm). */
+static inline uint8_t bus_read_zp(a2vm *m, uint16_t address, int kind)
+{
+    if ((kind & CPU65C02_EA) && m->zpb.rd && zpb_redirects(address)) {
+        const uint8_t *page = zpb_page(m, m->zpb.rd, address);
+        m->zpb.reads++;
+        if (m->irq_guard)
+            irq_bounds_check(m, address, 0);
+        if (m->cost)
+            a2vm_cost_read(m, address, page, kind);
+        return page[address & 0xff];
+    }
+    return bus_read(m, address, kind);
+}
+
+static inline void bus_write_zp(a2vm *m, uint16_t address, uint8_t value,
+                                int kind)
+{
+    if ((kind & CPU65C02_EA) && m->zpb.wr && zpb_redirects(address)) {
+        uint8_t *page = zpb_page(m, m->zpb.wr, address);
+        m->zpb.writes++;
+        if (m->irq_guard)
+            irq_bounds_check(m, address, 1);
+        if (m->write_hook)
+            m->write_hook(m, address, page + (address & 0xff), value);
+        if (m->cost)
+            a2vm_cost_write(m, address, value, page, kind);
+        page[address & 0xff] = value;   /* PSRAM: never a video write */
+        return;
+    }
+    bus_write(m, address, value, kind);
+    if (address < 0x100 && m->zpb.address && m->wpage[0] == m->main)
+        zpb_watch(m, address, value);
+}
+
 uint8_t a2vm_read(a2vm *m, uint16_t address)
 {
-    return bus_read(m, address, CPU65C02_DATA);
+    return m->zpb.armed ? bus_read_zp(m, address, CPU65C02_DATA)
+                        : bus_read(m, address, CPU65C02_DATA);
 }
 
 void a2vm_write(a2vm *m, uint16_t address, uint8_t value)
 {
-    bus_write(m, address, value, CPU65C02_DATA);
+    if (m->zpb.armed)
+        bus_write_zp(m, address, value, CPU65C02_DATA);
+    else
+        bus_write(m, address, value, CPU65C02_DATA);
+}
+
+uint8_t a2vm_read_ea(a2vm *m, uint16_t address)
+{
+    return bus_read_zp(m, address, CPU65C02_DATA_EA);
+}
+
+void a2vm_write_ea(a2vm *m, uint16_t address, uint8_t value)
+{
+    bus_write_zp(m, address, value, CPU65C02_DATA_EA);
 }
 
 /* ---- the cores ---- */
@@ -977,16 +1169,35 @@ void a2vm_write(a2vm *m, uint16_t address, uint8_t value)
 #undef C02_READ
 #undef C02_WRITE
 
+/* the exact core again, on the bus of the armed pair */
+#define C02_PREFIX w65zp_
+#define C02_LINKAGE static inline
+#define C02_READ(cpu, address, kind) \
+    bus_read_zp((a2vm *)(cpu)->context, (address), (kind))
+#define C02_WRITE(cpu, address, value, kind) \
+    bus_write_zp((a2vm *)(cpu)->context, (address), (value), (kind))
+#include "cpu65c02_core.h"
+#undef C02_PREFIX
+#undef C02_LINKAGE
+#undef C02_READ
+#undef C02_WRITE
+
 static uint8_t native_read(void *context, uint16_t address,
                            cpu65c02_kind kind)
 {
-    return bus_read(context, address, kind);
+    a2vm *m = context;
+    return m->zpb.armed ? bus_read_zp(m, address, kind)
+                        : bus_read(m, address, kind);
 }
 
 static void native_write(void *context, uint16_t address, uint8_t value,
                          cpu65c02_kind kind)
 {
-    bus_write(context, address, value, kind);
+    a2vm *m = context;
+    if (m->zpb.armed)
+        bus_write_zp(m, address, value, kind);
+    else
+        bus_write(m, address, value, kind);
 }
 
 uint16_t a2vm_pc(const a2vm *m)
@@ -1131,6 +1342,7 @@ void a2vm_step(a2vm *m)
         vbl_event(m);
     m->instructions++;
     if (m->core == A2VM_CORE_PY65) {
+        m->instruction_pc = m->r.pc;
         if (m->mouse_on && m->mouse.irq && !(m->r.p & P65_I)) {
             m->r.waiting = 0;
             p65_irq(m);
@@ -1141,6 +1353,7 @@ void a2vm_step(a2vm *m)
             m->irq_guard = m->irq_bound_count != 0;
         }
         uint16_t pc = m->r.pc;
+        m->instruction_pc = pc;
         if (m->idle_map[pc >> 3] & (1u << (pc & 7)))
             skip_idle(m, pc);
         if (m->cost && m->cost->timed && m->r.waiting)
@@ -1165,6 +1378,7 @@ void a2vm_step(a2vm *m)
             ay_log_irq(m);
     }
     uint16_t pc = m->cpu.pc;
+    m->instruction_pc = pc;     /* an interrupt entry's too */
     if (m->idle_map[pc >> 3] & (1u << (pc & 7)))
         skip_idle(m, pc);
     if (m->prodos && m->cpu.state == CPU65C02_RUNNING &&
@@ -1172,7 +1386,10 @@ void a2vm_step(a2vm *m)
         return;
     int rti = (m->ay_log || m->irq_bound_count) && !taken &&
               m->cpu.state == CPU65C02_RUNNING && at_rti(m, m->cpu.pc);
-    w65_step(&m->cpu);
+    if (m->zpb.armed)
+        w65zp_step(&m->cpu);
+    else
+        w65_step(&m->cpu);
     /* the bounds hold from the handler's first instruction: the entry's
        reads of the interrupted PC are the main program's */
     if (taken && m->irq_bound_count)
@@ -1239,6 +1456,153 @@ void a2vm_mouse_buttons(a2vm *m, int left, int right)
 {
     mouse_commit(&m->mouse, m->mouse.x, m->mouse.y,
                  (left ? 1u : 0u) | (right ? 2u : 0u), 1);
+}
+
+/* ---- the CPU's RESET ---- */
+
+void a2vm_cpu_reset(a2vm *m)
+{
+    a2vm_zpbank_reset(m);
+    m->instruction_pc = a2vm_pc(m);
+    if (m->core == A2VM_CORE_W65C02S)
+        w65_reset(&m->cpu);
+}
+
+/* ---- ranges (the write log, range snapshots) ---- */
+
+int a2vm_locate(const a2vm *m, const uint8_t *p, unsigned *kind,
+                unsigned *bank, unsigned *offset)
+{
+    *bank = 0;
+    if (p >= m->main && p < m->main + sizeof m->main) {
+        *kind = A2VM_RANGE_MAIN;
+        *offset = (unsigned)(p - m->main);
+    } else if (p >= m->lc && p < m->lc + sizeof m->lc) {
+        *kind = A2VM_RANGE_LC;
+        *offset = 0xc000 + (unsigned)(p - m->lc);
+    } else if (p >= m->lc1 && p < m->lc1 + sizeof m->lc1) {
+        *kind = A2VM_RANGE_LC1;
+        *offset = 0xd000 + (unsigned)(p - m->lc1);
+    } else if (p >= m->aux_banks &&
+               p < m->aux_banks + (size_t)A2VM_MAX_BANKS * A2VM_BANK_SIZE) {
+        size_t o = (size_t)(p - m->aux_banks);
+        *kind = A2VM_RANGE_AUX;
+        *bank = (unsigned)(o / A2VM_BANK_SIZE);
+        *offset = (unsigned)(o % A2VM_BANK_SIZE);
+    } else
+        return 0;
+    return 1;
+}
+
+int a2vm_in_ranges(const a2vm *m, const a2vm_range *ranges, unsigned count,
+                   uint16_t address, const uint8_t *p)
+{
+    unsigned kind = A2VM_RANGE_CPU, bank = 0, offset = 0;
+    int located = p && a2vm_locate(m, p, &kind, &bank, &offset);
+    for (unsigned i = 0; i < count; i++) {
+        const a2vm_range *r = &ranges[i];
+        if (r->kind == A2VM_RANGE_CPU) {
+            if (address >= r->low && address <= r->high)
+                return 1;
+        } else if (located && r->kind == kind && offset >= r->low &&
+                   offset <= r->high &&
+                   (kind != A2VM_RANGE_AUX ||
+                    (bank >= r->bank_low && bank <= r->bank_high)))
+            return 1;
+    }
+    return 0;
+}
+
+static int parse_hex16(const char *text, uint16_t *value)
+{
+    char *end;
+    unsigned long v = strtoul(text, &end, 16);
+    if (end == text || *end || v > 0xffff)
+        return 0;
+    *value = (uint16_t)v;
+    return 1;
+}
+
+int a2vm_parse_ranges(const char *text, a2vm_range *ranges,
+                      unsigned *count, int allow_cpu, char *error,
+                      size_t error_size)
+{
+    char buffer[4096];
+    if (strlen(text) >= sizeof buffer) {
+        snprintf(error, error_size, "the ranges are too long");
+        return 0;
+    }
+    strcpy(buffer, text);
+    *count = 0;
+    for (char *item = strtok(buffer, ","); item; item = strtok(NULL, ",")) {
+        a2vm_range r;
+        memset(&r, 0, sizeof r);
+        char *colon = strchr(item, ':');
+        if (colon)
+            *colon = 0;
+        uint16_t lowest = 0, highest = 0xffff;
+        if (!strcmp(item, "main"))
+            r.kind = A2VM_RANGE_MAIN;
+        else if (!strcmp(item, "lc")) {
+            r.kind = A2VM_RANGE_LC;
+            lowest = 0xc000;
+        } else if (!strcmp(item, "lc1")) {
+            r.kind = A2VM_RANGE_LC1;
+            lowest = 0xd000;
+            highest = 0xdfff;
+        } else if (!strcmp(item, "cpu") && allow_cpu)
+            r.kind = A2VM_RANGE_CPU;
+        else if (!strncmp(item, "aux", 3) && item[3]) {
+            char *end, *dash;
+            unsigned long first = strtoul(item + 3, &end, 10), last = first;
+            dash = end;
+            if (*dash == '-')
+                last = strtoul(dash + 1, &end, 10);
+            if (end == item + 3 || *end || first > last ||
+                last >= A2VM_MAX_BANKS) {
+                snprintf(error, error_size, "%s: aux banks are auxN or "
+                         "auxN-M, 0-%d", item, A2VM_MAX_BANKS - 1);
+                return 0;
+            }
+            r.kind = A2VM_RANGE_AUX;
+            r.bank_low = (uint8_t)first;
+            r.bank_high = (uint8_t)last;
+        } else {
+            snprintf(error, error_size, "%s: a range is main, auxN, auxN-M, "
+                     "lc, lc1%s, then :LO-HI", item, allow_cpu ? ", cpu" : "");
+            return 0;
+        }
+        r.low = lowest;
+        r.high = highest;
+        if (colon) {
+            char *dash = strchr(colon + 1, '-');
+            if (dash)
+                *dash = 0;
+            if (!parse_hex16(colon + 1, &r.low) ||
+                (dash && !parse_hex16(dash + 1, &r.high))) {
+                snprintf(error, error_size, "%s: the addresses are hex, LO or "
+                         "LO-HI", item);
+                return 0;
+            }
+            if (!dash)
+                r.high = r.low;
+        }
+        if (r.low > r.high || r.low < lowest || r.high > highest) {
+            snprintf(error, error_size, "%s: $%04X-$%04X is empty or outside "
+                     "$%04X-$%04X", item, r.low, r.high, lowest, highest);
+            return 0;
+        }
+        if (*count == A2VM_MAX_RANGES) {
+            snprintf(error, error_size, "at most %d ranges", A2VM_MAX_RANGES);
+            return 0;
+        }
+        ranges[(*count)++] = r;
+    }
+    if (!*count) {
+        snprintf(error, error_size, "no range");
+        return 0;
+    }
+    return 1;
 }
 
 /* ---- construction ---- */

@@ -35,6 +35,7 @@ static const param_spec specs[] = {
     P_U(io_capture), P_U(io_route), P_U(video_wait), P_U(bus_drive_tap),
     P_U(bus_data_tap), P_U(bus_done), P_U(status_read), P_U(sp_private),
     P_U(rom_read), P_U(quiet_switch), P_I(quiet_switches), P_I(read_bank),
+    P_I(zp_pair),
     P_U(flush_steer_cycles), P_I(lazy_shr),
     P_D(axi_us), P_D(axi_write_us), P_D(ps_dispatch_us), P_U(amem_chunk),
     P_U(amem_request_axi), P_U(amem_begin_axi), P_U(amem_poll_axi),
@@ -109,7 +110,8 @@ int a2vm_cost_load(a2vm_cost_params *p, const char *path, char *error,
             return 0;
         }
     if (!p->fabric_mhz || !p->line_us || !p->lines || !p->rw_lines ||
-        p->rw_lines > COST_RW_LINES_MAX || !p->amem_chunk) {
+        p->rw_lines > COST_RW_LINES_MAX || !p->amem_chunk ||
+        (p->zp_pair && p->read_bank)) {
         snprintf(error, error_size, "%s: a parameter is out of range", path);
         return 0;
     }
@@ -904,7 +906,8 @@ static void slowdown_read(a2vm *m, uint16_t address, const uint8_t *page,
         c->instr_turbo = c->slow_left == 0;
     if (c->slow_left)
         slow_access(c, m, address, 0, page, 0);
-    else if (kind == CPU65C02_DUMMY && !io && c->instr_turbo) {
+    else if (CPU65C02_BASE_KIND(kind) == CPU65C02_DUMMY && !io &&
+             c->instr_turbo) {
         if (m->core == A2VM_CORE_W65C02S &&
             m->cpu.state != CPU65C02_RUNNING)
             charge(c, c->p.turbo_hit, &c->c.fast_clocks);
@@ -924,7 +927,7 @@ void a2vm_cost_read(a2vm *m, uint16_t address, const uint8_t *page, int kind)
         return;
     }
     int io = (address >> 12) == 0xc;
-    if (kind == CPU65C02_DUMMY && !io) {
+    if (CPU65C02_BASE_KIND(kind) == CPU65C02_DUMMY && !io) {
         /* TURBO omits dummy reads outside I/O (w65c02_core.sv:903-967),
            but a waiting or stopped core still takes time */
         if (m->core == A2VM_CORE_W65C02S &&
@@ -1147,6 +1150,31 @@ static void write_slow_counters(FILE *out, const a2vm_cost_counters *now,
 #undef FIELD
 }
 
+/* The zero-page pair's counters (a2vm.h), with the pair armed only. */
+static void zpb_counters(const a2vm *m, uint64_t values[6])
+{
+    values[0] = m->zpb.enables;
+    values[1] = m->zpb.loads;
+    values[2] = m->zpb.reads;
+    values[3] = m->zpb.writes;
+    values[4] = m->zpb.firmware;
+    values[5] = m->zpb.amem;
+}
+
+static void write_zpb_counters(FILE *out, const a2vm *m,
+                               const uint64_t *before)
+{
+    static const char *const names[6] = {
+        "zpb_enables", "zpb_loads", "zpb_reads", "zpb_writes",
+        "zpb_firmware", "zpb_amem"
+    };
+    uint64_t now[6];
+    zpb_counters(m, now);
+    for (int i = 0; i < 6; i++)
+        fprintf(out, ", \"%s\": %" PRIu64, names[i],
+                now[i] - (before ? before[i] : 0));
+}
+
 void a2vm_cost_boundary(a2vm *m, uint64_t boundary)
 {
     a2vm_cost *c = m->cost;
@@ -1162,12 +1190,15 @@ void a2vm_cost_boundary(a2vm *m, uint64_t boundary)
         write_counters(c->report, &c->c, &c->last_c);
         if (c->p.slowdown_slot4)
             write_slow_counters(c->report, &c->c, &c->last_c);
+        if (m->zpb.armed)
+            write_zpb_counters(c->report, m, c->last_zpb);
         fprintf(c->report, ", \"irqs\": %" PRIu64 "}\n", m->irqs);
         fflush(c->report);
     }
     c->last_t = c->t;
     memcpy(c->last_phase, c->phase_clocks, sizeof c->last_phase);
     c->last_c = c->c;
+    zpb_counters(m, c->last_zpb);
 }
 
 void a2vm_cost_final(a2vm *m, FILE *out)
@@ -1182,5 +1213,7 @@ void a2vm_cost_final(a2vm *m, FILE *out)
     write_counters(out, &c->c, NULL);
     if (c->p.slowdown_slot4)
         write_slow_counters(out, &c->c, NULL);
+    if (m->zpb.armed)
+        write_zpb_counters(out, m, NULL);
     fputs("},\n", out);
 }

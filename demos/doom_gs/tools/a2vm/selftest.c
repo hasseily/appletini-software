@@ -63,7 +63,7 @@ static void bus_write(void *context, uint16_t address, uint8_t value,
     } while (0)
 
 enum { O = CPU65C02_OPCODE, P = CPU65C02_OPERAND, D = CPU65C02_DATA,
-       X = CPU65C02_DUMMY };
+       X = CPU65C02_DUMMY, DE = CPU65C02_DATA_EA, XE = CPU65C02_DUMMY_EA };
 
 /* True when the log is exactly the accesses listed: address, value,
    write flag and kind of each. */
@@ -273,15 +273,15 @@ static void test_kinds(void)
     CHECK("kinds", cpu65c02_step(&cpu) == 5 && cpu.a == 0x5a);
     CHECK("kinds", LOG_IS({0x1000, 0xbd, 0, O}, {0x1001, 0xf0, 0, P},
                           {0x1002, 0x20, 0, P}, {0x1002, 0x20, 0, X},
-                          {0x2110, 0x5a, 0, D}));
+                          {0x2110, 0x5a, 0, DE}));
     /* INC zp: read, read again, write. */
     start(&cpu);
     memcpy(&memory[0x1000], "\xe6\x80", 2);
     memory[0x80] = 0x41;
     CHECK("kinds", cpu65c02_step(&cpu) == 5 && memory[0x80] == 0x42);
     CHECK("kinds", LOG_IS({0x1000, 0xe6, 0, O}, {0x1001, 0x80, 0, P},
-                          {0x0080, 0x41, 0, D}, {0x0080, 0x41, 0, X},
-                          {0x0080, 0x42, 1, D}));
+                          {0x0080, 0x41, 0, DE}, {0x0080, 0x41, 0, XE},
+                          {0x0080, 0x42, 1, DE}));
     /* JSR: the high byte of the target is an operand read last. */
     start(&cpu);
     memcpy(&memory[0x1000], "\x20\x34\x12", 3);
@@ -289,7 +289,8 @@ static void test_kinds(void)
     CHECK("kinds", LOG_IS({0x1000, 0x20, 0, O}, {0x1001, 0x34, 0, P},
                           {0x01f0, 0x00, 0, X}, {0x01f0, 0x10, 1, D},
                           {0x01ef, 0x02, 1, D}, {0x1002, 0x12, 0, P}));
-    /* STA a,X on the same page reads its target first. */
+    /* STA a,X on the same page reads its target first: a plain dummy,
+       not the effective-address access (zpbank-review.md finding 8). */
     start(&cpu);
     cpu.x = 0x01;
     cpu.a = 0x99;
@@ -297,7 +298,7 @@ static void test_kinds(void)
     CHECK("kinds", cpu65c02_step(&cpu) == 5 && memory[0x2011] == 0x99);
     CHECK("kinds", LOG_IS({0x1000, 0x9d, 0, O}, {0x1001, 0x10, 0, P},
                           {0x1002, 0x20, 0, P}, {0x2011, 0x00, 0, X},
-                          {0x2011, 0x99, 1, D}));
+                          {0x2011, 0x99, 1, DE}));
     /* Decimal ADC: the extra cycle reads the operand again. */
     start(&cpu);
     cpu.a = 0x99;
@@ -308,7 +309,104 @@ static void test_kinds(void)
     CHECK("kinds", cpu.p == (CPU65C02_U | CPU65C02_D | CPU65C02_Z |
                              CPU65C02_C));
     CHECK("kinds", LOG_IS({0x1000, 0x65, 0, O}, {0x1001, 0x10, 0, P},
-                          {0x0010, 0x01, 0, D}, {0x0010, 0x01, 0, X}));
+                          {0x0010, 0x01, 0, DE}, {0x0010, 0x01, 0, XE}));
+}
+
+/* The data_ea classification (cpu65c02.h) for every opcode, in both
+   decimal modes, against the Appletini core's states. The tables are
+   the core's decode (w65c02_core.sv:281-564, decode_opcode; :251-279,
+   kind_for_op) and its state transitions (:1318-1570): an opcode whose
+   mode addresses memory goes to ST_MEM_READ (kind READ), ST_MEM_WRITE
+   (WRITE) or ST_RMW_READ, ST_RMW_MODIFY, ST_RMW_WRITE (RMW), and ADC and
+   SBC add ST_DECIMAL_EXTRA in decimal mode; BBR and BBS (ST_BIT_BRANCH_*),
+   JMP, JSR and NOP a (ST_NOP_ABS_DUMMY) never enter them.
+     R  one EA read at the effective address
+     A  ADC, SBC: the EA read, then in decimal mode an EA dummy read there
+     W  one EA write
+     M  EA read, EA dummy read, EA write, all at the effective address
+     .  no EA cycle, except immediate ADC and SBC in decimal mode: one EA
+        dummy read of $007F (ADC) or $0000 (SBC) (:1154-1156, :1331-1338)
+   Modes: z zp, x zp,X, y zp,Y, a abs, X abs,X, Y abs,Y, i (zp,X),
+   j (zp),Y, p (zp). */
+static const char ea_class[] =
+    ".R..MRMM....MRM..RR.MRMM.R..MRM."  /* 00 */
+    ".R..RRMM....RRM..RR.RRMM.R..RRM."  /* 20 */
+    ".R..RRMM.....RM..RR.RRMM.R...RM."  /* 40 */
+    ".A..WAMM.....AM..AA.WAMM.A...AM."  /* 60 */
+    ".W..WWWM....WWW..WW.WWWM.W..WWW."  /* 80 */
+    ".R..RRRM....RRR..RR.RRRM.R..RRR."  /* A0 */
+    ".R..RRMM....RRM..RR.RRMM.R...RM."  /* C0 */
+    ".A..RAMM....RAM..AA.RAMM.A...AM.";  /* E0 */
+static const char ea_mode[] =
+    "-i--zzzz----aaa--jp-zxxz-Y--aXX-"  /* 00 */
+    "-i--zzzz----aaa--jp-xxxz-Y--XXX-"  /* 20 */
+    "-i--zzzz-----aa--jp-xxxz-Y---XX-"  /* 40 */
+    "-i--zzzz-----aa--jp-xxxz-Y---XX-"  /* 60 */
+    "-i--zzzz----aaa--jp-xxyz-Y--aXX-"  /* 80 */
+    "-i--zzzz----aaa--jp-xxyz-Y--XXY-"  /* A0 */
+    "-i--zzzz----aaa--jp-xxxz-Y---XX-"  /* C0 */
+    "-i--zzzz----aaa--jp-xxxz-Y---XX-";  /* E0 */
+
+static void test_data_ea(void)
+{
+    static const struct { char mode; uint16_t ea; } eas[] = {
+        {'z', 0x0010}, {'x', 0x0011}, {'y', 0x0012}, {'a', 0x2010},
+        {'X', 0x2011}, {'Y', 0x2012}, {'i', 0x5030}, {'j', 0x3042},
+        {'p', 0x3040}
+    };
+    unsigned checked = 0;
+    for (unsigned opcode = 0; opcode < 256; opcode++)
+        for (int decimal = 0; decimal < 2; decimal++) {
+            cpu65c02 cpu;
+            char name[32];
+            start(&cpu);
+            cpu.p = (uint8_t)(CPU65C02_U | (decimal ? CPU65C02_D : 0));
+            cpu.x = 1;
+            cpu.y = 2;
+            memory[0x1000] = (uint8_t)opcode;
+            memory[0x1001] = 0x10;
+            memory[0x1002] = 0x20;
+            /* zero-page pointers: ($10) = $3040, ($11) = $5030 */
+            memory[0x10] = 0x40;
+            memory[0x11] = 0x30;
+            memory[0x12] = 0x50;
+            (void)cpu65c02_step(&cpu);
+            snprintf(name, sizeof name, "data_ea %02X D=%d", opcode, decimal);
+
+            access expected[3];
+            unsigned count = 0;
+            char c = ea_class[opcode];
+            uint16_t ea = 0;
+            for (unsigned k = 0; k < sizeof eas / sizeof eas[0]; k++)
+                if (eas[k].mode == ea_mode[opcode])
+                    ea = eas[k].ea;
+            CHECK(name, (c == '.') == (ea_mode[opcode] == '-'));
+            if (c == 'R' || c == 'A' || c == 'M')
+                expected[count++] = (access){ ea, 0, 0, DE };
+            if ((c == 'A' && decimal) || c == 'M')
+                expected[count++] = (access){ ea, 0, 0, XE };
+            if (c == 'W' || c == 'M')
+                expected[count++] = (access){ ea, 0, 1, DE };
+            if (c == '.' && decimal && (opcode == 0x69 || opcode == 0xe9))
+                expected[count++] = (access){
+                    (uint16_t)(opcode == 0x69 ? 0x007f : 0x0000), 0, 0, XE };
+
+            unsigned seen = 0;
+            int match = bus_count <= sizeof bus_log / sizeof bus_log[0];
+            for (unsigned i = 0; match && i < bus_count; i++) {
+                if (!(bus_log[i].kind & CPU65C02_EA))
+                    continue;
+                match = seen < count &&
+                        bus_log[i].address == expected[seen].address &&
+                        bus_log[i].write == expected[seen].write &&
+                        bus_log[i].kind == expected[seen].kind;
+                seen++;
+            }
+            CHECK(name, match && seen == count);
+            checked++;
+        }
+    printf("data_ea: %u opcode and decimal-mode cases classed as the "
+           "core's states\n", checked);
 }
 
 /* cpu65c02_run stops at the limit, and a callback that lowers `until`
@@ -511,6 +609,7 @@ int main(void)
     test_wai();
     test_stp();
     test_kinds();
+    test_data_ea();
     test_run();
     test_lengths();
     test_cycles();

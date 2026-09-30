@@ -22,6 +22,10 @@
  *   --phasor-mb-only    the Phasor locked to Mockingboard mode (the
  *                       card's audio_control bit 26): $C0C0-$C0CF mode
  *                       switches are ignored
+ *   --zpbank            arm the zero-page bank pair of the firmware design
+ *                       (README.md, "The zero-page bank pair"; needs
+ *                       --core w65c02s); the cost profiles f121zp and
+ *                       fastzp arm it too
  *
  * Start
  *   --image FILE        memory records (A2VMIMG1, see README.md)
@@ -44,13 +48,21 @@
  *   --boundary ADDR     a frame boundary: the CPU at ADDR after a step,
  *                       with ALTZP off
  *   --boundaries N      stop at the Nth boundary
- *   --cycles N          stop once the clock reaches N
+ *   --cycles N|none     stop once the clock reaches N. Without it a run
+ *                       stops at 20,000,000,000 cycles (DEFAULT_CYCLES,
+ *                       about two minutes on the host) with end
+ *                       "cycle-cap" and exit status 3; "none" runs with no
+ *                       limit
  *   --stop-pc ADDR      stop at ADDR (hex; ALTZP off with a :main suffix)
  *   --input FILE        events, one a line: WHEN ACTION (README.md)
  *   --snapshot-dir DIR  where snapshots, shots and the state go
  *   --snapshot-boundaries
  *                       a snapshot at every boundary
  *   --final-snapshot    a snapshot when the run ends
+ *   --snapshot-ranges RANGES
+ *                       snapshots of these ranges only (README.md,
+ *                       "Ranges"): NAME.img, an A2VMIMG1 image, in place
+ *                       of the whole RAM's NAME.ram
  *   --state FILE        the final state as JSON (default: stdout)
  *   --bus-script FILE   instead of running the CPU, run the bus commands
  *                       of FILE (README.md) and print their results
@@ -73,6 +85,23 @@
  *                       chip, each chip reset, each interrupt taken and
  *                       each RTI, with the machine's time (README.md,
  *                       "The AY log")
+ *   --write-log RANGES  a line for each CPU write that reaches the ranges
+ *                       (README.md, "The write log"), to the file of
+ *                       --write-log-file (default: writes.log in the
+ *                       --snapshot-dir)
+ *   --write-log-file FILE
+ *   --write-log-limit N at most N lines (default 10,000,000, about
+ *                       500 MB); the write that would be line N + 1 halts
+ *                       the run
+ *   --lowest-s          the lowest S the run reaches, in the state
+ *   --lowest-s-in RANGES
+ *                       also the lowest S reached by the instructions whose
+ *                       PC is in each range (hex LO-HI, commas, at most
+ *                       16; README.md, "The lowest S")
+ *
+ *   --every-limit N     at most N snapshots or shots of each pc ADDR@*
+ *                       event (default 100); the visit after them ends the
+ *                       run with an error (exit status 2)
  *
  * Checks
  *   --irq-bounds RANGES the only addresses an interrupt handler may read
@@ -96,9 +125,16 @@
 #include <string.h>
 #include <time.h>
 
+/* The cycles a run may make without --cycles (--cycles none: no limit),
+   and the default bounds of the write log and of @* events. */
+#define DEFAULT_CYCLES 20000000000ull
+#define WRITE_LOG_LINES 10000000ull
+#define EVERY_LIMIT 100ull
+
 enum {
     MAX_LIST = 64, MAX_EVENTS = 4096,
-    SHOT_BYTES = 0x8000
+    SHOT_BYTES = 0x8000,
+    MAX_S_RANGES = 16
 };
 
 static void fail(const char *format, ...)
@@ -183,12 +219,24 @@ typedef struct {
     when_kind when;
     uint64_t value;             /* boundary number, cycle, pc */
     int main_only;              /* WHEN_PC: with ALTZP off */
+    uint64_t nth;               /* WHEN_PC: fire at this visit (1 first) */
+    int every;                  /* WHEN_PC: fire at every visit */
+    uint64_t visits;            /* WHEN_PC: visits so far */
     action_kind action;
     int64_t a, b;
     char name[64];
     int done;
     unsigned line;
 } event;
+
+/* --lowest-s: the lowest S, and where it was reached */
+typedef struct {
+    uint16_t low, high;         /* a PC range; the whole run: 0-FFFF */
+    int seen;
+    uint8_t s, last;            /* last: S after the last step (lows[0]) */
+    uint16_t pc;
+    uint64_t cycles, steps;
+} lowest_s;
 
 typedef struct {
     uint16_t pc;
@@ -200,6 +248,8 @@ typedef struct {
     const char *image, *prodos, *input, *snapshot_dir, *state, *bus_script;
     const char *volume, *launched;
     const char *cost, *cost_report, *ay_log, *irq_bounds;
+    const char *write_log, *write_log_file, *snapshot_ranges, *lowest_s_in;
+    int zpbank, lowest_s;
     int cost_timed, cost_phase;
     const char *loads[MAX_LIST], *aux_loads[MAX_LIST], *regs[MAX_LIST],
         *switches[MAX_LIST], *idles[MAX_LIST];
@@ -208,6 +258,8 @@ typedef struct {
     uint16_t boundary;
     int has_boundary;
     uint64_t boundaries, cycles;
+    int cycles_given;           /* --cycles, a number or none */
+    uint64_t write_log_limit, every_limit;
     stop_pc stops[MAX_LIST];
     unsigned stop_count;
     int snapshot_boundaries, final_snapshot;
@@ -227,6 +279,8 @@ static void parse(int argc, char **argv, options *o)
     a2vm_default_config(&o->config);
     o->amem_supported = o->amem_available = 1;
     o->boundaries = o->cycles = UINT64_MAX;
+    o->write_log_limit = WRITE_LOG_LINES;
+    o->every_limit = EVERY_LIMIT;
     o->volume = "DOOM";
     o->cost_phase = -1;
     o->launched = "DOOM.SYSTEM";
@@ -266,6 +320,14 @@ static void parse(int argc, char **argv, options *o)
         }
         if (!strcmp(arg, "--phasor-mb-only")) {
             o->phasor_mb_only = 1;
+            continue;
+        }
+        if (!strcmp(arg, "--zpbank")) {
+            o->zpbank = 1;
+            continue;
+        }
+        if (!strcmp(arg, "--lowest-s")) {
+            o->lowest_s = 1;
             continue;
         }
         if (i + 1 == argc)
@@ -317,8 +379,14 @@ static void parse(int argc, char **argv, options *o)
             o->has_boundary = 1;
         } else if (!strcmp(arg, "--boundaries"))
             o->boundaries = number(value, 0);
-        else if (!strcmp(arg, "--cycles"))
-            o->cycles = number(value, 0);
+        else if (!strcmp(arg, "--cycles")) {
+            o->cycles = !strcmp(value, "none") ? UINT64_MAX
+                                               : number(value, 0);
+            o->cycles_given = 1;
+        } else if (!strcmp(arg, "--write-log-limit"))
+            o->write_log_limit = number(value, 0);
+        else if (!strcmp(arg, "--every-limit"))
+            o->every_limit = number(value, 0);
         else if (!strcmp(arg, "--stop-pc")) {
             if (o->stop_count == MAX_LIST)
                 fail("too many --stop-pc");
@@ -348,7 +416,16 @@ static void parse(int argc, char **argv, options *o)
             o->ay_log = value;
         else if (!strcmp(arg, "--irq-bounds"))
             o->irq_bounds = value;
-        else
+        else if (!strcmp(arg, "--write-log"))
+            o->write_log = value;
+        else if (!strcmp(arg, "--write-log-file"))
+            o->write_log_file = value;
+        else if (!strcmp(arg, "--snapshot-ranges"))
+            o->snapshot_ranges = value;
+        else if (!strcmp(arg, "--lowest-s-in")) {
+            o->lowest_s_in = value;
+            o->lowest_s = 1;
+        } else
             fail("unknown option %s", arg);
     }
     if (!o->config.rom_path)
@@ -357,6 +434,14 @@ static void parse(int argc, char **argv, options *o)
         fail("snapshots need --snapshot-dir");
     if ((o->cost_timed || o->cost_report || o->cost_phase >= 0) && !o->cost)
         fail("the cost options need --cost");
+    if (o->write_log_file && !o->write_log)
+        fail("--write-log-file needs --write-log");
+    if (o->write_log && !o->write_log_file && !o->snapshot_dir)
+        fail("--write-log needs --write-log-file or --snapshot-dir");
+    if (!o->write_log_limit)
+        fail("--write-log-limit takes a count from 1");
+    if (!o->cycles_given)
+        o->cycles = DEFAULT_CYCLES;
 }
 
 /* ---- loading ---- */
@@ -588,6 +673,16 @@ static unsigned read_events(const char *path, event *events)
             e->value = number(words[1], 0);
             w = 2;
         } else if (n >= 2 && !strcmp(words[0], "pc")) {
+            char *at = strchr(words[1], '@');
+            e->nth = 1;
+            if (at) {
+                *at = 0;
+                if (!strcmp(at + 1, "*"))
+                    e->every = 1;
+                else if ((e->nth = number(at + 1, 10)) == 0)
+                    fail("%s:%u: pc ADDR@N counts visits from 1", path,
+                         number_of_line);
+            }
             char *colon = strchr(words[1], ':');
             e->main_only = colon && !strcmp(colon, ":main");
             if (colon)
@@ -744,6 +839,19 @@ static void write_state_body(FILE *out, a2vm *m)
     } else
         fputs("  \"amem\": null,\n", out);
 
+    /* only in runs that ask for them, so every other state is as it was */
+    if (m->zpb.armed) {
+        const a2vm_zpbank *z = &m->zpb;
+        fprintf(out, "  \"zpbank\": {\"address\": %u, \"rd\": %u, \"wr\": %u, "
+                "\"enables\": %" PRIu64 ", \"loads\": %" PRIu64 ", "
+                "\"reads\": %" PRIu64 ", \"writes\": %" PRIu64 ", "
+                "\"firmware\": %" PRIu64 ", \"amem\": %" PRIu64 "},\n",
+                z->address, z->rd, z->wr, z->enables, z->loads, z->reads,
+                z->writes, z->firmware, z->amem);
+    }
+    if (m->write_log)
+        fprintf(out, "  \"write_logged\": %" PRIu64 ",\n", m->write_logged);
+
     const a2vm_prodos *p = m->prodos;
     if (p) {
         fprintf(out, "  \"prodos\": {\"quit\": %d, \"calls\": %" PRIu64
@@ -804,12 +912,49 @@ static void write_ram(a2vm *m, const char *path)
         fail("cannot write %s", path);
 }
 
+/* --snapshot-ranges: an A2VMIMG1 image of the ranges (the records of
+   --image: kind, bank, address, length, bytes), which --image loads
+   back. */
+static a2vm_range snapshot_ranges[A2VM_MAX_RANGES];
+static unsigned snapshot_range_count;
+
+static void write_ranges_image(a2vm *m, const char *path)
+{
+    FILE *file = fopen(path, "wb");
+    if (!file || fwrite("A2VMIMG1", 1, 8, file) != 8)
+        fail("cannot write %s", path);
+    for (unsigned i = 0; i < snapshot_range_count; i++) {
+        const a2vm_range *r = &snapshot_ranges[i];
+        unsigned first = r->kind == A2VM_RANGE_AUX ? r->bank_low : 0;
+        unsigned last = r->kind == A2VM_RANGE_AUX ? r->bank_high : 0;
+        for (unsigned bank = first; bank <= last; bank++) {
+            uint32_t length = (uint32_t)r->high - r->low + 1;
+            uint8_t header[8] = {
+                r->kind, (uint8_t)bank, (uint8_t)r->low,
+                (uint8_t)(r->low >> 8), (uint8_t)length,
+                (uint8_t)(length >> 8), (uint8_t)(length >> 16), 0
+            };
+            const uint8_t *data = a2vm_storage(m, r->kind, bank, r->low);
+            if (fwrite(header, 1, 8, file) != 8 ||
+                fwrite(data, 1, length, file) != length)
+                fail("cannot write %s", path);
+        }
+    }
+    if (fclose(file))
+        fail("cannot write %s", path);
+}
+
 static void snapshot(a2vm *m, const char *directory, const char *name,
                      const char *extra)
 {
     char path[1200];
     snprintf(path, sizeof path, "%s/%s.json", directory, name);
     write_json(path, m, extra);
+    if (snapshot_range_count) {
+        snprintf(path, sizeof path, "%s/%s.img", directory, name);
+        write_ranges_image(m, path);
+        return;
+    }
     snprintf(path, sizeof path, "%s/%s.ram", directory, name);
     write_ram(m, path);
 }
@@ -875,12 +1020,33 @@ static void bus_script(a2vm *m, const char *path)
         if (!strcmp(verb, "read") && n == 2) {
             uint16_t address = address16(words[1]);
             printf("read %04X %02X\n", address, a2vm_read(m, address));
-        } else if (!strcmp(verb, "write") && n == 3) {
+        } else if (!strcmp(verb, "read-ea") && n == 2) {
+            uint16_t address = address16(words[1]);
+            printf("read %04X %02X\n", address, a2vm_read_ea(m, address));
+        } else if ((!strcmp(verb, "write") || !strcmp(verb, "write-ea")) &&
+                   n == 3) {
             uint16_t address = address16(words[1]);
             uint64_t value = number(words[2], 16);
             if (value > 0xff)
                 fail("%s:%u: a byte", path, number_of_line);
-            a2vm_write(m, address, (uint8_t)value);
+            if (verb[5])
+                a2vm_write_ea(m, address, (uint8_t)value);
+            else
+                a2vm_write(m, address, (uint8_t)value);
+        } else if (!strcmp(verb, "zpbank") && n == 1) {
+            const a2vm_zpbank *z = &m->zpb;
+            printf("zpbank armed=%u address=%02X rd=%02X wr=%02X "
+                   "enables=%" PRIu64 " loads=%" PRIu64 " reads=%" PRIu64
+                   " writes=%" PRIu64 " firmware=%" PRIu64 " amem=%" PRIu64
+                   "\n", z->armed, z->address, z->rd, z->wr, z->enables,
+                   z->loads, z->reads, z->writes, z->firmware, z->amem);
+        } else if (!strcmp(verb, "zpbank-arm") && n == 2) {
+            char error[256];
+            if (!a2vm_zpbank_arm(m, strcmp(words[1], "0") != 0, error,
+                                 sizeof error))
+                fail("%s:%u: %s", path, number_of_line, error);
+        } else if (!strcmp(verb, "reset") && n == 1) {
+            a2vm_cpu_reset(m);
         } else if ((!strcmp(verb, "peek") && n == 4) ||
                    (!strcmp(verb, "poke") && n == 5)) {
             static const char *kinds[] = { "main", "aux", "lc", "lc1" };
@@ -985,6 +1151,18 @@ static void bus_script(a2vm *m, const char *path)
 
 static void act(a2vm *m, const options *o, event *e, int *stop)
 {
+    char name[96];
+    if (e->every && (e->action == ACT_SNAPSHOT || e->action == ACT_SHOT) &&
+        e->visits > o->every_limit)
+        fail("the event of line %u (pc %04X@*) would take %s number %"
+             PRIu64 ", past --every-limit %" PRIu64, e->line,
+             (unsigned)e->value, e->action == ACT_SNAPSHOT ? "snapshot"
+             : "shot", e->visits, o->every_limit);
+    /* an event at every visit names its snapshots and shots NAME-VISIT */
+    if (e->every)
+        snprintf(name, sizeof name, "%s-%04" PRIu64, e->name, e->visits);
+    else
+        snprintf(name, sizeof name, "%s", e->name);
     switch (e->action) {
     case ACT_KEY: a2vm_press(m, (uint8_t)e->a, a2vm_now(m)); break;
     case ACT_HOLD: a2vm_hold(m, (uint8_t)e->a); break;
@@ -997,16 +1175,16 @@ static void act(a2vm *m, const options *o, event *e, int *stop)
     case ACT_SNAPSHOT:
         if (!o->snapshot_dir)
             fail("the snapshot action needs --snapshot-dir");
-        snapshot(m, o->snapshot_dir, e->name, NULL);
+        snapshot(m, o->snapshot_dir, name, NULL);
         break;
     case ACT_SHOT:
         if (!o->snapshot_dir)
             fail("the shot action needs --snapshot-dir");
-        shot(m, o->snapshot_dir, e->name);
+        shot(m, o->snapshot_dir, name);
         break;
     case ACT_STOP: *stop = 1; break;
     }
-    e->done = 1;
+    e->done = !e->every;
 }
 
 /* --irq-bounds LO-HI[,LO-HI...] (hex) */
@@ -1032,6 +1210,103 @@ static void irq_bounds(a2vm *m, const char *text)
     }
     if (!m->irq_bound_count)
         fail("--irq-bounds: no range");
+}
+
+/* --lowest-s-in LO-HI[,LO-HI...] (hex): lows[0] is the whole run, the
+   ranges follow. Returns the count. */
+static unsigned lowest_s_ranges(const char *text, lowest_s *lows)
+{
+    char buffer[512];
+    unsigned count = 1;
+    if (strlen(text) >= sizeof buffer)
+        fail("--lowest-s-in: too long");
+    strcpy(buffer, text);
+    for (char *item = strtok(buffer, ","); item; item = strtok(NULL, ",")) {
+        char *dash = strchr(item, '-');
+        if (!dash)
+            fail("--lowest-s-in: %s is not LO-HI", item);
+        *dash = 0;
+        uint16_t low = address16(item), high = address16(dash + 1);
+        if (low > high)
+            fail("--lowest-s-in: %s-%s is empty", item, dash + 1);
+        if (count == 1 + MAX_S_RANGES)
+            fail("--lowest-s-in: at most %d ranges", MAX_S_RANGES);
+        memset(&lows[count], 0, sizeof lows[count]);
+        lows[count].low = low;
+        lows[count].high = high;
+        count++;
+    }
+    if (count == 1)
+        fail("--lowest-s-in: no range");
+    return count;
+}
+
+static void lower(lowest_s *l, uint8_t s, uint16_t pc, uint64_t cycles)
+{
+    if (!l->seen || s < l->s) {
+        l->seen = 1;
+        l->s = s;
+        l->pc = pc;
+        l->cycles = cycles;
+    }
+}
+
+/* After a step: the instruction (or interrupt entry) that started at
+   m->instruction_pc took S from the S of the step before (lows[0].last)
+   to its present value. The whole run sees the new S; a range sees both
+   when the step started inside it. */
+static void note_lowest_s(const a2vm *m, lowest_s *lows, unsigned count)
+{
+    uint16_t pc0 = m->instruction_pc;
+    uint8_t s0 = lows[0].last, s1 = a2vm_register(m, 's');
+    uint64_t cycles = a2vm_now(m);
+    lows[0].last = s1;
+    lower(&lows[0], s1, pc0, cycles);
+    lows[0].steps++;
+    for (unsigned i = 1; i < count; i++)
+        if (pc0 >= lows[i].low && pc0 <= lows[i].high) {
+            lower(&lows[i], s0, pc0, cycles);
+            lower(&lows[i], s1, pc0, cycles);
+            lows[i].steps++;
+        }
+}
+
+static size_t lowest_s_fields(char *out, size_t size, const lowest_s *l)
+{
+    char s[8];
+    if (l->seen)
+        snprintf(s, sizeof s, "%u", l->s);
+    else
+        snprintf(s, sizeof s, "null");
+    int n = snprintf(out, size, "\"s\": %s, \"pc\": %u, \"cycles\": %"
+                     PRIu64 ", \"steps\": %" PRIu64, s, l->pc, l->cycles,
+                     l->steps);
+    return n < 0 ? size : (size_t)n;
+}
+
+/* "lowest_s": {the whole run's fields, "ranges": [{"low", "high", then
+   the fields}, ...]} */
+static void lowest_s_json(char *out, size_t size, const lowest_s *lows,
+                          unsigned count)
+{
+    size_t used = (size_t)snprintf(out, size, "  \"lowest_s\": {");
+    if (used < size)
+        used += lowest_s_fields(out + used, size - used, &lows[0]);
+    if (used < size)
+        used += (size_t)snprintf(out + used, size - used, ", \"ranges\": [");
+    for (unsigned i = 1; i < count && used < size; i++) {
+        used += (size_t)snprintf(out + used, size - used,
+                                 "%s{\"low\": %u, \"high\": %u, ",
+                                 i > 1 ? ", " : "", lows[i].low, lows[i].high);
+        if (used < size)
+            used += lowest_s_fields(out + used, size - used, &lows[i]);
+        if (used < size)
+            used += (size_t)snprintf(out + used, size - used, "}");
+    }
+    if (used < size)
+        used += (size_t)snprintf(out + used, size - used, "]},\n");
+    if (used >= size)
+        fail("the lowest S does not fit the state");
 }
 
 int main(int argc, char **argv)
@@ -1078,7 +1353,38 @@ int main(int argc, char **argv)
                 fail("cannot write %s", o.cost_report);
         }
         a2vm_attach_cost(m, cost, o.cost_timed);
+        if (o.zpbank && !params.zp_pair)
+            fail("--zpbank: the cost profile's firmware has no zero-page "
+                 "pair (use f121zp or fastzp)");
     }
+    if (o.zpbank || (m->cost && m->cost->p.zp_pair)) {
+        if (!a2vm_zpbank_arm(m, 1, error, sizeof error))
+            fail("%s", error);
+    }
+    if (o.write_log) {
+        char path[1200];
+        if (!a2vm_parse_ranges(o.write_log, m->write_ranges,
+                               &m->write_range_count, 1, error, sizeof error))
+            fail("--write-log: %s", error);
+        if (o.write_log_file)
+            snprintf(path, sizeof path, "%s", o.write_log_file);
+        else
+            snprintf(path, sizeof path, "%s/writes.log", o.snapshot_dir);
+        FILE *log = fopen(path, "w");
+        if (!log)
+            fail("cannot write %s", path);
+        a2vm_start_write_log(m, log);
+        m->write_log_limit = o.write_log_limit;
+        fprintf(m->write_log, "# a2vm write-log 1 (tools/a2vm/README.md, "
+                "\"The write log\")\n"
+                "# ranges %s\n"
+                "# w CLOCK CPU_CYCLES PC ADDRESS STORAGE BANK OFFSET OLD NEW\n",
+                o.write_log);
+    }
+    if (o.snapshot_ranges &&
+        !a2vm_parse_ranges(o.snapshot_ranges, snapshot_ranges,
+                           &snapshot_range_count, 0, error, sizeof error))
+        fail("--snapshot-ranges: %s", error);
     if (o.ay_log) {
         m->ay_log = fopen(o.ay_log, "w");
         if (!m->ay_log)
@@ -1099,8 +1405,20 @@ int main(int argc, char **argv)
         bus_script(m, o.bus_script);
         if (m->ay_log)
             fclose(m->ay_log);
+        if (m->write_log && fclose(m->write_log))
+            fail("cannot write the write log");
+        m->write_log = NULL;
         a2vm_free(m);
         return 0;
+    }
+
+    static lowest_s lows[1 + MAX_S_RANGES];
+    unsigned low_count = 0;
+    if (o.lowest_s) {
+        lows[low_count].low = 0;
+        lows[low_count++].high = 0xffff;
+        if (o.lowest_s_in)
+            low_count = lowest_s_ranges(o.lowest_s_in, lows);
     }
 
     static event events[MAX_EVENTS];
@@ -1130,12 +1448,20 @@ int main(int argc, char **argv)
         reason = "stop";
     clock_t started = clock();
 
+    if (low_count) {
+        lows[0].seen = 1;           /* the whole run starts at the start S */
+        lows[0].s = lows[0].last = a2vm_register(m, 's');
+        lows[0].pc = a2vm_pc(m);
+        lows[0].cycles = a2vm_now(m);
+    }
     while (!reason) {
         if (a2vm_now(m) >= o.cycles) {
-            reason = "cycles";
+            reason = o.cycles_given ? "cycles" : "cycle-cap";
             break;
         }
         a2vm_step(m);
+        if (low_count)
+            note_lowest_s(m, lows, low_count);
         if (m->halt[0]) {
             reason = "halt";
             break;
@@ -1160,10 +1486,15 @@ int main(int argc, char **argv)
                         events[i].value == boundaries)
                         act(m, &o, &events[i], &stop);
             }
-            for (unsigned i = 0; i < event_count; i++)
-                if (!events[i].done && events[i].when == WHEN_PC &&
-                    events[i].value == pc && (!events[i].main_only || main_zp))
-                    act(m, &o, &events[i], &stop);
+            for (unsigned i = 0; i < event_count; i++) {
+                event *e = &events[i];
+                if (e->done || e->when != WHEN_PC || e->value != pc ||
+                    (e->main_only && !main_zp))
+                    continue;
+                e->visits++;
+                if (e->every || e->visits == e->nth)
+                    act(m, &o, e, &stop);
+            }
             for (unsigned i = 0; i < o.stop_count; i++)
                 if (o.stops[i].pc == pc && (!o.stops[i].main_only || main_zp))
                     reason = "stop-pc";
@@ -1189,8 +1520,8 @@ int main(int argc, char **argv)
     }
     double seconds = (double)(clock() - started) / CLOCKS_PER_SEC;
 
-    char extra[1024];
-    snprintf(extra, sizeof extra,
+    char extra[8192];
+    int used = snprintf(extra, sizeof extra,
              "  \"end\": \"%s\",\n  \"halt\": \"%s\",\n"
              "  \"boundaries\": %" PRIu64 ",\n"
              "  \"run_cycles\": %" PRIu64 ",\n"
@@ -1198,6 +1529,9 @@ int main(int argc, char **argv)
              "  \"host_seconds\": %.6f,\n", reason, m->halt,
              boundaries, a2vm_now(m) - start_cycles,
              m->instructions - start_instructions, seconds);
+    if (low_count)
+        lowest_s_json(extra + used, sizeof extra - (size_t)used, lows,
+                      low_count);
     if (o.final_snapshot)
         snapshot(m, o.snapshot_dir, "final", extra);
     if (m->cost && m->cost->report) {
@@ -1211,7 +1545,16 @@ int main(int argc, char **argv)
     if (m->ay_log && fclose(m->ay_log))
         fail("cannot write %s", o.ay_log);
     m->ay_log = NULL;
+    if (m->write_log && fclose(m->write_log))
+        fail("cannot write the write log");
+    m->write_log = NULL;
     int status = !strcmp(reason, "halt") ? 1 : 0;
+    if (!strcmp(reason, "cycle-cap")) {
+        fprintf(stderr, "a2vm: the run reached the default limit of %llu "
+                "cycles (give --cycles N, or --cycles none for no limit)\n",
+                (unsigned long long)DEFAULT_CYCLES);
+        status = 3;
+    }
     a2vm_free(m);
     return status;
 }

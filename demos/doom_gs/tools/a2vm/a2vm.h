@@ -11,7 +11,10 @@
  *     and Solid Apple, paddles, speaker, NEWVIDEO, the Appletini mouse
  *     card in slot 2 with its VBL interrupt, the Phasor in slot 4 (its
  *     registers), and the memory API FIFO at $CFF0-$CFF2 in slot 7;
- *   - a trap of the ProDOS MLI entry (prodos.h).
+ *   - a trap of the ProDOS MLI entry (prodos.h);
+ *   - optionally, the zero-page bank pair of the firmware design
+ *     (docs/firmware/zpbank-spec.md, as zpbank-review.md corrects it),
+ *     which is not in F1.2.1: off unless armed.
  *
  * Every rule follows demos/doom/tools/a2sim.py, the Python model the
  * existing port was developed on, so that the two can be compared cycle
@@ -123,6 +126,38 @@ typedef struct {
     uint16_t word_a, word_b;
 } a2vm_idle;
 
+/* A range of storage, for the write log and range snapshots: the
+   storage kinds of a2vm_storage (main, aux bank, main LC $C000-$FFFF,
+   main LC bank 1 $D000-$DFFF), or A2VM_RANGE_CPU, the CPU's address
+   whatever it reaches (I/O and write-protected pages included). An aux
+   bank's language card is in its $C000-$FFFF: bank 2 at $D000-$FFFF,
+   bank 1 at $C000-$CFFF. `low` and `high` are inclusive. */
+enum {
+    A2VM_RANGE_MAIN, A2VM_RANGE_AUX, A2VM_RANGE_LC, A2VM_RANGE_LC1,
+    A2VM_RANGE_CPU, A2VM_MAX_RANGES = 256
+};
+
+typedef struct {
+    uint8_t kind, bank_low, bank_high;  /* banks: aux only */
+    uint16_t low, high;
+} a2vm_range;
+
+/* The zero-page bank pair. `address` is the pair's first byte (zp_rd),
+   0 when the pair is off; zp_wr is address + 1. `rd` and `wr` are the
+   registers: 0 follows the switches, 1-126 is the $C073 bank that data
+   reads (writes) of $0200-$BFFF reach. */
+typedef struct {
+    uint8_t armed, address, rd, wr;
+    uint64_t enables;               /* $C069 writes while armed */
+    uint64_t loads;                 /* main zero-page writes that set rd
+                                       or wr */
+    uint64_t reads, writes;         /* redirected accesses */
+    uint64_t firmware;              /* redirected accesses made with the
+                                       PC in $C100-$CFFF or in the ROM */
+    uint64_t amem;                  /* memory API requests made with rd or
+                                       wr nonzero */
+} a2vm_zpbank;
+
 /* The registers of the compatibility core (py65's MPU). P keeps bit 4 as
    py65 does: set by reset, PLP and RTI, cleared by an interrupt. */
 typedef struct {
@@ -225,6 +260,27 @@ typedef struct a2vm {
     uint16_t irq_bounds[A2VM_MAX_IRQ_BOUNDS][2];
     unsigned irq_bound_count;
     int irq_guard;
+
+    /* The PC of the instruction running (set by a2vm_step), for the
+       write log. */
+    uint16_t instruction_pc;
+
+    /* --write-log (README.md, "The write log"): a line for each CPU
+       write that reaches one of the ranges, made by the write_hook that
+       a2vm_start_write_log sets. NULL in every other run; it only
+       observes. */
+    FILE *write_log;
+    a2vm_range write_ranges[A2VM_MAX_RANGES];
+    unsigned write_range_count;
+    uint64_t write_logged;
+    uint64_t write_log_limit;   /* lines; 0 for none. The write that would
+                                   pass it halts the run */
+
+    /* The zero-page bank pair (README.md, "The zero-page bank pair";
+       docs/firmware/zpbank-spec.md as corrected by zpbank-review.md).
+       zpb.armed is 0 in every run without --zpbank or a pair profile
+       (f121zp, fastzp): the machine is then F1.2.1's exactly. */
+    a2vm_zpbank zpb;
 } a2vm;
 
 typedef struct {
@@ -302,5 +358,38 @@ uint64_t a2vm_bus_clock(const a2vm *m);
    bus scripts). */
 size_t a2vm_amem_execute(a2vm *m, uint8_t family, const uint8_t *request,
                          size_t length, uint8_t *reply);
+
+/* The zero-page bank pair: arm it (the firmware's kill switch on), or
+   disarm it, which turns it off. Arming needs the exact core and 128
+   RamWorks banks; returns 0 with the reason in `error` otherwise. */
+int a2vm_zpbank_arm(a2vm *m, int on, char *error, size_t error_size);
+/* Start the write log: `log` gets a line for each CPU write into
+   m->write_ranges. It is the machine's write_hook, so a harness cannot
+   use both. */
+void a2vm_start_write_log(a2vm *m, FILE *log);
+/* RES#: the pair turns off (zpbank-spec.md section 4). */
+void a2vm_zpbank_reset(a2vm *m);
+/* A data access of the CPU at an effective address (kind DATA_EA of
+   cpu65c02.h): what the core's ST_MEM_READ and ST_MEM_WRITE do, the
+   pair's redirection included. For bus scripts. */
+uint8_t a2vm_read_ea(a2vm *m, uint16_t address);
+void a2vm_write_ea(a2vm *m, uint16_t address, uint8_t value);
+/* The CPU RESET sequence of the exact core, with RES#'s effect on the
+   pair. The //e's own reset of the switches is not modelled (a2sim.py
+   has none). */
+void a2vm_cpu_reset(a2vm *m);
+
+/* Where a storage byte is: its kind (A2VM_RANGE_MAIN ... LC1), bank
+   and offset in that storage. 0 when `p` is not storage (the ROM). */
+int a2vm_locate(const a2vm *m, const uint8_t *p, unsigned *kind,
+                unsigned *bank, unsigned *offset);
+/* Does the range list hold a write of the CPU's `address` reaching
+   storage `p` (NULL: none)? */
+int a2vm_in_ranges(const a2vm *m, const a2vm_range *ranges, unsigned count,
+                   uint16_t address, const uint8_t *p);
+/* Parse RANGES (README.md, "Ranges"); 0 with the reason in `error`. */
+int a2vm_parse_ranges(const char *text, a2vm_range *ranges,
+                      unsigned *count, int allow_cpu, char *error,
+                      size_t error_size);
 
 #endif

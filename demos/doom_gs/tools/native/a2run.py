@@ -5,10 +5,12 @@ calls the replay once a batch between drv_callK and drv_retK. A run can
 take a snapshot at each of those points (the whole machine: main, both
 language-card parts, all 128 aux banks), and can run under a2vm's cost
 model (tools/a2vm/README.md, "The cost model") with the driver marking
-the replay as phase 1 through the byte PHASE (--cost-phase).
+the replay as phase 1 through the byte PHASE (--cost-phase), and can log
+every CPU write into chosen ranges (a2vm's --write-log, tools/a2vm/
+README.md "The write log"), which shows a store of the value already
+there, as the snapshots cannot.
 
-a2vm is used as it is, through its command line: nothing in tools/a2vm is
-changed.
+a2vm is used through its command line.
 """
 
 import json
@@ -65,9 +67,12 @@ def last_json_object(text: str) -> Dict:
 
 def run(image: Path, labels: Dict[str, int], directory: Path,
         batches: int, snapshots: bool = False,
-        profile: Optional[str] = None, a2vm: Path = A2VM) -> 'Run':
+        profile: Optional[str] = None, a2vm: Path = A2VM,
+        write_log: Optional[str] = None) -> 'Run':
     """One run of the test image. `profile` (f121, fastpath...) turns the
-    cost model on, timed, with the replay as phase 1."""
+    cost model on, timed, with the replay as phase 1. `write_log`: a2vm's
+    --write-log ranges (stray_ranges() for instance); the run's `writes`
+    are then the logged writes."""
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     rom = directory / 'rom.bin'
@@ -94,6 +99,9 @@ def run(image: Path, labels: Dict[str, int], directory: Path,
         (directory / 'events.txt').write_text('\n'.join(events) + '\n')
         args += ['--snapshot-dir', str(directory), '--input',
                  str(directory / 'events.txt')]
+    log = directory / 'writes.log'
+    if write_log:
+        args += ['--write-log', write_log, '--write-log-file', str(log)]
     report = directory / 'cost.json'
     if profile:
         (directory / 'cost.txt').write_text(costs.text(profile))
@@ -117,7 +125,41 @@ def run(image: Path, labels: Dict[str, int], directory: Path,
             for name in ('before%d' % k, 'after%d' % k):
                 if (directory / (name + '.ram')).exists():
                     shots[name] = read_snapshot(directory, name)
-    return Run(state, shots, cost, directory, labels)
+    writes = read_write_log(log) if write_log else None
+    return Run(state, shots, cost, directory, labels, writes)
+
+
+class Write(NamedTuple):
+    """A line of a2vm's write log (tools/a2vm/README.md)."""
+    clock: int                  # the machine's clock (the state's cycles)
+    pc: int
+    address: int
+    storage: str                # main, aux, lc, lc1, or io
+    bank: int
+    offset: int
+    old: Optional[int]
+    new: int
+
+    def describe(self) -> str:
+        where = ('%s %d $%04X' % (self.storage, self.bank, self.offset)
+                 if self.storage == 'aux' else
+                 'I/O' if self.storage == 'io' else
+                 '%s $%04X' % (self.storage, self.offset))
+        old = '$%02X' % self.old if self.old is not None else '-'
+        return '%s: %s -> $%02X (pc $%04X)' % (where, old, self.new, self.pc)
+
+
+def read_write_log(path: Path) -> List[Write]:
+    out = []
+    for line in Path(path).read_text().splitlines():
+        if line.startswith('#'):
+            continue
+        f = line.split()
+        io = f[5] == 'io'
+        out.append(Write(int(f[1]), int(f[3], 16), int(f[4], 16), f[5],
+                         0 if io else int(f[6]), 0 if io else int(f[7], 16),
+                         None if io else int(f[8], 16), int(f[9], 16)))
+    return out
 
 
 class Run(NamedTuple):
@@ -126,6 +168,7 @@ class Run(NamedTuple):
     cost: Optional[Dict]
     directory: Path
     labels: Dict[str, int]
+    writes: Optional[List[Write]] = None
 
     def ended(self) -> str:
         """'halt' (the driver's end), 'crash' (a BRK), or a2vm's reason."""
@@ -156,6 +199,29 @@ def allowed_offsets(sp: int = L.DRV_STACK) -> List[Tuple[int, int]]:
     spans += [(aux_offset(0, a), aux_offset(0, b)) for a, b in
               L.ALLOWED_AUX0]
     return sorted(spans)
+
+
+def complement(spans: Sequence[Tuple[int, int]], end: int = 0x10000
+               ) -> List[Tuple[int, int]]:
+    """The inclusive ranges of 0 .. end - 1 outside the half-open spans."""
+    out, at = [], 0
+    for start, stop in sorted(spans):
+        if start > at:
+            out.append((at, start - 1))
+        at = max(at, stop)
+    if at < end:
+        out.append((at, end - 1))
+    return out
+
+
+def stray_ranges(sp: int = L.DRV_STACK) -> str:
+    """a2vm --write-log ranges of everything the replay may not write when
+    called with S = sp: main and aux bank 0 outside allowed_offsets(), and
+    aux banks 1-127. The language card is left to the snapshots: the
+    replay writes its row-block patches there and restores them."""
+    items = ['main:%04X-%04X' % r for r in complement(L.allowed_main(sp))]
+    items += ['aux0:%04X-%04X' % r for r in complement(L.ALLOWED_AUX0)]
+    return ','.join(items + ['aux1-127'])
 
 
 def describe(offset: int) -> str:

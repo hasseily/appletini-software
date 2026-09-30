@@ -43,8 +43,8 @@ from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ref816 import lists, make_image, marks, refimage, run_script, \
-    script, title  # noqa: E402
+from ref816 import bounded, lists, make_image, marks, refimage, \
+    run_script, script, title  # noqa: E402
 
 CAPTURES = make_image.BUILD / 'captures'
 FORMAT = 'ref816-replay-capture 1'
@@ -459,8 +459,15 @@ def run_call(machine: Path, directory: Path, manifest: Dict, scratch: Path,
         '--save', '%06X:0x%X:%s' % (SCREEN, SCREEN_SIZE, screen),
         '--save', '%06X:0x%X:%s' % (BUFFER, SCREEN_SIZE, buffer),
         '--call-writes', str(writes)]
-    result = subprocess.run(command, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, universal_newlines=True)
+    # bounded (the ground rules): --call stops at 10^9 cycles by itself;
+    # the wall-time limit and the file-size limit are the backstop
+    try:
+        result = bounded.run(command, timeout=bounded.TOOL_TIMEOUT,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             universal_newlines=True)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError('ref816 --call did not finish in %d s'
+                           % bounded.TOOL_TIMEOUT)
     if result.returncode:
         raise RuntimeError('ref816 --call failed: ' + result.stderr)
     state = json.loads(result.stdout)

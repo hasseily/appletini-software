@@ -31,6 +31,9 @@ from test_a2vm_machine import (AUX, MAIN, Workspace, control, descriptor,
                                have_tools, needs_doom)
 
 COPY, FILL, PRIVATE = 1, 2, 1
+# The most cycles a frame of the existing port takes on a2vm (under 1e8
+# with every profile; the report's --cycles bound, cost_report.py)
+PORT_CYCLES = cost_report.FRAME_CYCLES
 
 
 def parse_cost(line):
@@ -67,18 +70,25 @@ class ParameterFile(unittest.TestCase):
         for name, entry in entries:
             self.assertIn('value', entry, name)
             self.assertTrue(entry.get('source', '').strip(), name)
-        self.assertEqual(costs.profiles(), ['f121', 'fastpath'])
+        self.assertEqual(costs.profiles(),
+                         ['f121', 'f121zp', 'fastpath', 'fastzp'])
         extra = data['common']['turbo_extra']
         self.assertTrue(extra['calibratable'])
         self.assertFalse(extra['calibrated'])
         self.assertEqual(len(data['profiles']['fastpath']['changes']), 7)
 
     def test_profiles_set_the_same_parameters(self):
+        profiles = costs.load()['profiles']
+        for name in profiles:
+            self.assertEqual(set(profiles[name]['params']),
+                             set(profiles['fastpath']['params']), name)
         f121, fast = costs.parameters('f121'), costs.parameters('fastpath')
         self.assertEqual(set(f121), set(fast))
         differ = {key for key in f121 if f121[key] != fast[key]}
-        self.assertEqual(differ, set(costs.load()['profiles']['fastpath']
-                                     ['params']))
+        # fastpath changes every profile parameter but the pair's
+        # (tests/test_a2vm_zpbank.py checks f121zp and fastzp)
+        self.assertEqual(differ, set(profiles['fastpath']['params']) -
+                         {'zp_pair'})
 
 
 class AxiDependency(unittest.TestCase):
@@ -128,11 +138,11 @@ class Loading(CostWorkspace):
         path.write_text(text)
         script = self.directory / 'bus.txt'
         script.write_text('cost\n')
-        return subprocess.run(
+        return support.run(
             [str(self.out / 'a2vm'), '--rom', str(self.rom), '--cost',
-             str(path), '--bus-script', str(script)],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            universal_newlines=True)
+             str(path), '--bus-script', str(script)], timeout=120,
+            max_bytes=16 << 20, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, universal_newlines=True)
 
     def test_rejects_bad_files(self):
         good = self.files['f121'].read_text()
@@ -162,14 +172,19 @@ class TurboPath(CostWorkspace):
         image.write_bytes(b'A2VMIMG1' + struct.pack('<BBHI', 2, 0, 0xF000,
                                                     len(program)) + program)
         report = self.directory / 'bench.jsonl'
-        subprocess.run(
+        # bounded: ten passes take about 2,500 cycles
+        support.run(
             [str(self.out / 'a2vm'), '--rom', str(self.rom), '--core', core,
              '--no-mouse', '--image', str(image), '--switch', 'lc_read=1',
              '--switch', 'lc_write=1', '--reg', 'pc=F000', '--cost',
              str(self.files['f121']), '--cost-report', str(report),
-             '--boundary', 'F000', '--boundaries', '10', '--state',
-             str(self.directory / 'state.json')], check=True,
+             '--boundary', 'F000', '--boundaries', '10', '--cycles',
+             '1000000', '--state', str(self.directory / 'state.json')],
+            timeout=120, max_bytes=16 << 20, check=True,
             stdout=subprocess.DEVNULL)
+        state = json.loads((self.directory / 'state.json').read_text())
+        self.assertEqual((state['end'], state['boundaries']),
+                         ('boundaries', 10))
         rows = [json.loads(line) for line in report.read_text().splitlines()
                 if line.startswith('{"boundary')]
         return [row['clocks'] for row in rows], [row['accesses'] for row in rows]
@@ -396,11 +411,14 @@ class MemoryApiCost(CostWorkspace):
                            100 * 131)
 
 
-def doom_command(build, directory, core='py65', amem=True):
+def doom_command(build, directory, core='py65', amem=True, a2vm=None):
+    """The command that runs the existing port on `a2vm` (default
+    doom.A2VM, build/a2vm/a2vm; the tests pass the one they built)."""
     image = Path(directory) / 'fast.img'
     image.write_bytes(build.image())
-    command = [str(doom.A2VM), '--rom', str(doom.DEFAULT_ROM), '--speed',
-               'turbo', '--core', core] + (['--amem'] if amem else [])
+    command = [str(a2vm or doom.A2VM), '--rom', str(doom.DEFAULT_ROM),
+               '--speed', 'turbo', '--core', core] + \
+        (['--amem'] if amem else [])
     return command + build.fast_arguments(image) + build.hook_arguments()
 
 
@@ -413,22 +431,48 @@ class ExistingPort(unittest.TestCase):
         self.addCleanup(shutil.rmtree, str(self.directory), True)
         self.build = doom.Build()
 
-    def finish(self, name, extra=()):
+    def finish(self, name, extra=(), core='py65'):
         directory = self.directory / name
         directory.mkdir()
-        command = doom_command(self.build, directory) + list(extra) + [
-            '--boundaries', '3', '--snapshot-dir', str(directory),
-            '--final-snapshot', '--state', str(directory / 'state.json')]
-        subprocess.run(command, check=True, stdout=subprocess.DEVNULL)
+        # the a2vm built from the source (not build/a2vm/a2vm), bounded:
+        # three frames take at most 3e8 cycles and a second
+        command = doom_command(self.build, directory, core,
+                               a2vm=self.out / 'a2vm') + list(extra) + [
+            '--boundaries', '3', '--cycles', str(PORT_CYCLES * 3),
+            '--snapshot-dir', str(directory), '--final-snapshot',
+            '--state', str(directory / 'state.json')]
+        support.run(command, timeout=600, max_bytes=64 << 20, check=True,
+                    stdout=subprocess.DEVNULL)
         state = json.loads((directory / 'state.json').read_text())
+        self.assertEqual((state['end'], state['boundaries']),
+                         ('boundaries', 3), name)
         state.pop('host_seconds')
         return state, (directory / 'final.ram').read_bytes()
 
     def test_observing_changes_nothing(self):
         plain = self.finish('plain')
         for profile in costs.profiles():
+            if costs.parameters(profile)['zp_pair']:
+                continue            # the next test (the exact core)
             observed = self.finish(profile, self.build.cost_arguments(
                 profile, self.directory))
+            self.assertEqual(plain[0], observed[0], profile)
+            self.assertTrue(plain[1] == observed[1], profile)
+
+    def test_the_pair_profiles_change_nothing_here(self):
+        """f121zp and fastzp arm the zero-page pair (the exact core only).
+        The existing port never writes $C069, so a run is the plain run of
+        the exact core, plus the pair's state, which stays all zero."""
+        plain = self.finish('plain-w65', core='w65c02s')
+        self.assertNotIn('zpbank', plain[0])
+        idle = {'address': 0, 'rd': 0, 'wr': 0, 'enables': 0, 'loads': 0,
+                'reads': 0, 'writes': 0, 'firmware': 0, 'amem': 0}
+        for profile in costs.profiles():
+            if not costs.parameters(profile)['zp_pair']:
+                continue
+            observed = self.finish(profile, self.build.cost_arguments(
+                profile, self.directory), core='w65c02s')
+            self.assertEqual(observed[0].pop('zpbank'), idle, profile)
             self.assertEqual(plain[0], observed[0], profile)
             self.assertTrue(plain[1] == observed[1], profile)
 
@@ -436,9 +480,11 @@ class ExistingPort(unittest.TestCase):
         rows = {}
         for profile in costs.profiles():
             rows[profile], state = cost_report.run(
-                self.build, profile, self.directory / profile, 20)
+                self.build, profile, self.directory / profile, 20,
+                a2vm=self.out / 'a2vm')
             again, _ = cost_report.run(self.build, profile,
-                                       self.directory / (profile + '-2'), 20)
+                                       self.directory / (profile + '-2'), 20,
+                                       a2vm=self.out / 'a2vm')
             self.assertEqual(rows[profile], again, 'not deterministic')
             self.assertEqual(state['end'], 'boundaries')
             for row in rows[profile]:

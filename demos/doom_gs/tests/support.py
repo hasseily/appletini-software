@@ -23,8 +23,23 @@ RELEASE_IMAGE = BUILD / 'release' / 'doom-hd.hdv'
 sys.path.insert(0, str(ROOT / 'tools'))
 
 from v816 import hdv, prodos  # noqa: E402
+from ref816 import bounded  # noqa: E402
 
 BLOCK = prodos.BLOCK
+
+# The bounds of a machine run in a test (the ground rules: a test fails
+# rather than grows). Tests pass tighter ones where they know better.
+TEST_TIMEOUT = 300.0
+TEST_MAX_BYTES = 256 << 20
+
+
+def run(command, timeout=TEST_TIMEOUT, max_bytes=TEST_MAX_BYTES, **kwargs):
+    """subprocess.run(command, **kwargs) with a wall-time timeout that
+    kills the child's whole process group, a limit on the size of every
+    file it writes, and a CPU-time limit that stops it even if this
+    process is killed (tools/ref816/bounded.py)."""
+    return bounded.run(command, timeout=timeout, max_bytes=max_bytes,
+                       **kwargs)
 NEED_FETCH = '%s is missing: run python3 tools/fetch_upstream.py first'
 
 needs_release = unittest.skipUnless(
@@ -271,9 +286,9 @@ def ref816_build():
         BUILD.mkdir(exist_ok=True)
         out = Path(tempfile.mkdtemp(prefix='test-ref816-', dir=str(BUILD)))
         atexit.register(shutil.rmtree, str(out), True)
-        result = subprocess.run(
+        result = run(
             ['make', '-B', '-C', str(ROOT / 'tools' / 'ref816'),
-             'OUT=%s' % out, 'all'],
+             'OUT=%s' % out, 'all'], timeout=600,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             universal_newlines=True)
         _ref816_built.extend([out, result])
@@ -295,9 +310,9 @@ def a2vm_build():
         BUILD.mkdir(exist_ok=True)
         out = Path(tempfile.mkdtemp(prefix='test-a2vm-', dir=str(BUILD)))
         atexit.register(shutil.rmtree, str(out), True)
-        result = subprocess.run(
+        result = run(
             ['make', '-B', '-C', str(ROOT / 'tools' / 'a2vm'),
-             'OUT=%s' % out, 'all'],
+             'OUT=%s' % out, 'all'], timeout=600,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             universal_newlines=True)
         _a2vm_built.extend([out, result])

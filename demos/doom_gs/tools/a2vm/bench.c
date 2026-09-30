@@ -118,7 +118,7 @@ static uint8_t mapped_read(void *context, uint16_t address,
 {
     machine *m = context;
     uint8_t *page = m->read_page[address >> 8];
-    m->by_kind[kind]++;
+    m->by_kind[CPU65C02_BASE_KIND(kind)]++;
     return page ? page[address & 0xff] : io_read(m, address);
 }
 
@@ -127,7 +127,7 @@ static void mapped_write(void *context, uint16_t address, uint8_t value,
 {
     machine *m = context;
     uint8_t *page = m->write_page[address >> 8];
-    m->by_kind[kind]++;
+    m->by_kind[CPU65C02_BASE_KIND(kind)]++;
     if (page)
         page[address & 0xff] = value;
     else

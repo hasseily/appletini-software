@@ -245,6 +245,43 @@ class StrayWrites(unittest.TestCase):
         self.assertIn('card $D000: $00 -> $05', shown)
         self.assertIn('aux 7 $4000: $00 -> $06', shown)
 
+    def test_write_log_ranges(self):
+        """a2run.stray_ranges, a2vm's --write-log ranges, holds exactly the
+        main and aux 0 bytes allowed_offsets() leaves out, and banks 1-127
+        whole."""
+        sp = L.DRV_STACK
+        allowed = a2run.allowed_offsets(sp)
+        inside = {'main': bytearray(0x10000), 'aux0': bytearray(0x10000)}
+        banks = None
+        for item in a2run.stray_ranges(sp).split(','):
+            where, _, span = item.partition(':')
+            if where == 'aux1-127':
+                banks = where
+                continue
+            low, high = (int(x, 16) for x in span.split('-'))
+            inside[where][low:high + 1] = b'\1' * (high - low + 1)
+        self.assertEqual(banks, 'aux1-127')
+        for name, base in (('main', a2run.MAIN), ('aux0', a2run.AUX)):
+            for address in range(0x10000):
+                offset = base + address
+                ok = any(a <= offset < b for a, b in allowed)
+                self.assertEqual(bool(inside[name][address]), not ok,
+                                 '%s $%04X' % (name, address))
+
+    def test_read_write_log(self):
+        path = Path(tempfile.mkdtemp(dir=str(ROOT / 'build'))) / 'w.log'
+        self.addCleanup(shutil.rmtree, str(path.parent))
+        path.write_text('# a2vm write-log 1\n'
+                        'w 120 118 F9B2 1A80 main 0 1A80 A5 A5\n'
+                        'w 130 125 0808 C005 io - - - 11\n'
+                        'w 140 131 080B 4000 aux 5 4000 00 22\n')
+        writes = a2run.read_write_log(path)
+        self.assertEqual([w.describe() for w in writes],
+                         ['main $1A80: $A5 -> $A5 (pc $F9B2)',
+                          'I/O: - -> $11 (pc $0808)',
+                          'aux 5 $4000: $00 -> $22 (pc $080B)'])
+        self.assertEqual((writes[0].clock, writes[2].address), (120, 0x4000))
+
 
 # ---------------------------------------------------------------------------
 # the loader
@@ -419,6 +456,9 @@ class CapturedFrames(unittest.TestCase):
                                  (r['name'], run, r[run]['first']))
                 self.assertEqual(r[run]['stray_writes'], 0,
                                  (r['name'], run, r[run]['stray_first']))
+                self.assertEqual(r[run]['stray_logged'], 0,
+                                 (r['name'], run,
+                                  r[run]['stray_logged_first']))
                 self.assertEqual(r[run]['switch_changes'], [], r['name'])
                 self.assertEqual(r[run]['shr_writes'],
                                  r[run]['stores_expected'], r['name'])
@@ -540,6 +580,9 @@ class SyntheticStreams(unittest.TestCase):
                                  (r['name'], run, r[run]['first']))
                 self.assertEqual(r[run]['stray_writes'], 0,
                                  (r['name'], run, r[run]['stray_first']))
+                self.assertEqual(r[run]['stray_logged'], 0,
+                                 (r['name'], run,
+                                  r[run]['stray_logged_first']))
                 self.assertEqual(r[run]['shr_writes'],
                                  r[run]['stores_expected'], r['name'])
                 self.assertEqual(r[run]['other_video_writes'], 0, r['name'])
@@ -554,9 +597,10 @@ class SyntheticStreams(unittest.TestCase):
 
 # Bugs planted in a scratch copy of replay.s: (name, [(the text replaced,
 # its replacement), ...], the frame, what must catch it: 'pixels' the
-# screen against the truth, 'stray' the snapshot comparison, 'stores' the
-# count of SHR writes against upstream's screen stores). A frame named
-# synth-* is a synthetic stream of tools/native/synth.py.
+# screen against the truth, 'stray' the snapshot comparison, 'logged' a2vm's
+# write log alone (the snapshots cannot see the store), 'stores' the count
+# of SHR writes against upstream's screen stores). A frame named synth-* is
+# a synthetic stream of tools/native/synth.py.
 DRAW_END = '@done:  sta     WRMAIN\n        ldx     sc0\n'
 BUGS = (
     ('fill bytes by the wrong parity',
@@ -593,6 +637,11 @@ BUGS = (
     ('a store below the stack floor',
      [(DRAW_END, DRAW_END.replace('ldx', 'stz     $01B8\n        ldx'))],
      'still-1', 'stray'),
+    # a store of the value already there (A is free at the draw's end)
+    ('the value of main $1A80 stored back into it',
+     [(DRAW_END, DRAW_END.replace('ldx', 'lda     $1A80\n        sta     '
+                                  '$1A80\n        ldx'))],
+     'still-1', 'logged'),
     ('no covered-range cut at all',
      [('        lda     CVEND,x                 ; a covered range?\n'
        '        beq     dloop\n',
@@ -657,6 +706,11 @@ class TheChecksCanFail(unittest.TestCase):
                                            for x in runs), 0, name)
                 elif caught == 'stray':
                     self.assertGreater(sum(x['stray_writes'] for x in runs),
+                                       0, name)
+                elif caught == 'logged':
+                    self.assertEqual(sum(x['stray_writes'] for x in runs),
+                                     0, name)
+                    self.assertGreater(sum(x['stray_logged'] for x in runs),
                                        0, name)
                 else:
                     self.assertTrue(any(x['shr_writes'] !=

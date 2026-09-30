@@ -168,7 +168,7 @@ compare: $(MACHINE)
 	    --amem --cost f121
 
 costreport: $(MACHINE)
-	python3 $(HERE)cost_report.py
+	python3 $(HERE)cost_report.py --a2vm $(MACHINE)
 
 clean:
 	rm -rf $(OUT)
