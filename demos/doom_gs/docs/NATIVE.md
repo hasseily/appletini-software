@@ -570,7 +570,8 @@ should run before milestone 5 ends. The sound track S1-S4 runs in parallel.
 12. **Video and input.** PAL, NTSC or both? Is the mouse card required?
     Answer: Both PAL and NTSC. Mouse card is required
 13. **A column seen from behind** (asked 2026-09-30, milestone 7's
-    verification; open, to settle before milestone 8). At a grazing view
+    verification; answered the same day: "treat it as a known
+    difference"). At a grazing view
     a wall's first or last column can lie just past the seg's end;
     upstream's renderer then reads its own code (`sineLow`) and live data
     (`tcExact`) as table values, which no port can reproduce. The native
@@ -595,3 +596,4 @@ should run before milestone 5 ends. The sound track S1-S4 runs in parallel.
 | 10 | View sizes if they are not complicated | Full view first; the other sizes stay in milestone 13 and are dropped if they cost more than their own drawers and tables. |
 | 11 | Every VBL; no 6-voice fallback; effects automatic with the 10 most frequent hand-tuned; stereo by picking a left- or right-panned voice | The mb6 layout is removed from the converter, the player, the song files and the tests. The probe stays: on a card that cannot switch to native mode the game runs without music and says so. S4 builds the effects and the stereo voice choice. |
 | 12 | PAL and NTSC; the mouse card is required | The Appletini's mouse card (slot 2) is the clock and the music interrupt, and the boot checks for it. The mouse itself stays optional for play, as upstream. |
+| 13 | A column seen from behind is a known difference | The native renderer keeps its own rules there (`RENDER.md` 3.9: the scale 256 as vanilla DOOM, the tangent table's end) and flags the frame in `RULES`; the lockstep comparison skips a flagged frame and reports it by name, as it does for the `validcount` fix. |

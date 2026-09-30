@@ -894,14 +894,15 @@ cannot happen on a level `levelconv.py` accepts (it refuses a deeper BSP
 and converts every texture the level source made); `ST_RECORDS` (the
 staging and the spill are full) is milestone 8's decision (3.6, risk 14).
 
-**For the owner** (open, before milestone 8): on a grazing frame the
-native game renders by these rules, and upstream renders from its own
-code bytes. The release gate is lockstep-schedule mode (`NATIVE.md` 15.1
-row 4); such a frame differs from `ref816` there, whatever the port does.
-Accept it as a known divergence, as the `validcount` fix is (the lockstep
-comparison then skips a frame whose `RULES` is not 0 and says so), or
-choose other rules. No captured frame reaches it (acceptance 1: 188
-frames), so its frequency in play is unknown.
+**The owner's answer** (2026-09-30, `NATIVE.md` 15 question 13: "treat
+it as a known difference"): on a grazing frame the native game renders
+by these rules, and upstream renders from its own code bytes, so such a
+frame differs from `ref816` in lockstep-schedule mode (`NATIVE.md` 15.1
+row 4) whatever the port does. It is a known divergence, as the
+`validcount` fix is: the lockstep comparison skips a frame whose `RULES`
+is not 0 and reports it by name, never as a pass. No captured frame
+reaches it (acceptance 1: 188 frames), so its frequency in play is
+unknown.
 
 ## 4. The test harness
 
@@ -1659,9 +1660,10 @@ takes 3.1 (walk), 2.4 (wall setup) and 1.9 (seg loops) times upstream's
 - The records' bound: at most 11,052 bytes staged in a frame (aux 0's
   8 KB and part of `RECSP`'s first bank, bank 9: 18 of the 188 frames
   spill into it); `RECSP` keeps two banks, bank 10 never reached.
-- **For the owner, before milestone 8**: the rules of our own for a
+- **Answered by the owner** (2026-09-30): the rules of our own for a
   column seen from behind (3.9) make such a frame differ from `ref816`
-  in the lockstep build.
+  in the lockstep build; it is a known difference, skipped and reported
+  by name.
 
 ## Review
 
