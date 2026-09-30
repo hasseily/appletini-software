@@ -679,7 +679,12 @@ one exception, `zp_pair` of the pair profiles, arms the zero-page pair:
 without it the model runs beside a2sim.py's timeline, and
 `make compare` checks that a run with the model on still matches
 a2sim.py byte for byte. Phases are the values the port's profiling build
-writes to its `profile_stage` byte (`--cost-phase`).
+writes to its `profile_stage` byte (`--cost-phase`). With `--cost-phase`
+the final report also gives, by phase, the core's cycles
+(`phase_cycles`: the accesses charged and the dummy reads TURBO omits)
+and the soft-switch accesses (`phase_io`: `io_accesses` of the phase);
+a run without it writes the same report as before (milestone 7, stage C;
+`tools/native/render_check.py --frame-mode --timing`).
 
     python3 tools/a2vm/doom.py --frames 21 --core w65c02s --amem --cost f121 --timed
     python3 tools/a2vm/cost_report.py          # both profiles, the tables below

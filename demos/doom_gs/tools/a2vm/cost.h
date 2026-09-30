@@ -198,6 +198,11 @@ typedef struct a2vm_cost {
     int phase_addr;                 /* -1: none */
     unsigned phase;
     uint64_t phase_start, phase_clocks[COST_PHASES];
+    /* by phase too: the core's cycles (the accesses charged and the dummy
+       reads TURBO omits) and the soft-switch accesses (io_accesses),
+       reported with --cost-phase only */
+    uint64_t phase_cycles_start, phase_io_start;
+    uint64_t phase_cycles[COST_PHASES], phase_io[COST_PHASES];
 
     /* the report: one JSON line a frame boundary */
     FILE *report;

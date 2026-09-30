@@ -77,7 +77,7 @@ Main zero page, both variants, all phases:
 | Boot, installer | all but `$D8-$FF` | page 1 |
 | Level load | 1 and 2 | ≤ 128 B [A] |
 | Tics | 1 and 2 (argument blocks, current mobj, fixed-point temporaries) | ≤ 160 B [A; upstream's tic stack reached 228 B with 3-byte returns, M: `PROFILE.md:680`] |
-| Render | 1 and 2 (the seg loop page); spill to main `$0280-$02FF` | ≤ 96 B [A; BSP recursion about 80 B, R `NATIVE.md` §6; upstream's frame stack 86 B, M: `MILESTONES.md`] |
+| Render | 1 and 2 (the seg loop page); spill to main `$0280-$02FF` | ≤ 112 B with the IRQ's 24 [M: at most 79 B below the driver's S in milestone 7's frame mode, 188 frames, so 103 B with the IRQ; the first budget, 96 B [A; BSP recursion about 80 B, R `NATIVE.md` §6; upstream's frame stack 86 B, M: `MILESTONES.md`], was below that and was raised in milestone 7's verification; `tools/native/rlayout.py` `RENDER_STACK`] |
 | Replay | `$48-$6F` (39 B used [M: `make sizes`]) | 14 B below the caller's S [M: the harness's snapshots]; page 1 `$0100-$01B4` holds its gather (below), so S ≥ `$01C0` always |
 | 2D, menus | 2 | ≤ 64 B [A] |
 | IRQ | `$D8-$FF` | ≤ 24 B on top of any phase [A; a2vm can measure] |
@@ -112,7 +112,7 @@ page and aux stack; pair stores go through the trampoline [R `NATIVE.md`
 | --- | ---: | --- | --- | --- | --- |
 | `$0200-$027F` | 128 | Far bounce buffer: `FAR_GET` destination for records larger than zero page (a node 28 B, a seg 18 B, a sector 58 B [R `verification` §2.1]) | tics, render | scratch | no |
 | `$0280-$02FF` | 128 | Zero-page spill of the running phase (the render loop page first) | per phase | scratch | no |
-| `$0300-$03EF` | 240 | Persistent globals: gametic, tic command slot, input state, effect request queue, fill-span frame stamps (`W_FSC`, `W_FSP`, `W_FSW` [R `r_list65.s:144-150`]), level number, frame parameters | platform, all | zeroed at start | no |
+| `$0300-$03EF` | 240 | Persistent globals: gametic, tic command slot, input state, effect request queue, fill-span frame stamps (`W_FSC`, `W_FSP`, `W_FSW` [R `r_list65.s:144-150`]), level number, frame parameters. Milestone 7 (section 12): the cost phase `$0300` (test builds), the render frame block `$0310-$036F`, the render inputs `$0370-$039F`, the level's counts `$03A0-$03A3` | platform, all | zeroed at start | no |
 | `$03F0-$03FF` | 16 | //e ROM soft vectors (BRK, reset, `&`, Ctrl-Y, NMI, `$03FE` IRQ). Set once at boot; the game's IRQ vector is `$FFFE` in the card | ROM | boot | yes |
 
 ### 3.2 `$0400-$0BFF`, write-expensive, read-only
@@ -147,7 +147,7 @@ the seg loops index at column rate start on a page boundary.
 | Range | Bytes | Content | Owner | Persistent across frames | Label |
 | --- | ---: | --- | --- | --- | --- |
 | `$0C00-$0C9F` | 160 | `FLOORCLIP` | render | no | M: linkmap `floorclip` 320 B |
-| `$0CA0-$0CFF` | 96 | render scratch | render | no | A |
+| `$0CA0-$0CFF` | 96 | render scratch; `FRVIS` at `$0CA0-$0CC9` (milestone 7, section 12) | render | no | A |
 | `$0D00-$0D9F` | 160 | `CEILCLIP` | render | no | M: linkmap `ceilingclip` |
 | `$0DA0-$0DFF` | 96 | render scratch | render | no | A |
 | `$0E00-$0E9F` | 160 | `SOLIDCOL` | render | no | M: linkmap `solidcol` 160 B |
@@ -172,7 +172,7 @@ the seg loops index at column rate start on a page boundary.
 | `$18E0-$197F` | 160 | `WTMP`: floor clip of a sprite in a frame that skips the weapon rows | render | no | R `lists.inc:127-128`, `:131` |
 | `$1980-$19FF` | 128 | `DSX1`: x1 of drawseg i | render | no | R `dscols.inc:3-11`; 416-624 reads a frame [M: §A.2] |
 | `$1A00-$1A7F` | 128 | `DSX2` | render | no | R `dscols.inc:12` |
-| `$1A80-$1FFF` | 1,408 | Persistent hot game globals (the rest of upstream's near game globals go to RamWorks) | tics | yes | A |
+| `$1A80-$1FFF` | 1,408 | Persistent hot game globals (the rest of upstream's near game globals go to RamWorks). Milestone 7 (section 12): `TEXTRANS` `$1A80-$1B7F`, `LNMAP` `$1B80-$1BFF` | tics | yes | A |
 
 Tic phases never overlay `$0C00-$1A7F`.
 
@@ -294,7 +294,7 @@ runs):
 | --- | ---: | --- | --- |
 | `$D000-$D7FF` | 2,048 | Quarter squares: four 512 B tables, page aligned | M: `experiment` (b) |
 | `$D800-$DBFF` | 1,024 | 16 × 16 multiply (114 B [M: `experiment` (b)]), `FixedMul` family, divides written from the call sites, 16/32-bit helpers | about 600 B [A] |
-| `$DC00-$DFFF` | 1,024 | Far layer (F1.2.1 or pair back end), the RamWorks table lookup, phase loader (CPU copy RamWorks → W with RAMRD on), memory-API transport | about 1,000 B [A; the existing port's kernel code is 1,405 B plus 5 overlays of 256 B for its memory API, M: `demos/doom` build map] |
+| `$DC00-$DFFF` | 1,024 | Far layer (F1.2.1 or pair back end), the RamWorks table lookup, phase loader (CPU copy RamWorks → W with RAMRD on). The memory-API transport moved to the window of the mode that calls it (4.1 fallback 3, taken by milestone 7: section 12) | `MATHFAR` 67 B at `$DC00`, `far.s` 313 B at `$DC43-$DD7B` [M: `src/native/render.mk` sizes, stage A]; stage B adds the `FSTEP` gather, stage C the phase loader: 642 B in all [M] |
 
 **`$E000-$FFFF`** (always visible):
 
@@ -330,9 +330,8 @@ into registers or main memory, `ALTZP` off. A window costs 2.4-4 µs [M:
 | Range | Bytes | Content | Reads a frame, still / demo [M: §A.2] |
 | --- | ---: | --- | --- |
 | aux card bank 1 `$D000-$D7FF` | 2,048 | `finetangent` part 3: 1,024 words as low and high planes | 83 / 62 (both parts) |
-| bank 1 `$D800-$DBFC` | 1,021 | `viewangletox` low bytes | 166 / 100 |
-| bank 1 `$DC00-$DFFC` | 1,021 | `viewangletox` high bytes | |
-| bank 1 `$DBFD-$DBFF`, `$DFFD-$DFFF` | 6 | free | |
+| bank 1 `$D800-$DFF9` | 2,042 | `viewangletox`, one plane: upstream's table is 2,042 **bytes** (values 0-160, `r_bsp65.s:1106-1235`, read as a word masked to its low byte), not 1,021 words. Corrected by milestone 7 (`docs/RENDER.md` 1.6); the earlier low and high planes of 1,021 were wrong | 166 / 100 |
+| bank 1 `$DFFA-$DFFF` | 6 | free | |
 | bank 2 `$D000-$DFFF` | 4,096 | `finetangent` part 4: 1,024 longs as four planes. Also needs bank 2 selected: 3 more soft-switch reads a window | |
 | `$E000-$FFFF` | 8,192 | `tantoangle` entries 0-2047 as four planes of 2,048 at `$E000`, `$E800`, `$F000`, `$F800`. Entry 2048 is a constant in code (`ANG45`, `$20000000` [A: Doom's table; checked against upstream's at build]) | 62 / 50 |
 
@@ -565,7 +564,7 @@ estimate's width (36-75 ms).
 1. **a2vm has no command-line write log.** The harness hook exists (`write_hook`, `a2vm.c:928-930`) but no option prints it [R `verification` §5.3; `main.c:233-350`]. Until it does, milestone 5 checks stray writes by comparing a snapshot before and after the replay byte for byte outside the allowed ranges of rule 6. Every byte the frame does not define is filled with `$A5` in one run and `$5A` in the other, so a stray store of any constant (zero included) changes a byte in at least one run; a store of the value a defined byte already holds is still unseen, as are CPU stores that the card runner makes to the forbidden bytes of rule 8 with the value they hold. Needed: `--write-log` with ranges.
 2. **a2vm has no pair**, so section 6 cannot be run yet [R `memory` §8].
 3. **Code sizes are assumed** for the dispatcher, math, far layer, transport, effects and platform: about 5.5 KB of the card. The build must print the spare of every region.
-4. **Render window on F1.2.1.** 23,040 B of code room against a 19-26 KB hot set [A]. Milestone 7 measures the native hot set.
+4. **Render window on F1.2.1.** 23,040 B of code room against a 19-26 KB hot set [A]. Milestone 7 measures the native hot set. The whole front end (milestone 7, stages A-C): 15,606 B of the 20,416 B of code room (`docs/RENDER.md` 3.8, "Stage C as built"; section 12); its load each frame, code and per-level tables, 18,176 B, 4.54 ms on a2vm's f121 model (`docs/RENDER.md` "Stage C as built").
 5. **Heavy demo frames.** The stage need and packed record bytes of the demo's heaviest frames are unknown: the series dumps were deleted after decoding [R `verification` §3]. Recapture them in milestone 5.
 6. **The access counts of §A.2 are sampled** (one instruction in 499): 1 to 12 samples a table for the trig tables, so ±30-100%. Exact counts need `--call-log` or a full sample run.
 7. **Soft-switch and `ALTZP` costs** are the model's; milestone 0 measures them.
@@ -620,6 +619,52 @@ and fails on any breach. Spaces: `main`, `aux0`, `auxN`, `mainlc1`,
 **Stack**
 
 - [ ] The static call-graph depth of each phase plus 24 B for the IRQ stays under the budgets of section 2; the pair build's replay stays above `$0180`.
+
+## 12. Milestone 7, stages A, B and C: the front end's regions (built)
+
+`docs/RENDER.md` risk 13 proposed these changes to this map; stages A,
+B and C of milestone 7 build them (`tools/native/rlayout.py` holds every
+address and checks the overlaps; `src/native/render.cfg` fails the link
+on an overflow). Sizes are the build's [M: `make -f render.mk sizes`];
+the rows marked B are stage B's, C stage C's.
+
+| Space | Range | Content |
+| --- | --- | --- |
+| zero page | `$00-$05` | Far layer arguments `FA_DST`, `FA_SRC`, `FA_BANK`, `FA_N` |
+| zero page | `$18-$38` | Overlay 1, the BSP walk's state (33 of 42 B), live across the call of the wall setup |
+| zero page | `$48-$AE` | B: overlay 2, the seg page (103 of 104 B): the four edges, a column's rows, texCol's state, the seg's flags and light, the tiers' texturemid >> 7, the batch's count, the `FSTEP` gather's scale and step |
+| main | `$0200-$0277` | Bounce buffer: five segs of 24 B |
+| main | `$0280-$028F` | Spill of the walk: worldbottom, the plane colormap row, viewSide's first product, the subsector record, the root |
+| main | `$0290-$02BE` | B: the seg descriptor's cold part (rw_x, rw_scale, scale2, rw_distance, the light level, the normal angle, rw_offset, rw_centerangle, the texturemids, the masked columns' opening index), genColumn's words, the gather's flag |
+| main | `$0310-$036F` | Render frame block (87 of 96 B): the view, its sine and cosine, the light numbers, validcount, the span and weapon-skip stamps, the vertex cache's map unit and stamp, the status, the rules of our own taken (`RULES`, RENDER.md 3.9); B: the fill bytes and their plane colours, didsolidcol, rw_scalestep (kept from wall to wall), the staging's bank and pointer; C: the sky's slot 0 (bank, address) |
+| main | `$0370-$039F` | Render inputs: the player's view (x, y, angle, viewz), extralight, the fixed colormap, gamma (what milestone 10's game state keeps) |
+| main | `$03A0-$03A3` | The level's counts of sectors and sides (the bridge manifest of `levelconv.py`) |
+| main | `$0CA0-$0CC9` | C: `FRVIS`: the frame's weapon vissprite from the seam (milestone 8's clip pass) |
+| main | `$1800-$189F`, `$18A0-$18C9` | C: `WCLIP`, `WPREV` (3.3) written by the weapon skip (`nr_wskip`); `FSSTT`, `FSSTB` (3.3) by the plane stamps (`nr_fillstamps`) |
+| main | `$1A80-$1B7F` | `TEXTRANS`: `texturetranslation` as bytes |
+| main | `$0DA0-$0DE1` | B: the wall setup's variables (inside 3.3's render scratch) |
+| main | `$1B80-$1BFF` | `LNMAP`: `ML_MAPPED` of 2,048 lines, a bit each |
+| W | `$6000-$AFBF` | Render code: 4,342 B in stage A (`RENDERW` 3,061, the render subset of `MATHW` 1,281); 15,139 B with stage B (`rwall.s` 5,374, `rseg.s` and `rrec.s` 2,941, the 13 loops 2,482); 15,606 B with stage C (`rsky.s` 273, `rframe.s` 428). Loaded each frame by the phase loader: the code's pages and the tables' pages `$AF00-$B8FF` (18,176 B) |
+| W | `$AFC0-$B3FF` | `FLATCM`, per level |
+| W | `$B400-$B8FF` | `TXBANK`, `TXLO`, `TXHI`, `TXWM`, `TXHT`, per level; live in the masked phase |
+| W | `$B900-$B9FF` | Record batch buffer (stage B); live in the masked phase |
+| W | `$BA00-$BC7F` | Node frames of the walk, 20 × 32 B (under `YHTAB` in the masked phase) |
+| W | `$BC80-$BEFF` | B: `FSTEP` of the seg's columns (low, high planes), its masked texture columns (low, high) |
+| W | `$BF00-$BF27` | The wall's sector frame: front sector, side, back sector |
+| W | `$BF28-$BFC7` | B: each column's light distance d (`DLW`), for a seg whose light varies |
+| W | `$BFC8-$BFE7` | B: the drawseg being built (`DSBUF`) |
+| card bank 1 | `$DC43-$DE4C` | `far.s`: `FAR_GET`, `FAR_PUT`, the vertex-angle gather and write-back, the stamp clear, the gather's 61 B of entries (near in a read window; `vg_n` to the end of `vg_d`, `$DE10-$DE4C` today, the only bytes of `$DC43-$DFFF` render code may write: `render_check.allowed_sets` takes them from the label file); B: the `FSTEP` gather (`far_fstep`) |
+| card bank 1 | `$DE4D-$DE81` | C: the phase loader (`far_wload`, segment `RLOAD`, 53 B): the render window's image from RamWorks into W, one RAMRD window. `$DC00-$DFFF` holds 642 of 1,024 B |
+| aux 0 | `$0C00-$15FF` | B: the openings' low bytes (section 5) |
+| aux 0 | `$A000-$BFFF` | B: the record staging (section 5), a record with its column byte |
+| aux card | bank 1 `$D000-$D7FF`, `$D800-$DFF9`; bank 2; `$E000-$FFFF` | `finetangent` part 3, `viewangletox` (one plane, the correction of 4.3), part 4, `tantoangle` 0-2047 |
+| RamWorks | 6, 7 | `LVSEG` (segs, 24 B), `LVMAP` (nodes 32 B at `$0200`, subsectors 4 B at `$6200`, the vertex cache's three planes of 1,536 at `$6E00`, sectors 16 B at `$8000`, sides 8 B at `$9000`, patchless bitmaps at `$B000`) |
+| RamWorks | 8 | B: `RENDB`: 128 drawsegs of 32 B at `$0200`, the openings' high bytes (`OPENHI`) at `$1200` |
+| RamWorks | 9, 10 | B: the record spill beyond aux 0's staging. Bank 9 reached in frame mode by 18 of the 188 frames (up to 11,052 B staged, 2,860 B of them in bank 9) [M: milestone 7, stage C]; bank 10 never reached |
+| RamWorks | 11-30 | Texel slots: one 128 B slot per texture column, and the sky's 256 (7 to 19 banks a map; 19 for E1M2-E1M4) |
+| RamWorks | 31 | `SEAM`: the harness's weapon-clip seam (floorclip, C: `FR_VIS`, `MM_WPOK`) and lockstep data (test builds only) |
+| RamWorks | 112 | C: the render window's image (`WCODE_BANK`, at W's addresses): the code and the per-level tables (the harness's bank; the game's allocation is milestone 11's) |
+| RamWorks | 116-119 | `FSTEP_TABLE`, low plane `$2000-$5FFF`, high plane `$6000-$9FFF` |
 
 ## Appendix: the measurements made for this map
 

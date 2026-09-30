@@ -887,8 +887,13 @@ static void phase_to(a2vm_cost *c, unsigned phase)
 {
     if (phase >= COST_PHASES)
         phase = COST_PHASES - 1;
+    uint64_t cycles = c->c.accesses + c->c.dropped;
     c->phase_clocks[c->phase] += c->t - c->phase_start;
+    c->phase_cycles[c->phase] += cycles - c->phase_cycles_start;
+    c->phase_io[c->phase] += c->c.io_accesses - c->phase_io_start;
     c->phase_start = c->t;
+    c->phase_cycles_start = cycles;
+    c->phase_io_start = c->c.io_accesses;
     c->phase = phase;
 }
 
@@ -1371,6 +1376,15 @@ void a2vm_cost_final(a2vm *m, FILE *out)
     for (int i = 0; i < COST_PHASES; i++)
         fprintf(out, "%s%" PRIu64, i ? ", " : "", c->phase_clocks[i]);
     fputs("]", out);
+    if (c->phase_addr >= 0) {
+        fputs(", \"phase_cycles\": [", out);
+        for (int i = 0; i < COST_PHASES; i++)
+            fprintf(out, "%s%" PRIu64, i ? ", " : "", c->phase_cycles[i]);
+        fputs("], \"phase_io\": [", out);
+        for (int i = 0; i < COST_PHASES; i++)
+            fprintf(out, "%s%" PRIu64, i ? ", " : "", c->phase_io[i]);
+        fputs("]", out);
+    }
     write_counters(out, &c->c, NULL);
     if (c->p.slowdown_slot4)
         write_slow_counters(out, &c->c, NULL);

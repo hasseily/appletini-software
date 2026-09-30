@@ -213,6 +213,7 @@ class PortWriter(_Codec):
             self.m.put(p + index, value >> (8 * k), 1)
 
     def encode(self, leaf: Leaf, index: int, value: Any) -> None:
+        index *= leaf.stride            # records of `stride` bytes
         e = leaf.enc['enc']
         planes = leaf.planes
         where = '.'.join(map(str, leaf.path))
@@ -347,6 +348,7 @@ class PortReader(_Codec):
         return v
 
     def decode(self, leaf: Leaf, index: int) -> Any:
+        index *= leaf.stride            # records of `stride` bytes
         e = leaf.enc['enc']
         planes = leaf.planes
         if e == 'int':

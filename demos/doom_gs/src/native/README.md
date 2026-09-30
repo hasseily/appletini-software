@@ -1,4 +1,8 @@
-# src/native: the native record replay (milestone 5)
+# src/native: the native record replay (milestone 5), the math (milestone 6), the front end (milestone 7)
+
+The replay is described first; the math has its own
+[`MATH.md`](MATH.md); the renderer's front end is the last section, "The
+front end (milestone 7)".
 
 The first hand-written kernel of the native rewrite: upstream's column
 records in, the 3D view's SHR bytes out, in 65C02 assembly for ca65
@@ -453,3 +457,616 @@ the native producers (milestone 7) would change:
 - a fill's bytes by row parity (even rows', odd rows'), not first row's
   and second row's;
 - `R_CMP` could hold the native colormap page.
+
+## The front end (milestone 7)
+
+The renderer's front end, from `R_FillStamps` to `drawMasked`, designed
+in [`docs/RENDER.md`](../../docs/RENDER.md) and built in three stages.
+**Stage A** is built: the level converter, the tables, frame setup, the
+frame-start clears, the BSP walk and its clipping, the sector light and
+the plane colours, and the harness to checkpoint A. **Stage B** is built:
+`R_StoreWallRange` (the drawseg, the scales, the heights, marks and
+textures, the texture edges, the silhouettes and the clips saved for the
+sprites), `R_RenderSegLoop` with our own generator of its 13 loops,
+genColumn and the masked-only loop, texCol with its exact texture u, the
+K_TEX and K_FILL records with the fill spans, and the routine mode of the
+harness to checkpoint B (acceptance 2). **Stage C** is built: the plane
+stamps (`R_FillStamps`), the weapon skip (`weaponClipSame`'s
+bookkeeping), the sky columns and the patchless texture columns, the
+whole frame from `R_FillStamps` to `drawMasked` with the render window
+loaded by the phase loader, frame mode of the harness to checkpoint C
+(acceptance 1) with its timing report, and the milestone 5 replay run on
+the records the native front end made. It is a GPL-2 derivative of
+upstream's `r_frame65.s`, `r_bsp65.s`, `r_iigs65.s`, `r_wall65.s`,
+`r_seg65.s`, `segvar.inc` and `r_list65.s` (the same walk, drawsegs,
+openings, records, clips, spans and stamps, written for the 65C02).
+
+| File | What it is |
+| --- | --- |
+| `rframe.s` | `nr_frame` (the plane stamps, setup, clears, the weapon's clip pass through the seam, the weapon skip, the walk, the last batch), `nr_fillstamps`, `nr_setup`, `nr_clear`, `nr_wskip` |
+| `rbsp.s` | `nr_bsp`, the recursion over node frames in W, `nr_side`, `nr_checkbox` (with upstream's `boxPre`), `nr_scan0`/`nr_scan1`, `nr_sub`, the seg loop and `clipwall`, the vertex-angle cache |
+| `rlight.s` | `nr_planes` (the sector into the sector frame, its plane colormap row, worldbottom, the floor and ceiling colours), `nr_walllight` (for stage B) |
+| `auxlc.s` | The aux card's reads in `ALTZP` windows from W: `ax_vtox`, `ax_tanto`, `ax_tan3`, `ax_tan4` |
+| `far.s` | Card bank 1 from `$DC43`: `far_get`, `far_put`, the vertex-angle gather and write-back, the stamp clear, the `FSTEP` gather (stage B); the phase loader `far_wload` (stage C, segment `RLOAD`) |
+| `rwall.s` | `nr_storewall` (stage B): `R_StoreWallRange` with its helpers (the axis differences and distAny, scaleFast with normD and sinA, scaleSlow with `R_ScaleFromGlobalAngle`, rowMod, edgeAL, the edges and edgeSlow, saveClip, the silhouettes); the drawseg built in W and put into `RENDB` |
+| `rseg.s`, `rseg.inc` | `nr_segloop` (stage B): `R_RenderSegLoop`'s prologue and the choice of its loop, genColumn, the masked-only loop, segDone, texCol and tcExact, the tiers and their K_TEX records, the ceiling and floor fills with their spans and K_FILL records; the loops' macros |
+| `rsky.s` | Stage C: `sky_col` (skyColumn, ceilSky: a K_TEX record of the sky's slot) and `tier_flat` (tierFlat: a column without a patch as a K_FILL of the texture's colour, with its span cut) |
+| `rrec.s` | The record batch in W and its staging (aux 0 `$A000`, then the spill banks); `rec_start` at the frame's start |
+| `gen/segloops.s` | The 13 loops of `segvar.inc`, written by `tools/native/seggen.py` (build output) |
+| `rdriver.s` | The a2vm test driver (not the game): one frame with the mouse card's VBL interrupt on (`drv_frame`; `drv_wframe` loads the render window first), the seam's `wclip_pass` (floorclip, `FR_VIS`, `MM_WPOK`), checkpoint A's lockstep `nr_storewall` and staging stubs (`-D LOCKSTEP`), routine mode's `drv_wall` and `drv_seg`, and a descriptor loop for bulk cases (`rt_side`, the aux reads) |
+| `render.cfg`, `render.mk` | The ld65 map and the builds into `build/native/render/obj`: `rtest` and `rprof` (checkpoint A's, with the lockstep stub; phases marked), `rwall` and `rwprof` (the whole front end: stages A, B and C); `math.s` is assembled again with `-D RENDER` (the renderer's subset; `pta16` reads `tantoangle` from the aux card). `rwall.w` with a level's `wtables.img` is the render window's image |
+
+The host tools, in [`tools/native`](../../tools/native):
+
+| Tool | What it does |
+| --- | --- |
+| `rlayout.py` | Every address, bank, record and zero-page byte of the front end; writes `rlayout.inc`; checks overlaps and budgets |
+| `rendercap.py` | The captures: five ref816 runs, each twice (choose, then capture), the frames' dumps at `R_FillStamps`, the seam, `R_RenderBSPNode`, early flushes and `drawMasked`, and the call logs, stored compressed per frame; a full dump of each level as the converter's source |
+| `levelconv.py` | A reference state into the native level (`render-level 1`): segs, nodes, subsectors, sectors, sides, the vertex cache, one 128-byte texel slot per texture column and the sky's, the W tables; its checks |
+| `rtables.py` | The constant tables from the reference's RAM, checked against their formulas; the aux card's and `FSTEP`'s images |
+| `framestate.py` | A captured frame into a2vm records: the render inputs, the frame block, the dynamic level fields, the vertex cache from upstream's, the seam |
+| `rcanon.py` | Both machines' outputs in one canonical form, and their diff |
+| `render_check.py` | The harness: checkpoint A on the frames, routine mode (`--routines checkpoint` or `all`, `--cases`: checkpoint B), frame mode (`--frame-mode`: checkpoint C, acceptance 1), both poisoned fills, the write-log filter, the timing (`--timing`, `--routine-timing`, `--frame-mode --timing --report`), the sizes (`--sizes`) |
+| `sidecheck.py` | Check A3: upstream's `viewSide` in `mathref batch` against `nr_side` on a2vm |
+| `routinecap.py` | Stage B's captures: for each run of `rendercap.py`, a survey (a call log of the wall calls, their seg loop calls, early flushes and the paths they take) and a dump run: every wall call of the captured frames at its entry and return, and its seg loop's, stored as one case |
+| `routinesynth.py` | Synthetic cases for the paths no capture reaches: a captured call recorded whole (`--capture`), changed by pokes, upstream's truth by `--call` |
+| `segdesc.py` | A case's entry state as the native's: the frame block, the clips, spans and plane state, the wall's arguments, the seg descriptor |
+| `seggen.py` | The 13 seg loops (`gen/segloops.s`) |
+| `framesynth.py` | Stage C's synthetic frames: a captured frame's `R_FillStamps` recorded whole (`--capture`), changed by pokes, the frame run by `--call` from display's `JSL` to each point; for patchless columns the level converted again with the same pokes |
+| `render_replay.py` | The milestone 5 replay (`loader.py`, `replay.s`) on the native front end's records and texel slots with upstream's masked-phase records after them: the SHR bytes against ref816's |
+
+### Commands
+
+From `demos/doom_gs`, with ref816, a2vm, cc65, `tools/native`'s mathref
+(`make -C tools/native`) and the link map:
+
+```
+python3 tools/native/rendercap.py          # 177 frames, 13 level sources, ~1 min
+python3 tools/native/levelconv.py --all    # every level source, all checks
+python3 tools/native/rtables.py            # the tables, checked
+make -C src/native -f render.mk            # rtest and rprof
+make -C src/native -f render.mk sizes
+python3 tools/native/render_check.py       # checkpoint A, 354 runs, ~15 s
+python3 tools/native/render_check.py --fills a5 --timing
+python3 tools/native/sidecheck.py          # check A3, 9 maps, ~80 s
+python3 tools/native/routinecap.py         # 3,595 wall calls, 162 MB, ~30 s
+python3 tools/native/routinesynth.py       # 13 synthetic cases, ~40 s
+python3 tools/native/render_check.py --routines checkpoint   # ~90 s
+python3 tools/native/render_check.py --routines all          # ~5 min
+python3 tools/native/render_check.py --routine-timing        # ~90 s
+python3 tools/native/framesynth.py         # 11 synthetic frames, ~20 s
+python3 tools/native/render_check.py --frame-mode            # 188 frames, ~90 s
+python3 tools/native/render_check.py --frame-mode --timing \
+    --report build/native/render/report.md                   # ~2 min
+python3 tools/native/render_replay.py      # 15 frames through the replay
+python3 -m unittest discover -s tests -p 'test_native_render*.py'
+```
+
+`render_replay.py` also needs milestone 5's captures and build
+(`tools/ref816/capture.py`, `make -C src/native`).
+
+### How it runs
+
+On F1.2.1 the tics run in W before the frame, so the frame starts with
+the phase loader (`far_wload`, in the card): one RAMRD window on the
+render window's image in RamWorks bank 112, which copies the code's pages
+(from `$6000` to the page after the end of `MATHW`, 61 pages) and the
+per-level tables' pages (`$AF00-$B8FF`: `FLATCM`, `TXBANK` ... `TXHT`)
+into main W, 18,176 bytes.
+
+`nr_frame` first makes the plane stamps (`nr_fillstamps`, upstream's
+`R_FillStamps`): the stamp of this frame `W_FSC` + 1, `W_FSP` the frame
+before's when its view shows (`W_FSW`) with the same first row and row
+after it (`W_TOPR`, `W_BOTR`, set to this view's), no plane colour of
+the fill bytes (`W_LCC`, `W_LFC` get `$80` in the high byte), and every
+128 frames all span stamps refreshed (`fsFill`). It copies the player's
+view from the render inputs (`$0370`),
+computes viewangle16, the light numbers `LT_BASE` and `LT_FIXED`, the
+view's approximate sine and cosine (the math's `sineapprox`, a tables-bank
+window) and adds 1 to `validcount`; clears `SOLIDCOL`, the clip arrays
+(the clips + 1 as bytes), the drawseg count and `lastopening`; lets the
+seam put the weapon's clip pass into `FLOORCLIP` and `FRVIS` (milestone
+8's sprite code); keeps the weapon skip (`nr_wskip`, `weaponClipSame`'s
+bookkeeping: `FR_SKIP` = `W_FSW` when there is a weapon without a flash,
+no automap overlay, not the shadow weapon, and the same vissprite as the
+frame before's in `WPREV`, which becomes this one; `WCLIP` = `FLOORCLIP`
+at the first frame that skips; `W_WSK`); empties the staging
+(`rec_start`); then walks the tree from `numnodes - 1` and flushes the
+last batch of records.
+
+The walk fetches each node whole (32 bytes, one `far_get` from `LVMAP`)
+into a node frame of W (`$BA00` + 32 a level), decides the side (the
+tests for dx or dy 0, else viewSide's sign test, else the two shiftMul
+products: always the products, never `c14Bounds`, see "Check A3"),
+recurses into the front child with `JSR` (2 bytes of stack a level),
+checks the back box (the view's case, `boxPre`, the corners' angles by
+`pta16`, `viewangletox` from the aux card, `nr_scan0`) and continues
+into the back child in the same frame. A subsector's record (4 bytes)
+names its sector: unless it is the sector of the subsector before
+(upstream's `CN_LSEC`), the sector's 16 bytes come into the sector frame,
+the plane colours are computed from its light (`SMAP`, `PCMO`, `FLATCM`)
+or the fixed colormap, and its `validcount` is stamped (a 2-byte
+`far_put`) with a call of `nr_addsprites` (a stub until milestone 8).
+Its segs come five at a time (24 bytes each) into the bounce buffer at
+`$0200`, their vertices' angles and stamps in one read window (the card's
+gather), missing angles by `pta16` (the rtest counter `VA_COUNT`), new
+ones written back in one write window; each seg is clipped to the view's
+columns and `clipwall` calls `nr_storewall` for each open run of
+columns, as upstream calls `R_StoreWallRange`.
+
+`nr_storewall` (stage B) takes the walk's arguments (the start and stop
+columns, the seg's record in the bounce buffer, the front sector in the
+sector frame, the plane colours, worldbottom), marks the line in
+`LNMAP`, checks the drawsegs and the openings, fetches the side (and the
+back sector) into the sector frame, and makes what upstream's
+`R_StoreWallRange` makes, step for step: the distance and offset of the
+view from the seg's line (differences along an axis, else distAny's
+products), the scales (scaleFast: `qmulh`'s "+ 0 or 1", normD's
+`RECIP_TABLE`, the 1.001 step; scaleSlow with `R_ScaleFromGlobalAngle`
+and a divide for the step), the heights, the marks, the three textures
+with rowMod, the masked columns' openings, and the four edges of the
+tiers (edgeAL's shared low word, or FixedMul). The drawseg is built in
+W's `DSBUF` and put into `RENDB` (32 bytes) when the wall ends; the seg
+descriptor goes into the seg page (zero page `$48-$AE`: the edges, the
+flags, the rows of a column, texCol's state) and the spill (`SD_*`).
+rw_scalestep is kept in the frame block from wall to wall (`RW_STEP`):
+scaleSlow leaves it for a wall of one column, as upstream does, and the
+edges of that wall use it.
+
+`nr_segloop` computes the wall light (`nr_walllight`, then one colormap
+page for the seg, or `W_LV` when the light varies along it), the tiers'
+texturemid >> 7, and each column's `FSTEP` and light distance d:
+`far_fstep`, in the card, steps the seg's scale from rw_scale -
+rw_scalestep 24 bits a column (as upstream's `STEP8` and `STEP24W` do)
+and reads the table in the four `FSTEP` banks, one RAMRD window a seg,
+a `$C073` write when the bank changes; the loops read each column's
+from W. Then the fill bytes (colormap B's and A's byte of level 0 for
+the plane colours, kept from seg to seg as upstream's `W_LCC`, `W_LFC`)
+and the loop of the seg's kind: one of the 13 generated loops, genColumn
+for every column (`genloop`), the masked-only loop (`vmask`), or none.
+A generated loop is segvar.inc's: the rows as bytes, the edges stepped
+by bytes 1-3 (`STEP8E`), a closed column (floor clip + 1 of 0) through
+genColumn, whose rows are signed words and whose edges step 32 bits. A
+tier calls `texcol` when its column has none yet: the texture u exact
+(`tcexact`: `finetangent` from the aux card, the products of TANPROD) at
+a span's ends, 8, 2 or 1 columns apart, and linear between with 8 bits
+of fraction; then `tierdraw`: the column's texel slot, frac = (row - 85)
+fracstep + texturemid >> 7 (two `mul8`), the K_TEX record. The fills
+check the span of the frame before (`W_FSP`, the same bytes: only the
+other rows) and make the span of this frame (`W_FSC`), then the K_FILL
+record. A sky ceiling (stage C, `sky_col`) is a K_TEX record of the
+sky's texel column ((viewangle >> 16) + xtoviewangle[x]) >> 6, its slot
+in the level's sky slots (`SKYBANK`, `SKYLO`, `SKYHI` of the frame
+block), one texel a row from texturemid 100, the page of the fixed
+colormap or of colormap A's full light; as upstream, the wall's yl goes
+through `DC_ROW` and the column's step is left at the sky's. A texture
+flagged with patchless columns (bit 7 of `TXBANK`) looks its column up in
+the level's `TXFLAT` bitmap (`LVMAP`, two 1-byte `far_get`s); a column
+without a patch (`tier_flat`) becomes a K_FILL of the texture's colour
+(colormap A's and B's full-light bytes) after the span cut of
+`R_DrawColumnFlat`'s `fillCol`. Records go into the 256-byte batch in W
+with their column byte and are flushed into the staging (aux 0 `$A000`,
+then banks 9-10) with one RAMWRT window an area. After the loop the masked columns go into the
+openings (low bytes in aux 0, high bytes in `OPENHI`), a single sided
+wall with marks makes its columns solid, and `DIDSOLID` tells the wall.
+Back in `nr_storewall`: the silhouettes for a two sided wall that made a
+column solid, the clips saved into the openings for the sprites
+(`saveceil`, `savefloor`: one RAMWRT window each), the drawseg's columns
+(`DSX1`, `DSX2`).
+
+Not reproduced: a column seen from behind (a grazing view: a wall's
+first or last column just past the seg's end), where upstream reads past
+its tables, into its own code (scaleSlow's sine of a negative index)
+and live data (`tcExact`'s texture angle past `finetangent` part 4). The
+native code takes a rule of its own there (RENDER.md 3.9): the scale
+256, vanilla DOOM's (`RULE_SINE`), and the tangent table's nearer end
+(`RULE_TANGENT`), and sets the rule's bit in the frame block's `RULES`;
+the harness reports any run with a rule. Stage B stopped the frame
+there. A texture without slots stops the frame (`ST_TEXTURE`, `BRK` in
+every build; a level `levelconv.py` accepts has none), as do full node
+frames (`ST_DEPTH`) and a full staging (`ST_RECORDS`, milestone 8's
+decision). (Stage B's `ST_SKY` and `ST_FLAT` are gone: stage C draws
+both.)
+
+### Memory
+
+As [`docs/MEMORY_MAP.md`](../../docs/MEMORY_MAP.md) section 12 lists it
+(RENDER.md risk 13's proposals, taken): zero page `$00-$05` (far layer),
+`$18-$38` (overlay 1, 33 of 42 bytes) and `$48-$AE` (overlay 2, the seg
+page, 103 of 104 bytes; stage B), the spill `$0280-$02BE` (63 of 128
+bytes: the walk's, the seg descriptor's cold part, genColumn's words),
+the frame block `$0310-$036F` (86 of 96 bytes; stage C adds the sky's
+slot), the render inputs
+`$0370-$039F`, the level's counts `$03A0-$03A3`, `FRVIS` `$0CA0-$0CC9`
+(stage C: the seam's weapon vissprite), the wall setup's
+variables `$0DA0-$0DE1` (stage B), `WCLIP` and `WPREV` (stage C: the
+weapon skip, `$1800`, `$18A0`), W code from `$6000`, the node frames
+`$BA00-$BC7F`, each column's `FSTEP` `$BC80` and masked texture column
+`$BDC0`, the sector frame `$BF00`, each column's light distance `$BF28`
+and the drawseg being built `$BFC8` (stage B), the far layer at card
+bank 1 `$DC43-$DE4C` and the phase loader `$DE4D-$DE81` (stage C); the
+drawsegs and `OPENHI` in RamWorks bank 8, the
+openings' low bytes at aux 0 `$0C00`, the record staging at aux 0
+`$A000`, then banks 9 and 10; the render window's image in RamWorks bank
+112 (stage C). Sizes (`make -f render.mk sizes`; the whole front end,
+build `rwall`):
+
+| Area | Used | Budget (RENDER.md 3.8) |
+| --- | ---: | ---: |
+| `rframe.s` | 428 | 500 (stage A), and stage C's part of the 900 below |
+| `rbsp.s` + `rlight.s` (with `SMAP`, `PCMO`, the box tables) | 2,688 | 3,400 |
+| `auxlc.s` | 146 | 200 |
+| `MATHW`, render subset | 1,281 | 1,700 |
+| `rwall.s` (with `KS`) | 5,368 | 5,500 |
+| `rseg.s` + `rrec.s` (with `PGT`) | 2,946 | 3,800 |
+| `segloops.s` (13 loops) | 2,482 | 2,860 |
+| stage C: `rsky.s` 273, `nr_fillstamps` and `nr_wskip` in `rframe.s` 201, `rec_start` 13 | 487 | 900 |
+| W code, all stages | 15,612 | 20,416 (4,804 left) |
+| `far.s` in card bank 1 (the phase loader 53) | 575 | 850 (far layer 500, vertex gather 100, `FSTEP` gather 250) |
+| Card bank 1 `$DC00-$DFFF` in all | 642 | 1,024 |
+
+The walk's stack is at most 64 bytes below the driver's S (a2vm's
+`--lowest-s-in` over the render code, all 177 frames, the lockstep
+build); a wall call, with its seg loop and the math, at most 20 (routine
+mode, every case); the whole frame, at most 79 (frame mode, all 188
+frames; the interrupt handler's own pushes are not counted). With
+MEMORY_MAP's 24 B IRQ allowance that is 103 B, within the render budget
+of 112 B (MEMORY_MAP section 2; 96 B before milestone 7's verification,
+which found it too small); `render_check.py` and the tests check depth +
+24 against it.
+
+### Verification (checkpoint A, RENDER.md 5.1)
+
+**1. The level converter** on all nine maps (13 level sources: E1M1 and
+E1M7 from three runs each, the tour's nine maps): every count within its
+native limit (the largest, E1M6: 250 sectors, 1,862 segs, 605 nodes,
+1,207 vertices; BSP depth at most 19); no sector address with a low word
+of 0 (bspSub's "no sector"); the native level decoded back through
+`rlayout.py` equal to the bridge Reader's canonical objects in every
+rendered field (1,563 objects on E1M1, 3,083 on E1M7); every made texture
+column's
+slot equal to the reference's 128 bytes at its texel pointer, read again
+from `COLDIR` (1,896-5,736 slots a map, the sky's 256 included);
+`skypatchnum` a lump of the WAD directory; the sectors' and sides' render
+fields read back by the bridge's port reader through the level's
+manifest (records with the bridge's new `stride`); the static fields
+equal to the bridge's tour dump of the same level load. No slot is
+open-ended and no texture of E1 has a patchless column. Texels take 7 to
+19 banks a map (E1M2-E1M4 the most).
+
+**2. The tables**: every table read back equal to the reference's RAM;
+`FSTEP` entries 512-65,535 equal to 33,554,431 / L; `SMAP`, `PCMO`,
+`CMO`, `PGT` equal to their formulas and `c26Reverse` to `PGT` reversed;
+`tantoangle[2048]` is ANG45; the same tables in all 13 sources.
+
+**3. Check A3, `c14Bounds`**: upstream's `viewSide` (with `c14Bounds`) on
+ref816's machine (`mathref batch`, which now outputs P), from a real
+call's registers and return address, X = node × 4 and ND the node's
+address (checked: `CORE_NODEADR` is `nodes` + 28 n), against `nr_side`
+(the products only) on a2vm: **0 differences in 4,994,932 cases** on the
+nine maps: 3,600,000 random (100,000 views a map, each at the four
+corners of the fraction byte shiftMul keeps) and 1,394,932 edge cases
+(views within 5 of the log difference ±417 on the 23-173 nodes a map that
+`c14Bounds` decides, |x| and |y| of 15, 16 and 17, offsets of -32,768).
+Every branch the maps' nodes allow was reached (greater, less, the
+threshold miss, both small-offset misses, both -32,768 misses, the
+fall-backs for |dx| or |dy| over 255); every such node with offsets at
+log differences 416 and 417 (computed from `LOGTAB` and `SIGHTLOG`, not
+from the generator) had cases at them. The overflow branch cannot be
+reached in E1: it needs |K| of at least 10,240 and the nodes' K lie in
+-8,192 to 9,504. So upstream's claim holds on these cases and
+`c14Bounds` is dropped as RENDER.md 1.9 planned.
+
+**4. The frames**: 177 frames (the 15 of milestone 5, 50 of `newgame`, 50
+of the title loop's demo3, 50 of the tour over E1M1-E1M9, and 12 of a
+`lights` run that no coverage script replaces: the fixed colormaps 1 and
+32 and gamma 2, through upstream's own cheats), each run twice (every
+undefined byte `$A5`, then `$5A`), the walk's wall calls going to the
+lockstep stub: **354 runs, 0 differences**. Equal to ref816: the list of
+3,595 wall calls (start, stop, seg, front sector, floor and ceiling
+colour, worldbottom), `validcount` and every sector's stamp at
+`drawMasked`, the 4,012 vertex angles computed (ref816's `vtxAngle`
+calls, 0-119 a frame), the clears and derived values at the walk's entry
+(`CEILCLIP`, `FLOORCLIP` after the seam, `SOLIDCOL`, the drawseg count,
+`lastopening`, `LT_BASE`, `LT_FIXED`, viewsin, viewcos, validcount, the
+cache's map unit) and the map unit at the end; no write outside the
+allowed set (a2vm's write log of every storage but the stack page,
+filtered by the writing PC); 2-31 interrupts taken a run.
+
+**Planted bugs** (`tests/test_native_render*.py`, each in a scratch copy):
+
+| Bug | Frame or check | Caught |
+| --- | --- | --- |
+| a texel slot one column off (`levelconv.py`) | E1M1 | the slot check: "the slot differs from the reference" |
+| viewSide's side flipped for dy < 0 (dx 0) | still-1 | the call list from call 0 (start, stop, seg, sector, colours) |
+| viewSide's products compared the wrong way | A3 on E1M1; still-1 | 28,320 of 29,436 sides; calls 5 and 6 swapped |
+| the plane colours with extralight | title-22 (extralight 2) | the calls' floor and ceiling colours (243, 107 for 245, 111) |
+| the fixed colormap ignored by the planes | lights-08 | the calls' colours |
+| a sector not stamped | still-1 | 8 sectors' stamps at `drawMasked` |
+| the vertex stamp advanced every frame | still-2 | vertex angles computed: 64 for 0 |
+| A3's edges aimed at ±317 | A3 on E1M1 | the coverage check: no case at log differences 416 and 417 |
+| a store into the hot game globals | still-1 | 48 stray writes (`$1A80`) |
+| `R_WallLight`'s contrast + 1 along x | `nr_walllight` against upstream | the offsets and `LT_I` differ |
+
+`nr_walllight` (for stage B) equals upstream's `R_WallLight` (`mathref
+batch`) on 64,000 cases: every light level, the fake contrast's angles,
+extralight 0-2, gamma 0-4, the fixed colormaps (`sidecheck.py
+--walllight`). `ax_tan3` and `ax_tan4` (for stage B) and `ax_vtox`,
+`ax_tanto` equal the tables on 160-300 indexes each, the ends included
+(bulk runs).
+
+### Verification (checkpoint B = acceptance 2, RENDER.md 5.2)
+
+**Routine mode.** A case is one call of `R_StoreWallRange` of a captured
+frame (`routinecap.py`: all 3,595 wall calls of the 177 frames), with
+the `R_RenderSegLoop` call it makes. For each routine, twice (every byte
+the state does not define `$A5`, then `$5A`), `segdesc.py` builds the
+native state from the reference's at the call's entry (the frame's P0
+for the level, the zone and the colormaps; the entry's dump for the view,
+the light numbers, the clips, `solidcol`, the spans, the drawseg count,
+lastopening, rw_scalestep and the plane state; the walk's arguments, or
+the seg descriptor), the driver syncs to a VBL and waits so that the
+next falls inside the call (the calls are often shorter than a VBL
+period), calls `nr_storewall` or `nr_segloop` and flushes the batch; the
+outputs (`rcanon.py`) must equal the reference's at the return: the
+records the call made by column in order (upstream's walked from each
+list's end at the entry through `K_NEXT`; a texture's texels through the
+level's texture map), `FLOORCLIP`, `CEILCLIP`, `SOLIDCOL`, didsolidcol,
+the spans and covered ranges, `W_LCC`, `W_LFC`, `W_CEILW`, `W_FLOORW`;
+for a wall also the drawseg it made (the fields upstream defines: its
+scalestep only for two columns or more, a silhouette's height and clip
+only with that silhouette), the openings its fields name (the masked
+columns 16 bits, the clips their low bytes), `dsX1`/`dsX2`, the count,
+lastopening, rw_scalestep and the line's `ML_MAPPED` (set unless the
+drawsegs are full; the line must be mapped at `drawMasked`, P3, and no
+other bit of `LNMAP` may change); and no write outside stage B's allowed
+set (`rlayout.allowed_writes_b`, by the writing PC).
+
+**The synthetic cases** (`routinesynth.py`) for the paths no capture
+takes: a captured call recorded whole by ref816's `--capture`, changed by
+pokes, run alone by `--call` to its return and stopped at its seg loop's
+entry and return. `edgeslow` (a back floor with a fraction of its own:
+edgeSlow), `mod16` and `mod16neg` (a row offset of ±45 on a texture 72
+high: rowMod's remainder, the vendor's `_Mod16` upstream, `sdiv16`
+natively: an indirect comparison, RENDER.md 5.2), `vmask` (a two sided
+line with nothing to draw given a mid texture), `closed` (a floor clip of
+-1 in a column of a generated loop: genColumn from it), `onecolslow` (a
+scaleSlow wall cut to one column: its scalestep and its edges from the
+wall before's), `dsfull`, `openfull` (the early returns), `fsgeneral` (a
+scale of 80.0) and `segearly` (a seg loop that returns at once); and
+`negsine`, a view that sees the wall's first column, and so all of it,
+from behind, which stage B refused (`ST_SINE`). Since verification
+`negsine`, `grazefirst` and `grazelast` (only the first or last column
+behind) are the ruled cases of RENDER.md 3.9: each takes its rules and
+equals upstream wherever upstream stays in its tables.
+
+**Results** (2026-09-30, `render_check.py --routines checkpoint`, then
+`all`):
+
+| Set | Wall calls equal | Seg loop calls equal | Deferred (a sky column) | Runs |
+| --- | ---: | ---: | ---: | ---: |
+| checkpoint: 1,000 calls evenly over the calls without a sky, the calls a path of the coverage needed (a v02 loop, scaleSlow), every call with a sky, the synthetic cases | 1,010 | 1,010 | 62 | 4,288 |
+| all: every captured call and synthetic case | 3,541 | 3,542 | 62 | 14,416 |
+
+0 differences, 0 stray writes, in both fills; `negsine` refused as it
+must be; 91% (checkpoint) and 95% (all) of the runs took an interrupt
+inside the call. Every
+loop ran: in the checkpoint v02 1, v04 39, v05 24, v06 4, v07 3, v08
+23, v10 61, v12 124, v13 59, v14 23, v15 95, v20 28, v28 499 seg loop
+calls, genColumn's loop 22, the masked-only loop 1, none (segDone) 4;
+and every path of upstream's the captures reach (scaleFast 1,001 walls,
+scaleSlow 1 (2 in all), distAny 235, `R_WallLight`'s varying light 198,
+fstepHigh 109, tcExact 773, genColumn 22) with the synthetic ones. The
+62 deferred calls stop at their first sky column with `ST_SKY` (their
+ceiling colour is the sky's); stage C closes them.
+
+**Planted bugs** (`tests/test_native_render_walls.py`, each in a scratch
+copy, each case run once, `$A5`):
+
+| Bug | Cases | Caught by |
+| --- | --- | --- |
+| `qmulh` without its carry | 20 of 40 walls with scaleFast | the drawseg: scale1 14,246 for 14,247 |
+| `STEP8E` stepping all four bytes | 3 of 12 seg loops | the records: a fill ending a row off |
+| `W_FSP` compared where `W_FSC` is due | 2 of 12 seg loops of `still-2` | the records: 91 columns (fills upstream's spans spared) |
+| `W_LV` not set for a seg of one light (upstream's C26 base kept) | 4 of 4 | the records' colormap pages |
+| saveClip one column short | 1 of 1 | the openings of `sprtopclip` |
+| the fill bytes of an odd first row not swapped | 1 of 1 | the records' B1, B2 |
+| the texture u exact every 4 columns, not 8 | 3 of 4 | the records' texels |
+| the line not mapped | 2 of 2 | `ML_MAPPED` |
+| rw_scalestep of a one-column scaleSlow wall set | `onecolslow` | rw_scalestep |
+| edgeSlow with the step and the scale swapped | `edgeslow` | the clips |
+| rowMod's negative remainder not corrected | `mod16neg` | the records' texels |
+| a closed column not given to genColumn (the generator) | `closed` | the clips |
+| fsGeneral shifted one too few | `fsgeneral` | the records' steps |
+| a store into the hot game globals | 1 of 1 | the write log |
+
+Two rounding bugs are not in the list because the checks cannot see
+them, and neither can a frame: an edge rounded with FRACUNIT for
+FRACUNIT - 1 (or the reverse), and `qmulh`'s carry on the scales of far
+walls. The loops step an edge's bytes 1-3 only, so its byte 0 (where the
+rounding lies) reaches a row only through genColumn's 32-bit steps, and a
+difference of 1/65,536 of a row reaches no row in the captures; the
+scale of a wall beyond 256 map units is `qmulh`'s result shifted right,
+which mostly drops the extra 1 (the bug above shows on nearer walls).
+
+### Verification (checkpoint C = acceptance 1, RENDER.md 5.3)
+
+**Frame mode** (`render_check.py --frame-mode`). Each captured frame,
+twice (every byte the frame does not define `$A5`, then `$5A`), on the
+whole front end (`rwall`): the render window's image (`rwall.w`'s code,
+the level's W tables) in RamWorks bank 112 and W itself filled, so the
+frame runs only if the phase loader brings in every byte it needs; the
+driver's `drv_wframe` turns the VBL interrupt on (`--speed 1`), loads
+the window and calls `nr_frame`. At the walk's entry (`nr_bsp`) the
+clears and derived values of checkpoint A, the span stamps and plane
+state after `R_FillStamps` and the weapon skip after `weaponClipSame`
+must equal P0b's; at the end every output of RENDER.md 2.4 must equal
+the reference's at `drawMasked` (`rcanon.frame_truth`): every record of
+the frame by column in the order made (upstream's lists walked from
+their first page through `K_NEXT`, those of any early flush first; the
+native staging and spill by the column byte; a K_TEX's texels through
+the level's texture map), `FLOORCLIP`, `CEILCLIP`, `SOLIDCOL`,
+didsolidcol, the drawseg count, every drawseg's defined fields and
+columns and the openings they name, lastopening, the 8 span planes, the
+covered ranges (0), `W_FSC`, `W_FSP`, `W_TOPR`, `W_BOTR`, `W_LCC`,
+`W_LFC`, `W_CEILW`, `W_FLOORW`, rw_scalestep, `FR_SKIP`, `W_WSK`,
+`WPREV`, `WCLIP`, `validcount` and every sector's, `ML_MAPPED` of every
+line, and the vertex angles computed (ref816's `vtxAngle` calls); the
+write log (every storage but the stack page, and every soft-switch
+write) must hold no write outside the allowed set, by the writing PC:
+the render code's (`rlayout.allowed_writes_b`), the phase loader's (W
+and its pointer only), the driver's.
+
+**Synthetic frames** (`framesynth.py`) for the paths no capture takes:
+`noweapon`, `shadow` (the shadow weapon), `automap` (the overlay:
+`automapmode` 3 and the view's row after it 160), `fsfill` and `fswrap`
+(the stamps' refresh at 128 and at the wrap), `skyfixed` (the sky under
+the fixed colormap 1), `skyodd` (the player's angle's high word ending
+in 63: captured angles are multiples of 64, so only this frame shows a
+sky column one angle unit off), and `flat`, `flatsky`, `flatv06`, `flatv14` (a
+third of every made texture's columns without a patch, on frames with a
+sky and with loops of kind 6 and 14; the level converted again from its
+source with the same pokes). Each is a captured frame's `R_FillStamps`
+recorded whole by ref816's `--capture`, the pokes, then `--call` from
+display's `JSL R_FillStamps` to each point (P0, the seam, P0b,
+`drawMasked`); the P0 so reached must equal the captured frame's with the
+pokes applied. They have no call log (ref816's `--call` and
+`--call-log` exclude each other): the vertex-angle count is not
+compared and checkpoint A does not run on them.
+
+**The replay on the native records** (`render_replay.py`): for the 15
+frames milestone 5 captured, the native frame's staged records, their
+texels read from the native level's slots, then upstream's records of
+the masked phase (each column's list at `R_DrawLists` after its end at
+`drawMasked`; the part before must be the list at `drawMasked`), through
+milestone 5's loader and replay on a2vm from the captured screen, both
+fills: the SHR bytes must equal the screen after upstream's
+`R_DrawLists`, with no stray write and the model's screen stores.
+
+**Results** (2026-09-30):
+
+| Check | Result |
+| --- | --- |
+| Frame mode (`render_check.py --frame-mode`) | 188 frames (15 `m5`, 50 `newgame`, 50 `title`, 50 `tour`, 12 `lights`, 11 synthetic), 376 runs, **0 differences**, 0 stray writes, no rule of our own taken: 104,011 records (396 of them sky columns, in 14 frames; in the four synthetic flat frames 107-146 texture records a frame become fills of patchless columns), 3,950 drawsegs, 4,012 vertex angles; 31-138 interrupts a run; at most 79 bytes of stack, 103 with the IRQ's 24 (budget 112) |
+| Checkpoint A (`render_check.py`) | 177 frames, 354 runs, 0 differences, the stamps and weapon skip at the walk's entry included |
+| Routine mode (`--routines all`) | 3,608 cases, 14,424 runs: 3,603 wall calls and 3,604 seg loop calls equal, the 62 with a sky (stage B's deferred) among them; the ruled cases (`negsine`, `grazefirst`, `grazelast`: 3 walls, 2 seg loops) with their rules, equal where upstream stays in its tables; the checkpoint set, 1,072 of each, equal |
+| The replay on the native records (`render_replay.py`) | 15 frames, both fills: **0 differing SHR bytes**, 0 stray writes, the SHR writes equal to the screen stores of the model (8,519 still, 11,657-25,615 demo); 7,597 native records, 1,032 of the masked phase |
+
+What the frames reach: 15 frames where the weapon skip starts (`WCLIP`
+copied), 41 that keep it, 12 that stop it, 109 without; a flash in 5;
+the spans' refresh in 1 captured frame (`newgame-50`) and 2 synthetic;
+the view of the frame before not shown or moved (`W_FSP` = `W_FSC`) in
+14; the message rows (`viewtop` 9) in 55; the sky in 10 captured frames
+and 3 synthetic; 25 masked drawsegs, every silhouette kind, clips of
+`screenheightarray`, `negonearray` and the openings. Not reached: an
+early flush before `drawMasked` (no captured frame's lists use even one
+extra page by then: the largest column list is 139 of 254 bytes), a
+texture made in play, a view size other than the full one.
+
+**Planted bugs** (`tests/test_native_render_frame.py`, each in a scratch
+copy, each frame run once, `$A5`):
+
+| Bug | Frame | Caught by |
+| --- | --- | --- |
+| `fsFill` every 64 frames | `tour-24` | the stamps at the walk's entry (320 differ), the records, the spans |
+| the first skipping frame's `WCLIP` copy missing | `still-1` | `WCLIP` at the walk's entry and at `drawMasked` |
+| the sky's column one texel column off | `tour-46` | the records' texels (35 columns) |
+| the sky's column one angle unit off (`sec` for `clc` at `sky_col`) | `synth-skyodd` | the records' texels |
+| the sky always colormap A's page | `synth-skyfixed` | the records' pages (`$46` for `$47`) |
+| `tier_flat` writing `DC_ROW` (upstream's does not) | `synth-flatv06`, `synth-flatv14` | the drawsegs, their openings, the clips |
+| the flat colour's rows swapped | `synth-flatv06`, `synth-flatv14` | the records' fill bytes |
+| a patchless column's bit read one column off | `synth-flat` | a record naming no slot |
+| the automap overlay ignored by the weapon skip | `synth-automap` | `FR_SKIP`, `W_WSK`, `WPREV` |
+| the shadow weapon not tested | `synth-shadow` | `WPREV`, `FR_SKIP` |
+| no plane colours reset by `R_FillStamps` | `still-1`, `demo-10` | `W_LCC` at the walk's entry |
+| the last batch not flushed | `still-1` | the records (5 columns) |
+| the phase loader one page of code short | `still-1` | the run never ends |
+| the phase loader without the per-level tables | `still-1` | a record naming no slot |
+| a store into the hot game globals | `tour-46` | the write log |
+| a store into the phase loader's code (`far_wload`) at `nr_frame`'s entry | `still-1` | the write log (card bank 1 allows only the gather's entries) |
+
+and in the replay check, one texel of each native slot wrong: the SHR
+bytes differ. The first version of `tier_flat` had the `DC_ROW` bug in
+this list; `flatv06` and `flatv14` found it (upstream runs
+`R_DrawColumnFlat` on the C code's direct page).
+
+### Timing (a2vm's cost model, not the card)
+
+The profiling build, per frame (ms; median and range; f121 is F1.2.1,
+fastpath the firmware design without the pair). "Wall calls" is the
+lockstep stub, a harness cost, not wall setup.
+
+| Set | Frames | Setup and clears, f121 | BSP walk, f121 | BSP walk, fastpath |
+| --- | ---: | ---: | ---: | ---: |
+| still (E1M1) | 3 | 0.12 | 7.20 | 5.01 |
+| newgame | 50 | 0.12 | 5.95 (0.44-8.87) | 4.14 (0.33-6.20) |
+| m5 demo | 11 | 0.12 | 4.57 (0.77-9.84) | 3.30 (0.56-6.85) |
+| title (demo3) | 50 | 0.12 | 3.76 (0.53-12.18) | 2.69 (0.40-8.67) |
+| tour | 50 | 0.12 | 3.29 (0.46-15.62) | 2.32 (0.33-10.97) |
+
+Against RENDER.md 4.4 (from `docs/research/native-memory.md` 7): setup
+0.2-0.5 ms estimated, 0.12 measured; the walk 3.4-7.1 ms standing still
+estimated, 7.20 measured (the top of the range); 0.8-1.6 ms in the demo
+estimated, 3.76 median measured (above). A one-off profile (phases
+around the calls, a scratch build) of still-1 and title-25: far windows
+2.9 and 3.5 ms (node fetches, subsectors, segs, the vertex gather), the
+box corners' `pta16` 1.3 and 2.8 ms, the walk's own code 2.5 and 3.8 ms,
+`viewangletox` windows 0.5 ms. The corners' angles depend only on the
+view's map unit and the box, as the vertex angles do, so a corner cache
+(same results) is the first candidate; stage C measures the whole front
+end.
+
+Stage B, routine mode (`render_check.py --routine-timing`, the profiling
+build `rwprof`): wall setup (phase 9) and seg loops (phase 10) of each
+frame, the sum over its wall calls, each call with the model's caches
+cold (a little above what a frame would take); frames with a sky wall
+are left out (stage C). ms, median and range, f121:
+
+| Set | Frames | Wall setup | Seg loops | Wall setup, fastpath | Seg loops, fastpath |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| still (E1M1) | 3 | 6.01 | 10.85 | 4.82 | 9.99 |
+| newgame | 47 | 5.90 (0.24-8.84) | 10.54 (3.60-16.51) | 4.76 | 9.66 |
+| m5 demo | 11 | 1.27 (0.68-8.21) | 4.66 (3.93-13.18) | 1.05 | 4.35 |
+| title (demo3) | 48 | 2.82 (0.37-8.86) | 6.72 (3.85-18.64) | 2.32 | 6.15 |
+| tour | 45 | 3.19 (0.59-9.86) | 9.41 (4.06-15.26) | 2.56 | 8.81 |
+| lights | 12 | 5.36 (4.76-7.52) | 10.64 (8.36-12.18) | 4.40 | 9.90 |
+
+Against RENDER.md 4.4 (`docs/research/native-memory.md` 7), F1.2.1:
+standing still, wall setup 4.0-8.7 ms estimated, 6.01 measured, and seg
+loops 7.4-14.8 estimated, 10.85 measured; in the demo, 0.7-1.5 and
+3.1-6.2 estimated, medians 2.82 and 6.72 measured (demo3's frames have
+more walls than the estimate's median frame: up to 43). A wall's setup
+costs about 0.18 ms: its far windows (the side, the back sector, the
+drawseg, the sines and `RECIP_TABLE`) and the exact products; stage C
+measures the whole front end.
+
+Stage C, frame mode (`render_check.py --frame-mode --timing --report
+build/native/render/report.md`, the profiling build `rwprof`, each frame
+from `R_FillStamps` to `drawMasked` on the model's clock): ms, median
+and range, f121 (the report has fastpath, the 65C02 cycles and the
+soft-switch accesses of each phase, and the windows):
+
+| Set | Frames | Window load | Setup | BSP walk | Wall setup | Seg loops | Window + front end |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| still (E1M1) | 3 | 4.54 | 0.14 | 7.21 | 5.99 | 11.92 | 29.82 |
+| newgame | 50 | 4.54 | 0.14 | 5.97 (0.49-8.93) | 5.88 (0.24-8.80) | 11.69 (3.66-18.30) | 28.25 (9.11-40.39) |
+| m5 demo | 11 | 4.54 | 0.14 | 4.65 (0.79-9.91) | 1.26 (0.68-8.18) | 4.65 (4.01-14.71) | 15.08 (10.24-36.91) |
+| title (demo3) | 50 | 4.54 | 0.14 | 3.82 (0.58-12.18) | 2.98 (0.37-8.82) | 7.18 (3.85-19.65) | 19.97 (9.50-43.04) |
+| tour | 50 | 4.54 | 0.14 | 3.35 (0.51-15.65) | 3.18 (0.59-9.82) | 7.12 (4.16-17.06) | 20.71 (10.06-46.49) |
+| lights | 12 | 4.54 | 0.14 | 6.61 (5.59-9.08) | 5.35 (4.74-7.49) | 11.47 (8.96-13.07) | 28.12 (25.30-33.50) |
+
+(After verification; before it the seg loops were 0.05-0.15 ms slower,
+12.07 ms still, with nearly the same cycles: RENDER.md "Stage C as
+built".) Against RENDER.md 4.4 on F1.2.1: standing still, 29.82 ms for
+these phases against 20.0-38.2 estimated (the window load 4.54 against
+5.0-7.1, setup 0.14 against 0.2-0.5, the walk 7.21 at the top of
+3.4-7.1, wall setup 5.99 in 4.0-8.7, seg loops 11.92 in 7.4-14.8); in
+the demo (title's medians) 19.97 ms against 10.8-18.3 (walk 3.82 against
+0.8-1.6, wall setup 2.98 against 0.7-1.5, seg loops 7.18 against
+3.1-6.2), up to 43.0 ms. The 65C02 code takes 3.1, 2.4 and 1.9 times
+upstream's 65816 cycles for the walk, the wall setup and the seg loops
+standing still, where `NATIVE.md` 1.2 assumed 1.37. The phases here are
+the frame's own (the caches warm from the walk into the walls), close to
+the sums of stage B's routine mode (cold caches per call). Standing
+still a frame opens 362 read windows, 117 write windows and 322 aux-card
+windows and writes `$C073` 971 times.

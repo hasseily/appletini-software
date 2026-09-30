@@ -644,15 +644,19 @@ def filled_card(build: Build, fill: int) -> bytes:
 def build_package(capture: Capture, build: Build,
                   screen: Optional[bytes] = None, bank_base: int = 1,
                   batch_bytes: int = L.RECBUF_SIZE,
-                  fill: Optional[int] = None) -> Package:
+                  fill: Optional[int] = None,
+                  cols: Optional[List[List[Rec]]] = None) -> Package:
     """The a2vm image of a frame. With fill (a byte), every byte of the
     machine the frame and the build do not define is set to it: all of
     main $0000-$BFFF, the card's two parts outside the build's segments,
     every aux bank (tools/native/replay_check.py runs the captured and the
     poisoned screen with different fills, so a stray store of any constant
     changes a byte in one of them). Without, those bytes are left to a2vm
-    (zero) and the image stays small (tools/native/disk.py)."""
-    cols = mark_fuzz(columns(capture))
+    (zero) and the image stays small (tools/native/disk.py). cols: each
+    column's records instead of the capture's lists (tools/native/
+    render_replay.py: the native front end's), their texels read from the
+    capture's memory at their Rec.texels."""
+    cols = mark_fuzz(columns(capture) if cols is None else cols)
     texels = place_texels(capture, cols, bank_base)
     batches, w_address = make_batches(cols, texels, batch_bytes)
     state = convert_state(capture, cols, w_address)

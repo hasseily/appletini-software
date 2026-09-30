@@ -20,6 +20,13 @@
 ; run with RAMRD on, so they live in the card: the far layer's $DC00-$DFFF);
 ; MATHW, the rest, in a code window of main memory (W); MATHRND, the
 ; random table, page aligned in W.
+;
+; The render build (-D RENDER, src/native/render.mk; docs/RENDER.md 3.1):
+; the same file for the render window, with the subset of MATHW the
+; renderer calls (no R_PointToAngle3, P_AproxDistance, game sine and
+; cosine or random numbers), and pta16 reading tantoangle from the aux
+; card (ax_tanto of auxlc.s, MEMORY_MAP.md 4.3) instead of the tables
+; bank: only that table read changes (MATH.md, "Not the aux card").
 
         .setcpu "65C02"
         .include "math.inc"
@@ -27,11 +34,20 @@
         .export mt_init, mulw, umul16, umul16lo, mul8, qmulh, mul32
         .export fixmul, fixmul3216, fixmulang
         .export udiv16, sdiv16, udiv32, sdiv32
-        .export recip, recipsmall, recipbig, approxdiv, aproxdist
-        .export pta3, pta16, finesine, finecosine, sineapprox, cosineapprox
-        .export prandom, mrandom, mclearrandom, mt_far, mt_recipe
-        .export mt_far_count, mt_far_stride, pta_oct, pta_tab
+        .export recip, recipsmall, recipbig, approxdiv
+.ifndef RENDER
+        .export aproxdist
+.endif
+        .export pta16, sineapprox, cosineapprox
+        .export mt_far, mt_recipe
+        .export mt_far_count, mt_far_stride, pta_tab
+.ifndef RENDER
+        .export pta3, finesine, finecosine
+        .export prandom, mrandom, mclearrandom, pta_oct
         .export rndtable, cosexc
+.else
+        .import ax_tanto
+.endif
         ; for the harness (tools/native/mathrun.py reads the label file)
         .exportzp MZ, M_A, M_B, M_R, M_T, MT, MT_E, MT_P
         .export MT_PRND, MT_MRND, SQL
@@ -982,6 +998,7 @@ approxdiv:
         phy
         rts
 
+.ifndef RENDER
 ; ---------------------------------------------------------------------------
 ; aproxdist: M_R = P_AproxDistance(M_A, M_B) (p_path65.s): dx = |dx|,
 ; dy = |dy| (32-bit two's complement), then dx + dy - m / 2 for the smaller
@@ -1088,12 +1105,14 @@ pta_oct:
         dey
         bpl @swap
 @done:  rts
+.endif
 
 pta_tab:
 OCTC:   .byte $00, $3F, $00, $C0, $7F, $40, $80, $BF
 OCTMINUS:
         .byte $00, $FF, $FF, $00, $FF, $00, $00, $FF
 
+.ifndef RENDER
 ; ---------------------------------------------------------------------------
 ; pta3: M_R = R_PointToAngle3(M_A, M_B) (x, y): 0 for (0, 0); else the
 ; octant and tantoangle[SlopeDiv(num, den)], SlopeDiv = (uint16_t)((num
@@ -1263,6 +1282,8 @@ pta3:
         sta M_R+3
         rts
 
+.endif
+
 ; ---------------------------------------------------------------------------
 ; pta16: M_R (16 bits) = R_PointToAngle16 of (M_A, M_A+2) from (M_B,
 ; M_B+2): x, y, viewx, viewy, whole units (r_iigs65.s R_PointToAngle16 and
@@ -1401,6 +1422,19 @@ pta16:
         bcc @q
 @max:   ldx #<2048
         ldy #>2048
+.ifdef RENDER
+@q:     cpy #>2048              ; the high word of tantoangle[q]: 2048,
+        bne :+                  ;   ANG45 (checked by rtables.py), else
+        stz MT_E                ;   the aux card's planes 2 and 3
+        lda #>$2000
+        sta MT_E+1
+        bra :++
+:       tya
+        jsr ax_tanto
+        sta MT_E
+        sty MT_E+1
+:       plx
+.else
 @q:     stx MT_P                ; the high word of tantoangle[q]
         tya
         clc
@@ -1411,6 +1445,7 @@ pta16:
         ldy #TANTO_STRIDE
         jsr mt_far
         plx
+.endif
         lda OCTMINUS,x
         bne @minus
         lda MT_E                ; C + T
@@ -1440,6 +1475,7 @@ pta16:
         sta M_R+1
         rts
 
+.ifndef RENDER
 ; ---------------------------------------------------------------------------
 ; finesine: M_R = finesine[M_A], M_A = 0-8191 (tables65.s): the magnitude
 ; from the two sine planes, the sign bit 12 of x. finecosine: the 12
@@ -1505,6 +1541,8 @@ finesine:
         sta M_R+3
         rts
 
+.endif
+
 ; ---------------------------------------------------------------------------
 ; sineapprox: M_R = finesineapprox(M_A), M_A unsigned 16 (tables65.s): the
 ; quarter table finesineTable_part_1 at c or 4095 - c; negated for x >=
@@ -1565,6 +1603,7 @@ sineapprox:
         sta M_R+1
         rts
 
+.ifndef RENDER
 ; ---------------------------------------------------------------------------
 ; prandom: A = P_Random(): rndtable[++index], the index a byte
 ; (m_random65.s); mrandom: M_Random, its own index; mclearrandom: both
@@ -1596,3 +1635,4 @@ cosexc:
 ; P_Random's table (Doom's), from the reference's RAM
 rndtable:
         .incbin "rndtable.bin"
+.endif

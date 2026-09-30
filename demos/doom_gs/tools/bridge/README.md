@@ -286,7 +286,11 @@ is the reference):
 
 A leaf is one value: its path into the canonical object, its encoding, the
 addresses of its byte planes (byte k of object i at `planes[k] + i`), and
-optionally `when` (it exists only when a field has a value). Encodings:
+optionally `when` (it exists only when a field has a value) and `stride`
+(default 1: byte k of object i at `planes[k] + stride * i`, so a manifest
+can describe records as well as byte planes; milestone 7's
+`tools/native/levelconv.py` writes one for the renderer's sectors and
+sides, 16 and 8 bytes a record, and reads it back with the port reader). Encodings:
 `int`, `ref` (tag, id low, id high, and offset planes when the targets
 carry offsets; tag 0 is null, tag i the leaf's `codes[i - 1]`), `enum` (a
 thinker function), `raw`, `list` (the head: a ref to the first element;

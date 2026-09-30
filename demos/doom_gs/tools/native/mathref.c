@@ -34,9 +34,10 @@
  * SPEC, one line each, # starts a comment:
  *
  *   routine NAME ADDR [inonly]     a routine at ADDR (hex, 24 bits)
- *   in a|x|y                       a 16-bit register input
+ *   in a|x|y|p                     a 16-bit register input (p: the
+ *                                  flags in its low byte, the high 0)
  *   in ADDR LEN                    LEN bytes of memory (hex address)
- *   out a|x|y                      the same, as outputs
+ *   out a|x|y|p                    the same, as outputs
  *   out ADDR LEN
  *   table ADDR LEN                 memory the routine may read that is
  *                                  neither an input nor written first:
@@ -152,7 +153,8 @@ static uint32_t le(const uint8_t *p, unsigned bytes)
 static int parse_item(const char *what, const char *length, item *it,
                       unsigned long most)
 {
-    if (!strcmp(what, "a") || !strcmp(what, "x") || !strcmp(what, "y")) {
+    if (!strcmp(what, "a") || !strcmp(what, "x") || !strcmp(what, "y") ||
+        !strcmp(what, "p")) {
         it->reg = what[0];
         it->address = 0;
         it->length = 2;
@@ -217,7 +219,7 @@ static void read_spec(const char *path)
             item it = { 0, 0, 0 };
             if (count < 2 || count > 3 ||
                 !parse_item(words[1], count == 3 ? words[2] : NULL, &it, 64))
-                fail("%s:%u: in|out a|x|y|ADDR LEN", path, number);
+                fail("%s:%u: in|out a|x|y|p|ADDR LEN", path, number);
             unsigned *n = in ? &r->in_count : &r->out_count;
             if (*n == MAX_ITEMS)
                 fail("%s:%u: too many items", path, number);
@@ -274,7 +276,7 @@ static void get_items(const iigs *m, const item *items, unsigned count,
         const item *it = &items[i];
         if (it->reg) {
             uint16_t v = it->reg == 'a' ? m->cpu.a : it->reg == 'x' ?
-                m->cpu.x : m->cpu.y;
+                m->cpu.x : it->reg == 'y' ? m->cpu.y : m->cpu.p;
             *out++ = (uint8_t)v;
             *out++ = (uint8_t)(v >> 8);
         } else
@@ -295,8 +297,10 @@ static void put_items(iigs *m, const item *items, unsigned count,
                 m->cpu.a = v;
             else if (it->reg == 'x')
                 m->cpu.x = v;
-            else
+            else if (it->reg == 'y')
                 m->cpu.y = v;
+            else
+                m->cpu.p = (uint8_t)v;
         } else {
             if (!iigs_load(m, it->address, in, it->length))
                 fail("an input outside RAM");

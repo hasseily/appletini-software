@@ -47,6 +47,12 @@ layout native-verification.md section 4.3 proposes. Encodings:
 A leaf may have "when": [field, value]: it exists only in objects whose
 field has that value (the fields of a sector node that is not free).
 
+A leaf may have "stride": n (default 1): byte k of object i is then at
+planes[k] + n * i, so a manifest can describe records of n bytes (the
+native renderer's sectors and sides, tools/native/levelconv.py: a leaf's
+planes are the field's bytes in record 0) as well as byte planes. A
+manifest without strides reads and writes as before.
+
 An address is "main:XXXX" or "aux:BB:XXXX" (RamWorks bank BB, as $C073
 names it); memory.port_address reads them.
 """
@@ -81,11 +87,15 @@ ADDRESSABLE = [('sector', 'soundorg'), ('side', 'textureoffset')]
 
 class Leaf:
     def __init__(self, path: Sequence[Any], enc: Dict[str, Any],
-                 planes: Sequence[int] = (), when=None):
+                 planes: Sequence[int] = (), when=None, stride: int = 1):
         self.path = tuple(path)
         self.enc = dict(enc)
         self.planes = list(planes)
         self.when = tuple(when) if when else None
+        if not isinstance(stride, int) or stride < 1:
+            raise ValueError('%s: a stride of %r' % (
+                '.'.join(map(str, self.path)), stride))
+        self.stride = stride
 
     @property
     def width(self) -> int:
@@ -114,12 +124,15 @@ class Leaf:
                'planes': [port_text(p) for p in self.planes]}
         if self.when:
             out['when'] = list(self.when)
+        if self.stride != 1:
+            out['stride'] = self.stride
         return out
 
     @classmethod
     def from_json(cls, d: Dict[str, Any]) -> 'Leaf':
         return cls(d['path'], d['enc'], [port_address(p) for p in
-                                         d['planes']], d.get('when'))
+                                         d['planes']], d.get('when'),
+                   d.get('stride', 1))
 
 
 class Manifest:

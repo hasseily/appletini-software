@@ -569,6 +569,17 @@ should run before milestone 5 ends. The sound track S1-S4 runs in parallel.
     Answer: every VBL; no 6-voice fallback; effects automatic with 10 hand-tuned; stereo
 12. **Video and input.** PAL, NTSC or both? Is the mouse card required?
     Answer: Both PAL and NTSC. Mouse card is required
+13. **A column seen from behind** (asked 2026-09-30, milestone 7's
+    verification; open, to settle before milestone 8). At a grazing view
+    a wall's first or last column can lie just past the seg's end;
+    upstream's renderer then reads its own code (`sineLow`) and live data
+    (`tcExact`) as table values, which no port can reproduce. The native
+    renderer takes rules of its own there (`RENDER.md` 3.9: the scale 256
+    as vanilla DOOM, the tangent table's end) and flags the frame, so
+    such a frame differs from `ref816` in the lockstep build. Accept it
+    as a known divergence, as the `validcount` fix (question 4), with the
+    lockstep comparison skipping a flagged frame and reporting it; or
+    choose other rules? No captured frame reaches it.
 
 ### 15.1 What the answers change (2026-09-30)
 
