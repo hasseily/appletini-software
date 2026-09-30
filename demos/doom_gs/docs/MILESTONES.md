@@ -497,6 +497,13 @@ with milestones 2 and 3. ARCHITECTURE.md section 12 has the file list.
 - A standard 320-mode SHR picture with per-row palettes. Upstream uses
   standard SHR; the existing Doom port uses only the PAL256 extension.
 
+## Owner's plan for testing (2026-09-30)
+
+"Make S3. Then keep going with the milestones as planned. I'll test at
+milestone 12." Build S3 (the music disk), then milestones 7 to 12 in order;
+each is verified on a2vm and against `ref816` and committed without waiting
+for a card run. The owner's next card test is milestone 12, the whole game.
+
 ## Direction since 2026-09-30: a native rewrite
 
 The owner's words: "To go faster we'll probably have to fully rewrite and
