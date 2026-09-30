@@ -106,7 +106,7 @@ binary and the owner's Mac has no Rosetta.
 | 1 | Front end, 65816 assembler and linker, image match | **Done**, commit `89bb480f`. |
 | 2 | Reference machine runs the release; measured profiles | **Done**, see the results below. |
 | 3 | Target machine model with cost model; 65816 interpreter | **Done**, see the results below. |
-| 4 | Native rewrite: architecture (`NATIVE.md`), with a measured experiment | **Written and reviewed** (two reviews, findings applied). Awaits the owner's review and 10 answers; the licence (question 1) is answered: GPL-2. |
+| 4 | Native rewrite: architecture (`NATIVE.md`), with a measured experiment | **Written and reviewed** (two reviews, findings applied). **Reviewed by the owner** on 2026-09-30: every question of section 15 is answered, and section 15.1 says what each answer changes. |
 | S1 | Sound: MUS to Phasor converter, player model, WAV renders (`tools/sound/`) | **Done**, commit `ae6a28bd`. Steals and writes at or below the design in every song. Awaits the owner's ear: `build/sound/*.wav`. |
 | S2 | Sound: the 65C02 player (`src/sound/`), a2vm's AY log, slot-4 slowdown and interrupt bounds | **Done** 2026-09-30, reviewed once, the review's 7 defects fixed and checked by rerunning the tests. AY writes equal the model's at every interrupt, 13 songs, both layouts, PAL and NTSC. Player's cost at window 512: 13.0-29.6 ms a second (native12). |
 | 5 | Native replay on captured records; byte-level memory map; ref816 capture and `--call` | In progress since 2026-09-30 |
@@ -552,9 +552,17 @@ natively written routines are in `build/native-design/` and
 `build/native-experiment/`, which git ignores; they are rebuilt as tools
 once the licence is decided.
 
-**Next.** The owner reviews `NATIVE.md` and answers its section 15. The
-licence is settled (GPL-2), so milestone 5, the native replay, can start and
-be committed.
+**Owner's answers (2026-09-30), `NATIVE.md` 15.1.** The decisions that
+bind later work: renderer arithmetic stays exact; the release is gated on
+lockstep-schedule mode and the port fixes upstream's `validcount` wrap (a
+build option keeps upstream's behaviour for the lockstep tests); our own
+divides, with our own result for division by zero; 6 FPS minimum on
+F1.2.1; 8 MB of RamWorks and the mouse card are required; PAL and NTSC;
+any load time; view sizes only if simple; music every VBL, no 6-voice
+fallback, effects generated with the 10 most frequent hand-tuned, stereo by
+voice choice; main zero page only for the pair (D4); a Doom configuration
+profile with `vtw.slowdown.cycles=32` now, and FW-S1 later with the
+firmware design.
 
 ## Related work outside this directory
 

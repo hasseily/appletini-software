@@ -535,26 +535,52 @@ should run before milestone 5 ends. The sound track S1-S4 runs in parallel.
 2. **Firmware.** Will the pair and the rest of the design be built, and is
    D4 (main zero page only) final? Ship a Doom profile with
    `vtw.slowdown.cycles=32`, or pursue FW-S1?
+   Answer: keep main zero page only. Ship a Doom profile but FW-S1 should be
+   done with the firmware changes later
 3. **Frame exactness.** Must renderer arithmetic stay exact (`qmulh`,
    `FSTEP`, scale tables), or may it trade exactness for speed within a
    pixel budget?
+   Answer: Stay exact, but flag as an option for later
 4. **Release gate.** `validcount` wraps about every 80 s of play, and the
    wrap to 0 makes a whole search skip every line unstamped since the level
    loaded. Gate on lockstep-schedule mode only, or also free-running mode
    accepting those differences? Or may the port fix the wrap (a divergence
    from upstream)?
+   Answer: Gate the release on lockstep only, and fix the bug in the port
 5. **Division by zero.** May the vendor divides be tested as black boxes on
    `ref816` (outputs only)? C leaves the case undefined.
+   Answer: create your own.
 6. **E1M3 or E1M7.** Settled: the WAD's DEMO3 header is E1M7, and the
    documents were corrected on 2026-09-30.
 7. **Minimum speed.** What frame rate on F1.2.1 is acceptable for a first
    release? §1.1 gives 13-29 FPS still and 7.9-19 in the demo.
+   Answer: 6 fps
 8. **Memory.** May the port require 8 MB of RamWorks (126 banks)?
+   Answer: yes
 9. **Level store.** ProDOS cannot stay resident. Compressed in RAM, loaded
    at boot (longer boot), or read per map by our own SmartPort block reader?
    What load time is acceptable?
+   Answer: Load time is not relevant. Any load time is acceptable
 10. **View sizes.** Needed in the first release, or full view only?
+   Answer: if it's complicated, full view only. Otherwise add the view sizes
 11. **Sound.** VBL rate 50/60 Hz or every second VBL; keep the 6-voice
     fallback; effects automatic with 10 hand-tuned, or all hand-made; stereo
     by picking a left or right voice.
+    Answer: every VBL; no 6-voice fallback; effects automatic with 10 hand-tuned; stereo
 12. **Video and input.** PAL, NTSC or both? Is the mouse card required?
+    Answer: Both PAL and NTSC. Mouse card is required
+
+### 15.1 What the answers change (2026-09-30)
+
+| # | Decision | Effect on the plan |
+| --- | --- | --- |
+| 2 | Main zero page only (D4). Ship a Doom configuration profile with `vtw.slowdown.cycles=32`; FW-S1 is done later with the firmware design | The tic window keeps its trampoline for pair writes (§4.3). The disk carries the profile. FW-S1 goes into the firmware design document as a further change. Read as: the firmware design will be built later, so the pair build (milestone 13) stays in the plan. |
+| 3 | Renderer arithmetic stays exact | As planned. Faster, inexact arithmetic is listed as a later option, never the default. |
+| 4 | Gate the release on lockstep-schedule mode; fix the `validcount` wrap in the port | The port clears every stamp when `validcount` wraps (the fix). A build option restores upstream's behaviour, and the lockstep tests use it, so they stay bit-exact against `ref816`. Risk 10 becomes a known, fixed divergence from upstream. |
+| 5 | Our own divides; no black-box testing of the vendor routines | Divide by zero gets our own defined result, documented with the routines (milestone 6). The coverage runs are checked for any division by zero; if one occurs, the tic comparison reports it as a known divergence rather than a failure. |
+| 7 | 6 FPS minimum on F1.2.1 | Every §1.1 estimate is above it, the demo's slow end (7.9) included. Milestone 12 reports against 6. |
+| 8 | 8 MB of RamWorks may be required | The allocation of §4.4 (76-82 of 126 banks) stands; the port checks for 126 banks at boot. |
+| 9 | Any load time is acceptable | Milestone 9 takes the simplest store: the level store is loaded whole at boot while ProDOS is still present, so no disk reads are needed during play. Saves still need the slot-7 block driver (§10). |
+| 10 | View sizes if they are not complicated | Full view first; the other sizes stay in milestone 13 and are dropped if they cost more than their own drawers and tables. |
+| 11 | Every VBL; no 6-voice fallback; effects automatic with the 10 most frequent hand-tuned; stereo by picking a left- or right-panned voice | The mb6 layout is removed from the converter, the player, the song files and the tests. The probe stays: on a card that cannot switch to native mode the game runs without music and says so. S4 builds the effects and the stereo voice choice. |
+| 12 | PAL and NTSC; the mouse card is required | The Appletini's mouse card (slot 2) is the clock and the music interrupt, and the boot checks for it. The mouse itself stays optional for play, as upstream. |
