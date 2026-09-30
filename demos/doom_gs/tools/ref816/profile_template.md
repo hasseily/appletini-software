@@ -25,7 +25,7 @@ Two scenarios:
   `still` (3 seconds after E1M1 has loaded) to `still-10s`, ten seconds of
   machine time: {still_frames} frames.
 - **The title demo**: `coverage/title.script` from its note `demo` (the
-  first tic of demo3, in E1M3) to `demo-25s`: {demo_frames} frames.
+  first tic of demo3, in E1M7) to `demo-25s`: {demo_frames} frames.
 
 A frame is one pass of the game's main loop that drew the 3D view, from
 one call of `R_RenderPlayerView` to the next. It includes the game tics
@@ -100,7 +100,7 @@ the sound chip each pass. The music is also why a few interrupts show up
 
 A frame takes {demo_ms} ms ({demo_fps} frames a second):
 {demo_instructions} instructions and {demo_cycles} cycles. With monsters
-awake in E1M3 the tics rise to {demo_share_tics} of the cycles and the
+awake in E1M7 the tics rise to {demo_share_tics} of the cycles and the
 replay to {demo_share_replay}. The first frame is the slowest: it draws the
 whole status bar and view window (the status bar and frame setup phases).
 The last frames are a fight at close range, where a large monster fills

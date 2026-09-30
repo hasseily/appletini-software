@@ -18,6 +18,7 @@ which is a different engine written for cc65.
 | Path | Contents |
 | --- | --- |
 | `docs/MILESTONES.md` | The handoff brief: status, ground rules, results of each milestone, the next steps |
+| `docs/NATIVE.md` | The architecture of the native rewrite: strategy by subsystem, memory map, verification, expected frame rates, milestones, risks and questions for the owner. Awaits the owner's review. |
 | `docs/ARCHITECTURE.md` | The earlier draft architecture: a virtual 65816 machine on the 65C02. Superseded as the end state by the native rewrite; its facts and verification sections still hold. |
 | `docs/INTERPRETER.md` | Measured cost of the 65816 interpreter of milestone 3, by opcode and by game phase |
 | `docs/PROFILE.md` | Measured profiles of the game on the reference machine: instructions and cycles by phase, memory accesses by kind and bank, code heat, register widths, self-modification, stack and screen, and the architecture's performance assumptions measured. Written by `tools/ref816/profile816.py`. |

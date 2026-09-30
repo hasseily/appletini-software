@@ -181,7 +181,7 @@ full size). `full_3d_view` is true for a full-size 3D view.
 
 | Script | What it does |
 | --- | --- |
-| `coverage/title.script` | The title page, then the demo (demo3, in E1M3) for 25 seconds, a shot every 5 |
+| `coverage/title.script` | The title page, then the demo (demo3, in E1M7) for 25 seconds, a shot every 5 |
 | `coverage/newgame.script` | A new game at the default skill through the menus; 10 seconds standing in E1M1; strafe, walk, turn, fire, open the first door, walk through |
 | `coverage/viewsize.script` | Every view size of DISPLAY & SOUND, FULL down to 1/4 and back, each checked on `VW_SIZE`, a shot at each |
 | `coverage/tour.script` | The nine maps of episode 1 through the level cheat, 5 seconds and a shot in each, in god mode |

@@ -105,8 +105,8 @@ binary and the owner's Mac has no Rosetta.
 | 1 | Front end, 65816 assembler and linker, image match | **Done**, commit `89bb480f`. |
 | 2 | Reference machine runs the release; measured profiles | **Done**, see the results below. |
 | 3 | Target machine model with cost model; 65816 interpreter | **Done**, see the results below. |
-| 4 | Native rewrite: architecture (`NATIVE.md`), with a measured experiment | In progress: a design run writes `NATIVE.md` and `research/native-*.md`. Awaits the owner's review. |
-| 5 and later | Native rewrite milestones | Defined in `NATIVE.md` section 13 once it is reviewed |
+| 4 | Native rewrite: architecture (`NATIVE.md`), with a measured experiment | **Written and reviewed** (two reviews, findings applied). Awaits the owner's review and 11 answers, first the licence. |
+| 5 to 13, S1 to S4 | Native rewrite milestones and the sound track | Defined in `NATIVE.md` section 13. Not started. |
 
 ## Milestone 1: done
 
@@ -152,7 +152,7 @@ Frame cost on an ideal 65816 with no wait states, 4 tics per frame:
 | Scene | Instructions a frame | Cycles a frame | Frames a second at 2.86 MHz | at 12 MHz |
 | --- | ---: | ---: | ---: | ---: |
 | Standing still in E1M1 | 331,325 | 1,123,634 | 2.50 | 10.79 |
-| Title demo, E1M3 | 461,187 | 1,604,459 | 1.64 | 6.19 |
+| Title demo, E1M7 | 461,187 | 1,604,459 | 1.64 | 6.19 |
 
 The full measurements are in [`PROFILE.md`](PROFILE.md). What they change:
 
@@ -520,17 +520,18 @@ What this means for the plan:
   code. Until the owner decides how this directory is licensed, it stays
   under `build/` (ground rules).
 
-**Rough speed, an assumption until measured.** Standing still, upstream needs
-1.12 million 65816 cycles a frame. If native code needs 1.5 to 3 times that
-many 65C02 cycles, the CPU work is about 30 to 60 ms a frame. With the
-firmware design that would be roughly 10 to 20 frames a second. On F1.2.1,
-far accesses dominate unless the data layout avoids them: roughly 5 to 8.
-Milestone 4 measures the 1.5 to 3 factor on three real routines.
+**Expected speed.** `NATIVE.md` section 1 estimates 13 to 29 frames a
+second standing still in E1M1 on F1.2.1, and 24 to 35 with the firmware
+design and the zero-page pair (35 is the game's cap). In the title demo:
+7.9 to 19, and 18 to 35. These rest on measurements plus assumptions: the
+native cycle count (about 1.37 times upstream's, from an opcode-by-opcode
+count; three routines written natively measured 0.95, 1.2 to 1.3 and 2.1
+to 2.5 times), and a2vm's cost model. They assume the fast-memory plan
+fits, which is `NATIVE.md`'s top risk.
 
 ### Milestone 4: native architecture
 
-A design run started on 2026-09-30. It writes, without changing tools, tests
-or sources:
+Done on 2026-09-30 by a design run, which changed no tool, test or source:
 
 | Output | Content |
 | --- | --- |
@@ -541,12 +542,16 @@ or sources:
 | `research/native-sound.md` | MUS to Phasor converter and player, sound effects, tests |
 | `NATIVE.md` | The architecture: frame-rate estimates on both firmware variants, the milestones from 5 with acceptance tests, risks, questions for the owner |
 
-Two reviews (correctness, hardware) check `NATIVE.md`, and a last step
-applies their findings. Then the owner reviews it.
+Two reviews (correctness, hardware) checked `NATIVE.md`, and a last step
+applied their findings: 28 applied, one in part. Its prototypes and the
+natively written routines are in `build/native-design/` and
+`build/native-experiment/`, which git ignores; they are rebuilt as tools
+once the licence is decided.
 
-If the run was interrupted: the research files that exist are complete
-reports; rerun only the missing ones. `NATIVE.md` is final only after the
-revision step.
+**Next.** The owner reviews `NATIVE.md` and answers its section 15. The
+sound track S1 (MUS converter and player model, original code) can start
+before that. Milestone 5 (the native replay) needs the licence answer
+before its code is committed.
 
 ## Related work outside this directory
 
