@@ -613,6 +613,10 @@ iigs_stop iigs_run(iigs *m, uint64_t cycle_limit, uint64_t frame_limit)
         }
         if (m->stop_on_fault && spun(m, pc))
             return IIGS_SPIN;
+        if (m->stop_request) {
+            m->stop_request = 0;
+            return IIGS_REQUEST;
+        }
     }
     return IIGS_LIMIT;
 }

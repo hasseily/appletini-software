@@ -34,6 +34,39 @@
  *   --peek ADDR:LEN    bytes of RAM to put in the final state (hex address)
  *   --state FILE       write the final state there (default: stdout)
  *   --dump-ram FILE    write banks $00-$7F then $E0-$E1 there at the end
+ *   --load ADDR:FILE   put the bytes of FILE in RAM at ADDR (hex) after
+ *                      the image, with no I/O or shadowing (repeatable,
+ *                      in order)
+ *   --load-image FILE  put the records of the memory image FILE in RAM
+ *                      after the image, in order with the --load files
+ *                      (its registers and switches are not used)
+ *   --reg NAME=VALUE   set a register after the image and the loads: a,
+ *                      x, y, s, d, pc (16 bits), pbr, dbr, p (8 bits), e
+ *                      (0 or 1); VALUE in hex (repeatable)
+ *   --save ADDR:LEN:FILE
+ *                      write LEN bytes of RAM from ADDR (hex; LEN with
+ *                      0x for hex) to FILE at the end (repeatable)
+ *
+ * Calls (footprint.h):
+ *
+ *   --call ADDR        run the routine at ADDR (hex, 24 bits: PBR and PC)
+ *                      on the state of the image, the loads and --reg,
+ *                      until it returns: the RTS, RTL or RTI that leaves
+ *                      it at call depth 0. The run ends there (reason
+ *                      "return"), or at --frames or --cycles (default
+ *                      1000000000 cycles); the state gets a "call" member
+ *   --call-reads FILE  write the bytes the call read first, with the
+ *                      registers at its start, as a memory image
+ *   --call-writes FILE write the bytes the call wrote, with the registers
+ *                      at its return, as a memory image
+ *   --capture DIR      capture calls of --capture-entry into
+ *                      DIR/hit-NNNNNNNN/ (entry.img, reads.img,
+ *                      writes.img, exit.img, call.json; DIR must
+ *                      exist)
+ *   --capture-entry ADDR
+ *                      the routine whose calls (JSR, JSL, JSR (a,x)) are
+ *                      counted, from 1 (hex)
+ *   --capture-hit N    capture its Nth call (repeatable)
  *
  * Tracing (trace.h; without --trace the machine runs untraced):
  *
@@ -52,10 +85,13 @@
  *   --trace-sample-every N
  *                      one instruction in N (default 499)
  *
+ * --trace does not go with --call or --capture (they share the hooks).
+ *
  * The final state is JSON: why the run ended, time, registers, a hash of
  * all RAM, the soft switches, the text page, and the counts of
  * everything the machine met that it does not model.
  */
+#include "footprint.h"
 #include "iigs.h"
 #include "program.h"
 #include "trace.h"
@@ -66,6 +102,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* The cycles a --call may run without --frames or --cycles. */
+#define CALL_CYCLES 1000000000u
 
 enum {
     MAX_LIST = 256,
@@ -82,6 +121,19 @@ typedef struct {
 } peek_range;
 
 typedef struct {
+    uint32_t address;
+    uint32_t length;            /* --save only */
+    const char *path;
+    int image;                  /* --load-image: the records of an image */
+} file_range;
+
+/* A --reg: which register, and its value. */
+typedef struct {
+    char name[4];
+    uint32_t value;
+} register_setting;
+
+typedef struct {
     const char *image, *disk, *disk_out, *input, *shot_dir, *state, *dump;
     const char *marks;
     uint64_t frames, cycles;
@@ -93,6 +145,13 @@ typedef struct {
     unsigned shot_frame_count, shot_cycle_count;
     peek_range peeks[MAX_LIST];
     unsigned peek_count;
+    file_range loads[MAX_LIST], saves[MAX_LIST];
+    unsigned load_count, save_count;
+    register_setting regs[MAX_LIST];
+    unsigned reg_count;
+    int call;                   /* --call given */
+    uint32_t call_address;
+    footprint_config footprint; /* --call and --capture */
     trace_config trace;         /* trace.path is NULL without --trace */
     int trace_options;          /* --trace-* options given */
 } options;
@@ -100,7 +159,7 @@ typedef struct {
 /* How the run ended. */
 typedef struct {
     const char *reason;         /* frames, cycles, stop, stop-pc, spin,
-                                   opcode, timeout, late */
+                                   opcode, timeout, late, return */
     uint32_t pc;                /* stop-pc, spin, opcode: where */
     unsigned line;              /* stop, timeout, late: the input line */
 } ending;
@@ -166,27 +225,10 @@ static uint32_t le(const uint8_t *p, int bytes)
     return value;
 }
 
-/* The image: a header with the registers and the soft switches, then
-   records of a 32-bit address, a 32-bit length and the bytes. */
-static void load_image(iigs *m, const char *path)
+/* The records of an image into RAM. */
+static void load_records(iigs *m, const char *path, const uint8_t *data,
+                         size_t length)
 {
-    size_t length;
-    uint8_t *data = read_file(path, &length);
-    if (length < HEADER || memcmp(data, MAGIC, sizeof MAGIC - 1))
-        fail("%s is not a ref816 memory image", path);
-    cpu816 *c = &m->cpu;
-    c->pc = (uint16_t)le(data + 8, 2);
-    c->pbr = data[10];
-    c->dbr = data[11];
-    c->a = (uint16_t)le(data + 12, 2);
-    c->x = (uint16_t)le(data + 14, 2);
-    c->y = (uint16_t)le(data + 16, 2);
-    c->s = (uint16_t)le(data + 18, 2);
-    c->d = (uint16_t)le(data + 20, 2);
-    c->p = data[22];
-    c->e = data[23] & 1;
-    cpu816_normalise(c);
-    iigs_set_switches(m, data[24], data[25], data[26], data[27]);
     size_t at = HEADER;
     while (at < length) {
         if (length - at < 8)
@@ -201,7 +243,98 @@ static void load_image(iigs *m, const char *path)
                  address);
         at += count;
     }
+}
+
+static uint8_t *read_image(const char *path, size_t *length)
+{
+    uint8_t *data = read_file(path, length);
+    if (*length < HEADER || memcmp(data, MAGIC, sizeof MAGIC - 1))
+        fail("%s is not a ref816 memory image", path);
+    return data;
+}
+
+/* The image: a header with the registers and the soft switches, then
+   records of a 32-bit address, a 32-bit length and the bytes. */
+static void load_image(iigs *m, const char *path)
+{
+    size_t length;
+    uint8_t *data = read_image(path, &length);
+    cpu816 *c = &m->cpu;
+    c->pc = (uint16_t)le(data + 8, 2);
+    c->pbr = data[10];
+    c->dbr = data[11];
+    c->a = (uint16_t)le(data + 12, 2);
+    c->x = (uint16_t)le(data + 14, 2);
+    c->y = (uint16_t)le(data + 16, 2);
+    c->s = (uint16_t)le(data + 18, 2);
+    c->d = (uint16_t)le(data + 20, 2);
+    c->p = data[22];
+    c->e = data[23] & 1;
+    cpu816_normalise(c);
+    iigs_set_switches(m, data[24], data[25], data[26], data[27]);
+    load_records(m, path, data, length);
     free(data);
+}
+
+/* --load, in order, then --reg, then --call's address. */
+static void load_files(iigs *m, const options *o)
+{
+    for (unsigned i = 0; i < o->load_count; i++) {
+        size_t length;
+        const file_range *r = &o->loads[i];
+        if (r->image) {
+            uint8_t *data = read_image(r->path, &length);
+            load_records(m, r->path, data, length);
+            free(data);
+            continue;
+        }
+        uint8_t *data = read_file(r->path, &length);
+        if (!iigs_load(m, r->address, data, length))
+            fail("--load %s: outside RAM", r->path);
+        free(data);
+    }
+}
+
+static void set_registers(iigs *m, const options *o)
+{
+    cpu816 *c = &m->cpu;
+    for (unsigned i = 0; i < o->reg_count; i++) {
+        const char *name = o->regs[i].name;
+        uint32_t v = o->regs[i].value;
+        uint16_t *wide = !strcmp(name, "a") ? &c->a : !strcmp(name, "x") ?
+            &c->x : !strcmp(name, "y") ? &c->y : !strcmp(name, "s") ?
+            &c->s : !strcmp(name, "d") ? &c->d : !strcmp(name, "pc") ?
+            &c->pc : NULL;
+        uint8_t *narrow = !strcmp(name, "pbr") ? &c->pbr :
+            !strcmp(name, "dbr") ? &c->dbr : !strcmp(name, "p") ? &c->p :
+            !strcmp(name, "e") ? &c->e : NULL;
+        if (wide)
+            *wide = (uint16_t)v;
+        else if (narrow && (v <= 0xff && (narrow != &c->e || v <= 1)))
+            *narrow = (uint8_t)v;
+        else
+            fail("--reg %s=%X: no such register, or too wide", name, v);
+    }
+    if (o->call) {
+        c->pbr = (uint8_t)(o->call_address >> 16);
+        c->pc = (uint16_t)o->call_address;
+    }
+    if (o->reg_count)
+        cpu816_normalise(c);
+}
+
+static void save_files(const iigs *m, const options *o)
+{
+    for (unsigned i = 0; i < o->save_count; i++) {
+        const file_range *r = &o->saves[i];
+        uint8_t *data = malloc(r->length);
+        if (!data)
+            fail("out of memory");
+        for (uint32_t j = 0; j < r->length; j++)
+            data[j] = iigs_peek(m, (r->address + j) & 0xffffff);
+        write_file(r->path, data, r->length);
+        free(data);
+    }
 }
 
 /* ---- screen dumps ---- */
@@ -269,7 +402,7 @@ static void sites_json(FILE *out, const char *name,
 }
 
 static void write_state(const iigs *m, const options *o, const ending *end,
-                        FILE *out)
+                        footprint *calls, FILE *out)
 {
     const cpu816 *c = &m->cpu;
     const iigs_counts *n = &m->counts;
@@ -335,7 +468,12 @@ static void write_state(const iigs *m, const options *o, const ending *end,
             fprintf(out, "%02x", iigs_peek(m, o->peeks[i].address + j));
         fputc('"', out);
     }
-    fputs("},\n  \"text_page\": [\n", out);
+    fputs("},\n", out);
+    if (calls && o->call) {
+        footprint_json(calls, out);
+        fputs(",\n", out);
+    }
+    fputs("  \"text_page\": [\n", out);
     for (unsigned row = 0; row < TEXT_ROWS; row++) {
         char text[TEXT_COLUMNS + 1];
         text_row(m, row, text);
@@ -400,6 +538,31 @@ static int trace_option(trace_config *c, const char *arg, char *value)
     } else
         return 0;
     return 1;
+}
+
+/* --load ADDR:FILE, --save ADDR:LEN:FILE */
+static void file_option(options *o, const char *arg, char *value)
+{
+    int save = !strcmp(arg, "--save");
+    file_range *list = save ? o->saves : o->loads;
+    unsigned *count = save ? &o->save_count : &o->load_count;
+    char *colon = strchr(value, ':');
+    char *second = colon && save ? strchr(colon + 1, ':') : colon;
+    if (!colon || !second || !second[1] || *count == MAX_LIST)
+        fail(save ? "--save takes ADDR:LEN:FILE" : "--load takes ADDR:FILE");
+    *colon = 0;
+    file_range *r = &list[(*count)++];
+    r->address = (uint32_t)address(value, arg);
+    r->length = 0;
+    r->image = 0;
+    if (save) {
+        *second = 0;
+        uint64_t length = number(colon + 1, 0);
+        if (!length || length > 0x1000000)
+            fail("--save: 1 to 16 MB");
+        r->length = (uint32_t)length;
+    }
+    r->path = second + 1;
 }
 
 static void parse(int argc, char **argv, options *o)
@@ -468,9 +631,56 @@ static void parse(int argc, char **argv, options *o)
             p->length = (uint32_t)number(colon + 1, 0);
             if (p->address > 0xffffff || p->length > 0x10000)
                 fail("--peek: at most 64 KB of a 24-bit address");
+        } else if (!strcmp(arg, "--load") || !strcmp(arg, "--save"))
+            file_option(o, arg, argv[i]);
+        else if (!strcmp(arg, "--load-image")) {
+            if (o->load_count == MAX_LIST)
+                fail("at most %d of each option", MAX_LIST);
+            o->loads[o->load_count++] = (file_range){ 0, 0, value, 1 };
+        } else if (!strcmp(arg, "--reg")) {
+            const char *equals = strchr(value, '=');
+            if (!equals || equals == value || equals - value > 3 ||
+                o->reg_count == MAX_LIST)
+                fail("--reg takes NAME=VALUE");
+            register_setting *r = &o->regs[o->reg_count++];
+            memset(r->name, 0, sizeof r->name);
+            memcpy(r->name, value, (size_t)(equals - value));
+            uint64_t v = number(equals + 1, 16);
+            if (v > 0xffff)
+                fail("--reg %s: at most 16 bits", r->name);
+            r->value = (uint32_t)v;
+        } else if (!strcmp(arg, "--call")) {
+            o->call = 1;
+            o->call_address = (uint32_t)address(value, arg);
+        } else if (!strcmp(arg, "--call-reads"))
+            o->footprint.reads_path = value;
+        else if (!strcmp(arg, "--call-writes"))
+            o->footprint.writes_path = value;
+        else if (!strcmp(arg, "--capture"))
+            o->footprint.capture_dir = value;
+        else if (!strcmp(arg, "--capture-entry"))
+            o->footprint.entry = (uint32_t)address(value, arg);
+        else if (!strcmp(arg, "--capture-hit")) {
+            uint64_t hit = number(value, 0);
+            if (!hit || o->footprint.hit_count == FOOTPRINT_MAX_HITS)
+                fail("--capture-hit takes a call from 1, at most %d of them",
+                     FOOTPRINT_MAX_HITS);
+            o->footprint.hits[o->footprint.hit_count++] = hit;
         } else
             fail("unknown option %s", arg);
     }
+    if (o->call && o->frames == UINT64_MAX && o->cycles == UINT64_MAX)
+        o->cycles = CALL_CYCLES;
+    if (!o->call && (o->footprint.reads_path || o->footprint.writes_path))
+        fail("--call-reads and --call-writes need --call");
+    if (!o->footprint.capture_dir != !o->footprint.hit_count ||
+        (o->footprint.capture_dir && !o->footprint.entry))
+        fail("--capture needs --capture-entry and --capture-hit");
+    if (o->call && o->footprint.capture_dir)
+        fail("--call and --capture go in separate runs");
+    if (o->trace.path && (o->call || o->footprint.capture_dir))
+        fail("--trace does not go with --call or --capture");
+    o->footprint.call = o->call;
     if (!o->image)
         fail("usage: ref816 [options] IMAGE (see the source for options)");
     if (o->frames == UINT64_MAX && o->cycles == UINT64_MAX)
@@ -517,7 +727,7 @@ static void log_line(FILE *marks, const char *kind, const char *what,
 /* Do the steps of the input due now; one that ends the run puts the
    reason in `end`. `tracer` may be NULL. */
 static void input(program *p, iigs *m, const options *o, FILE *marks,
-                  trace *tracer, ending *end)
+                  trace *tracer, footprint *calls, ending *end)
 {
     for (;;) {
         const step *s = NULL;
@@ -533,6 +743,8 @@ static void input(program *p, iigs *m, const options *o, FILE *marks,
             log_line(marks, "note", s->name, m);
             if (tracer)
                 trace_note(tracer, s->name);
+            if (calls)
+                footprint_note(calls, s->name);
             break;
         case PROGRAM_STOP:
             end->reason = "stop";
@@ -561,6 +773,8 @@ int main(int argc, char **argv)
         fail("out of memory");
     iigs_set_cpu_hz(&m, o.cpu_hz);
     load_image(&m, o.image);
+    load_files(&m, &o);
+    set_registers(&m, &o);
     m.stop_on_fault = o.stop_on_fault;
     for (unsigned i = 0; i < o.stop_pc_count; i++)
         if (!iigs_set_break(&m, (uint32_t)o.stop_pcs[i]))
@@ -586,6 +800,12 @@ int main(int argc, char **argv)
     trace *tracer = NULL;
     if (o.trace.path && !(tracer = trace_open(&m, &o.trace)))
         fail("cannot trace to %s", o.trace.path);
+    footprint *calls = NULL;
+    qsort(o.footprint.hits, o.footprint.hit_count, sizeof(uint64_t),
+          compare_u64);
+    if ((o.call || o.footprint.capture_dir) &&
+        !(calls = footprint_open(&m, &o.footprint)))
+        fail("out of memory");
 
     qsort(o.shot_frames, o.shot_frame_count, sizeof(uint64_t), compare_u64);
     qsort(o.shot_cycles, o.shot_cycle_count, sizeof(uint64_t), compare_u64);
@@ -593,7 +813,7 @@ int main(int argc, char **argv)
     ending end = { NULL, 0, 0 };
 
     /* The input's steps at frame 0 come before any instruction. */
-    input(&p, &m, &o, marks, tracer, &end);
+    input(&p, &m, &o, marks, tracer, calls, &end);
     while (!end.reason) {
         uint64_t frame_stop = minimum(minimum(
             o.frames, upcoming(o.shot_frames, o.shot_frame_count,
@@ -618,8 +838,10 @@ int main(int argc, char **argv)
         } else if (why == IIGS_ODD_OPCODE) {
             end.reason = "opcode";
             end.pc = m.opcode_pc;
-        } else
-            input(&p, &m, &o, marks, tracer, &end);
+        } else if (why == IIGS_REQUEST && calls && footprint_returned(calls))
+            end.reason = "return";
+        else
+            input(&p, &m, &o, marks, tracer, calls, &end);
         while (next_frame_shot < o.shot_frame_count &&
                o.shot_frames[next_frame_shot] <= m.frame)
             numbered_shot(&m, o.shot_dir, "frame",
@@ -642,9 +864,15 @@ int main(int argc, char **argv)
     FILE *out = stdout;
     if (o.state && !(out = fopen(o.state, "w")))
         fail("cannot write %s", o.state);
-    write_state(&m, &o, &end, out);
+    write_state(&m, &o, &end, calls, out);
     if (out != stdout && fclose(out))
         fail("cannot write %s", o.state);
+    if (calls) {
+        const char *error = footprint_close(calls);
+        if (error)
+            fail("%s", error);
+    }
+    save_files(&m, &o);
     if (o.dump) {
         FILE *file = fopen(o.dump, "wb");
         if (!file ||

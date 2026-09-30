@@ -39,7 +39,7 @@ $(OUT)/%.o: $(HERE)%.c $(HEADERS) | $(OUT)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(MACHINE): $(OUT)/main.o $(OUT)/program.o $(OUT)/trace.o \
-            $(MACHINE_OBJECTS)
+            $(OUT)/footprint.o $(MACHINE_OBJECTS)
 	$(CC) $(CFLAGS) -o $@ $^
 
 $(HARNESS): $(OUT)/vectors.o $(OUT)/cpu816.o

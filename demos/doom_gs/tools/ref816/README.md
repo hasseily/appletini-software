@@ -24,6 +24,10 @@ run, byte for byte. The machine reads no host clock and nothing random.
 | `codemap.py` | Addresses as places of the link map: section, source file, label |
 | `measures.py` | The measures of a trace, frame by frame |
 | `profile816.py`, `profile_template.md` | Traces two scenarios and writes `docs/PROFILE.md` |
+| `footprint.c`, `footprint.h` | Calls (`--call`) and captures of calls (`--capture`): what a routine reads and writes, to its return |
+| `refimage.py` | Memory images: read, write, and a sparse memory |
+| `lists.py` | Upstream's column records (`lists.inc`) decoded from memory |
+| `capture.py` | Captures of the record replay (`R_DrawLists`) at the frames of milestone 5, into `build/captures/` |
 
 Build and check:
 
@@ -242,3 +246,152 @@ reaches the report: `codemap.py` makes its code one anonymous place, and
 of the game, never alone and never as a row of its own, so that neither a
 row nor a total minus the rows gives a figure of its own. The rows it
 would have had go to `build/ref816/profile-withheld.json` only.
+
+## Calls and captures
+
+These are for milestone 5 and later (`docs/NATIVE.md` section 11): the
+reference's own routines as the oracle of the native ones.
+
+### Loading and saving memory
+
+| Option | Meaning |
+| --- | --- |
+| `--load ADDR:FILE` | the bytes of FILE into RAM at ADDR (hex), after the image, with no I/O or shadowing |
+| `--load-image FILE` | the records of the memory image FILE (its registers and switches are not used) |
+| `--reg NAME=VALUE` | a register after the image and the loads: `a`, `x`, `y`, `s`, `d`, `pc` (16 bits), `pbr`, `dbr`, `p` (8 bits), `e` (0 or 1); VALUE in hex |
+| `--save ADDR:LEN:FILE` | LEN bytes of RAM from ADDR to FILE at the end of the run (LEN decimal, or `0x` hex) |
+
+Loads happen in the order given, so a later one overwrites an earlier
+one (a poisoned screen over a captured one, say). They work in any run.
+
+### --call
+
+    ref816 IMAGE [--load ...] [--reg ...] --call ADDR [--call-reads FILE]
+           [--call-writes FILE] [--save ...] [--cycles N]
+
+runs the routine at ADDR (PBR and PC; hex) on the state of the image,
+the loads and `--reg`, and ends the run when it returns: at the RTS, RTL
+or RTI that leaves it at call depth 0 (end reason `return`). The depth
+goes up at each JSR, JSL, JSR (a,x), BRK, COP and interrupt entry and
+down at each RTS, RTL and RTI (and at a firmware trap, which returns for
+its JSR), so a routine needs no return address of its own on the stack:
+it returns into whatever its stack holds, and the run stops there.
+Without `--frames` or `--cycles` a call may take 1,000,000,000 cycles.
+The final state gets a `call` member:
+
+| Field | Meaning |
+| --- | --- |
+| `returned`, `depth` | whether it returned, and the depth when the run ended |
+| `start`, `end` | the registers (and the shadow register) at the start and at the return |
+| `instructions`, `cycles` | the routine's own, without the interrupts inside it |
+| `interrupts` | their count, instructions and cycles |
+| `bytes_read` | bytes of RAM read before the call wrote them |
+| `bytes_written` | bytes of RAM written (with the bytes of `$E0`/`$E1` that the shadow register copied them to) |
+| `written_then_changed` | of those, the ones an interrupt inside the call wrote again later |
+| `io`, `rom_reads`, ... | I/O registers by address, ROM and missing memory |
+
+`--call-reads FILE` writes the bytes read first, with the values read
+and the registers and switches at the start, as a memory image: `--call`
+on it alone runs the call again, as long as it takes the same path.
+`--call-writes FILE` writes the bytes written, with the values the call
+wrote last and the registers and switches at the return. What an
+interrupt does inside the call is left out of both (`footprint.h`).
+The machine starts a `--call` with the DOC and the ADB quiet, so no
+interrupt comes unless the routine starts one.
+
+`--call` goes with neither `--trace` nor `--capture` (they share the
+machine's hooks).
+
+### --capture
+
+    ref816 ... --capture DIR --capture-entry ADDR --capture-hit N ...
+
+counts the calls (JSR, JSL, JSR (a,x)) of the routine at ADDR from 1 in
+the run, and records each call whose number is given (`--capture-hit`,
+repeatable) into `DIR/hit-NNNNNNNN/`:
+
+| File | Content |
+| --- | --- |
+| `entry.img` | all RAM when the routine starts (after the call instruction), with the registers and switches: `--call ADDR` on it runs the call alone |
+| `reads.img`, `writes.img` | as `--call-reads` and `--call-writes` |
+| `exit.img` | the bytes written, with their values at the return (`writes.img` but for what interrupts wrote after the call) |
+| `call.json` | `hit`, `entry`, the last `note` of the input before it, `frame`, `clock`, `cycles` and `instructions` of the machine at the entry, and `call` as above |
+
+The run exits with status 2 when a chosen call does not come or does
+not return before the run ends. Recording a call changes nothing of the
+run: `capture.py` checks that the capturing run ends with the RAM and
+the log of marks of a run without it.
+
+### Replay captures: capture.py
+
+    python3 tools/ref816/capture.py [--out DIR] [--sets still,demo,e1m3]
+                                    [--keep-raw] [--no-verify]
+
+makes the frame set of milestone 5 in `build/captures/`: `still-1` to
+`still-3`, the first three calls of `R_DrawLists` after the note `still`
+of `coverage/newgame.script` (standing in E1M1); `demo-01` to `demo-11`,
+eleven calls spread evenly from the note `demo` to `demo-25s` of
+`coverage/title.script` (demo3, E1M7); `e1m3-1`, the first call after
+the shot `e1m3` of `coverage/tour.script` (the tool puts a note after
+that line of the script, which changes nothing of the run). The last
+call of a run is never chosen: the run may end before it returns.
+
+Each script runs twice, with `run_script.py`'s checks: once with
+`--mark` at `R_DrawLists` and `drawAllL` (an early flush of the lists)
+to choose the calls, once with `--capture`. Each raw capture is then
+distilled into one directory a frame, and the raw files are deleted
+(`--keep-raw` keeps them in `DIR/raw/`). The files of a frame, all
+places from the link map:
+
+| File | From | Content |
+| --- | --- | --- |
+| `records-00.bin`, `records-20.bin`, `records-a0.bin` | `$1D:0000`, `$1D:2000`, `$1D:A000` | the pages the column lists can use (`lists.inc`: the home pages `COLPAGE(c)` and the extra pages `XP_FIRST`-`$FF`), 53,760 bytes |
+| `lists.bin` | `COLW` | `COLW` (the end of each list), `XPNEXT`, `colOrder` |
+| `screen.bin` | `$E1:2000` | the SHR screen: pixels, SCBs, palettes (32 KB) |
+| `buffer.bin` | `$01:2000` | bank `$01` `$2000-$9FFF`, where the drawers write with SHR shadowing on |
+| `spans.bin` | `FS_ROW` | the fill spans (`FS_ROW`, `FS_EVEN`, `FS_ODD`, `FS_STAMP`) and the covered ranges (`CV_ROW`, `CV_REC`) |
+| `weapon.bin` | `WCLIP` | the weapon skip: `WCLIP`, `WPREV`, `WTMP` |
+| `colormaps.bin` | `iigs_shrcmapA` | both colormaps, 17,408 bytes; the manifest lists the pages the records use |
+| `fuzz.bin` | `FUZZ_DARKEN` | the shadow drawer's darkening table, 256 bytes (all of it: on another screen the drawer reads other entries) |
+| `texels.img` | | an image: 128 bytes from the texel address of each `K_TEX` and `K_TEXC` record (the texel position is 7 bits), merged, by bank |
+| `context.img` | | an image: every other byte the replay read before writing it (its code, the row blocks, the direct page, the stack, `TEXLO`/`TEXHI`, the view size flags), with the value read, and the registers and switches at the entry |
+| `screen-after.bin`, `buffer-after.bin` | `$E1:2000`, `$01:2000` | the same after the replay |
+| `writes.img` | | an image: every byte the replay wrote, with its value, and the registers at its return |
+| `manifest.json` | | below |
+
+`capture.call_options` gives the arguments that run the replay alone on
+a frame: `context.img` as the image, then every "before" file loaded.
+Unless `--no-verify`, the tool does so for each frame, and the replay
+must return, write exactly the bytes of `writes.img` with the registers
+at its return, leave `screen-after.bin` and `buffer-after.bin` byte for
+byte, and take the instructions and cycles of the capture.
+
+`manifest.json` holds `format` (`ref816-replay-capture 1`), `name`,
+`script`, `note`, `hit` (the call of `R_DrawLists`, from 1),
+`frame` (the video frame), `seconds` and `cycles` of machine time,
+`gametic`, `entry` (`symbol`, `address`), `registers` and `switches` at
+the entry, and `files`: for each, `name`, `file`, `when` (`before` or
+`after` the replay), `what`, `format` (`raw`: its `size` bytes go at
+`address`, also written `at` as `$BB:AAAA`; `image`: a memory image
+whose records are `ranges`, `[address, length]`, `size` bytes in all)
+and `sha256`. Then the measures: `records` (counts by kind, bytes,
+extra pages used, `colormap_pages`), `early_flushes` (calls of
+`drawAllL` since the frame before: records drawn early, which a capture
+at `R_DrawLists` does not see), `replay` (instructions, cycles,
+interrupts, bytes read and written, I/O, all without the interrupts),
+`screen` (bytes of the pixels written, and bytes changed from before
+to after, in the view, the pixels, the SCBs and palettes),
+`context_by_bank`, `written_by_bank`,
+`written_then_changed_by_interrupts` (the stack below S), `problems`
+(empty when the capture is sound: every byte read first inside a named
+file had its value at the entry, and no byte of the level window was
+read outside the texels of the records), and `verified`.
+
+`lists.py` walks the records (`lists.walk`) from any memory; the
+capture uses it for the texels and the counts, and it refuses a record
+of unknown kind or a list that does not reach its end.
+
+`tests/test_ref816_call.py` checks `--call`, `--capture` and the
+loading options on hand-made routines; `tests/test_ref816_capture.py`
+captures three E1M1 frames and two demo frames and checks the manifest,
+the `--call` oracle, and a run on a poisoned screen.

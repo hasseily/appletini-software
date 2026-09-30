@@ -81,7 +81,8 @@ typedef enum {
     IIGS_LIMIT,                 /* the cycle or frame limit */
     IIGS_BREAK,                 /* the next instruction is at a breakpoint */
     IIGS_SPIN,                  /* an instruction jumped to itself */
-    IIGS_ODD_OPCODE             /* WDM or STP was executed */
+    IIGS_ODD_OPCODE,            /* WDM or STP was executed */
+    IIGS_REQUEST                /* the step hook set stop_request */
 } iigs_stop;
 
 /* Reads of one instruction that the model answers with 0: the address of
@@ -162,6 +163,9 @@ typedef struct iigs {
        for none, so that an untraced run pays one test a step. */
     void (*after_step)(void *context);
     void *step_context;
+    /* Set by the step hook to make iigs_run return IIGS_REQUEST after
+       this step (footprint.c: the end of a --call); iigs_run clears it. */
+    int stop_request;
 
     iigs_counts counts;
 } iigs;
@@ -215,7 +219,8 @@ int iigs_set_break(iigs *m, uint32_t address);
    where it was (IIGS_SPIN): a branch to itself, which only an
    interrupt could leave (MVN and MVP repeat that way on purpose and do
    not count); and after WDM or STP (IIGS_ODD_OPCODE), with its
-   address in opcode_pc. */
+   address in opcode_pc. Stops after a step whose hook set
+   stop_request (IIGS_REQUEST). */
 iigs_stop iigs_run(iigs *m, uint64_t cycle_limit, uint64_t frame_limit);
 
 /* FNV-1a (64 bits) over banks $00-$7F then $E0-$E1. */
