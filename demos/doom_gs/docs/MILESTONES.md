@@ -106,7 +106,7 @@ binary and the owner's Mac has no Rosetta.
 | 2 | Reference machine runs the release; measured profiles | **Done**, see the results below. |
 | 3 | Target machine model with cost model; 65816 interpreter | **Done**, see the results below. |
 | 4 | Native rewrite: architecture (`NATIVE.md`), with a measured experiment | **Written and reviewed** (two reviews, findings applied). Awaits the owner's review and 11 answers, first the licence. |
-| 5 to 13, S1 to S4 | Native rewrite milestones and the sound track | Defined in `NATIVE.md` section 13. Not started. |
+| 5 to 13, S1 to S4 | Native rewrite milestones and the sound track | Defined in `NATIVE.md` section 13. S1 (MUS converter, player model, WAV renders; `tools/sound/`, `tests/test_sound_*.py`) built 2026-09-30 and reviewed once; the review's defects are applied. Every song's steals, drum steals, writes a second and p99 writes of a burst are at or below `summary50.md` in both layouts with no exception in the tests (mb6 D_E1M4 writes 72.47 a second against the prototype's 71.77, equal when rounded as `summary50.md` prints them; `tools/sound/README.md`, "Against the design"). The fixes were checked by rerunning all 955 tests, not by a second review. Renders in `build/sound/*.wav` (`python3 tools/sound/report.py --render`); awaits the owner's ear. S2 to S4 and the rest not started. |
 
 ## Milestone 1: done
 
