@@ -42,7 +42,8 @@ These are firm. Breaking one is a defect even if the tests pass.
 
 | Rule | Why |
 | --- | --- |
-| Never commit upstream source, upstream's generated code, the release image, ROM images or third-party test vectors. Fetch them into `build/`, which is ignored. | Upstream is GPL-2; this repository follows [The Bilestoad](../../bilestoad/README.md) in keeping upstream out. |
+| This directory is licensed GPL-2 (`LICENSE`), the owner's decision of 2026-09-30. Code rewritten from upstream is committed here under it. | The native port is a derivative of upstream, which is GPL-2. |
+| Never commit upstream's own files, upstream's generated code, the release image, the WAD, ROM images or third-party test vectors. Fetch them into `build/`, which is ignored. | They are fetched pinned; the WAD and the ROMs are not ours to redistribute. This follows [The Bilestoad](../../bilestoad/README.md). |
 | Nothing of upstream's `src/iigs/cal_integer.s` may leave `build/`: no copies, excerpts or translations of its code, and no routine written from reading it. The port's replacements are written from the call sites and the documented behaviour only. Facts about the file, such as its length or a `file:line` reference, are fine. | It is a copy of the Calypsi vendor runtime, licensed for that toolchain only. |
 | The Calypsi manual extract stays in `build/reference/`. | Vendor copyright. |
 | Emulated machines are deterministic: the same inputs give the same run, byte for byte. No host time, no randomness. | Lockstep comparison depends on it. |
@@ -50,7 +51,6 @@ These are firm. Breaking one is a defect even if the tests pass.
 | Unit tests live in `tests/` and run with `python3 -m unittest discover -s tests` from this directory. Tests that need `build/` skip with a clear message when it is missing. | One command checks everything. |
 | Do not weaken a test, and do not special-case game addresses or file names to force a result. Report what does not work. | Earlier stages were independently reviewed for exactly this. |
 | Work on branch `claude/iigs-doom-port`. Commit only finished, tested milestones or documents. | The owner approved commits and pushes on this branch. |
-| Code written by translating upstream routines stays under `build/` until the owner decides how the repository licenses this directory. | It is derived from GPL-2 code, so the first rule does not cover it. |
 
 ## Setting up
 
@@ -105,8 +105,8 @@ binary and the owner's Mac has no Rosetta.
 | 1 | Front end, 65816 assembler and linker, image match | **Done**, commit `89bb480f`. |
 | 2 | Reference machine runs the release; measured profiles | **Done**, see the results below. |
 | 3 | Target machine model with cost model; 65816 interpreter | **Done**, see the results below. |
-| 4 | Native rewrite: architecture (`NATIVE.md`), with a measured experiment | **Written and reviewed** (two reviews, findings applied). Awaits the owner's review and 11 answers, first the licence. |
-| 5 to 13, S1 to S4 | Native rewrite milestones and the sound track | Defined in `NATIVE.md` section 13. S1 (MUS converter, player model, WAV renders; `tools/sound/`, `tests/test_sound_*.py`) built 2026-09-30 and reviewed once; the review's defects are applied. Every song's steals, drum steals, writes a second and p99 writes of a burst are at or below `summary50.md` in both layouts with no exception in the tests (mb6 D_E1M4 writes 72.47 a second against the prototype's 71.77, equal when rounded as `summary50.md` prints them; `tools/sound/README.md`, "Against the design"). The fixes were checked by rerunning all 955 tests, not by a second review. Renders in `build/sound/*.wav` (`python3 tools/sound/report.py --render`); awaits the owner's ear. S2 to S4 and the rest not started. |
+| 4 | Native rewrite: architecture (`NATIVE.md`), with a measured experiment | **Written and reviewed** (two reviews, findings applied). Awaits the owner's review and 10 answers; the licence (question 1) is answered: GPL-2. |
+| 5 to 13, S1 to S4 | Native rewrite milestones and the sound track | Defined in `NATIVE.md` section 13. S1 (MUS converter, player model, WAV renders; `tools/sound/`, `tests/test_sound_*.py`) built 2026-09-30 and reviewed once; the review's defects are applied. Every song's steals, drum steals, writes a second and p99 writes of a burst are at or below `summary50.md` in both layouts with no exception in the tests (mb6 D_E1M4 writes 72.47 a second against the prototype's 71.77, equal when rounded as `summary50.md` prints them; `tools/sound/README.md`, "Against the design"). The fixes were checked by rerunning all 955 tests, not by a second review. Renders in `build/sound/*.wav` (`python3 tools/sound/report.py --render`); awaits the owner's ear. S2 (the 65C02 player in `src/sound/`, a2vm's AY log, slot-4 slowdown and interrupt bounds, the card probe, compared write for write with `tools/sound/player.py`) built 2026-09-30 and reviewed once; the review's defects are applied (the build's linker warning, chip resets and final registers now checked, the IRQ contract checked at run time, the write lists' padding, the probe, bad stream indexes), uncommitted until the owner accepts it. S3, S4 and the rest not started. |
 
 ## Milestone 1: done
 
@@ -516,9 +516,9 @@ What this means for the plan:
   (`tools/music` in the clone); that is not used.
 - **Firmware.** The port must run on F1.2.1 as it is and use the proposed
   zero-page bank pair when present. `a2vm` must model the pair.
-- **Licence, open.** Code translated from upstream is a derivative of GPL-2
-  code. Until the owner decides how this directory is licensed, it stays
-  under `build/` (ground rules).
+- **Licence.** Code translated from upstream is a derivative of GPL-2 code.
+  On 2026-09-30 the owner licensed this directory GPL-2, so it is committed
+  like the rest.
 
 **Expected speed.** `NATIVE.md` section 1 estimates 13 to 29 frames a
 second standing still in E1M1 on F1.2.1, and 24 to 35 with the firmware
@@ -549,9 +549,8 @@ natively written routines are in `build/native-design/` and
 once the licence is decided.
 
 **Next.** The owner reviews `NATIVE.md` and answers its section 15. The
-sound track S1 (MUS converter and player model, original code) can start
-before that. Milestone 5 (the native replay) needs the licence answer
-before its code is committed.
+licence is settled (GPL-2), so milestone 5, the native replay, can start and
+be committed.
 
 ## Related work outside this directory
 

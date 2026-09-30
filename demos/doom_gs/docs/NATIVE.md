@@ -479,13 +479,13 @@ Generated streams are valid tests: the reference is the truth.
 | `ref816` | The truth: runs the release, captures states and call footprints, feeds the bridge |
 | a2vm | Runs and times every native routine under `f121` and `fastpath` (then the pair profiles); runs whole native builds; validated against `a2sim.py` and one hardware frame [M: MILESTONES] |
 | `tools/v816` | `linkmap.json`: the symbols the bridge reads. The image match stays a regression test. |
-| `build/native-design/` helpers, `build/native-experiment/` (`capture.c`, `run02.c`) | Prototypes of the bridge and the routine harness; rewritten as tools once the licence question is settled |
+| `build/native-design/` helpers, `build/native-experiment/` (`capture.c`, `run02.c`) | Prototypes of the bridge and the routine harness; to be rewritten as tools (the licence is settled: GPL-2) |
 | The interpreter (`src/vm`) | At most a bring-up aid: a cost baseline (299-319 cycles an instruction [M: MILESTONES]), or a temporary host for cold upstream routines whose data is still in upstream layout. No milestone depends on it; it is not shipped. |
 
 ## 13. Milestones
 
-`<native>` is the native source tree: `build/native/` until the owner decides
-the licence (question 1). Acceptance tests name what a reviewer runs;
+`<native>` is the native source tree, `src/native/`, committed under GPL-2
+(question 1, answered 2026-09-30). Acceptance tests name what a reviewer runs;
 items marked "Report" are measurements, not pass/fail.
 Milestone 0 (hardware microbenchmarks, owner and card) is unchanged and
 should run before milestone 5 ends. The sound track S1-S4 runs in parallel.
@@ -521,7 +521,7 @@ should run before milestone 5 ends. The sound track S1-S4 runs in parallel.
 | 3 | Game logic volume under a bit-exact contract (52 KB upstream, 68-101 KB native) | Late desyncs; slow progress | Bridge and routine tests first; tic-level bisection; more scripts for rare paths |
 | 4 | The design and the pair are not built, or D4 (loading from aux zero page) is refused | The design column is out of reach; tic code stays in W with a trampoline or paging | Port runs on F1.2.1 first; one interface, two back ends |
 | 5 | The SHR drain on F1.2.1 | Replay floor 8.4-21.5 ms; any `$Cxxx` access waits, the VBL interrupt's included; every picture or wipe frame about 31.5 ms | Gather then draw; `$Cxxx` placed after the drain; lazy mirror |
-| 6 | Licence undecided | Nothing rewritten can be committed | Owner question 1, before milestone 5 code |
+| 6 | Licence | Settled: GPL-2 (owner, 2026-09-30) | None needed |
 | 7 | Level store: RAM or load time | Long loads or no room | Compressed store or disk per map (question 9) |
 | 8 | Sound: slot-4 cost and the instrument mapping | 1.2-3.4% of wall time; songs sound wrong | Profile window 32 or FW-S1; tuning by ear |
 | 9 | Tool work in `ref816` and a2vm competes with other work in `tools/a2vm` | Milestone 6 slips | Additions are opt-in flags; existing tests byte-identical |
@@ -530,11 +530,8 @@ should run before milestone 5 ends. The sound track S1-S4 runs in parallel.
 
 ## 15. Questions for the owner
 
-1. **Licence.** Rewritten code is translated from upstream, so it is a
-   derivative of GPL-2 code. The rule "keep upstream out of the repository"
-   cannot cover it. How is `demos/doom_gs` licensed before any rewritten code
-   is committed? The same question covers tools that encode upstream's
-   layouts (the bridge schema).
+1. **Licence.** Answered 2026-09-30: `demos/doom_gs` is licensed GPL-2,
+   rewritten code included.
 2. **Firmware.** Will the pair and the rest of the design be built, and is
    D4 (main zero page only) final? Ship a Doom profile with
    `vtw.slowdown.cycles=32`, or pursue FW-S1?

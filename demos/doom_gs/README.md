@@ -100,16 +100,25 @@ still in E1M1, and the title demo) and writes
 [docs/PROFILE.md](docs/PROFILE.md) from the traces, with the register
 widths of every executed instruction in `build/ref816/widths.json`.
 
-## Upstream code is not in this repository
+## Licence
 
-Upstream is GPL-2. The build fetches a pinned clone and the v1.0 release image
-into `build/`, which is ignored by git, and converts them there. This follows
-[The Bilestoad](../bilestoad/README.md).
+Everything in this directory is licensed under the GNU General Public
+License, version 2 ([`LICENSE`](LICENSE)), as upstream is. The native port is
+rewritten from upstream's source, so it is a derivative of it. The owner
+chose this licence on 2026-09-30.
 
-Two further rules:
+`tools/a2vm/py65core.h` holds tables from py65 under their own BSD licence,
+which the header reproduces.
+
+## What stays out of the repository
+
+The build fetches a pinned clone of upstream and the v1.0 release image into
+`build/`, which is ignored by git, and converts them there, as
+[The Bilestoad](../bilestoad/README.md) does. Upstream's own files, the
+release image, the shareware `DOOM1.WAD` (id Software's licence), ROM images
+and third-party test vectors are never committed.
 
 - `src/iigs/cal_integer.s` in upstream is a copy of the Calypsi vendor runtime.
   Its licence restricts it to that toolchain, so the port uses its own
   routines and keeps nothing derived from that file.
 - The research notes quote short passages of upstream source for analysis.
-  Those passages remain under upstream's licence.
