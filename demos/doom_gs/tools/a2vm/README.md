@@ -667,7 +667,7 @@ milestone 0 measures them.
 | A dummy read | Omitted outside `$C000-$CFFF` (the TURBO core's shortcuts, `w65c02_core.sv:903-967`); kept, as a real access, in I/O | 0 |
 | Extended memory (RamWorks banks 1-127) | The 8-byte write-allocate line (or 16 lines, fastpath), write-back; a miss is a PSRAM operation admitted once an Apple cycle inside a 40-clock window (`psram_simple.sv`), a dirty victim two | hit 5, clean miss 35 with the window open, about 131 sustained, dirty about 260 |
 | `$Cxxx` | A real bus cycle launched at the next `drive_en`, answered at `data_en`; or a private shortcut: `$C011-$C01F` reads, the slot-7 SmartPort window, internal ROM | 122-253; private 3 to 6 |
-| The video mirror | Each video write leaves a byte for the motherboard, "active" or deferred as `vtw_video_policy.sv` decides, coalesced while it waits; active bytes drain one an Apple cycle, the next `$Cxxx` access waits for them; an exposure access flushes every pending byte | 131.3 a byte |
+| The video mirror | Each video write leaves a byte for the motherboard, "active" or deferred as `vtw_video_policy.sv` decides, coalesced while it waits. Active bytes go through the coalescer (`vtw_video_coalescer.sv`, every firmware since F1.1.0; `coalescer` 1): its scanner selects the dirty pages in address order, one page a clock, takes every byte of a selected page, dirty or not, in two clocks, and queues the dirty ones for the bus (508 entries before it reports full), which takes one an Apple cycle; the next `$Cxxx` access waits until the scan is done and the queue empty. An exposure access flushes every pending byte | 131.3 a byte when a page has 4 or more dirty bytes; at least 513 a page scanned below that, so a column of the 3D view (one byte a 160-byte row, 1.6 a page) drains at about 4 Apple cycles a byte |
 | A mapping change | Clears both TURBO caches (and every ARM write to the shadow counts as one, as the card's counter does) | the misses that follow |
 | A memory API request | The hold (the mirror and the line flushed first), then the ARM's work as `memory_api_hw.c` does it: AXI register accesses per 4 bytes of fast memory, one PSRAM line an Apple cycle by DMA, in 504-byte chunks | 0.135 us an AXI access, fitted to the hardware (below) |
 
@@ -713,7 +713,7 @@ Apple M3 Pro.
 
 | Profile | Mean ms a frame | Median | Range | Frames a second | Against 248 ms measured |
 | --- | ---: | ---: | --- | ---: | ---: |
-| f121 | 248.6 | 241.2 | 236.9-275.2 | 4.02 | +0.2% |
+| f121 | 248.6 | 241.2 | 236.9-275.3 | 4.02 | +0.2% |
 | fastpath | 188.6 | 188.9 | 184.3-194.5 | 5.30 | -23.9% |
 
 **The f121 total is fitted, not predicted.** One parameter, `axi_us`, the
@@ -732,10 +732,10 @@ the capture:
 | 0.120 | 243.6 | 43.3 |
 | **0.135 (fitted)** | **248.6** | **47.0** |
 | 0.140 | 249.6 | 48.2 |
-| 0.160 | 252.5 | 53.2 |
+| 0.160 | 253.1 | 53.2 |
 | 0.200 | 263.6 | 63.1 |
 | 0.305 | 289.8 | 89.1 |
-| 0.980 | 456.8 | 256.4 |
+| 0.980 | 457.3 | 256.4 |
 
 Two routes give the same value. The frame matches 248.0 ms at 0.133 us.
 The copy phases match the hardware's at 0.137 us: its VBL-sampled 40.5 ms
@@ -762,7 +762,7 @@ section 5):
 | debug | 1.5 | 1.5 | 0.97 | 0.2 |
 | setup | 0.7 | 0.3 | 0.48 | 0.3 |
 | idle | 0.0 | 0.0 | - | 0.0 |
-| present_wait | 0.0 | 2.6 | - | 1.0 |
+| present_wait | 0.0 | 2.5 | - | 1.0 |
 | **total** | **241.1** (248.0 by host time) | **248.6** | 1.00 | **188.6** |
 
 Every phase the CPU runs comes within 11% of the hardware, except the two
@@ -775,17 +775,27 @@ after the same capture (in its profile JSON; per frame of 248 ms):
 
 | Counter a frame | Hardware (`vtw status`) | f121 | f121 / hardware | fastpath |
 | --- | ---: | ---: | ---: | ---: |
-| steps (core cycles) | 6634040 | 6431428 | 0.97 | 6426674 |
-| read_hits | 4690791 | 4531642 | 0.97 | 4538899 |
-| misses | 1384441 | 1366468 | 0.99 | 1338967 |
+| steps (core cycles) | 6634040 | 6431431 | 0.97 | 6426674 |
+| read_hits | 4690791 | 4531640 | 0.97 | 4538899 |
+| misses | 1384441 | 1366474 | 0.99 | 1338967 |
 | invalidations | 25680 | 25354 | 0.99 | 20003 |
-| video_wait (clocks) | 4396035 | 4264054 | 0.97 | 133520 |
+| video_wait (clocks) | 4396035 | 4267487 | 0.97 | 133520 |
 | bus_cycles | 5597 | 5630 | 1.01 | 324 |
-| posted | 36970 | 36451 | 0.99 | 27701 |
+| posted | 36970 | 36452 | 0.99 | 27701 |
 
 That capture ran on F1.1.4 (its timing candidate), not F1.2.1; the
 counters agreeing within 3% suggests the paths the model follows are the
 same.
+
+**The coalescer's page scan (modelled since 2026-09-30) leaves this
+calibration where it was:** 248.6 ms f121 and 188.6 ms fastpath with the
+scan and without it (`coalescer` 0), the fits at 0.133 and 0.137 us, and
+every phase within 0.1 ms; the video waits grow by 3,433 clocks a frame
+(0.08%), the sweep by at most 0.6 ms. The port writes its frame a
+whole row at a time, so its pages are full when the scanner takes them;
+the scan costs only scattered writes, such as the native replay's fuzz
+columns (`src/native/README.md`). So `axi_us` was not fitted again. The
+tables above are the run with the scan.
 
 **Fastpath against the F1.2.1 profile: +31.8% frames a second**
 (248.6 to 188.6 ms), a little above MILESTONES.md's estimate of +20% to
@@ -879,6 +889,10 @@ write the SSI-263.
   invalidation; a `$C073` write at every phase, 122 to 253 clocks; a
   RamWorks miss, a sustained miss, a dirty victim, under both profiles;
   the mirror's barrier, coalescing, deferred bytes and exposure flushes;
+  the coalescer's page scan (a 168-row column drains in 53,760-55,760
+  clocks with its writes, as the RTL's 54,745; 168 contiguous bytes in
+  168 Apple cycles; with `coalescer` 0 the column drains as 168
+  contiguous bytes do);
   the quiet switches, the reconciler, the lazy class; the memory API's
   cost per chunk, and its hold flushing the mirror;
 - with the existing port: a run with the model observing matches a run
@@ -891,8 +905,20 @@ write the SSI-263.
 
 - It assumes the renderer's capture stream always accepts a video write
   (the ARM consumer is not modelled; lazy-mirror-spec.md section 6).
-- The coalescer's page scan is taken as free: one byte drains an Apple
-  cycle ("at least 131 clocks a byte", read-bank-review.md 11).
+- The coalescer's page scan is modelled for active bytes only
+  (`coalescer` 1): deferred and lazy bytes keep the flush model, one byte
+  an Apple cycle, without the scan (a flush drains whole screens, whose
+  pages are full: assumed, not checked). The snapshot collision (a write
+  to the byte being fetched is retried, `vtw_video_coalescer.sv:76-81`)
+  and the bitmap clear after a reset (131,072 clocks) are not modelled.
+  Until 2026-09-30 the model took the scan as free, one byte an Apple
+  cycle ("at least 131 clocks a byte", read-bank-review.md 11), which
+  made the native replay's frames with fuzz 11-40% faster than the card
+  (demo-10: 34.3 ms against 48.1). With the scan, a Verilator run of the
+  RTL (`vtw_core_top` in a copy of `tb_vtw_turbo`'s harness) and the
+  model agree within 1% on micro-benchmarks and on the replay's draw
+  phase on all 13 captured frames
+  (`docs/results/fuzz-timing-2026-09-30.md`).
 - The PS's latency to take a SmartPort request is 0 plus its AXI reads
   (bounded by the v12 batching result, well under 1 ms a request); AXI
   writes cost what reads do.

@@ -20,11 +20,16 @@
 ;   * runs the replay once, batch by batch (as src/native/driver.s), and
 ;     takes the CRC-32 of aux 0 $2000-$9FFF (zlib's);
 ;   * shows the frame for WAIT_VBL vertical blanks;
-;   * runs it REPS more times (the covered ranges restored before each),
-;     counting the mouse card's VBL interrupts during the replay calls;
+;   * runs it REPS more times (the covered ranges restored and the batches
+;     loaded before each), counting the mouse card's VBL interrupts over
+;     the whole loop, then the same loop without the replay calls;
 ; and at the end shows a table on the text screen: each frame's name, its
 ; CRC and whether it equals the expected one (the truth's, from the
-; reference), and the VBLs of the REPS runs.
+; reference), then milliseconds a run at 50 Hz: the loop with the replay
+; (LOOP), the loop without it (BASE), and their difference (REPLAY, the
+; replay's time). Each is VBLs * 20 ms / REPS, rounded to 0.1 ms, so at
+; REPS = 200 (tools/native/disk.py's default) one VBL is 0.1 ms a run and
+; the figures are the VBL counts themselves.
 ;
 ; The IRQ handler follows the game's contract (docs/MEMORY_MAP.md rule 2):
 ; zero page $D8-$FF, the stack, $E000-$FFFF and the mouse card only. It
@@ -1038,6 +1043,10 @@ show_table:
         jsr     row
         ldx     #msg_title - messages
         jsr     print
+        lda     #1                      ; the units on row 1
+        jsr     row
+        ldx     #msg_units - messages
+        jsr     print
         stz     frame
 @line:  lda     frame
         cmp     catalog
@@ -1048,12 +1057,12 @@ show_table:
         adc     #2
         jsr     row
         jsr     run_entry
-        ldy     #E_NAME                 ; the name
+        ldy     #E_NAME                 ; the name: its first 7 letters
 :       lda     (entry),y
         ora     #$80
         jsr     putc
         iny
-        cpy     #E_NAME + 12
+        cpy     #E_NAME + 7
         bcc     :-
         lda     #' ' | $80
         jsr     putc
@@ -1096,17 +1105,27 @@ show_table:
         jsr     putc
         lda     #'O' | $80
 @vbl:   jsr     putc
-        lda     #' ' | $80
-        jsr     putc
-        lda     results+4,x             ; the replay's milliseconds at
-        sec                             ;   50 Hz: (T1 - T2) * 200 / REPS
-        sbc     results+6,x             ;   tenths
+        lda     results+4,x             ; LOOP: the VBLs with the replay
+        sta     tmp
+        lda     results+5,x
+        sta     tmp+1
+        jsr     ms_field
+        lda     results+6,x             ; BASE: without it
+        sta     tmp
+        lda     results+7,x
+        sta     tmp+1
+        jsr     ms_field
+        lda     results+4,x             ; REPLAY: the difference (0 if
+        sec                             ;   the base took longer)
+        sbc     results+6,x
         sta     tmp
         lda     results+5,x
         sbc     results+7,x
         sta     tmp+1
-        jsr     tenths
-        jsr     decimal
+        bcs     :+
+        stz     tmp
+        stz     tmp+1
+:       jsr     ms_field
         inc     frame
         jmp     @line
 @done:  lda     frame
@@ -1116,58 +1135,100 @@ show_table:
         ldx     #msg_key - messages
         jmp     print
 
-; tenths: tmp = tmp * 200 / REPS (tmp <= 327)
-tenths: lda     tmp                     ; * 200 = * 128 + * 64 + * 8
+; ms_field: a blank, then tmp VBLs as milliseconds a run at 50 Hz,
+; "NNN.N" (X kept)
+ms_field:
+        lda     #' ' | $80
+        jsr     putc
+        jsr     tenths
+        jmp     decimal
+
+; tenths: tmp = tmp * 200 / REPS rounded (tenths of a millisecond a run
+; at 20 ms a VBL), at most 9,999. The product has 24 bits (crc .. crc+2).
+tenths: phx
+        lda     tmp                     ; crc = tmp * 8
         sta     crc
         lda     tmp+1
         sta     crc+1
-        ldy     #3                      ; * 8
+        stz     crc+2
+        ldy     #3
 :       asl     crc
         rol     crc+1
+        rol     crc+2
         dey
         bne     :-
-        lda     crc
-        sta     crc+2
-        lda     crc+1
-        sta     crc+3
-        ldy     #3                      ; * 64
-:       asl     crc
-        rol     crc+1
-        dey
-        bne     :-
-        lda     crc
-        clc
-        adc     crc+2
-        sta     crc+2
-        lda     crc+1
-        adc     crc+3
-        sta     crc+3
-        asl     crc                     ; * 128
-        rol     crc+1
-        lda     crc
-        clc
-        adc     crc+2
+        lda     crc                     ; tmp.crc+3 = tmp * 8 (kept)
         sta     tmp
         lda     crc+1
-        adc     crc+3
         sta     tmp+1
-        lda     #0                      ; / REPS: 16 by 8 bits
-        ldy     #16
+        lda     crc+2
+        sta     crc+3
+        ldx     #2                      ; + tmp * 64, + tmp * 128
+@add:   ldy     #3                      ;   (* 8 more, then * 2 more)
+        cpx     #1
+        bne     :+
+        ldy     #1
 :       asl     tmp
         rol     tmp+1
-        rol     a
-        cmp     catalog+1
+        rol     crc+3
+        dey
+        bne     :-
+        lda     crc
+        clc
+        adc     tmp
+        sta     crc
+        lda     crc+1
+        adc     tmp+1
+        sta     crc+1
+        lda     crc+2
+        adc     crc+3
+        sta     crc+2
+        dex
+        bne     @add
+        lda     catalog+1               ; + REPS / 2: rounded
+        lsr     a
+        clc
+        adc     crc
+        sta     crc
         bcc     :+
-        sbc     catalog+1
-        inc     tmp
-:       dey
-        bne     :--
+        inc     crc+1
+        bne     :+
+        inc     crc+2
+:       lda     #0                      ; / REPS: 24 by 8 bits, the
+        ldy     #24                     ;   quotient in place
+@div:   asl     crc
+        rol     crc+1
+        rol     crc+2
+        rol     a
+        bcs     @sub                    ; (9 bits: over REPS)
+        cmp     catalog+1
+        bcc     @next
+@sub:   sbc     catalog+1
+        inc     crc
+@next:  dey
+        bne     @div
+        lda     crc
+        sta     tmp
+        lda     crc+1
+        sta     tmp+1
+        lda     crc+2                   ; at most 9,999
+        bne     @max
+        lda     tmp
+        cmp     #<10000
+        lda     tmp+1
+        sbc     #>10000
+        bcc     @done
+@max:   lda     #<9999
+        sta     tmp
+        lda     #>9999
+        sta     tmp+1
+@done:  plx
         rts
 
-; decimal: tmp (tenths, < 10,000.0) as "NNNN.N", leading blanks
+; decimal: tmp (tenths, < 1,000.0) as "NNN.N", leading blanks
 decimal:
         phx
-        ldx     #0
+        ldx     #1                      ; (from the thousands' digit)
         stz     crc                     ; a digit printed yet
 @digit: ldy     #0
 @sub:   lda     tmp
@@ -1277,9 +1338,11 @@ text_hi:
 
 messages:
 msg_title:
-        .byte   "FRAME        CRC-32   OK  MS AT 50 HZ", 0
+        .byte   "FRAME   CRC-32   OK  LOOP  BASE REPLAY", 0
+msg_units:
+        .byte   "MS A RUN AT 50 HZ (NTSC: MS X 0.834)", 0
 msg_key:
-        .byte   "NTSC: MS X 0.834. A KEY: AGAIN", 0
+        .byte   "REPLAY = LOOP - BASE. A KEY: AGAIN", 0
 msg_nomouse:
         .byte   "NO MOUSE CARD IN SLOT 2: NO VBL CLOCK", 0
 msg_crash:
@@ -1295,7 +1358,8 @@ L_AUX_COPY      = 6
 .segment "RUNBSS"
 catalog:        .res    $400            ; (the boot copies 1 KB)
         .assert CAT_FIRST + MAX_FRAMES * CAT_ENTRY <= $400, error, "catalog"
-results:        .res    8 * MAX_FRAMES  ; CRC (4), VBLs (2), 2 unused
+results:        .res    8 * MAX_FRAMES  ; CRC (4), the VBLs of the loop
+                                        ;   with the replay (2), without (2)
 bounce:         .res    256
 crc_t0:         .res    256
 crc_t1:         .res    256

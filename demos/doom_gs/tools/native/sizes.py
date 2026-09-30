@@ -19,7 +19,7 @@ AREAS = {
     'RZP': ('zero page $48-$6F (replay)', 0x48, 0x28),
     'RSCR': ('main $17C2-$17FF scratch', 0x17C2, 0x3E),
     'MAINTAB': ('main $0800-$0BFF tables', 0x0800, 0x400),
-    'AUXCODE': ('aux 0 $0200-$03FF drawers', 0x0200, 0x200),
+    'AUXCODE': ('aux 0 $0200-$02BF drawers', 0x0200, 0xC0),
     'AUXTAB': ('aux 0 $0800-$0BFF tables', 0x0800, 0x400),
     'TEXBLK': ('card bank 2 $D000-$DBFF texture rows', 0xD000, 0xC00),
     'FILLE': ('card bank 2 $DC00-$DCFF even fills', 0xDC00, 0x100),

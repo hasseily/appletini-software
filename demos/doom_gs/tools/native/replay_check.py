@@ -242,14 +242,15 @@ def check_frame(directory: Path, out: Path, build: loader.Build,
                         result['fastpath_ended'] == 'halt')
     except (loader.LoadError, RuntimeError) as error:
         result['error'] = str(error)
-    if not keep:        # (8.4 MB each)
-        for path in list(work.rglob('*.ram')) + list(work.glob('*.img')):
+    if not keep:        # (8.4 MB each; the write logs up to 2 MB)
+        for path in (list(work.rglob('*.ram')) + list(work.glob('*.img')) +
+                     list(work.rglob('writes.log'))):
             path.unlink()
     return result
 
 
 def breakdown(directory: Path, out: Path, prof: loader.Build,
-              units: Optional[Dict] = None) -> Dict:
+              units: Optional[Dict] = None, keep: bool = False) -> Dict:
     """walk, copy, draw milliseconds of the profiling build, both
     profiles."""
     capture = loader.read_capture(directory, units)
@@ -270,6 +271,9 @@ def breakdown(directory: Path, out: Path, prof: loader.Build,
                           ((1, 'walk'), (2, 'copy'), (4, 'switch'),
                            (3, 'draw'))}
         parts[profile]['switch_writes'] = copy_switch_writes(package)
+    if not keep:
+        for path in [image] + list(work.rglob('*.ram')):
+            path.unlink()
     return parts
 
 
@@ -353,7 +357,8 @@ def main(argv=None) -> int:
         prof = loader.read_build(name='prof')
         with ThreadPoolExecutor(jobs) as pool:
             parts = list(pool.map(
-                lambda d: breakdown(d, args.out, prof, units), dirs))
+                lambda d: breakdown(d, args.out, prof, units, args.keep),
+                dirs))
         for r, part in zip(results, parts):
             r['breakdown'] = part
     if not args.quiet:

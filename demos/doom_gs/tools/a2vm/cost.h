@@ -19,7 +19,10 @@
  *     the slot-7 SmartPort window, internal ROM);
  *   - a video write (main text and HGR pages, aux $0400-$0BFF and
  *     $2000-$9FFF): 6 clocks, and a byte for the mirror, which drains to
- *     the motherboard at one byte an Apple cycle; the next $Cxxx access
+ *     the motherboard at one byte an Apple cycle; with `coalescer` (every
+ *     firmware since F1.1.0) an active byte goes through the coalescer's
+ *     page scan, 2 clocks for every byte of a dirty page, so a page with
+ *     few dirty bytes takes about 4 Apple cycles; the next $Cxxx access
  *     waits while "active" bytes are pending, and an "exposure" access
  *     waits until every pending byte is out;
  *   - a change of the memory mapping: both TURBO caches are cleared;
@@ -92,6 +95,14 @@ typedef struct {
     /* the video mirror */
     unsigned flush_steer_cycles;
     int lazy_shr;                   /* fastpath */
+    int coalescer;                  /* F1.1.0 on: active bytes go through the
+                                       page-scanning coalescer
+                                       (vtw_video_coalescer.sv), not a
+                                       write-ordered queue */
+    unsigned scan_byte;             /* clocks a byte of a selected page
+                                       (FETCH_BYTE, CHECK_BYTE) */
+    unsigned post_depth;            /* the engine's posted queue, as its
+                                       post_full sees it */
     /* the memory API */
     double axi_us, axi_write_us, ps_dispatch_us;
     unsigned amem_chunk, amem_request_axi, amem_begin_axi,
@@ -122,6 +133,7 @@ typedef struct {
     uint64_t rw_accesses, rw_hits, rw_misses, rw_dirty, rw_wait;
     uint64_t barrier_wait, flush_wait, flushes, lazy_flushes, lazy_wait;
     uint64_t reconcile_cycles;
+    uint64_t scan_pages;            /* coalescer: pages selected */
     uint64_t amem_requests, amem_bytes, amem_clocks;
     uint64_t fast_clocks, rw_clocks, io_clocks, video_clocks;
     /* the slot-4 slowdown, reported only when it is on */
@@ -164,6 +176,18 @@ typedef struct a2vm_cost {
     uint32_t *deferred_list;
     uint32_t deferred_count, lazy_count, deferred_aux, lazy_aux;
     uint32_t list_used;
+
+    /* the coalescer (coalescer = 1): the active dirty bytes and pages,
+       the scanner's state and clock, the engine's posted queue (the drive
+       time of each queued byte) */
+    uint8_t *cz_dirty;
+    uint8_t cz_page[512];
+    uint32_t cz_pages;
+    int cz_state;
+    unsigned cz_next, cz_cur, cz_byte;
+    uint64_t cz_t;
+    uint64_t *cz_fifo;
+    uint32_t cz_head, cz_count;
 
     /* the switches the motherboard has seen (quiet switches) */
     uint8_t phys_bank, phys_ramrd, phys_altzp, phys_lc_read,

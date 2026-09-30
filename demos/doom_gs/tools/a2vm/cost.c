@@ -37,6 +37,7 @@ static const param_spec specs[] = {
     P_U(rom_read), P_U(quiet_switch), P_I(quiet_switches), P_I(read_bank),
     P_I(zp_pair),
     P_U(flush_steer_cycles), P_I(lazy_shr),
+    P_I(coalescer), P_U(scan_byte), P_U(post_depth),
     P_D(axi_us), P_D(axi_write_us), P_D(ps_dispatch_us), P_U(amem_chunk),
     P_U(amem_request_axi), P_U(amem_begin_axi), P_U(amem_poll_axi),
     P_U(amem_end_axi), P_U(amem_dma_axi), P_U(amem_dma_poll_axi),
@@ -111,6 +112,8 @@ int a2vm_cost_load(a2vm_cost_params *p, const char *path, char *error,
         }
     if (!p->fabric_mhz || !p->line_us || !p->lines || !p->rw_lines ||
         p->rw_lines > COST_RW_LINES_MAX || !p->amem_chunk ||
+        (p->coalescer && (!p->scan_byte || !p->post_depth ||
+                          p->post_depth > 4096)) ||
         (p->zp_pair && p->read_bank)) {
         snprintf(error, error_size, "%s: a parameter is out of range", path);
         return 0;
@@ -130,7 +133,10 @@ a2vm_cost *a2vm_cost_new(const a2vm_cost_params *p)
     c->drain_at = calloc(MIRROR_BYTES, sizeof *c->drain_at);
     c->deferred = calloc(MIRROR_BYTES, 1);
     c->deferred_list = calloc(MIRROR_BYTES, sizeof *c->deferred_list);
-    if (!c->drain_at || !c->deferred || !c->deferred_list) {
+    c->cz_dirty = calloc(MIRROR_BYTES, 1);
+    c->cz_fifo = calloc(4096, sizeof *c->cz_fifo);
+    if (!c->drain_at || !c->deferred || !c->deferred_list || !c->cz_dirty ||
+        !c->cz_fifo) {
         a2vm_cost_free(c);
         return NULL;
     }
@@ -150,6 +156,8 @@ void a2vm_cost_free(a2vm_cost *c)
     free(c->drain_at);
     free(c->deferred);
     free(c->deferred_list);
+    free(c->cz_dirty);
+    free(c->cz_fifo);
     free(c);
 }
 
@@ -219,12 +227,156 @@ static int mirror_active(const a2vm *m, unsigned a17)
            (hires_page && !aux && !m->sw[SW_TEXT] && m->sw[SW_HIRES]);
 }
 
-static int mirror_pending(const a2vm_cost *c)
+/* ---- the coalescer (vtw_video_coalescer.sv, every firmware since F1.1.0;
+   lines of appletini-one be2ea4f) ----
+
+   An accepted active write sets its byte's dirty bit and its page's bit
+   (:85-90, :106-110): the core never waits for it (write_ready is high
+   outside the bitmap clear, :50). The scanner walks the 512 pages in
+   order, one a clock in SELECT_PAGE (:119-128), clears the page's bit when
+   it selects it (:100-105), then takes every byte of the page, dirty or
+   not, in FETCH_BYTE and CHECK_BYTE (:129-139); a dirty byte then waits in
+   SEND_BYTE until the engine's posted queue has room (:140-149,
+   mirror_ready = !eng_post_full, vtw_core_top.sv:1446). The queue gives
+   the bus one byte an Apple cycle (vtw_bus_engine.sv). The mirror is
+   drained when every page is clean with the scanner between pages
+   (active_drained, :56-57) and the queue idle (vtw_core_top.sv:1466-1471);
+   until then a $Cxxx access waits (video_barrier, vtw_core_top.sv:1414-1415,
+   :1907). A write during the scan of its own page is taken in this pass
+   if the scan has not reached it, and the page is scanned again anyway.
+   Not modelled: the snapshot collision of :76-81 (a write to the byte
+   being fetched, retried), and the bitmap clear after a reset. */
+
+enum { CZ_SELECT, CZ_PAGE };
+
+/* The dirty byte at `a17` enters SEND_BYTE at `t`: when it is accepted.
+   Its bus cycle is the engine's next free one after it is queued (the
+   stage register, then the queue: two clocks). */
+static uint64_t cz_send(a2vm_cost *c, uint64_t t, unsigned a17)
 {
-    return c->active_end > c->t || c->deferred_count > 0;
+    while (c->cz_count && c->cz_fifo[c->cz_head] <= t) {
+        c->cz_head = (c->cz_head + 1) & 4095;
+        c->cz_count--;
+    }
+    while (c->cz_count >= c->p.post_depth) {
+        uint64_t popped = c->cz_fifo[c->cz_head];
+        if (popped + 1 > t)
+            t = popped + 1;
+        c->cz_head = (c->cz_head + 1) & 4095;
+        c->cz_count--;
+    }
+    int64_t k = drive_cycle(c, t + 2, c->bus_next);
+    uint64_t done = cycle_start(c, k) + data_tap(c);
+    c->bus_next = k + 1;
+    c->cz_fifo[(c->cz_head + c->cz_count) & 4095] =
+        cycle_start(c, k) + c->p.bus_drive_tap;
+    c->cz_count++;
+    if (done > c->active_end)
+        c->active_end = done;
+    if ((a17 & 0x10000) && done > c->aux_drain_end)
+        c->aux_drain_end = done;
+    c->c.posted++;
+    return t;
 }
 
-static int any_pending(const a2vm_cost *c)
+/* The scanner up to `until`; with `idle_stop`, it stops (without moving
+   its clock) once nothing is dirty and it is between pages. */
+static void cz_advance(a2vm_cost *c, uint64_t until, int idle_stop)
+{
+    while (c->cz_t < until) {
+        if (c->cz_state == CZ_SELECT) {
+            if (!c->cz_pages) {
+                if (idle_stop)
+                    return;
+                c->cz_next = (unsigned)((c->cz_next + (until - c->cz_t)) & 511);
+                c->cz_t = until;
+                return;
+            }
+            unsigned d = 0;
+            while (!c->cz_page[(c->cz_next + d) & 511])
+                d++;
+            if (c->cz_t + d >= until) {
+                c->cz_next = (unsigned)((c->cz_next + (until - c->cz_t)) & 511);
+                c->cz_t = until;
+                return;
+            }
+            unsigned p = (c->cz_next + d) & 511;
+            c->cz_t += d + 1;
+            c->cz_next = (p + 1) & 511;
+            c->cz_page[p] = 0;
+            c->cz_pages--;
+            c->cz_cur = p;
+            c->cz_byte = 0;
+            c->cz_state = CZ_PAGE;
+            c->c.scan_pages++;
+            continue;
+        }
+        unsigned base = c->cz_cur << 8, b = c->cz_byte;
+        while (b < 256 && !c->cz_dirty[base + b])
+            b++;
+        uint64_t reach = c->cz_t + (uint64_t)c->p.scan_byte *
+                                   (b - c->cz_byte + (b < 256));
+        if (reach > until) {
+            uint64_t n = (until - c->cz_t) / c->p.scan_byte;
+            if (!n)
+                return;
+            c->cz_byte += (unsigned)n;
+            c->cz_t += n * c->p.scan_byte;
+            return;
+        }
+        if (b == 256) {
+            c->cz_t = reach;
+            c->cz_state = CZ_SELECT;
+            continue;
+        }
+        c->cz_dirty[base + b] = 0;
+        c->cz_t = cz_send(c, reach, base + b) + 1;
+        c->cz_byte = b + 1;
+        if (b == 255)
+            c->cz_state = CZ_SELECT;
+    }
+}
+
+static void cz_push(a2vm_cost *c, unsigned a17)
+{
+    cz_advance(c, c->t, 0);
+    c->cz_dirty[a17] = 1;
+    if (!c->cz_page[a17 >> 8]) {
+        c->cz_page[a17 >> 8] = 1;
+        c->cz_pages++;
+    }
+}
+
+/* When the active mirror is drained, from now with no new write: the
+   scanner runs to its end (the core is waiting, so nothing is pushed in
+   the meantime), then the queue's last bus cycle. */
+static uint64_t active_end_now(a2vm_cost *c)
+{
+    if (!c->p.coalescer)
+        return c->active_end;
+    cz_advance(c, c->t, 0);
+    if (!c->cz_pages && c->cz_state == CZ_SELECT)
+        return c->active_end;
+    while (c->cz_pages || c->cz_state == CZ_PAGE)
+        cz_advance(c, c->cz_t + 1000000, 1);
+    uint64_t end = c->cz_t + 1;
+    return end > c->active_end ? end : c->active_end;
+}
+
+static int active_pending(a2vm_cost *c)
+{
+    if (!c->p.coalescer)
+        return c->active_end > c->t;
+    cz_advance(c, c->t, 0);
+    return c->cz_pages || c->cz_state == CZ_PAGE || c->active_end > c->t;
+}
+
+static int mirror_pending(a2vm_cost *c)
+{
+    return active_pending(c) || c->deferred_count > 0;
+}
+
+static int any_pending(a2vm_cost *c)
 {
     return mirror_pending(c) || c->lazy_count > 0;
 }
@@ -265,6 +417,10 @@ static void post(a2vm_cost *c, const a2vm *m, unsigned a17)
         return;
     }
     if (mirror_active(m, a17)) {
+        if (c->p.coalescer) {
+            cz_push(c, a17);
+            return;
+        }
         if (c->drain_at[a17] > c->t)
             return;                 /* coalesced: still waiting */
         drain_byte(c, a17);
@@ -500,6 +656,8 @@ static void ramworks(a2vm_cost *c, unsigned bank, uint32_t offset, int write)
     uint32_t line = (uint32_t)bank << 13 | offset >> 3;
     unsigned n = c->p.rw_lines, victim = 0;
     uint64_t start = c->t;
+    if (c->p.coalescer)
+        cz_advance(c, c->t, 0);     /* the drain's bus cycles until now */
     c->c.rw_accesses++;
     c->c.misses++;                  /* never a TURBO cache hit */
     c->rw_use++;
@@ -676,12 +834,13 @@ static void io_access(a2vm_cost *c, a2vm *m, uint16_t a, int write,
     int bypass = is_quiet || read_bank;
 
     /* the active-pending barrier holds X_CAPTURE (:1414-1415, :1907) */
-    if (!bypass && c->active_end > c->t) {
-        uint64_t w = c->active_end - c->t;
+    uint64_t end = bypass ? 0 : active_end_now(c);
+    if (end > c->t) {
+        uint64_t w = end - c->t;
         c->c.barrier_wait += w;
         c->c.video_wait += w;
         c->c.video_clocks += w;
-        c->t = c->active_end;
+        c->t = end;
     }
     if (!is_quiet && !status && !rom && !read_bank)
         reconcile(c, m, 0);
@@ -1088,8 +1247,9 @@ void a2vm_cost_amem(a2vm *m, const uint8_t *request, size_t length)
        before the core is held (:1408-1413, :1604-1611, :1723-1843) */
     c->t += axi(c, c->p.amem_begin_axi, 1);
     uint64_t hold = c->t;
-    if (c->active_end > c->t)
-        c->t = c->active_end;
+    uint64_t end = active_end_now(c);
+    if (end > c->t)
+        c->t = end;
     flush(c, !(c->p.keep_lazy && !lazy_target), 0);
     ramworks_flush(c);
     uint64_t poll = axi(c, c->p.amem_poll_axi, 0);
@@ -1135,6 +1295,7 @@ static void write_counters(FILE *out, const a2vm_cost_counters *now,
     FIELD(rw_accesses); FIELD(rw_hits); FIELD(rw_misses); FIELD(rw_dirty);
     FIELD(rw_wait); FIELD(barrier_wait); FIELD(flush_wait); FIELD(flushes);
     FIELD(lazy_flushes); FIELD(lazy_wait); FIELD(reconcile_cycles);
+    FIELD(scan_pages);
     FIELD(amem_requests); FIELD(amem_bytes); FIELD(amem_clocks);
     FIELD(fast_clocks); FIELD(rw_clocks); FIELD(io_clocks);
     FIELD(video_clocks);

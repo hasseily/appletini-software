@@ -25,22 +25,29 @@ PRODOS of appletini-one's ProDOS_2_4_3.po), holding:
 On the card (8 MB RamWorks, the Appletini's mouse card in slot 2, its
 memory API in slot 7: F1.1.4 or later), boot
 the disk: it loads, then shows each frame for --wait VBLs after one run
-of the replay, runs it --reps more times, and ends on a table: each
-frame's CRC-32 of aux 0 $2000-$9FFF, OK when it equals the reference's
-(tools/ref816 on the IIgs release), and the VBLs of the --reps runs
-(PAL: 20 ms each, NTSC 16.7 ms). A key runs them all again.
+of the replay, runs it --reps more times (default 200), then the same
+loop without the replay, and ends on a table: each frame's CRC-32 of aux
+0 $2000-$9FFF, OK when it equals the reference's (tools/ref816 on the
+IIgs release), and milliseconds a run at 50 Hz: the loop with the replay,
+the loop without it, and their difference, the replay's time (VBLs * 20
+ms / --reps, rounded to 0.1 ms: at 200 runs one VBL is 0.1 ms a run; at
+NTSC multiply by 0.834). A key runs them all again.
 
 --check runs the disk's own REPLAY.SYSTEM on a2vm, its MLI trap serving
 the files and its memory API (--amem) the PRIVATE copies, under the cost
 model (--profile, default f121) on the model's clock, to the table; it
-prints each frame's CRC, whether it equals the expected one, and the VBL
-count against the harness's time. Every interrupt is held to the game's
+prints each frame's CRC, whether it equals the expected one, and both
+loops' VBL counts and times, to compare with the harness's time (tools/
+native/replay_check.py). Every interrupt is held to the game's
 contract (docs/MEMORY_MAP.md rule 2: zero page $D8-$FF, the stack,
 $E000-$FFFF, the mouse card; a2vm --irq-bounds). The first frame's
 restore is checked with snapshots before and after it: no CPU store to a
 write-expensive page but aux 0's screen (rule 3: a2vm's video writes less
 its SHR writes), main $0878-$087F unchanged (rule 8), and the PRIVATE
-copies made.
+copies made. It exits 1 unless every CRC is OK, the restore passes,
+the runner's table shows the times, and the loop with the replay took
+more VBLs than the loop without it (a base loop that still calls the
+replay would read as a replay of about 0 ms; check_failures).
 """
 
 import argparse
@@ -60,6 +67,7 @@ sys.path.insert(0, str(TOOLS))
 
 from a2vm import costs  # noqa: E402
 from native import a2run, loader, layout as L  # noqa: E402
+from ref816 import bounded  # noqa: E402
 
 DOOM_TOOLS = ROOT.parent / 'doom' / 'tools'
 OUT = ROOT / 'build' / 'native' / 'REPLAY.hdv'
@@ -71,6 +79,14 @@ AUX_COPY = 6                    # bank base + 6: aux 0
 CAT_FIRST, CAT_ENTRY, MAX_FRAMES = 4, 48, 20
 MAIN_SPAN = (0x0200, 0x6000)
 AUX_SPANS = ((0x0200, 0x0400), (0x0800, 0x0C00), (0x2000, 0xA000))
+REPS = 200                      # timed runs a frame: 0.1 ms a VBL a run
+WAIT = 150                      # VBLs each frame is shown
+# The bounds of the a2vm check: card seconds (the machine's clock, 133.33
+# million fabric clocks a second) for a frame's load, its showing and each
+# timed run (the heaviest synthetic stream takes 0.12 s a run, the loop
+# without the replay about 0.003), and host seconds for the whole run.
+RUN_S, FRAME_S, FABRIC_HZ = 0.25, 5.0, 133_333_333
+CHECK_TIMEOUT = 3600
 
 
 def disk_writer():
@@ -227,6 +243,8 @@ def build_disk(files, output: Path) -> None:
 def check(frames: List[Frame], files, obj: Path, work: Path,
           profile: str) -> List[Dict]:
     work = work.resolve()
+    listing = next(data for name, _, _, data in files if name == 'CATALOG')
+    reps, wait = listing[1], listing[2]
     work.mkdir(parents=True, exist_ok=True)
     labels = loader.read_labels(obj / 'card.lbl')
     (work / 'events.txt').write_text(
@@ -257,12 +275,13 @@ def check(frames: List[Frame], files, obj: Path, work: Path,
             '--irq-bounds', '00D8-01FF,C0A0-C0AF,E000-FFFF',
             '--stop-pc', '%X' % labels['run_key'],
             '--stop-pc', '%X' % labels['run_crash'],
-            '--cycles', str(20_000_000_000),
+            '--cycles', str(check_cycles(len(frames), reps, wait)),
             '--snapshot-dir', str(work), '--final-snapshot',
             '--input', str(work / 'events.txt'),
             '--state', str(work / 'state.json')]
-    result = subprocess.run(args, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, universal_newlines=True)
+    result = bounded.run(args, timeout=CHECK_TIMEOUT, max_bytes=1 << 30,
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         universal_newlines=True)
     state = json.loads((work / 'state.json').read_text())
     if state['end'] != 'stop-pc' or state['pc'] != labels['run_key']:
         raise RuntimeError('the card run ended with %s at $%04X: %s' % (
@@ -281,10 +300,61 @@ def check(frames: List[Frame], files, obj: Path, work: Path,
                     'ok': crc == f.crc and restore['ok'],
                     'restore': restore,
                     'vbls': with_replay - without,
-                    'vbls_loop': with_replay, 'vbls_without': without})
-    (work / 'screen.txt').write_text('\n'.join(text_screen(ram)) + '\n')
+                    'vbls_loop': with_replay, 'vbls_without': without,
+                    'ms_loop': run_ms(with_replay, reps),
+                    'ms_without': run_ms(without, reps),
+                    'ms': run_ms(max(0, with_replay - without), reps),
+                    'timed_ok': with_replay > without})
+    screen = text_screen(ram)
+    (work / 'screen.txt').write_text('\n'.join(screen) + '\n')
     (work / 'final.ram').unlink()
+    # the runner's own arithmetic: row 2 + k of its table shows frame k's
+    # LOOP, BASE and REPLAY, which must be run_ms of its VBL counts
+    for k, r in enumerate(out):
+        fields = screen[2 + k].split() if 2 + k < len(screen) else []
+        try:
+            r['shown'] = [float(x) for x in fields[-3:]]
+        except ValueError:
+            r['shown'] = []
+        r['shown_ok'] = r['shown'] == [r['ms_loop'], r['ms_without'],
+                                       r['ms']]
     return out
+
+
+def check_failures(results: List[Dict]) -> List[str]:
+    """What makes --check fail, one line a problem (empty: it passes): a
+    CRC or the restore wrong, the runner's table not showing its VBL
+    counts' times, or a loop with the replay no slower than the loop
+    without it."""
+    out = []
+    for r in results:
+        if not r['ok']:
+            out.append('%s: CRC %s, expected %s, restore %s' % (
+                r['name'], r['crc'], r['expected'],
+                'OK' if r['restore']['ok'] else 'WRONG'))
+        if not r['shown_ok']:
+            out.append('%s: the runner\'s table shows %s, not %s' % (
+                r['name'], r['shown'],
+                [r['ms_loop'], r['ms_without'], r['ms']]))
+        if r['vbls_without'] >= r['vbls_loop']:
+            out.append('%s: the loop without the replay took %d VBLs, the '
+                       'loop with it %d: the base loop calls the replay, '
+                       'or the replay does nothing' % (
+                           r['name'], r['vbls_without'], r['vbls_loop']))
+    return out
+
+
+def check_cycles(frames: int, reps: int, wait: int) -> int:
+    """The a2vm check's cycle bound (--cost-timed: fabric clocks)."""
+    seconds = frames * (FRAME_S + wait * 0.02 + 2 * reps * RUN_S)
+    return int(seconds * FABRIC_HZ)
+
+
+def run_ms(vbls: int, reps: int) -> float:
+    """Milliseconds a run at 50 Hz, as the runner shows them: VBLs * 20
+    / REPS rounded to 0.1 (src/native/runner.s tenths), at most 999.9."""
+    tenths = (vbls * 200 + reps // 2) // reps
+    return min(tenths, 9999) / 10.0
 
 
 def restore_check(work: Path) -> Dict:
@@ -327,11 +397,13 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('dirs', nargs='*')
     parser.add_argument('--out', type=Path, default=OUT)
-    parser.add_argument('--reps', type=int, default=32)
-    parser.add_argument('--wait', type=int, default=150)
+    parser.add_argument('--reps', type=int, default=REPS)
+    parser.add_argument('--wait', type=int, default=WAIT)
     parser.add_argument('--check', action='store_true')
     parser.add_argument('--profile', default='f121')
     args = parser.parse_args(argv)
+    if not 1 <= args.reps <= 255:
+        parser.error('--reps is 1-255 (one byte of the catalog)')
     dirs = [Path(d) for d in args.dirs] or sorted(
         p for p in (ROOT / 'build' / 'captures').iterdir()
         if (p / 'manifest.json').exists())
@@ -351,12 +423,16 @@ def main(argv=None) -> int:
         results = check(frames, files, obj, args.out.parent / 'disk-check',
                         args.profile)
         for r in results:
-            print('  a2vm %-12s CRC %s %s  %d - %d VBLs for %d runs: '
-                  '%.2f ms a run at 20 ms a VBL' % (
+            print('  a2vm %-12s CRC %s %s  %d runs: loop %d VBLs %.1f ms, '
+                  'base %d VBLs %.1f ms, replay %.1f ms a run' % (
                       r['name'], r['crc'], 'OK' if r['ok'] else
-                      'DIFFERS from %s' % r['expected'], r['vbls_loop'],
-                      r['vbls_without'], args.reps,
-                      20.0 * r['vbls'] / max(1, args.reps)))
+                      'DIFFERS from %s' % r['expected'], args.reps,
+                      r['vbls_loop'], r['ms_loop'], r['vbls_without'],
+                      r['ms_without'], r['ms']))
+        wrong = [r['name'] for r in results if not r['shown_ok']]
+        print('  the runner\'s table %s' % (
+            'shows these times' if not wrong else
+            'DIFFERS from them for ' + ', '.join(wrong)))
         print('  the first restore: %d video writes outside the screen, '
               '$0878-$087F %s, %d memory-API request%s' % (
                   results[0]['restore']['other_video_writes'],
@@ -370,7 +446,10 @@ def main(argv=None) -> int:
                      'screen.txt').read_text().splitlines():
             if text:
                 print('    | ' + text)
-        if not all(r['ok'] for r in results):
+        failures = check_failures(results)
+        for line in failures:
+            print('  FAILED ' + line)
+        if failures:
             return 1
     return 0
 

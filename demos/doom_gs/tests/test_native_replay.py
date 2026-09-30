@@ -107,6 +107,8 @@ class Layout(unittest.TestCase):
         for name, offset in L.FIELDS.items():
             self.assertEqual(lay.fields[name], offset, name)
         self.assertEqual(lay.columns, L.COLUMNS)
+        # the port's own kind is none of upstream's
+        self.assertNotIn(L.K_FUZZNOW, lay.kinds)
         u = units['r_list65.s']
         self.assertEqual(u['CONST_VIEWHEIGHT'], L.VIEW_ROWS)
         self.assertEqual(u['PAGE_ROOM'], L.PAGE_ROOM)
@@ -134,6 +136,24 @@ class Layout(unittest.TestCase):
         self.assertEqual(L.tex_entry(1), 0xD000 + L.EVEN_BYTES)
         self.assertEqual(L.tex_entry(L.VIEW_ROWS), L.TEXLAND)
         self.assertLessEqual(L.TEXLAND, L.FILLE)
+
+    def test_the_fuzz_queue(self):
+        """Four arrays of FQMAX in aux 0 after the drawers, before the
+        write-expensive $0400 (docs/MEMORY_MAP.md section 5), a byte index
+        each; the port's kind has K_FUZZ's size and fits the draw pass's
+        table (an even kind below K_OVL)."""
+        arrays = (L.FQCOL, L.FQROW, L.FQCNT, L.FQPOS)
+        self.assertEqual(arrays[0], L.FUZZQ)
+        for first, second in zip(arrays, arrays[1:]):
+            self.assertEqual(second - first, L.FQMAX)
+        self.assertEqual(arrays[-1] + L.FQMAX, L.FUZZQ_END)
+        self.assertLessEqual(L.AUXCODE_END, L.FUZZQ)
+        self.assertLessEqual(L.FUZZQ_END, 0x0400)
+        self.assertLess(L.FQMAX, 256)
+        self.assertIn((L.FUZZQ, L.FUZZQ_END), L.ALLOWED_AUX0)
+        self.assertEqual(L.SIZES[L.K_FUZZNOW], L.SIZES[L.K_FUZZ])
+        self.assertNotIn(L.K_FUZZNOW, L.KIND_NAMES)
+        self.assertTrue(L.K_FUZZNOW % 2 == 0 and L.K_FUZZNOW < L.K_OVL)
 
     def test_the_include_names_every_constant(self):
         text = L.include_text()
@@ -232,14 +252,22 @@ class StrayWrites(unittest.TestCase):
         after = bytearray(before)
         after[a2run.aux_offset(0, L.SCREEN + 5)] = 1      # allowed
         after[L.STAGE + 100] = 2                           # allowed
+        after[a2run.aux_offset(0, L.FUZZQ)] = 7            # the fuzz queue
+        after[a2run.aux_offset(0, L.FUZZQ_END - 1)] = 7
         self.assertEqual(a2run.stray_writes(bytes(before), bytes(after))[0],
                          0)
         after[a2run.aux_offset(0, L.VIEW_END)] = 3   # aux 0 past the view
         after[0x1000] = 4                      # main spans
         after[a2run.LC + 0x1000] = 5           # the card at $D000
         after[a2run.aux_offset(7, 0x4000)] = 6
+        after[a2run.aux_offset(0, L.FUZZQ - 1)] = 8     # the drawers
+        after[a2run.aux_offset(0, L.FUZZQ_END)] = 8     # past the queue
+        after[L.FUZZQ] = 8                     # main at the queue's address
         count, shown = a2run.stray_writes(bytes(before), bytes(after))
-        self.assertEqual(count, 4)
+        self.assertEqual(count, 7)
+        self.assertIn('aux 0 $02BF: $00 -> $08', shown)
+        self.assertIn('aux 0 $0400: $00 -> $08', shown)
+        self.assertIn('main $02C0: $00 -> $08', shown)
         self.assertIn('aux 0 $8900: $00 -> $03', shown)
         self.assertIn('main $1000: $00 -> $04', shown)
         self.assertIn('card $D000: $00 -> $05', shown)
@@ -286,6 +314,61 @@ class StrayWrites(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # the loader
 # ---------------------------------------------------------------------------
+
+class FuzzMark(unittest.TestCase):
+    """loader.mark_fuzz: a shadow of rows a .. e - 1 is drawn in place
+    (K_FUZZNOW) when a later record of its column paints a row from a - 1
+    to e."""
+
+    @staticmethod
+    def rec(kind, *fields):
+        size = L.SIZES[kind]
+        data = bytes((kind,) + fields) + bytes(size - 1 - len(fields))
+        return loader.Rec(0, 0, kind, data, 0, 0)
+
+    def marked(self, column):
+        out = loader.mark_fuzz([column])[0]
+        self.assertEqual([r.kind for r in out], [r.kind for r in column])
+        return [r.data[0] == L.K_FUZZNOW for r in out]
+
+    def test_the_rows_around_a_shadow(self):
+        shadow = self.rec(L.K_FUZZ, 50, 10, 3)          # rows 50-59
+        cases = [   # (the later record, marked)
+            (self.rec(L.K_TEX, 40, 49), False),          # to row 48
+            (self.rec(L.K_TEX, 40, 50), True),           # row 49: read
+            (self.rec(L.K_FILL, 60, 70), True),          # row 60: read
+            (self.rec(L.K_FILL, 61, 70), False),
+            (self.rec(L.K_TEXC, 55, 56), True),          # inside
+            (self.rec(L.K_TEX, 0, 168), True),           # over it
+            (self.rec(L.K_OVL, 49, 0x0F, 0x10), True),
+            (self.rec(L.K_OVL, 48, 0x0F, 0x10), False),
+            (self.rec(L.K_OVL, 60, 0x0F, 0x10), True),
+            (self.rec(L.K_OVL, 61, 0x0F, 0x10), False),
+            (self.rec(L.K_FUZZ, 40, 10, 0), True),       # rows 40-49
+            (self.rec(L.K_FUZZ, 40, 9, 0), False),       # to 48: it reads
+                                                         #   49, unwritten
+            (self.rec(L.K_FUZZ, 60, 5, 0), True),
+            (self.rec(L.K_FUZZ, 61, 5, 0), False),
+        ]
+        for later, marked in cases:
+            got = self.marked([shadow, later])
+            self.assertEqual(got[0], marked, later.data.hex())
+            self.assertFalse(got[1])            # nothing after it
+            # a record before the shadow never marks it
+            self.assertEqual(self.marked([later, shadow])[1], False)
+
+    def test_only_its_column_and_the_last_record_count(self):
+        a = self.rec(L.K_FUZZ, 10, 5, 0)                # rows 10-14
+        b = self.rec(L.K_FUZZ, 30, 5, 0)
+        near = self.rec(L.K_FILL, 15, 20)
+        self.assertEqual(self.marked([a, b, near]), [True, False, False])
+        self.assertEqual(self.marked([a, near, b]), [True, False, False])
+        cols = loader.mark_fuzz([[a], [near]])
+        self.assertEqual(cols[0][0].data[0], L.K_FUZZ)  # another column
+        # the other fields stay
+        self.assertEqual(loader.mark_fuzz([[a, near]])[0][0].data[1:],
+                         a.data[1:])
+
 
 @needs_cc65
 @needs_linkmap
@@ -589,6 +672,18 @@ class SyntheticStreams(unittest.TestCase):
             self.assertTrue(r['ok'], r['name'])
         self.assertGreater(max(r['records']['batches'] for r in results), 1)
         self.assertGreater(max(r['records']['strips'] for r in results), 1)
+        # the fuzz queue: fuzzedge's shadows are marked or queued, never
+        # drawn in place for want of room; fuzzfull fills the queue
+        # in two strips, and has marked ones
+        counts = {r['name']: r['records'] for r in results}
+        edge, full = counts['synth-fuzzedge'], counts['synth-fuzzfull']
+        self.assertGreater(edge['fuzz_now'], 50)
+        self.assertGreater(edge['fuzz_queued'], 50)
+        self.assertEqual(edge['fuzz_full'], 0)
+        self.assertGreaterEqual(full['strips'], 2)
+        self.assertGreater(full['fuzz_full'], 2 * L.FQMAX)
+        self.assertEqual(full['fuzz_queued'], full['strips'] * L.FQMAX)
+        self.assertGreater(full['fuzz_now'], 10)
 
 
 # ---------------------------------------------------------------------------
@@ -601,7 +696,7 @@ class SyntheticStreams(unittest.TestCase):
 # write log alone (the snapshots cannot see the store), 'stores' the count
 # of SHR writes against upstream's screen stores). A frame named synth-* is
 # a synthetic stream of tools/native/synth.py.
-DRAW_END = '@done:  sta     WRMAIN\n        ldx     sc0\n'
+DRAW_END = '@done:  jsr     fuzz_queue\n        sta     WRMAIN\n        ldx     sc0\n'
 BUGS = (
     ('fill bytes by the wrong parity',
      [('@draw:  lda     ta                      ; the even rows\n'
@@ -625,8 +720,8 @@ BUGS = (
      [(DRAW_END, DRAW_END.replace('ldx', 'stz     $1A80\n        ldx'))],
      'still-1', 'stray'),
     ('a zero stored into aux 0 $A000 during the draw',
-     [(DRAW_END, DRAW_END.replace('@done:  sta', '@done:  stz     $A000\n'
-                                  '        sta'))], 'still-1', 'stray'),
+     [(DRAW_END, DRAW_END.replace('@done:  jsr', '@done:  stz     $A000\n'
+                                  '        jsr'))], 'still-1', 'stray'),
     ('a zero stored into the card at $E480 (the player\'s lists)',
      [(DRAW_END, DRAW_END.replace('ldx', 'stz     $E480\n        ldx'))],
      'still-1', 'stray'),
@@ -674,6 +769,21 @@ BUGS = (
        '        sta     te\n',
        ':       lda     cv0                     ; rows a .. c0 - 1\n'
        '        dec     a\n        sta     te\n')], 'synth-rows', 'pixels'),
+    # the fuzz queue, on the synthetic streams made for it
+    ('a K_FUZZNOW queued as a K_FUZZ',
+     [('        cmp     #K_FUZZ\n'
+       '        bne     @now                    ; K_FUZZNOW: in place\n', '')],
+     'synth-fuzzedge', 'pixels'),
+    ('the queue never full',
+     [('        cpx     #FQMAX\n'
+       '        bcs     @now                    ; the queue is full: in '
+       'place\n', '')], 'synth-fuzzfull', 'stray'),
+    ('a record the full queue has no room for dropped',
+     [('        bcs     @now                    ; the queue is full: in '
+       'place\n', '        bcs     @next\n')], 'synth-fuzzfull', 'pixels'),
+    ('the queue never drawn',
+     [(DRAW_END, DRAW_END.replace('@done:  jsr     fuzz_queue\n',
+                                  '@done:\n'))], 'synth-fuzzfull', 'pixels'),
 )
 
 
@@ -749,10 +859,98 @@ class TheChecksCanFail(unittest.TestCase):
         finally:
             shutil.rmtree(str(out))
 
+    @needs_cc65
+    @needs_a2vm
+    @needs_ref816
+    @needs_linkmap
+    @needs_base
+    def test_planted_fuzz_queue_bugs_are_caught(self):
+        """synth-fuzzedge and synth-fuzzfull catch the queue's bugs, and
+        two bugs of the loader's mark on fuzzedge: the mark missing (every
+        shadow queued, the later records drawn before the ones they
+        touch), and a mark that ignores later shadows (a shadow queued
+        behind a later one that a third record makes draw in place)."""
+        out = Path(tempfile.mkdtemp(dir=str(ROOT / 'build' / 'native')))
+        try:
+            header = synth.base_image()
+            dirs = {}
+            for style in ('fuzzedge', 'fuzzfull'):
+                dirs['synth-' + style] = out / ('synth-' + style)
+                synth.write_stream(dirs['synth-' + style], style,
+                                   7000 + synth.STYLES.index(style),
+                                   loader.load_units(),
+                                   synth.refimage.load(header), header)
+            self.plant([b for b in BUGS if b[2] in dirs], dirs)
+            saved = loader.mark_fuzz
+
+            def fuzz_blind(cols):
+                """The mark with every later K_FUZZ left out."""
+                marked = []
+                for column in cols:
+                    marked.append([saved([[r] + [x for x in column[i + 1:]
+                                                 if x.kind != L.K_FUZZ]])
+                                   [0][0] if r.kind == L.K_FUZZ else r
+                                   for i, r in enumerate(column)])
+                return marked
+
+            good = replay_check.check_frame(dirs['synth-fuzzedge'],
+                                            out / 'check', build())
+            self.assertTrue(good['ok'])
+            for mark in (lambda cols: cols, fuzz_blind):
+                loader.mark_fuzz = mark
+                try:
+                    r = replay_check.check_frame(dirs['synth-fuzzedge'],
+                                                 out / 'check', build())
+                finally:
+                    loader.mark_fuzz = saved
+                self.assertLess(r['records']['fuzz_now'],
+                                good['records']['fuzz_now'])
+                for run in ('captured', 'poisoned'):
+                    self.assertGreater(r[run]['differing_bytes'], 0, run)
+            # the blind mark's pixels differ by the order alone: no shadow
+            # was drawn in place for want of room
+            self.assertEqual(r['records']['fuzz_full'], 0)
+        finally:
+            shutil.rmtree(str(out))
+
 
 # ---------------------------------------------------------------------------
 # the card run, on a2vm
 # ---------------------------------------------------------------------------
+
+class CardTimes(unittest.TestCase):
+
+    def test_milliseconds_a_run(self):
+        """disk.run_ms, the runner's tenths: VBLs * 20 ms / REPS, rounded
+        to 0.1 ms, at most 999.9; at 200 runs a VBL is 0.1 ms."""
+        self.assertEqual(disk.REPS, 200)
+        self.assertEqual(disk.run_ms(362, 200), 36.2)
+        self.assertEqual(disk.run_ms(0, 200), 0.0)
+        self.assertEqual(disk.run_ms(7, 3), 46.7)       # 46.67
+        self.assertEqual(disk.run_ms(1, 3), 6.7)        # 6.67
+        self.assertEqual(disk.run_ms(1, 6), 3.3)        # 3.33
+        self.assertEqual(disk.run_ms(65535, 200), 999.9)
+        self.assertEqual(disk.run_ms(1540, 32), 962.5)
+
+    def test_what_fails_the_check(self):
+        """disk.py --check exits 1 on each check_failures line: a base
+        loop no faster than the loop with the replay among them."""
+        good = {'name': 'f', 'ok': True, 'crc': '0', 'expected': '0',
+                'restore': {'ok': True}, 'shown_ok': True, 'shown': [],
+                'vbls_loop': 402, 'vbls_without': 266, 'ms_loop': 40.2,
+                'ms_without': 26.6, 'ms': 13.6}
+        self.assertEqual(disk.check_failures([good]), [])
+        for change in ({'vbls_without': 402}, {'vbls_without': 403},
+                       {'ok': False}, {'shown_ok': False}):
+            bad = dict(good, **change)
+            self.assertEqual(len(disk.check_failures([good, bad])), 1,
+                             change)
+
+    def test_the_check_is_bounded(self):
+        # the a2vm check's cycle bound covers the runs it times
+        self.assertGreater(disk.check_cycles(15, 200, 150),
+                           15 * 2 * 200 * 0.12 * disk.FABRIC_HZ)
+
 
 @needs_cc65
 @needs_a2vm
@@ -770,7 +968,8 @@ class CardDisk(unittest.TestCase):
             dirs = [CAPTURES / 'still-1', CAPTURES / 'demo-11']
             card = loader.read_build(OBJ, 'card')
             frames = disk.prepare(dirs, card)
-            files = disk.files_of(frames, OBJ, 2, 2)
+            # 3 runs: VBLs * 200 / 3 needs the runner's rounding
+            files = disk.files_of(frames, OBJ, 3, 2)
             disk.build_disk(files, out / 'T.hdv')
             image = (out / 'T.hdv').read_bytes()
             self.assertEqual(len(image) % 512, 0)
@@ -780,6 +979,12 @@ class CardDisk(unittest.TestCase):
                 self.assertEqual(int(r['crc'], 16),
                                  zlib.crc32(truth) & 0xffffffff, r['name'])
                 self.assertTrue(r['ok'])
+                # the table shows both loops and their difference, as
+                # disk.run_ms computes them from the VBL counts
+                self.assertTrue(r['shown_ok'], (r['shown'], r['ms_loop'],
+                                                r['ms_without'], r['ms']))
+                self.assertGreater(r['vbls_loop'], r['vbls_without'])
+            self.assertEqual(disk.check_failures(results), [])
             lines = (out / 'run' / 'screen.txt').read_text().splitlines()
             for r in results:
                 line = next(t for t in lines
@@ -793,6 +998,35 @@ class CardDisk(unittest.TestCase):
             capture = loader.read_capture(dirs[0])
             self.assertEqual(restore['main_4078'], loader.colormap_pages(
                 capture)[0x40][0x78:0x80].hex())
+        finally:
+            shutil.rmtree(str(out))
+
+    def test_a_base_loop_that_calls_the_replay_is_caught(self):
+        """A carry set before timed's ROR: both loops call the replay, the
+        CRCs stay right, and check_failures names the frame."""
+        master = disk.disk_writer().DEFAULT_MASTER
+        if not master.is_file():
+            self.skipTest('%s is missing (appletini-one)' % master)
+        out = Path(tempfile.mkdtemp(dir=str(ROOT / 'build' / 'native')))
+        try:
+            src = out / 'src'
+            shutil.copytree(str(SRC), str(src))
+            text = (src / 'runner.s').read_text()
+            old = 'timed:  ror     withrep\n'
+            self.assertEqual(text.count(old), 1)
+            (src / 'runner.s').write_text(text.replace(
+                old, 'timed:  sec\n        ror     withrep\n'))
+            obj = out / 'obj'
+            make(obj, src)
+            dirs = [CAPTURES / 'still-1']
+            frames = disk.prepare(dirs, loader.read_build(obj, 'card'))
+            files = disk.files_of(frames, obj, 3, 1)
+            results = disk.check(frames, files, obj, out / 'run', 'f121')
+            self.assertTrue(results[0]['ok'])
+            self.assertFalse(results[0]['timed_ok'])
+            failures = disk.check_failures(results)
+            self.assertEqual(len(failures), 1, failures)
+            self.assertIn('without the replay', failures[0])
         finally:
             shutil.rmtree(str(out))
 

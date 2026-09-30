@@ -25,11 +25,11 @@ The host tools are in [`tools/native`](../../tools/native):
 | --- | --- |
 | `layout.py` | Every address and constant, one source: `rowgen.py` writes `layout.inc` and the runner's `restore.inc` from it |
 | `rowgen.py` | The texture row pairs, the fill chains, the entry and colormap tables, the aux-0 tables |
-| `loader.py` | A capture directory into an a2vm image placed per MEMORY_MAP section 8 (below); refuses records the replay cannot draw safely; models upstream's screen stores and the replay's strips and copy groups |
+| `loader.py` | A capture directory into an a2vm image placed per MEMORY_MAP section 8 (below); refuses records the replay cannot draw safely; marks the fuzz records that must be drawn in place; models upstream's screen stores and the replay's strips, copy groups and fuzz queue |
 | `a2run.py` | Runs an image on a2vm with snapshots around each replay call and the cost model; compares snapshots for stray writes |
 | `replay_check.py` | The harness: every frame, captured and poisoned screen, against the reference; times |
 | `synth.py` | Synthetic record streams with upstream's truth from `ref816 --call` |
-| `disk.py` | The card disk `build/native/REPLAY.hdv`, and its run on a2vm (`--check`, with the memory API) |
+| `disk.py` | The card disk `build/native/REPLAY.hdv` (200 timed runs a frame), and its run on a2vm (`--check`, with the memory API) |
 | `sizes.py` | Each area's bytes used and left (`make sizes`) |
 
 ## Commands
@@ -41,7 +41,7 @@ From `demos/doom_gs`, with the captures of `tools/ref816/capture.py`
 make -C src/native                                  # the three builds
 make -C src/native sizes                            # the areas
 python3 tools/native/replay_check.py --breakdown    # the 15 captured frames
-python3 tools/native/synth.py                       # 10 synthetic streams
+python3 tools/native/synth.py                       # 12 synthetic streams
 python3 tools/native/replay_check.py build/native/synth/synth-*
 python3 tools/native/disk.py --check                # the card disk, run on a2vm
 python3 -m unittest discover -s tests -p 'test_native_replay.py'
@@ -85,11 +85,18 @@ draws one batch of records, in strips of whole columns:
      (`TEXLO`/`TEXHI`) to the exit row, patched to `RTS` and restored;
    - `K_FILL`: the even rows through the even chain, the odd rows
      through the odd chain, each with its row parity's byte;
-   - `K_FUZZ`, `K_OVL`: RAMRD on, the drawer in aux 0 `$0200` (it reads
-     the screen), RAMRD off.
+   - `K_OVL`: RAMRD on, the drawer in aux 0 `$0200` (it reads the
+     screen), RAMRD off;
+   - `K_FUZZ`: its column, first row, count and fuzz position go into
+     the fuzz queue (aux 0 `$02C0-$03FF`, written with RAMWRT on), while
+     it has room for them (80 records a strip);
+   - `K_FUZZNOW` (a `K_FUZZ` the loader marked), and a `K_FUZZ` the full
+     queue has no room for: drawn in place, as a `K_OVL`.
 
-   RAMWRT off (the bus cycle waits for the mirror's drain on F1.2.1),
-   then the covered ranges of the strip's columns are zeroed.
+   After the strip's last column: RAMRD on, the queued fuzz records
+   drawn in their order, RAMRD off (below, "The fuzz queue"). RAMWRT off
+   (the bus cycle waits for the mirror's drain on F1.2.1), then the
+   covered ranges of the strip's columns are zeroed.
 
 The texture row pair (36 bytes, `rowgen.py`): the even row adds `si2`
 (the whole step plus the rounded carry of twice the fraction step) to the
@@ -104,6 +111,45 @@ rows, B for odd) and stores `(cma)` or `(cmb)` at `$2000 + 160 × row, X`.
 The replay enters with `$D000` bank 1 selected and selects bank 2 (the
 row blocks and the draw pass) for its run, as MEMORY_MAP rule 1 says.
 
+### The fuzz queue
+
+A fuzz record reads the screen, so it runs with RAMRD on. On F1.2.1 a
+RAMRD write (`$C002`, `$C003`) is a `$Cxxx` access, and it waits until
+the firmware's coalescer has sent every screen byte written so far to
+the motherboard. The coalescer scans each 256-byte page it sends whole,
+two clocks a byte, so the scattered bytes of a column (one a 160-byte
+row) drain at about 4 Apple cycles each against one for a full page
+(`docs/results/fuzz-timing-2026-09-30.md`). Drawn in place, a fuzz record
+waits twice on scattered bytes: at `RDAUX` for the columns drawn since
+the last wait, at `RDMAIN` for its own. That made the frames with fuzz
+11-40% slower on the card than a2vm predicted before its model had the
+scan.
+
+So the draw queues them, and after the strip's columns draws the queue
+in one RAMRD window: its `RDAUX` waits for the strip's dense backlog,
+and the fuzz columns' scattered bytes drain once, at the strip's
+`WRMAIN`. demo-10 went from 48.1 to 36.2 ms on the card
+(`docs/results/replay-card-2026-09-30.md`).
+
+Drawing a fuzz record late is right unless a later record of its column
+paints one of the rows it reads or writes, rows `R_ROW - 1` to
+`R_ROW + R_COUNT`. The loader finds those (`loader.mark_fuzz`) and
+writes them into W as the port's own kind **`K_FUZZNOW` (4)**, which
+upstream never uses (`lists.inc` has no kind 4); its fields are
+`K_FUZZ`'s, and the replay draws it in place. Later fuzz records count
+too, so that the order never matters: two unmarked fuzz records of a
+column touch neither's rows, and a record drawn in place because the
+queue is full may go before the queued ones. In the captures 3 of 188
+fuzz records are marked, all in demo-09; drawing those late too changes
+1 byte of demo-09. In the game the producers (milestone 7) set the mark.
+
+The queue is four arrays of 80 bytes (column, first row, count,
+position) in aux 0 `$02C0-$03FF`, beside the drawers: written in the
+draw pass with RAMWRT on, read with RAMRD on, never a video window. Its
+count is zero page `gdx`, the gather's, which is free during the draw.
+The captures queue at most 65 records a strip (demo-11); a full queue
+only costs time.
+
 ## Memory
 
 MEMORY_MAP section 8's addresses, and how much of each area the build
@@ -111,7 +157,7 @@ takes (`make sizes`):
 
 | Area | Content | Used of |
 | --- | --- | ---: |
-| zero page `$48-$6F` | the replay's state; the gather and the drawers alias the draw's temporaries | 39 of 40 |
+| zero page `$48-$6F` | the replay's state; the gather and the drawers alias the draw's temporaries, the fuzz queue's count the gather's `gdx` | 39 of 40 |
 | page 1 `$0100-$01B4` | 12 gather descriptors of 12 bytes, the per-row copy loop (37 bytes); the stack stays at or above `$01C0` | 181 of 192 |
 | main `$0800-$0BFF` | `CMPA`, `CMPB`, `TEXLO`, `TEXHI` | 406 bytes of tables |
 | main `$17C2-$17FF` | gather scratch | 9 of 62 |
@@ -120,14 +166,16 @@ takes (`make sizes`):
 | card bank 2 `$D000-$DBD0` | texture row pairs, landing `RTS` | 3,025 of 3,072 |
 | card bank 2 `$DC00-$DCFC`, `$DD00-$DDFC` | fill chains, even and odd rows | 253 + 253 of 512 |
 | card bank 2 `$DE00-$DFFF` | the draw pass | 509 of 512 |
-| card `$F900-$FEFF` | batches, strips, gather, cold draw helpers | 1,079 of 1,536 |
-| aux 0 `$0200-$03FF` | the fuzz and overlay drawers | 113 of 512 |
+| card `$F900-$FEFF` | batches, strips, gather, cold draw helpers, the fuzz queue's code | 1,165 of 1,536 |
+| aux 0 `$0200-$02BF` | the fuzz and overlay drawers | 113 of 192 |
+| aux 0 `$02C0-$03FF` | the fuzz queue: 80 records of 4 bytes, as four arrays | 320 |
 | aux 0 `$0800-$0BFF` | `FUZZDARK` (per level), `ROWLO`, `FZDIR`, `ROWHI` | 706 bytes of tables |
 
 The replay writes only its zero page, page 1 `$0100-$01B4` and the stack
 from `$01C0` up to its caller's S (it takes 14 bytes below it, measured),
 main `$1400-$153F` (the covered ranges it clears), main `$17C2-$17FF`, W
-`$8000-$BFFF` and aux 0 `$2000-$88FF`; the row-block patches are restored
+`$8000-$BFFF`, aux 0 `$02C0-$03FF` (the fuzz queue) and aux 0
+`$2000-$88FF`; the row-block patches are restored
 before each record ends. `replay_check.py` checks exactly that (below).
 
 It relies on what upstream's producers guarantee of the records, and the
@@ -152,6 +200,7 @@ for a strip's first record), and a shadow of no rows would draw 256.
 | No `FZMOD50` table | The fuzz drawer steps its position 0-49 itself |
 | The replay does not write into records nor reset `COLW` or `XPNEXT` | Upstream writes back `R_TF` (`texStart`) and swaps `R_B1`/`R_B2` (`fillStart`); the native replay keeps those in zero page. Resetting the lists is the producers' business |
 | The covered ranges are zeroed after each strip's draw, for its columns | Upstream zeroes each column's range as it starts it; the map says after the last batch; per strip is the same state at the end |
+| Fuzz records queued and drawn after each strip's columns; the loader marks the ones that must be drawn in place (`K_FUZZNOW`) | Upstream draws each in place: on the IIgs a screen read costs nothing more. On F1.2.1 the RAMRD writes around each would wait for the coalescer's scan of scattered bytes ("The fuzz queue") |
 | One column needing more than the 16 KB stage stops the replay (`BRK`, code 1) | It needs over 125 texture records in one column; the loader's stage model refuses such a frame first. Upstream has no such limit |
 | The copies run in groups of 12 descriptors, each group with its own RAMRD window and one `$C073` write for each texel bank it copies from; NATIVE.md 5.2 says "open one window per texel bank" | One window a bank for a whole strip would need its queue near in every RAMRD state: 100 or more descriptors of 12 bytes, and neither page 1 nor the card has room. Measured (the profiling build's "switches" phase): 69-221 soft-switch writes a captured frame, 0.10-0.34 ms on f121 (0.27 still, 0.34 on demo-10), 0.01-0.05 ms on fastpath; one group a strip would take about 7 writes a strip, 0.01 ms |
 
@@ -188,7 +237,7 @@ checks:
 A store of the value a byte already holds is not seen (a2vm has no write
 log).
 
-`synth.py` makes 10 synthetic streams (every kind, `K_OVL` and `K_TEXC`
+`synth.py` makes 12 synthetic streams (every kind, `K_OVL` and `K_TEXC`
 chains included; `K_TEX` and `K_TEXC` covering records; rows 0 and 167;
 whole steps 0-127 and fractions at their extremes; all 50 fuzz positions;
 all 34 light levels; `K_NEXT` into the extra pages; several batches;
@@ -202,14 +251,28 @@ all 128 texels copied, an odd first row and an even end of the range), its
 edges at random parities, then the covering record (a `K_TEX`, or a
 `K_TEXC` of the case's chain), then a record inside the range, which the
 cut must no longer touch; nothing after the case's record paints its rows
-outside the range, so every row it keeps or loses shows.
+outside the range, so every row it keeps or loses shows. Two streams
+test the fuzz queue. `fuzzedge` puts a shadow in each column over two
+walls, then a later record of each kind (texture, fill, automap pixel,
+shadow) that paints the row just above it, the row just below it, rows
+inside it, or one row clear of it above or below; the shadow's first
+(last) row reads the row above (below), so drawing it late shows in the
+pixels whenever it was due in place. In half of the columns where that
+later record is a shadow above or below, a one-row fill on its far side
+makes it be drawn in place: the first shadow must then be drawn in place
+too when they touch (a mark that ignored later shadows would draw it
+after), and may wait when they do not. Its three strips never fill the
+queue: 112 shadows are marked, 107 queued. `fuzzfull` puts 3-4 shadows
+in each column over a wall, two strips of several times 80 queued
+records, some of them under a later record: with the default seed 160
+queued, 375 in place because the queue was full, 33 marked.
 
 `tests/test_native_replay.py` runs all of it, checks the generated code
 byte by byte (every row block's entry opcode and store address, both fill
-chains, the tables), the loader's refusals, the image's fill, and plants
-15 bugs in a scratch copy of the sources to show the checks fail
-(differing bytes captured / poisoned; stray bytes; SHR writes against the
-model):
+chains, the tables), the loader's refusals and its fuzz mark at every
+edge, the image's fill, and plants 19 bugs in a scratch copy of the
+sources and two in the loader to show the checks fail (differing bytes
+captured / poisoned; stray bytes; SHR writes against the model):
 
 | Bug | Frame | Caught |
 | --- | --- | --- |
@@ -224,6 +287,12 @@ model):
 | `texStart`: no advance; one row too many | synth-rows | 221 / 221; 213 / 213 differing |
 | `fillStart`: the bytes swapped at a new first row | synth-rows | 15 / 15 differing |
 | a texture ending in the range cut one row short | synth-rows | 20 / 21 differing, 7,272 SHR writes |
+| a `K_FUZZNOW` queued as a `K_FUZZ` | synth-fuzzedge | 166 / 166 differing |
+| the loader's mark missing (every shadow queued) | synth-fuzzedge | 166 / 166 differing |
+| the loader's mark blind to later shadows | synth-fuzzedge | 13 / 13 differing |
+| the queue never full | synth-fuzzfull | 5,966 / 5,967 differing, 858 / 859 stray bytes (aux 0 from `$0400`) |
+| a record the full queue has no room for dropped | synth-fuzzfull | 3,731 / 3,731 differing |
+| the queue never drawn | synth-fuzzfull | 1,816 / 1,816 differing |
 
 The same five cut bugs on the `rows` stream of `synth.py`'s default seed:
 0 / 0 differing (the cut skipped; 8,945 SHR writes for 7,335), 249, 241,
@@ -234,40 +303,71 @@ checks the first frame's load with snapshots around it: no video write
 outside the screen (the old runner, which restored main `$0200-$5FFF` by
 CPU, makes over 16,000: the test plants it back), main `$0878-$087F`
 (a sentinel there) untouched, one memory-API request, colormap B's level
-0 at `$4078-$407F` put by it.
+0 at `$4078-$407F` put by it. It exits 1 when a CRC differs, the load
+check fails, the runner's table does not show its VBL counts' times, or
+the loop without the replay takes as many VBLs as the loop with it (a
+base loop that calls the replay: the test plants a `SEC` before
+`timed`'s `ROR withrep`).
 
 ## Results
 
 a2vm's cost model (not yet measured on the card: milestone 0), f121 and
 fastpath, the replay's calls from entry to return (the return's bank
-switch waits for the mirror's drain on F1.2.1). Walk, copy, the copies'
-soft-switch writes and draw are the profiling build's (`--breakdown`,
-f121), with the count of those writes (`copy_switch_writes`, from
-`loader.copy_groups`). 0 differing bytes, 0 stray writes and the SHR
-writes equal to the model on every frame, both runs.
+switch waits for the mirror's drain on F1.2.1). Since 2026-09-30 the f121
+profile models the coalescer's page scan (`tools/a2vm/README.md`, "The
+video mirror"); "no scan" is the same run with `coalescer 0`, the model
+before (fastpath has no barrier on SHR bytes, so the scan does not change
+it). Walk, copy, the copies' soft-switch writes and draw are the
+profiling build's (`--breakdown`, f121 with the scan), with the count of
+those writes (`copy_switch_writes`, from `loader.copy_groups`). The fuzz
+records: queued, marked `K_FUZZNOW`, drawn in place because the queue was
+full (`loader.stage_plan`). 0 differing bytes, 0 stray writes and the SHR
+writes equal to the model on every frame, both runs, in both models.
 
-| Frame | Records | Bytes | Batches / strips | f121 ms | fastpath ms | walk / copy / switches / draw, f121 | Switch writes | Screen stores |
-| --- | ---: | ---: | --- | ---: | ---: | --- | ---: | ---: |
-| still-1, still-2, still-3 | 721 | 5,969 | 1 / 1 | 16.90 | 15.86 | 2.99 / 5.19 / 0.27 / 8.66 | 176 | 8,519 |
-| demo-01 | 361 | 3,119 | 1 / 2 | 33.24 | 22.30 | 2.24 / 6.07 / 0.13 / 24.96 | 88 | 25,615 |
-| demo-02 | 267 | 2,787 | 1 / 2 | 32.28 | 23.78 | 2.34 / 7.93 / 0.15 / 22.03 | 100 | 22,586 |
-| demo-03 | 329 | 2,881 | 1 / 2 | 29.27 | 19.98 | 2.13 / 4.70 / 0.13 / 22.45 | 86 | 22,792 |
-| demo-04 | 214 | 2,228 | 1 / 2 | 26.82 | 18.80 | 1.97 / 4.52 / 0.11 / 20.35 | 76 | 20,610 |
-| demo-05 | 181 | 1,991 | 1 / 1 | 29.17 | 19.30 | 1.86 / 2.79 / 0.10 / 24.51 | 69 | 24,833 |
-| demo-06 | 248 | 2,386 | 1 / 2 | 31.30 | 21.21 | 1.97 / 4.39 / 0.11 / 24.96 | 75 | 25,280 |
-| demo-07 | 468 | 4,134 | 1 / 2 | 31.55 | 23.48 | 2.71 / 7.34 / 0.21 / 21.43 | 141 | 21,719 |
-| demo-08 | 668 | 5,350 | 1 / 2 | 26.38 | 19.00 | 2.90 / 6.91 / 0.23 / 16.50 | 151 | 16,597 |
-| demo-09 | 785 | 5,987 | 1 / 2 | 21.45 | 18.76 | 2.95 / 6.37 / 0.23 / 12.11 | 154 | 11,657 |
-| demo-10 | 1,227 | 8,944 | 2 / 3 | 34.34 | 29.88 | 3.92 / 8.89 / 0.34 / 21.48 | 221 | 19,339 |
-| demo-11 | 1,198 | 8,755 | 2 / 3 | 35.09 | 29.96 | 3.99 / 8.84 / 0.32 / 22.20 | 213 | 20,184 |
-| e1m3-1 | 520 | 3,806 | 1 / 2 | 28.25 | 19.34 | 2.16 / 6.26 / 0.13 / 19.90 | 83 | 20,230 |
+| Frame | Records | Bytes | Batches / strips | Fuzz queued / marked / full | f121 ms | f121 ms, no scan | fastpath ms | walk / copy / switches / draw, f121 | Switch writes | Screen stores |
+| --- | ---: | ---: | --- | --- | ---: | ---: | ---: | --- | ---: | ---: |
+| still-1, still-2, still-3 | 721 | 5,969 | 1 / 1 |  | 17.09 | 17.02 | 15.96 | 2.98 / 5.25 / 0.29 / 8.68 | 176 | 8,519 |
+| demo-01 | 361 | 3,119 | 1 / 2 |  | 33.44 | 33.27 | 22.34 | 2.24 / 6.05 / 0.15 / 25.13 | 88 | 25,615 |
+| demo-02 | 267 | 2,787 | 1 / 2 |  | 32.52 | 32.31 | 23.80 | 2.33 / 7.91 / 0.17 / 22.25 | 100 | 22,586 |
+| demo-03 | 329 | 2,881 | 1 / 2 |  | 29.47 | 29.30 | 20.00 | 2.13 / 4.68 / 0.13 / 22.62 | 86 | 22,792 |
+| demo-04 | 214 | 2,228 | 1 / 2 |  | 27.00 | 26.84 | 18.82 | 1.96 / 4.50 / 0.13 / 20.51 | 76 | 20,610 |
+| demo-05 | 181 | 1,991 | 1 / 1 |  | 29.27 | 29.18 | 19.31 | 1.85 / 2.79 / 0.11 / 24.60 | 69 | 24,833 |
+| demo-06 | 248 | 2,386 | 1 / 2 |  | 31.65 | 31.32 | 21.23 | 1.97 / 4.39 / 0.12 / 25.28 | 75 | 25,280 |
+| demo-07 | 468 | 4,134 | 1 / 2 |  | 31.77 | 31.58 | 23.52 | 2.71 / 7.36 / 0.23 / 21.61 | 141 | 21,719 |
+| demo-08 | 668 | 5,350 | 1 / 2 | 12 / 0 / 0 | 26.46 | 26.34 | 19.09 | 2.90 / 6.92 / 0.24 / 16.52 | 151 | 16,597 |
+| demo-09 | 785 | 5,987 | 1 / 2 | 23 / 3 / 0 | 21.86 | 21.25 | 18.90 | 2.95 / 6.38 / 0.25 / 12.43 | 154 | 11,657 |
+| demo-10 | 1,227 | 8,944 | 2 / 3 | 59 / 0 / 0 | 33.28 | 32.89 | 30.11 | 3.91 / 8.93 / 0.37 / 20.26 | 221 | 19,339 |
+| demo-11 | 1,198 | 8,755 | 2 / 3 | 91 / 0 / 0 | 34.06 | 33.67 | 30.23 | 3.98 / 8.89 / 0.35 / 20.99 | 213 | 20,184 |
+| e1m3-1 | 520 | 3,806 | 1 / 2 |  | 28.44 | 28.29 | 19.39 | 2.16 / 6.23 / 0.13 / 20.05 | 83 | 20,230 |
 
 Against NATIVE.md's 9.2-16.9 ms standing still and 23.8-39.7 ms in the
-demo on F1.2.1: still at the top of its range; the demo frames 21.5-35.1,
+demo on F1.2.1: still at the top of its range; the demo frames 21.9-34.1,
 at or below theirs. The strips are those of `loader.stage_plan`, a model
 of the gather. The screen stores count every store, rows painted twice
 included; the capture's "screen bytes written" (8,443 still) counts
 bytes.
+
+The fuzz queue on the frames with fuzz, ms. On the frames without, the
+queue costs +0.01-0.04 ms, and +0.12 on still-1, most of it in the copy
+phase, whose code did not change but moved (other TURBO cache sets:
+not checked further); the scan adds 0.06-0.33 ms to them.
+
+| Frame | Milestone 5 replay, no scan | Milestone 5 replay, scan | Queue, no scan | Queue, scan | Card, milestone 5 disk | Card, queue |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| demo-08 | 26.38 | 27.78 | 26.34 | 26.46 | 29.3 | 26.8 |
+| demo-09 | 21.45 | 23.87 | 21.25 | 21.86 | 25.0 | 23.1 |
+| demo-10 | 34.34 | 46.04 | 32.89 | 33.28 | 48.1 | 36.2 |
+| demo-11 | 35.09 | 47.66 | 33.67 | 34.06 | 49.3 | 36.2 |
+
+The milestone 5 replay under the scan is `docs/results/fuzz-timing-2026-
+09-30.md` section 4 (the same model); the card's are the runner's 32
+runs a frame (`docs/results/replay-card-2026-09-30.md`), VBL-quantised to
+0.625 ms, the second one the prototype of this queue
+(`build/fuzz-timing/REPLAY-defer.hdv`), which draws the same records in
+the same order. The card stays 0.0-2.9 ms above the model on every
+frame, with or without fuzz: that residual has no established cause (the
+fuzz timing report, "Adversarial check"); the runner's new BASE column
+is the test it proposes.
 
 On F1.2.1 the draw is bound by the mirror's drain (0.985 µs a screen
 byte: 8.3 ms still, 24.9 ms on demo-01); the same draw on fastpath takes
@@ -277,24 +377,57 @@ the drain plus the copies, and the replay is one walk (2-4 ms) above it.
 
 The synthetic streams (the same checks, all passed):
 
-| Stream | Records | Batches / strips | f121 ms | fastpath ms | walk / copy / switches / draw, f121 | Screen stores |
-| --- | ---: | --- | ---: | ---: | --- | ---: |
-| synth-batches | 1,773 | 2 / 4 | 85.38 | 67.76 | 9.10 / 22.90 / 1.02 / 53.02 | 63,743 |
-| synth-chains | 795 | 1 / 2 | 26.66 | 22.77 | 4.71 / 8.56 / 0.49 / 13.18 | 17,905 |
-| synth-colormaps | 475 | 1 / 2 | 30.10 | 25.67 | 3.01 / 10.69 / 0.33 / 16.26 | 24,986 |
-| synth-fuzz | 477 | 1 / 1 | 37.12 | 29.57 | 1.50 / 4.32 / 0.13 / 31.26 | 27,455 |
-| synth-mixed | 1,018 | 1 / 2 | 43.37 | 32.89 | 4.72 / 9.89 / 0.49 / 28.58 | 32,354 |
-| synth-overlay | 1,051 | 1 / 1 | 29.14 | 16.65 | 2.04 / 4.72 / 0.14 / 22.34 | 22,745 |
-| synth-pages | 1,079 | 2 / 3 | 46.47 | 41.66 | 4.48 / 14.95 / 0.46 / 26.96 | 57,340 |
-| synth-rows | 535 | 1 / 1 | 15.55 | 14.63 | 3.16 / 5.31 / 0.34 / 6.99 | 7,335 |
-| synth-steps | 549 | 1 / 2 | 35.58 | 29.98 | 3.32 / 14.49 / 0.40 / 17.60 | 28,682 |
-| synth-strips | 316 | 1 / 2 | 24.45 | 21.36 | 2.92 / 8.63 / 0.28 / 12.88 | 15,119 |
+| Stream | Records | Bytes | Batches / strips | Fuzz queued / marked / full | f121 ms | f121 ms, no scan | fastpath ms | walk / copy / switches / draw, f121 | Switch writes | Screen stores |
+| --- | ---: | ---: | --- | --- | ---: | ---: | ---: | --- | ---: | ---: |
+| synth-batches | 1,773 | 14,225 | 2 / 4 | 30 / 79 / 0 | 118.95 | 84.93 | 67.95 | 9.09 / 23.05 / 1.10 / 86.35 | 670 | 63,743 |
+| synth-chains | 795 | 6,211 | 1 / 2 |  | 27.12 | 26.74 | 22.84 | 4.69 / 8.63 / 0.53 / 13.54 | 321 | 17,905 |
+| synth-colormaps | 475 | 4,577 | 1 / 2 |  | 31.11 | 30.16 | 25.72 | 3.00 / 10.75 / 0.36 / 17.20 | 219 | 24,986 |
+| synth-fuzz | 477 | 2,954 | 1 / 1 | 80 / 119 / 42 | 59.96 | 36.44 | 29.73 | 1.51 / 4.34 / 0.14 / 54.02 | 82 | 27,455 |
+| synth-fuzzedge | 675 | 5,276 | 1 / 3 | 107 / 112 / 0 | 97.10 | 64.88 | 49.27 | 2.56 / 11.38 / 0.35 / 83.08 | 209 | 56,097 |
+| synth-fuzzfull | 751 | 4,176 | 1 / 2 | 160 / 33 / 375 | 79.76 | 44.57 | 32.34 | 1.62 / 5.55 / 0.16 / 72.56 | 97 | 32,898 |
+| synth-mixed | 1,018 | 7,451 | 1 / 2 | 16 / 45 / 0 | 62.36 | 43.10 | 32.98 | 4.71 / 9.96 / 0.52 / 47.48 | 318 | 32,354 |
+| synth-overlay | 1,051 | 5,566 | 1 / 1 |  | 49.27 | 29.17 | 16.66 | 2.04 / 4.75 / 0.16 / 42.42 | 95 | 22,745 |
+| synth-pages | 1,079 | 8,611 | 2 / 3 |  | 47.12 | 46.62 | 41.78 | 4.46 / 15.04 / 0.51 / 27.41 | 308 | 57,340 |
+| synth-rows | 535 | 4,657 | 1 / 1 |  | 15.78 | 15.63 | 14.69 | 3.15 / 5.36 / 0.36 / 7.12 | 220 | 7,335 |
+| synth-steps | 549 | 5,391 | 1 / 2 |  | 36.84 | 35.64 | 30.05 | 3.30 / 14.55 / 0.43 / 18.81 | 257 | 28,682 |
+| synth-strips | 316 | 3,476 | 1 / 2 |  | 24.90 | 24.49 | 21.37 | 2.91 / 8.65 / 0.30 / 13.29 | 183 | 15,119 |
 
-The card disk (`disk.py --check`, 32 runs a frame, VBL-timed by the
-runner itself on a2vm's clock): every CRC equal to the reference's; 16.2
-ms standing still, 21.8-35.0 ms in the demo, within a VBL's resolution
-(0.6 ms) of the harness. On the card it needs the memory API (F1.1.4 or
-later) and says so when it is missing.
+With the scan, the streams with many records that toggle RAMRD in place
+are much slower: synth-overlay (637 automap pixels) 29.2 to 49.3 ms,
+synth-fuzz (119 marked shadows, 42 in place for want of room) 36.4 to
+60.0, synth-mixed 43.1 to 62.4. The captures have no automap pixels; the
+automap's overlay mode has one a pixel of each automap line over the
+view (not captured, so how many is not known), each a RAMRD pair around
+one byte. They could be queued the same way (one pixel, so the
+mark's rows are its own row only); that is not done.
+
+The card disk (`disk.py --check`, 200 runs a frame, VBL-timed by the
+runner itself on a2vm's clock, f121 with the scan): every CRC equal to
+the reference's. The runner now prints the loop with the replay, the
+loop without it and their difference, each in ms a run at 50 Hz; at 200
+runs one VBL is 0.1 ms a run:
+
+| Frame | Loop | Base | Replay | Harness, f121 | Replay, no scan |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| demo-01 | 34.5 | 0.9 | 33.6 | 33.44 | 33.2 |
+| demo-02 | 33.5 | 0.8 | 32.7 | 32.52 | 32.3 |
+| demo-03 | 30.4 | 0.9 | 29.5 | 29.47 | 29.3 |
+| demo-04 | 27.8 | 0.7 | 27.1 | 27.00 | 26.9 |
+| demo-05 | 30.0 | 0.7 | 29.3 | 29.27 | 29.3 |
+| demo-06 | 32.5 | 0.8 | 31.7 | 31.65 | 31.3 |
+| demo-07 | 33.1 | 1.2 | 31.9 | 31.77 | 31.6 |
+| demo-08 | 28.0 | 1.5 | 26.5 | 26.46 | 26.3 |
+| demo-09 | 23.6 | 1.6 | 22.0 | 21.86 | 21.2 |
+| demo-10 | 36.1 | 2.5 | 33.6 | 33.28 | 33.1 |
+| demo-11 | 36.7 | 2.4 | 34.3 | 34.06 | 33.8 |
+| e1m3-1 | 29.7 | 1.1 | 28.6 | 28.44 | 28.3 |
+| still-1..3 | 18.8 | 1.7 | 17.1 | 17.09 | 17.0 |
+
+The runner's replay time is 0.0-0.4 ms above the harness's (the
+difference of two loops, each also loading the batches' records and
+restoring the covered ranges every run, and the runner's own
+interrupts). On the card it needs the memory API (F1.1.4 or later) and
+says so when it is missing.
 
 ## The record layout
 
@@ -307,6 +440,10 @@ of each covered range into its W address. That is the shipping replay
 code and placement for F1.2.1, but not the shipping record layout, which
 the native producers (milestone 7) would change:
 
+- the fuzz mark, `K_FUZZNOW` (kind 4, "The fuzz queue"), set by the
+  producer on a shadow already written when a later record of its
+  column comes over or next to its rows (the loader does it here, from
+  the whole column);
 - records written in production order to the aux-0 staging area with a
   column tag, bucketed into W by column (MEMORY_MAP section 8);
 - texture sources as the level loader places texture columns: a

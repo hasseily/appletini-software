@@ -7,8 +7,9 @@ and harness always agree.
 The addresses are docs/MEMORY_MAP.md section 8 (the F1.2.1 placement of
 milestone 5), with the departures listed there by the milestone's report
 (src/native/README.md): the fill row blocks are two chains by row parity,
-the replay keeps its gather descriptors in page 1, and the fuzz drawer
-steps its position itself (no FZMOD50 table).
+the replay keeps its gather descriptors in page 1, the fuzz drawer
+steps its position itself (no FZMOD50 table), and the fuzz records wait
+in a queue in aux 0 $02C0-$03FF to be drawn after each strip's columns.
 
 The record format is upstream's (build/upstream/src/iigs/lists.inc), the
 kinds and field offsets below; tests/test_native_replay.py checks them
@@ -31,6 +32,14 @@ FIELDS = {
     'R_KEEP': 2, 'R_COLOR': 3,                               # K_OVL
     'R_PAGE': 1,                                             # K_NEXT
 }
+# The port's own kind, in W only (the loader writes it, upstream never
+# does; lists.inc has no kind 4): a K_FUZZ record the replay must draw in
+# place, because a later record of its column paints one of the rows it
+# reads or writes (row - 1 to row + count). The replay queues every other
+# K_FUZZ record and draws the queue after the strip's columns
+# (src/native/README.md, "The fuzz queue"). Same fields as K_FUZZ.
+K_FUZZNOW = 4
+SIZES[K_FUZZNOW] = SIZES[K_FUZZ]
 COLUMNS = 160
 VIEW_ROWS = 168                 # rows 0-167; row 168 is the landing
 ROW_BYTES = 160
@@ -94,7 +103,13 @@ RCODE, RCODE_END = 0xF900, 0xFF00   # $E000 part: batches, gather
 
 # ---- aux bank 0 ----
 
-AUXCODE, AUXCODE_END = 0x0200, 0x0400   # fuzz and overlay drawers
+AUXCODE, AUXCODE_END = 0x0200, 0x02C0   # fuzz and overlay drawers
+FUZZQ, FUZZQ_END = 0x02C0, 0x0400       # the fuzz queue: written with
+FQMAX = 80                              #   RAMWRT on (the draw), read with
+FQCOL = FUZZQ                           #   RAMRD on; FQMAX records of four
+FQROW = FUZZQ + FQMAX                   #   fields as four arrays: the
+FQCNT = FUZZQ + 2 * FQMAX               #   column, first row, count of
+FQPOS = FUZZQ + 3 * FQMAX               #   rows, fuzz position
 AUX_TABLES = 0x0800
 AUX_TABLES_END = 0x0C00
 FUZZDARK = 0x0800               # per level (the capture's fuzz.bin)
@@ -120,6 +135,10 @@ BANK_ROOM = (0x0200, 0xC000)    # what RAMRD reaches in a RamWorks bank
 MAX_BATCHES = 4
 DRVDATA = 0x0200                # the driver's batch table (main)
 PHASE = 0x0300                  # the cost phase byte (a2vm --cost-phase)
+                                #   in main; aux $0300 is FQCOL + 64, so
+                                #   a tool that reads phases from writes
+                                #   to $0300 must take main writes only
+                                #   (RAMWRT off), as a2vm does
 DRV_STACK = 0xEF                # the driver's S: $01F0-$01FF above it is a
                                 #   caller's frame the replay must not touch
 
@@ -221,13 +240,14 @@ def row_address(row):
 # byte of every bank outside them): its zero page, the gather descriptors
 # and the copy loop in page 1, the stack from STACK_FLOOR up to the
 # caller's S (allowed_main below), the covered ranges it clears, its main
-# scratch, the texel stage with its pointer list, and the 3D view of the
-# screen. The language card is not listed: its row-block patches are
-# restored.
+# scratch, the texel stage with its pointer list, the fuzz queue and the
+# 3D view of the screen. The language card is not listed: its row-block
+# patches are restored.
 ALLOWED_MAIN = ((ZP_FIRST, ZP_END), (DESC, P1CODE_END),
                 (CVFIRST, CVRECLO), (SCRATCH, SCRATCH_END),
                 (STAGE, STAGE_END))
-ALLOWED_AUX0 = ((SCREEN, VIEW_END),)
+ALLOWED_AUX0 = ((FUZZQ, FUZZQ_END), (SCREEN, VIEW_END))
+assert FUZZQ == AUXCODE_END and FUZZQ + 4 * FQMAX == FUZZQ_END
 
 
 def allowed_main(sp):
@@ -241,6 +261,7 @@ def allowed_main(sp):
 CONSTANTS = [
     ('K_TEX', K_TEX), ('K_FILL', K_FILL), ('K_TEXC', K_TEXC),
     ('K_FUZZ', K_FUZZ), ('K_OVL', K_OVL), ('K_NEXT', K_NEXT),
+    ('K_FUZZNOW', K_FUZZNOW),
     ('TEX_SIZE', SIZES[K_TEX]), ('FILL_SIZE', SIZES[K_FILL]),
     ('TEXC_SIZE', SIZES[K_TEXC]), ('FUZZ_SIZE', SIZES[K_FUZZ]),
     ('OVL_SIZE', SIZES[K_OVL]),
@@ -256,7 +277,9 @@ CONSTANTS = [
     ('RECBUF', RECBUF), ('STAGE', STAGE), ('STAGE_END', STAGE_END),
     ('TEXBLK', TEXBLK), ('FILLE', FILLE), ('FILLO', FILLO),
     ('FUZZDARK', FUZZDARK), ('ROWLO', ROWLO), ('ROWHI', ROWHI),
-    ('FZDIR', FZDIR),
+    ('FZDIR', FZDIR), ('AUXCODE_END', AUXCODE_END),
+    ('FQMAX', FQMAX), ('FQCOL', FQCOL), ('FQROW', FQROW), ('FQCNT', FQCNT),
+    ('FQPOS', FQPOS),
     ('RDMAIN', RDMAIN), ('RDAUX', RDAUX), ('WRMAIN', WRMAIN),
     ('WRAUX', WRAUX), ('BANKSEL', BANKSEL), ('LCBANK2', LCBANK2),
     ('LCBANK1', LCBANK1),

@@ -34,7 +34,10 @@ driver (build/native/obj/test.*, src/native/Makefile):
              (K_NEXT dropped), each with its column tables (COLLO, COLHI)
 
 The records keep upstream's format (lists.inc); only the texel sources
-change. A record the replay cannot draw safely (check_record) is refused.
+change, and a K_FUZZ record a later record of its column paints over or
+next to becomes the port's K_FUZZNOW (mark_fuzz: the replay draws it in
+place instead of queueing it). A record the replay cannot draw safely
+(check_record) is refused.
 With a fill byte (the harness), every other byte of the machine is set to
 it. B is --bank-base (1 for a2vm; the card packs one frame after
 another).
@@ -174,6 +177,43 @@ def columns(capture: Capture) -> List[List[Rec]]:
     return out
 
 
+def rows_of(r: Rec) -> Tuple[int, int]:
+    """The rows [first, end) a record paints, before any covered-range
+    cut."""
+    a = r.data[L.FIELDS['R_ROW']]
+    if r.kind == L.K_FUZZ:
+        return a, a + r.data[L.FIELDS['R_COUNT']]
+    if r.kind == L.K_OVL:
+        return a, a + 1
+    return a, r.data[L.FIELDS['R_END']]
+
+
+def mark_fuzz(cols: List[List[Rec]]) -> List[List[Rec]]:
+    """The bucket pass's mark for the fuzz queue (layout.py K_FUZZNOW): a
+    K_FUZZ record is written into W as K_FUZZNOW, to be drawn in place,
+    when a later record of its column paints any row from row - 1 to row +
+    count, the rows it reads and writes. The replay draws every other
+    K_FUZZ after the strip's columns, in order, so it must not meet a
+    later record that changes what it reads or that it would overwrite.
+    Later fuzz records count too: the queue may be full when one comes,
+    and then it is drawn in place, before the queued ones. (Two fuzz
+    records conflict exactly when either's rows touch the other's
+    neighbourhood, so each order of an unmarked pair is right.) The Rec's
+    kind stays K_FUZZ, upstream's; only its first byte changes."""
+    out = []
+    for column in cols:
+        new = []
+        for i, r in enumerate(column):
+            if r.kind == L.K_FUZZ:
+                a, e = rows_of(r)
+                if any(x0 <= e and x1 >= a
+                       for x0, x1 in (rows_of(x) for x in column[i + 1:])):
+                    r = r._replace(data=bytes([L.K_FUZZNOW]) + r.data[1:])
+            new.append(r)
+        out.append(new)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # the texels
 # ---------------------------------------------------------------------------
@@ -297,17 +337,20 @@ def stage_need(data: bytes, csf: int, csi: int) -> Tuple[str, int]:
 
 def stage_plan(batch: Batch) -> Dict[str, int]:
     """Strips and stage bytes of one batch, as the replay makes them: whole
-    columns while the texels and a 2-byte pointer each fit the 16 KB."""
+    columns while the texels and a 2-byte pointer each fit the 16 KB. And
+    its fuzz records: queued (the first FQMAX K_FUZZ of a strip), drawn in
+    place because the queue was full, or marked K_FUZZNOW."""
     room = L.STAGE_END - L.STAGE
     tables = batch.col_tables
     column_needs = []
     modes = {'rows': 0, 'span': 0, 'all': 0}
+    fuzz = {'fuzz_queued': 0, 'fuzz_full': 0, 'fuzz_now': 0}
     csf = csi = 0
     for c in range(batch.first, batch.end):
         start = (tables[c] | tables[len(tables) // 2 + c] << 8) - L.RECBUF
         end = (tables[c + 1] | tables[len(tables) // 2 + c + 1] << 8) - \
             L.RECBUF
-        need, at = 0, start
+        need, at, queued = 0, start, 0
         while at < end:
             kind = batch.records[at]
             data = batch.records[at:at + L.SIZES[kind]]
@@ -317,18 +360,24 @@ def stage_plan(batch: Batch) -> Dict[str, int]:
                 mode, count = stage_need(data, csf, csi)
                 modes[mode] += 1
                 need += count + 2
+            queued += kind == L.K_FUZZ
+            fuzz['fuzz_now'] += kind == L.K_FUZZNOW
             at += L.SIZES[kind]
-        column_needs.append(need)
-    strips, used, total = 1, 0, 0
-    for need in column_needs:
+        column_needs.append((need, queued))
+    strips, used, total, in_queue = 1, 0, 0, 0
+    for need, queued in column_needs:
         if need > room:
             raise LoadError('a column needs %d stage bytes, more than the '
                             'stage' % need)
         if used + need > room:
-            strips, used = strips + 1, 0
+            strips, used, in_queue = strips + 1, 0, 0
         used += need
         total += need
-    return dict(strips=strips, stage_bytes=total, **modes)
+        take = min(queued, L.FQMAX - in_queue)
+        in_queue += take
+        fuzz['fuzz_queued'] += take
+        fuzz['fuzz_full'] += queued - take
+    return dict(strips=strips, stage_bytes=total, **modes, **fuzz)
 
 
 def copy_groups(package: 'Package') -> List[int]:
@@ -603,7 +652,7 @@ def build_package(capture: Capture, build: Build,
     poisoned screen with different fills, so a stray store of any constant
     changes a byte in one of them). Without, those bytes are left to a2vm
     (zero) and the image stays small (tools/native/disk.py)."""
-    cols = columns(capture)
+    cols = mark_fuzz(columns(capture))
     texels = place_texels(capture, cols, bank_base)
     batches, w_address = make_batches(cols, texels, batch_bytes)
     state = convert_state(capture, cols, w_address)
@@ -685,7 +734,8 @@ def build_package(capture: Capture, build: Build,
     counts['texel_banks'] = len(texels.banks)
     counts['screen_stores'] = screen_stores(cols, state, w_address)
     plans = [stage_plan(b) for b in batches]
-    for key in ('strips', 'stage_bytes', 'rows', 'span', 'all'):
+    for key in ('strips', 'stage_bytes', 'rows', 'span', 'all',
+                'fuzz_queued', 'fuzz_full', 'fuzz_now'):
         counts[key] = sum(plan[key] for plan in plans)
     return Package(capture.directory.name, batches, texels, state,
                    records_bank, bytes(w.data), counts)

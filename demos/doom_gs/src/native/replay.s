@@ -23,7 +23,8 @@
 ;                   reads and writes RAM, bank 1 at $D000 selected;
 ;                   RAMRD, RAMWRT off; $C073 = 0; ALTZP off; decimal off.
 ;                   Out: the same switches; the 3D view drawn; the covered
-;                   ranges of the batch's columns zeroed. A, X, Y, P lost.
+;                   ranges of the batch's columns zeroed; the fuzz queue
+;                   (aux 0 FQCOL-FQPOS) left undefined. A, X, Y, P lost.
 ;
 ; Per batch, in strips of whole columns:
 ;
@@ -37,9 +38,22 @@
 ;           When the next column does not fit the stage, the strip ends
 ;           before it.
 ;   draw    RAMWRT on: each column's records through the row blocks (bank
-;           2), fills, the fuzz and overlay drawers (aux 0, RAMRD on);
-;           covered-range cuts as upstream's. RAMWRT off, then the covered
-;           ranges of the strip's columns are zeroed.
+;           2), fills, the overlay drawer (aux 0, RAMRD on); covered-range
+;           cuts as upstream's. Each K_FUZZ record goes into the fuzz
+;           queue (aux 0 FQCOL..FQPOS, written with RAMWRT on); after the
+;           strip's last column the queue is drawn in order, in one RAMRD
+;           window. A K_FUZZNOW record (the loader's mark: a later record
+;           of its column paints a row it reads or writes), or a K_FUZZ
+;           when the queue is full, is drawn in place, RAMRD on and off
+;           around it. RAMWRT off, then the covered ranges of the strip's
+;           columns are zeroed.
+;
+; Why the queue: on F1.2.1 a RAMRD write ($C002, $C003) waits until the
+; firmware's coalescer has sent every screen byte written so far, and it
+; scans each 256-byte page it sends whole, so a column's scattered bytes
+; take about 4 Apple cycles each (docs/results/fuzz-timing-2026-09-30.md).
+; Around every fuzz record in place, that is two waits on scattered bytes;
+; after the strip, one wait on its dense backlog.
 ;
 ; A texture record's texels go to the stage one of two ways:
 ;
@@ -133,6 +147,9 @@ fcnt    = te            ; the count of rows (K_OVL: the nibble to keep)
 fpos    = xop           ; the fuzz position (K_OVL: the colour)
 fdst    = tent
 fsrc    = xo
+; the fuzz queue's count, during the draw: gdx is 0 from run_descriptors
+; on, and the next strip's gather sets it again
+fqn     = gdx
 
 ; ---------------------------------------------------------------------------
 ; main scratch $17C2-$17FF: batches and gather only, never read or
@@ -230,6 +247,7 @@ nat_replay:
 ; ---------------------------------------------------------------------------
 draw_strip:
         MARK 2
+        stz     fqn                     ; the fuzz queue empty
         sta     WRAUX                   ; the screen: aux 0 ($C073 is 0)
         stz     pl
         lda     #>STAGE_END
@@ -242,7 +260,8 @@ draw_strip:
         lda     col
         inc     a
         bra     @col
-@done:  sta     WRMAIN
+@done:  jsr     fuzz_queue
+        sta     WRMAIN
         ldx     sc0
 @cv:    cpx     gcol
         bcs     @end
@@ -285,6 +304,8 @@ gather_column:
 @four:  cmp     #K_FUZZ
         beq     @is4
         cmp     #K_OVL
+        beq     @is4
+        cmp     #K_FUZZNOW
         bne     @bad
 @is4:   lda     #FUZZ_SIZE
 @adv:   clc
@@ -695,10 +716,12 @@ P1_SIZE = * - p1_image
         .assert P1CODE + P1_SIZE <= P1CODE_END, error, "page 1 code"
 
 ; ---------------------------------------------------------------------------
-; the fuzz and overlay records: their fields into zero page, then the
-; drawer in aux 0 with RAMRD on (it reads the screen)
+; the fuzz and overlay records: their fields into zero page; a K_FUZZ into
+; the queue while it has room; anything else to its drawer in aux 0 with
+; RAMRD on (it reads the screen)
 ; ---------------------------------------------------------------------------
         .assert FUZZ_SIZE = OVL_SIZE, error, "fuzz and overlay sizes"
+        .assert FQMAX < 256, error, "the fuzz queue"
 fuzz_or_overlay:
         ldy     #1
         lda     (rp),y
@@ -710,16 +733,57 @@ fuzz_or_overlay:
         lda     (rp),y
         sta     fpos
         lda     (rp)                    ; (the record is main: before
-        cmp     #K_FUZZ                 ;   RAMRD goes on)
-        bne     @ovl
-        sta     RDAUX
+        cmp     #K_OVL                  ;   RAMRD goes on)
+        beq     @ovl
+        cmp     #K_FUZZ
+        bne     @now                    ; K_FUZZNOW: in place
+        ldx     fqn
+        cpx     #FQMAX
+        bcs     @now                    ; the queue is full: in place
+        lda     col                     ; queued (RAMWRT is on: aux 0)
+        sta     FQCOL,x
+        lda     frow
+        sta     FQROW,x
+        lda     fcnt
+        sta     FQCNT,x
+        lda     fpos
+        sta     FQPOS,x
+        inc     fqn
+        bra     @next
+@now:   sta     RDAUX
         jsr     aux_fuzz
         bra     @back
 @ovl:   sta     RDAUX
         jsr     aux_overlay
 @back:  sta     RDMAIN
-        lda     #FUZZ_SIZE
+@next:  lda     #FUZZ_SIZE
         jmp     dnext
+
+; fuzz_queue: the queued fuzz records, in their order, in one RAMRD window
+; (RAMWRT on). The strip's own screen bytes are dense, so the RAMRD write
+; waits for a fast drain; the queue's scattered ones drain once, at the
+; strip's WRMAIN.
+fuzz_queue:
+        ldx     fqn
+        beq     @none
+        sta     RDAUX
+        ldx     #0
+@one:   lda     FQCOL,x                 ; (aux 0)
+        sta     col
+        lda     FQROW,x
+        sta     frow
+        lda     FQCNT,x
+        sta     fcnt
+        lda     FQPOS,x
+        sta     fpos
+        phx
+        jsr     aux_fuzz
+        plx
+        inx
+        cpx     fqn
+        bcc     @one
+        sta     RDMAIN
+@none:  rts
 
 ; ---------------------------------------------------------------------------
 ; the draw pass: bank 2, entered only while nat_replay runs. RAMWRT on,
@@ -784,9 +848,10 @@ drec:   lda     (rp)
 dcol_done:
         rts
 
-kinds:  .word   dtex, dfill, bad, dtexc, fuzz_or_overlay, fuzz_or_overlay
+kinds:  .word   dtex, dfill, fuzz_or_overlay, dtexc, fuzz_or_overlay
+        .word   fuzz_or_overlay
         .assert K_TEX = 0 && K_FILL = 2 && K_TEXC = 6, error, "kinds"
-        .assert K_FUZZ = 8 && K_OVL = 10, error, "kinds"
+        .assert K_FUZZNOW = 4 && K_FUZZ = 8 && K_OVL = 10, error, "kinds"
 bad:    brk                             ; a record of unknown kind
         .byte   $02
 

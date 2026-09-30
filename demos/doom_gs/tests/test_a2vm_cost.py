@@ -286,8 +286,9 @@ class VideoMirror(CostWorkspace):
         period = 133.333333 * 64 / 65
         d, points = self.deltas(self.lines(200))
         self.assertEqual(d[0], 200 * 6)     # a video write takes 6 clocks
-        self.assertEqual(points[1]['posted'], 200)
-        # the $C000 read waits until the 200th byte is out
+        # the $C000 read waits until the 200th byte is out (the
+        # coalescer counts a byte when it queues it for the bus)
+        self.assertEqual(points[2]['posted'], 200)
         self.assertGreater(d[0] + d[1], 200 * period)
         self.assertLess(d[0] + d[1], 200 * period + 400)
         # a main HGR byte with TEXT on is deferred: the next $C000 read
@@ -298,11 +299,39 @@ class VideoMirror(CostWorkspace):
 
     def test_coalescing(self):
         lines = ['write C005 00'] + ['write 2000 %02X' % i
-                                     for i in range(20)] + ['cost']
+                                     for i in range(20)] + \
+            ['read C000', 'cost']
         points = self.costs(lines)
-        # the first byte drains at the next drive_en; the writes that
-        # come before that are coalesced, those after it into one more
+        # the writes that come before the scanner reaches the byte are
+        # coalesced, those after it into one more
         self.assertIn(points[0]['posted'], (1, 2))
+
+    def test_sparse_column_drains_by_the_page(self):
+        # one byte a screen row (160 bytes apart): about 1.6 dirty bytes a
+        # page, each page scanned whole, 2 clocks a byte
+        # (vtw_video_coalescer.sv:119-149); the Verilator run of the RTL
+        # took 41,854 clocks for 168 rows after the writes, 54,745 with
+        # them (docs/results/fuzz-timing-2026-09-30.md section 3)
+        column = ['write %04X 01' % (0x2000 + 160 * r) for r in range(168)]
+        dense = ['write %04X 01' % (0x2000 + i) for i in range(168)]
+        period = 133.333333 * 64 / 65
+        for lines, low, high in ((column, 105 * 512, 105 * 512 + 2000),
+                                 (dense, 168 * period,
+                                  168 * period + 1200)):
+            d, points = self.deltas(['write C005 00', 'cost'] + lines +
+                                    ['read C000', 'cost'])
+            self.assertTrue(low <= d[0] <= high, (d[0], low, high))
+            self.assertEqual(points[1]['posted'], 168)
+        # coalescer 0: the write-ordered model, one byte an Apple cycle
+        # whatever the page
+        self.files['nocz'] = self.directory / 'nocz.txt'
+        self.files['nocz'].write_text(costs.text('f121').replace(
+            '\ncoalescer 1\n', '\ncoalescer 0\n'))
+        self.assertIn('\ncoalescer 0\n', self.files['nocz'].read_text())
+        d, points = self.deltas(['write C005 00', 'cost'] + column +
+                                ['read C000', 'cost'], 'nocz')
+        self.assertLess(d[0], 168 * period + 1200)
+        self.assertEqual(points[1]['posted'], 168)
 
     def test_fastpath_lazy_shr(self):
         d, points = self.deltas(self.lines(200), 'fastpath')

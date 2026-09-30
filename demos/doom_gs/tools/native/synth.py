@@ -34,6 +34,18 @@ record of its column):
   pages      long lists: K_NEXT into the extra pages
   batches    over 8 KB of records: several batches
   strips     texel spans over the 16 KB stage: several strips
+  fuzzedge   the fuzz queue's rule (tools/native/loader.py mark_fuzz):
+             in each column a shadow, then a later record of every kind
+             that paints the row just above it or just below it (so the
+             shadow must be drawn in place), or inside it, or one row
+             clear of it (so it may wait in the queue); the shadow reads
+             the neighbour row the later record paints. In some columns
+             the later record is a shadow and a third record paints the
+             row next to it, away from the first, so the later shadow is
+             drawn in place and the first must be too when they touch
+  fuzzfull   the fuzz queue full: 3-4 shadows a column over walls, in two
+             strips, several times the queue's FQMAX records a strip,
+             some of them under a later record
 
 The generator is deterministic (its own xorshift, not Python's random).
 Standard library only.
@@ -63,7 +75,7 @@ OUT = BUILD / 'native' / 'synth'
 FORMAT = 'native-synthetic 1'
 TEXEL_BANKS = range(0x30, 0x38)      # in the level window, empty in the base
 STYLES = ('mixed', 'chains', 'fuzz', 'overlay', 'rows', 'steps',
-          'colormaps', 'pages', 'batches', 'strips')
+          'colormaps', 'pages', 'batches', 'strips', 'fuzzedge', 'fuzzfull')
 
 
 class Rng:
@@ -211,6 +223,10 @@ class Gen:
         recs: List[Dict] = []
         if s == 'rows':
             return self.rows_column(c)
+        if s == 'fuzzedge':
+            return self.edge_column(c), None
+        if s == 'fuzzfull':
+            return self.full_column(c), None
         count = {'mixed': (0, 8), 'chains': (1, 4), 'fuzz': (1, 5),
                  'overlay': (1, 4), 'steps': (1, 6), 'colormaps': (1, 5),
                  'pages': (1, 4), 'batches': (5, 12),
@@ -256,6 +272,118 @@ class Gen:
         elif r.chance(0.05):
             cut = r.pick([(255, 254, None), (0, 0, None)])
         return recs, cut
+
+    def fuzz_at(self, a, n, reads=None):
+        """A shadow of n rows from row a. reads 'above' or 'below': a
+        position whose first row reads the row above it, or whose last
+        row reads the row below it (layout.py FUZZ_DIR)."""
+        r = self.rng
+        while True:
+            pos = r.range(0, 49)
+            if reads == 'above' and L.FUZZ_DIR[pos] != 0:
+                continue
+            if reads == 'below' and L.FUZZ_DIR[(pos + n - 1) % 50] != 1:
+                continue
+            return {'kind': L.K_FUZZ, 'bytes': [L.K_FUZZ, a, n, pos]}
+
+    def painter(self, kind, a, e):
+        """A record of this kind painting rows a .. e - 1 (K_OVL: row
+        a)."""
+        if kind == L.K_TEX:
+            return self.tex(a, e)
+        if kind == L.K_FILL:
+            return self.fill(a, e)
+        if kind == L.K_FUZZ:
+            return self.fuzz_at(a, e - a)
+        rec = self.ovl()
+        rec['bytes'][1] = a
+        return rec
+
+    # where the later record of a fuzzedge column paints, against the
+    # shadow's rows a .. e - 1: (name, the shadow must be drawn in place)
+    EDGE_CASES = (('above, touching', True), ('above, clear', False),
+                  ('below, touching', True), ('below, clear', False),
+                  ('inside', True))
+    EDGE_KINDS = (L.K_TEX, L.K_FILL, L.K_OVL, L.K_FUZZ)
+
+    def edge_column(self, c: int) -> List[Dict]:
+        """A shadow, then a later record (EDGE_CASES by EDGE_KINDS, in
+        turn by column) that paints the row just above or below it,
+        inside it, or one row clear of it. For the neighbour cases the
+        shadow's first (last) row reads the row above (below), so drawing
+        the shadow after the later record would change its pixels. A
+        second shadow, far from both, waits in the queue in some
+        columns. When the later record is a shadow above or below it, in
+        every other run of EDGE_CASES by EDGE_KINDS a third record, a
+        one-row fill, paints the row on the later shadow's far side: that
+        shadow is then drawn in place, so a first shadow it touches must
+        be drawn in place before it (a mark that ignored later shadows
+        would queue the first and draw it after the later one), and one
+        clear of it may wait (the unmarked pair in the other order)."""
+        r = self.rng
+        case, touch = self.EDGE_CASES[c % len(self.EDGE_CASES)]
+        kind = self.EDGE_KINDS[(c // len(self.EDGE_CASES)) %
+                               len(self.EDGE_KINDS)]
+        a = r.range(50, 110)        # (clear of the second shadow's rows)
+        n = r.range(1, 16)
+        e = a + n
+        span = r.range(1, 12) if kind != L.K_OVL else 1
+        if case.startswith('above'):
+            last = a - 1 if touch else a - 2       # its last row
+            x0, x1 = max(1, last + 1 - span), last + 1
+            shadow = self.fuzz_at(a, n, 'above')
+        elif case.startswith('below'):
+            x0 = e if touch else e + 1
+            x1 = min(L.VIEW_ROWS - 1, x0 + span)
+            shadow = self.fuzz_at(a, n, 'below')
+        else:
+            x0 = r.range(a, e - 1)
+            x1 = min(e, x0 + span)
+            shadow = self.fuzz_at(a, n)
+        # two walls under it: 260 stage bytes a column, so three strips,
+        # each with fewer than FQMAX shadows to queue (none is drawn in
+        # place for want of room)
+        recs = [self.tex(0, L.VIEW_ROWS), self.tex(0, L.VIEW_ROWS)]
+        for wall in recs:
+            wall['bytes'][6] = r.range(2, 5)
+        recs.append(shadow)
+        if r.chance(0.125):
+            recs.append(self.fuzz_at(r.range(1, 20), r.range(1, 10)))
+        recs.append(self.painter(kind, x0, x1))
+        cycle = len(self.EDGE_CASES) * len(self.EDGE_KINDS)
+        if kind == L.K_FUZZ and case != 'inside' and (c // cycle) % 2:
+            row = x0 - 1 if case.startswith('above') else x1
+            recs.append(self.fill(row, row + 1))
+        return recs
+
+    def full_column(self, c: int) -> List[Dict]:
+        """A wall of all 168 rows (its 128 texels take 130 stage bytes, so
+        the 160 columns make two strips), then 3-4 shadows with at least
+        two rows between them; in one column of five a later record over
+        or next to one of them."""
+        r = self.rng
+        wall = self.tex(0, L.VIEW_ROWS)
+        wall['bytes'][6] = r.range(2, 5)    # a whole step of 2 or more
+        recs = [wall]
+        rows = []
+        top = 1
+        for _ in range(r.range(3, 4)):
+            a = r.range(top, top + 10)
+            n = r.range(1, 20)
+            if a + n > L.VIEW_ROWS - 1:
+                break
+            recs.append(self.fuzz_at(a, n))
+            rows.append((a, a + n))
+            top = a + n + 2
+        if rows and c % 5 == 0:
+            a, e = r.pick(rows)
+            kind = r.pick(self.EDGE_KINDS)
+            x0 = r.pick([max(1, a - 1), e, r.range(a, e - 1)])
+            x1 = min(L.VIEW_ROWS - 1, x0 + r.range(1, 6))
+            if x1 <= x0:
+                x0, x1 = a, a + 1
+            recs.append(self.painter(kind, x0, x1))
+        return recs
 
     ROW_CASES = ('before', 'end-in', 'end-at', 'spans', 'inside', 'exact',
                  'start-in', 'after', 'whole', 'texc-behind-skipped',

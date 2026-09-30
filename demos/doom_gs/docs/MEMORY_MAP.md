@@ -372,7 +372,8 @@ bank, read through `zp_rd`.
 | Range | Bytes | F1.2.1 | Pair | Loaded | Read-only in the frame |
 | --- | ---: | --- | --- | --- | --- |
 | `$0000-$01FF` | 512 | unused (rule 7) | Tic zero page and stack | | |
-| `$0200-$03FF` | 512 | Screen-reading drawers, as loops: fuzz, automap overlay (113 B built [M]), the status bar's read-mask-or. They run with RAMRD and RAMWRT on, so their code and tables are aux reads | same | boot, PRIVATE | yes |
+| `$0200-$02BF` | 192 | Screen-reading drawers, as loops: fuzz, automap overlay (113 B built [M]), the status bar's read-mask-or. They run with RAMRD and RAMWRT on, so their code and tables are aux reads. Since the fuzz queue took `$02C0-$03FF`, the status bar's drawer, not yet written, has the 79 B left. If it needs more, the queue shrinks by 4 B a record (`FQMAX`; `layout.py` asserts that `FUZZQ` is `AUXCODE_END` and that the queue ends at `$0400`), or the drawer goes to `$0400-$07FF` once its slot holes are verified | same | boot, PRIVATE | yes |
+| `$02C0-$03FF` | 320 | The replay's fuzz queue: 80 records as four arrays of 80 bytes (column, first row, count, position), written in the draw pass with RAMWRT on, read with RAMRD on (section 8) | same | scratch | no |
 | `$0400-$07FF` | 1,024 | free, write-expensive (read-only data only; aux slot holes unverified) | same | | |
 | `$0800-$08FF` | 256 | `FUZZDARK`: darker colour of each colour | same | per level, PRIVATE (it follows the level palette [R `i_viigs65.s:1014-1017`]) | yes |
 | `$0900-$09C7` | 200 | `ROWLO`: SHR row address, rows 0-199 | same | boot, PRIVATE | yes |
@@ -453,7 +454,8 @@ bounce at `$0100`) is tested in milestone 13.
 | Dispatcher, hot | Bank 2 `$DE00-$DFFF` | 512 | Entered from `$F900-$FEFF`, which selects bank 2 before and bank 1 after |
 | Dispatcher, rest; gather | Main card `$F900-$FEFF` | 1,536 | The gather's copies run with RAMRD on |
 | Gather descriptors, copy loop | Page 1 `$0100-$018F`, `$0190-$01B4`; the stack at or above `$01C0` | 181 | Section 2 |
-| Fuzz, overlay | Aux 0 `$0200-$03FF`; tables aux 0 `$0800-$0AC7` (`FUZZDARK`, `ROWLO`, `FZDIR`, `ROWHI`) | 512; 706 | Entered with RAMRD on (section 5) |
+| Fuzz, overlay | Aux 0 `$0200-$02BF`; tables aux 0 `$0800-$0AC7` (`FUZZDARK`, `ROWLO`, `FZDIR`, `ROWHI`) | 192; 706 | Entered with RAMRD on (section 5) |
+| Fuzz queue | Aux 0 `$02C0-$03FF`: `FQCOL`, `FQROW`, `FQCNT`, `FQPOS`, 80 bytes each; its count in zero page (the gather's `gdx`, free in the draw) | 320 | Written with RAMWRT on (the draw), read with RAMRD on after the strip's columns; not a video window. The replay writes it and nothing else reads it |
 | Entry tables | `TEXLO` `$0900-$09A8`, `TEXHI` `$0A4A-$0AF2` | 2 × 169 | Read-only |
 | Colormap page tables | `CMPA` `$0800-$0821`, `CMPB` `$0822-$0843`, indexed `CMPA-$46,Y` by `R_CMP` | 2 × 34 | Read-only |
 | Colormaps | A: pages `$20-$3F` (levels 0-31), `$04`, `$05` (32, 33). B: pages `$40-$5F`, `$06`, `$07` | 17,408 | Read-only |
@@ -466,6 +468,19 @@ bounce at `$0100`) is tested in milestone 13.
 | Zero page | `$48-$6F` | 40 | Pointers to the record, the stage, colormaps A and B (low byte = texel), row block entry and exit, saved opcode, steps and paired steps, fraction, covered range, fill bytes, the stage's pointer list; the gather and the drawers alias the draw's temporaries (39 B used [M]) |
 | Scratch in main | `$17C2-$17FF` | 62 | Gather and bucket only, never in the draw pass |
 | Screen | Aux 0 `$2000-$88FF` | 26,880 | The only screen bytes it writes |
+
+**The fuzz queue.** The draw queues each `K_FUZZ` record and draws the
+queue after the strip's columns, in one RAMRD window, because on F1.2.1
+a RAMRD write waits for the coalescer to send every screen byte written
+so far, and it scans each page it sends whole: a fuzz record drawn in
+place would wait twice on scattered column bytes
+(`docs/results/fuzz-timing-2026-09-30.md`). A fuzz record that a later
+record of its column paints over or next to (rows `R_ROW - 1` to
+`R_ROW + R_COUNT`) must be drawn in place: the loader, and in the game
+the producer, writes it into W as `K_FUZZNOW` (kind 4, not an upstream
+kind). A record the full queue has no room for is drawn in place too.
+The record format above is otherwise upstream's (`src/native/README.md`,
+"The fuzz queue").
 
 **Batches and strips.** A frame whose packed records exceed 8,192 B is
 split by column range: columns [c0, c1) whole in each batch. Drawing
@@ -539,7 +554,7 @@ untouched.
 | Drawsegs, vissprites in RamWorks | 1-1.5 | 0 | A on M counts |
 | Stage strips | 0-0.8 on the captured frames | 0 | A: one unoverlapped gather a strip |
 | Copy groups of 12 descriptors (section 8) | 0.10-0.34 | 0 (no gather) | M: `replay_check.py --breakdown` |
-| Fuzz as a loop | 0 (under the drain) | up to about 1 in shadow frames | A |
+| Fuzz as a loop, queued per strip | 0.1-0.6 on the captured frames with fuzz (the coalescer's scan of their columns); 1.4-12.6 drawn in place | up to about 1 in shadow frames | M: `replay_check.py`, a2vm with the scan (`src/native/README.md`) |
 
 The trig windows and the RamWorks drawsegs are new against `NATIVE.md`
 §1.1: +1.5 to 2.3 ms a frame on F1.2.1 standing still [A], within the
