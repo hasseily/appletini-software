@@ -52,7 +52,40 @@
     "amem_read_setup_axi": {"value": 5, "source": "memory_api_hw.c:183-186: hw_held (4), READ4_STATUS (1), and the ADDR write"},
     "amem_write_word_axi": {"value": 6, "source": "memory_api_hw.c:254-272 (hw_shadow_write), per 4 bytes: hw_held 4 + DATA4_STATUS 1, then the DATA4 write"},
     "amem_write_setup_axi": {"value": 11, "source": "memory_api_hw.c:241-244 (hw_held 4, DATA4_STATUS 1, ADDR write) and :220-232 (the final hw_shadow_wait: DATA4_STATUS 1, hw_held 4, ADDR 1)"},
-    "amem_write_byte_axi": {"value": 11, "source": "memory_api_hw.c:246-252, :275-281: an unaligned byte is hw_held (4), a DATA write and hw_shadow_wait (6)"}
+    "amem_write_byte_axi": {"value": 11, "source": "memory_api_hw.c:246-252, :275-281: an unaligned byte is hw_held (4), a DATA write and hw_shadow_wait (6)"},
+
+    "slowdown_cycles": {"value": 512, "source": "ps_sources/frontend/config_menu.c:76 (CONFIG_DEFAULT_VTW_SLOWDOWN_CYCLES 512U, '1 MHz window per access'), sent as is to the RTL (:4677-4687; apple_top.sv:2172, slow_duration). In the RTL it is the value slow_cnt_q is loaded with on a hit, and slow_cnt_q drops by one each completed CPU cycle (core_top:1884-1898), so it counts CPU cycles; each of them is one Apple cycle at 1 MHz. The profile key vtw.slowdown.cycles sets any value 1-65535 (config_menu.c:3550-3552); 0 with the Phasor enabled becomes 512 (:4681-4683)"},
+    "slowdown_slot4": {"value": 0, "source": "Whether the virtual Phasor is enabled, which forces slot 4 into the slowdown mask whatever the per-slot setting (config_menu.c:4660-4692). Off by default (config_menu.c:93, CONFIG_DEFAULT_MOCKINGBOARD_SLOT4_ENABLED 0U), and off in f121 and fastpath, whose runs of the existing port touch no slot-4 address in a frame; the 'phasor' variant turns it on. A hit is any completed access to $C400-$C4FF (sd_iosel) or $C0C0-$C0CF (sd_slot_io), read or write (core_top:1119-1144)"},
+    "slowdown_via_exempt": {"value": 0, "source": "F1.2.1 exempts nothing: sd_hit does not look at the direction or the register (core_top:1141-1144). The 'fws1' variant models the firmware request FW-S1 of docs/research/native-sound.md 4.4 (not in any firmware)"},
+    "slow_done": {"value": 1, "source": "A memory cycle at 1 MHz ends on the clock after an Apple data strobe that came after the previous cycle ended: pace_tick_pending_q is set at data_en and cleared when a cycle completes (core_top:1849-1856), pace_ok follows it at 1 MHz (:1159-1162), and complete_mem is X_MEM_DONE and pace_ok (:1514). Bus cycles keep their own timing (bus_done)"}
+  },
+  "variants": {
+    "about": "Settings applied on top of a profile (tools/a2vm/costs.py: PROFILE+VARIANT). Each is a setting of the firmware or of the machine, not a change of the RTL, except fws1, a proposal.",
+    "phasor": {
+      "description": "The virtual Phasor enabled (the music player's runs).",
+      "params": {
+        "slowdown_slot4": {"value": 1, "source": "config_menu.c:4679-4680: slot 4 forced into the mask when mockingboard_slot4_enabled"}
+      }
+    },
+    "window32": {
+      "description": "The profile setting vtw.slowdown.cycles=32 (native-sound.md 2.3), no firmware change.",
+      "params": {
+        "slowdown_cycles": {"value": 32, "source": "config_menu.c:3550-3552 (the key accepts any value up to 65535) and :4677-4687 (applied as is)"}
+      }
+    },
+    "fws1": {
+      "description": "Firmware request FW-S1 of native-sound.md 4.4: writes to the VIA registers ORB, ORA, DDRB, DDRA, IFR, IER and ORA without handshake do not open the window; reads, and writes to the timers, SR, ACR, PCR, the SSI-263 and the mode switch still do.",
+      "params": {
+        "slowdown_via_exempt": {"value": 1, "source": "docs/research/native-sound.md 4.4 (FW-S1). The VIA registers are the low 4 address bits (mockingboard.sv:73-80 decode); addresses with bit 5 or 6 set also write the SSI-263 (mockingboard.sv:100-103) and stay hits"}
+      }
+    },
+    "ntsc": {
+      "description": "An NTSC //e: 262 lines of 63.695 us.",
+      "params": {
+        "line_us": {"value": 63.695246, "source": "apple_video_standard_detect.sv:5-8 (NTSC: 912 dots / 14.31818 MHz = 63.695 us a line of 65 PHI0 pulses)"},
+        "lines": {"value": 262, "source": "hdl/video2/video_timing_gen.sv:31 (NTSC frame = 262 lines, 59.923 Hz)"}
+      }
+    }
   },
   "profiles": {
     "f121": {

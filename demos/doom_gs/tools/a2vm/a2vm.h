@@ -41,6 +41,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 enum {
     A2VM_BANK_SIZE = 0x10000,
@@ -50,6 +51,7 @@ enum {
     A2VM_VBL_LINE = 192,
     A2VM_TURBO_FRAME = 1250000,     /* a2sim.py's historical "turbo" frame */
     A2VM_MAX_IDLE = 16,
+    A2VM_MAX_IRQ_BOUNDS = 8,
     A2VM_MAX_KEYS = 256,
     A2VM_AMEM_BUFFER = 0x10100
 };
@@ -199,6 +201,30 @@ typedef struct a2vm {
        models reject with an assertion, or a ProDOS volume they cannot
        build */
     char halt[256];
+
+    /* --ay-log (README.md, "The AY log"): a line for each AY register
+       write that reaches a chip, each chip reset, each interrupt taken
+       and each RTI. NULL in every other run; it only observes. */
+    FILE *ay_log;
+
+    /* --via-ora-nh: a write to a VIA's register 15 (ORA without
+       handshake) sets ORA, as the card's 6522 does (via6522.v:149).
+       a2sim.py ignores the register, so it is off by default. */
+    int via_ora_nh;
+
+    /* --phasor-mb-only: the card locked to Mockingboard mode, as the
+       card's audio_control bit 26 does (mockingboard.sv:38-41): the
+       $C0C0-$C0CF mode switch is ignored, so the card keeps one AY behind
+       each VIA. Off by default. */
+    int phasor_mb_only;
+
+    /* --irq-bounds (README.md, "Interrupt bounds"): the address ranges an
+       interrupt handler may access, from its first instruction to its
+       RTI; any other access halts the run. irq_guard is set while such a
+       handler runs. irq_bound_count is 0 in every other run. */
+    uint16_t irq_bounds[A2VM_MAX_IRQ_BOUNDS][2];
+    unsigned irq_bound_count;
+    int irq_guard;
 } a2vm;
 
 typedef struct {

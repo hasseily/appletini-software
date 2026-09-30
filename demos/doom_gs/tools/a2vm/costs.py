@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """The cost profiles of a2vm: tools/a2vm/costs/appletini.json.
 
-Usage:  python3 tools/a2vm/costs.py PROFILE [OUT]
+Usage:  python3 tools/a2vm/costs.py PROFILE[+VARIANT...] [OUT]
 
 Writes the parameters of PROFILE (the "common" values, then the
-profile's own) as the "name value" lines a2vm's --cost option reads, to
-OUT or to standard output. `profile(name)` does the same for other
-tools. Standard library only.
+profile's own, then those of each VARIANT in order) as the "name value"
+lines a2vm's --cost option reads, to OUT or to standard output.
+`profile(name)` does the same for other tools. The variants (the
+"variants" section: phasor, window32, fws1, ntsc) are settings of the
+firmware or the machine on top of a profile, for instance
+f121+phasor+window32. Standard library only.
 """
 
 import json
@@ -25,15 +28,31 @@ def profiles(path=COSTS):
     return sorted(load(path)['profiles'])
 
 
+def variants(path=COSTS):
+    return sorted(key for key in load(path).get('variants', {})
+                  if key != 'about')
+
+
 def parameters(name, path=COSTS):
-    """{parameter: value} of profile `name`."""
+    """{parameter: value} of profile `name`, or of PROFILE+VARIANT..."""
     data = load(path)
+    name, *extra = name.split('+')
     if name not in data['profiles']:
         raise KeyError('no cost profile %r (there are %s)'
                        % (name, ', '.join(sorted(data['profiles']))))
     values = {key: entry['value'] for key, entry in data['common'].items()}
     for key, entry in data['profiles'][name]['params'].items():
         values[key] = entry['value']
+    for variant in extra:
+        known = data.get('variants', {})
+        if variant not in known or variant == 'about':
+            raise KeyError('no cost variant %r (there are %s)'
+                           % (variant, ', '.join(variants(path))))
+        for key, entry in known[variant]['params'].items():
+            if key not in values:
+                raise KeyError('variant %s sets an unknown parameter %s'
+                               % (variant, key))
+            values[key] = entry['value']
     return values
 
 

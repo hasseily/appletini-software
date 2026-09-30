@@ -52,6 +52,8 @@ python3 tools/sound/mus2mid.py D_E1M1 build/sound/D_E1M1.mid    # MIDI
 | `player.py` | The model of the 65C02 player: the specification and S2's oracle |
 | `ayrender.py` | AY register writes to WAV, after the card's YM2149 core and mixer |
 | `report.py` | All songs: the tables below, song files and WAVs |
+| `tables65.py` | S2: the player's tables as ca65 source (`build/sound65/LAYOUT/tables.inc`), from `tables.py` |
+| `run65.py` | S2: the 65C02 player (`src/sound`) on a2vm against `player.py`, its sizes and its cost (`src/sound/README.md`) |
 
 ## Facts checked in the HDL
 
@@ -351,12 +353,14 @@ The renders are the first time anyone hears this. To judge:
 
 ## Open problems
 
-- S2 needs a2vm's per-write AY log (`--ay-log`) and the slot-4 slowdown in
-  its cost model (native-sound.md 5.2); neither exists yet.
+- S2 used a2vm's per-write AY log (`--ay-log`) and the slot-4 slowdown in
+  its cost model (native-sound.md 5.2); both exist now
+  (`tools/a2vm/README.md`).
 - MUS has no loop point: the songs loop from their start (loop offset 0).
 - The model reads the whole stream from memory; the ring buffer, its
   refill and the underrun rule (silence, hold position) of native-sound.md
-  4.3 are not modelled yet.
+  4.3 are modelled by `run65.RingPlayer` (S2), which the 65C02 player is
+  tested against, not by `player.py` itself.
 - Effects (S4) are not here. In mb6, chip 2's mixer (R7) is shared with
   the effect voices and will have to be composed from both.
 - Upstream's `tools/dmxmus.py` was not used as an extra oracle; the second

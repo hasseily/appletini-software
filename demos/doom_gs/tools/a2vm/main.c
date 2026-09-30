@@ -16,6 +16,12 @@
  *   --amem              the memory API in slot 7 (FakeSmartPortMemory)
  *   --amem-unsupported, --amem-unavailable
  *                       its STATUS answers $21, its CONTROL $60
+ *   --via-ora-nh        a write to a Phasor VIA's register 15 (ORA without
+ *                       handshake) sets ORA, as the card's 6522 does;
+ *                       a2sim.py ignores it (the default)
+ *   --phasor-mb-only    the Phasor locked to Mockingboard mode (the
+ *                       card's audio_control bit 26): $C0C0-$C0CF mode
+ *                       switches are ignored
  *
  * Start
  *   --image FILE        memory records (A2VMIMG1, see README.md)
@@ -61,6 +67,19 @@
  *                       phases: the phase is the value written / 2
  *   --cost-report FILE  a JSON line at every frame boundary: the model's
  *                       clocks, by phase, and its counters
+ *
+ * Logs
+ *   --ay-log FILE       a line for each AY register write that reaches a
+ *                       chip, each chip reset, each interrupt taken and
+ *                       each RTI, with the machine's time (README.md,
+ *                       "The AY log")
+ *
+ * Checks
+ *   --irq-bounds RANGES the only addresses an interrupt handler may read
+ *                       or write, from its first instruction to its RTI,
+ *                       as hex ranges LO-HI separated by commas (at most
+ *                       8); any other access halts the run (README.md,
+ *                       "Interrupt bounds")
  *
  * A snapshot NAME is NAME.json (the state: registers, time, switches,
  * devices, files) and NAME.ram: main 64 KB, the main language card 16 KB
@@ -180,7 +199,7 @@ typedef struct {
     a2vm_config config;
     const char *image, *prodos, *input, *snapshot_dir, *state, *bus_script;
     const char *volume, *launched;
-    const char *cost, *cost_report;
+    const char *cost, *cost_report, *ay_log, *irq_bounds;
     int cost_timed, cost_phase;
     const char *loads[MAX_LIST], *aux_loads[MAX_LIST], *regs[MAX_LIST],
         *switches[MAX_LIST], *idles[MAX_LIST];
@@ -192,6 +211,7 @@ typedef struct {
     stop_pc stops[MAX_LIST];
     unsigned stop_count;
     int snapshot_boundaries, final_snapshot;
+    int via_ora_nh, phasor_mb_only;
 } options;
 
 static void add(const char **list, unsigned *count, const char *value)
@@ -238,6 +258,14 @@ static void parse(int argc, char **argv, options *o)
         }
         if (!strcmp(arg, "--cost-timed")) {
             o->cost_timed = 1;
+            continue;
+        }
+        if (!strcmp(arg, "--via-ora-nh")) {
+            o->via_ora_nh = 1;
+            continue;
+        }
+        if (!strcmp(arg, "--phasor-mb-only")) {
+            o->phasor_mb_only = 1;
             continue;
         }
         if (i + 1 == argc)
@@ -316,6 +344,10 @@ static void parse(int argc, char **argv, options *o)
             o->cost_report = value;
         else if (!strcmp(arg, "--cost-phase"))
             o->cost_phase = address16(value);
+        else if (!strcmp(arg, "--ay-log"))
+            o->ay_log = value;
+        else if (!strcmp(arg, "--irq-bounds"))
+            o->irq_bounds = value;
         else
             fail("unknown option %s", arg);
     }
@@ -899,6 +931,11 @@ static void bus_script(a2vm *m, const char *path)
             COST_FIELD(reconcile_cycles); COST_FIELD(lazy_flushes);
             COST_FIELD(amem_requests); COST_FIELD(amem_bytes);
             COST_FIELD(amem_clocks);
+            if (c->p.slowdown_slot4) {
+                COST_FIELD(slow_hits); COST_FIELD(slow_cycles);
+                COST_FIELD(slow_clocks);
+                printf(" slow_left=%u", c->slow_left);
+            }
 #undef COST_FIELD
             printf("\n");
         } else if (!strcmp(verb, "counts") && n == 1) {
@@ -972,6 +1009,31 @@ static void act(a2vm *m, const options *o, event *e, int *stop)
     e->done = 1;
 }
 
+/* --irq-bounds LO-HI[,LO-HI...] (hex) */
+static void irq_bounds(a2vm *m, const char *text)
+{
+    char buffer[256];
+    if (strlen(text) >= sizeof buffer)
+        fail("--irq-bounds: too long");
+    strcpy(buffer, text);
+    for (char *item = strtok(buffer, ","); item; item = strtok(NULL, ",")) {
+        char *dash = strchr(item, '-');
+        if (!dash)
+            fail("--irq-bounds: %s is not LO-HI", item);
+        *dash = 0;
+        uint16_t low = address16(item), high = address16(dash + 1);
+        if (low > high)
+            fail("--irq-bounds: %s-%s is empty", item, dash + 1);
+        if (m->irq_bound_count == A2VM_MAX_IRQ_BOUNDS)
+            fail("--irq-bounds: at most %d ranges", A2VM_MAX_IRQ_BOUNDS);
+        m->irq_bounds[m->irq_bound_count][0] = low;
+        m->irq_bounds[m->irq_bound_count][1] = high;
+        m->irq_bound_count++;
+    }
+    if (!m->irq_bound_count)
+        fail("--irq-bounds: no range");
+}
+
 int main(int argc, char **argv)
 {
     options o;
@@ -981,6 +1043,10 @@ int main(int argc, char **argv)
     if (!m)
         fail("%s", error);
     a2vm_amem_options(m, o.amem_supported, o.amem_available, 1);
+    m->via_ora_nh = o.via_ora_nh;
+    m->phasor_mb_only = o.phasor_mb_only;
+    if (o.irq_bounds)
+        irq_bounds(m, o.irq_bounds);
     if (o.prodos)
         a2vm_attach_prodos(m, load_prodos(o.prodos, o.volume, o.launched));
     if (o.image)
@@ -1013,9 +1079,26 @@ int main(int argc, char **argv)
         }
         a2vm_attach_cost(m, cost, o.cost_timed);
     }
+    if (o.ay_log) {
+        m->ay_log = fopen(o.ay_log, "w");
+        if (!m->ay_log)
+            fail("cannot write %s", o.ay_log);
+        fputs("# a2vm ay-log 1 (tools/a2vm/README.md, \"The AY log\")\n"
+              "# w CPU_CYCLES APPLE_CYCLE CLOCK CHIP REG VALUE\n"
+              "# reset CPU_CYCLES APPLE_CYCLE CLOCK CHIP\n"
+              "# irq N CPU_CYCLES APPLE_CYCLE CLOCK\n"
+              "# rti CPU_CYCLES APPLE_CYCLE CLOCK\n", m->ay_log);
+        if (m->cost)
+            fprintf(m->ay_log, "# clock fabric %.6f MHz, apple cycle %.4f "
+                    "clocks\n", m->cost->p.fabric_mhz, m->cost->period);
+        else
+            fputs("# clock - (no cost model)\n", m->ay_log);
+    }
 
     if (o.bus_script) {
         bus_script(m, o.bus_script);
+        if (m->ay_log)
+            fclose(m->ay_log);
         a2vm_free(m);
         return 0;
     }
@@ -1125,6 +1208,9 @@ int main(int argc, char **argv)
         m->cost->report = NULL;
     }
     write_json(o.state, m, extra);
+    if (m->ay_log && fclose(m->ay_log))
+        fail("cannot write %s", o.ay_log);
+    m->ay_log = NULL;
     int status = !strcmp(reason, "halt") ? 1 : 0;
     a2vm_free(m);
     return status;

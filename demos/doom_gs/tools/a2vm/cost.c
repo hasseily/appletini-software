@@ -41,7 +41,9 @@ static const param_spec specs[] = {
     P_U(amem_end_axi), P_U(amem_dma_axi), P_U(amem_dma_poll_axi),
     P_U(amem_read_word_axi), P_U(amem_read_setup_axi),
     P_U(amem_write_word_axi), P_U(amem_write_setup_axi),
-    P_U(amem_write_byte_axi), P_I(keep_lazy)
+    P_U(amem_write_byte_axi), P_I(keep_lazy),
+    P_U(slowdown_cycles), P_I(slowdown_slot4), P_I(slowdown_via_exempt),
+    P_U(slow_done)
 };
 enum { SPEC_COUNT = sizeof specs / sizeof specs[0] };
 
@@ -135,6 +137,7 @@ a2vm_cost *a2vm_cost_new(const a2vm_cost_params *p)
     c->admit_cycle = -1;
     c->phase_addr = -1;
     c->shr_selected = 0;
+    c->instr_turbo = 1;
     return c;
 }
 
@@ -728,20 +731,10 @@ static void phase_to(a2vm_cost *c, unsigned phase)
     c->phase = phase;
 }
 
-void a2vm_cost_read(a2vm *m, uint16_t address, const uint8_t *page, int kind)
+/* One access that is not a dropped dummy read: the path of its kind. */
+static void access_read(a2vm_cost *c, a2vm *m, uint16_t address,
+                        const uint8_t *page)
 {
-    a2vm_cost *c = m->cost;
-    int io = (address >> 12) == 0xc;
-    if (kind == CPU65C02_DUMMY && !io) {
-        /* TURBO omits dummy reads outside I/O (w65c02_core.sv:903-967),
-           but a waiting or stopped core still takes time */
-        if (m->core == A2VM_CORE_W65C02S &&
-            m->cpu.state != CPU65C02_RUNNING)
-            charge(c, c->p.turbo_hit, &c->c.fast_clocks);
-        else
-            c->c.dropped++;
-        return;
-    }
     c->c.accesses++;
     if (!page) {
         io_access(c, m, address, 0, 0);
@@ -755,11 +748,9 @@ void a2vm_cost_read(a2vm *m, uint16_t address, const uint8_t *page, int kind)
         fast_read(c, address, phys);
 }
 
-void a2vm_cost_write(a2vm *m, uint16_t address, uint8_t value,
-                     const uint8_t *page, int kind)
+static void access_write(a2vm_cost *c, a2vm *m, uint16_t address,
+                         uint8_t value, const uint8_t *page)
 {
-    a2vm_cost *c = m->cost;
-    (void)kind;
     c->c.accesses++;
     if (!page) {
         /* $Cxxx, or $D000-$FFFF with the card write-protected, which is
@@ -789,6 +780,186 @@ void a2vm_cost_write(a2vm *m, uint16_t address, uint8_t value,
         reconcile(c, m, 1);         /* rule O2: the steer must match */
     if (fast_write(c, address, phys, posted, aux0))
         post(c, m, (unsigned)(aux0 ? 0x10000 : 0) | address);
+}
+
+/* ---- the slot-4 slowdown ----
+
+   With the virtual Phasor enabled, the firmware puts slot 4 in the
+   slowdown mask whatever the user chose (ps_sources/frontend/
+   config_menu.c:4660-4692). An access to $C400-$C4FF (sd_iosel) or
+   $C0C0-$C0CF (sd_slot_io) that the core completes, read or write, is a
+   hit (:1119-1144): it loads slow_cnt_q with the window, and every other
+   completed CPU cycle takes one off it (:1884-1898). While it is not zero
+   the effective speed is 1 MHz (:1153-1171): a cycle completes only
+   after an Apple data strobe that came after the previous cycle's end
+   (pace_tick_pending_q, :1849-1856; pace_ok, :1159-1162), and the core
+   runs its instructions without the TURBO shortcuts (w65c02_core.sv:
+   instruction_turbo_q is taken at the opcode fetch, :1250, so an
+   instruction that started slow keeps all its cycles). The caches are
+   still filled on the way (turbo_map_fill and turbo_byte_fill, :1212-1215:
+   X_ROUTE and X_MEM_CAPTURE, in any mode). FW-S1 (native-sound.md 4.4,
+   a proposal, not in F1.2.1) exempts writes to the VIA registers ORB,
+   ORA, DDRB, DDRA, IFR, IER and ORA without handshake. */
+
+static int slowdown_hit(const a2vm_cost *c, uint16_t a, int write)
+{
+    int iosel = (a >> 8) == 0xc4;
+    if (!c->p.slowdown_cycles || (!iosel && (a & 0xfff0) != 0xc0c0))
+        return 0;
+    if (c->p.slowdown_via_exempt && write && iosel && !(a & 0x60)) {
+        unsigned reg = a & 15;      /* not an SSI-263 write (addr bits 5-6) */
+        if (reg <= 3 || reg >= 13)
+            return 0;
+    }
+    return 1;
+}
+
+/* The end of a cycle at 1 MHz that started at `start` (the end of the
+   previous one): the first data strobe after it, then slow_done clocks
+   (complete_mem, :1514). */
+static void pace(a2vm_cost *c, uint64_t start)
+{
+    int64_t k = cycle_of(c, start);
+    uint64_t strobe = cycle_start(c, k) + data_tap(c);
+    if (strobe <= start)
+        strobe = cycle_start(c, k + 1) + data_tap(c);
+    uint64_t done = strobe + c->p.slow_done;
+    if (done > c->t)
+        c->t = done;
+}
+
+static void slow_fill_word(a2vm_cost *c, uint16_t a, uint32_t phys)
+{
+    unsigned i = word_set(a);
+    c->word_valid[i] = 1;
+    c->word_tag[i] = (uint16_t)(a >> 7);
+    c->word_phys[i] = phys;
+}
+
+/* A cycle while the window is open. */
+static void slow_access(a2vm_cost *c, a2vm *m, uint16_t address,
+                        uint8_t value, const uint8_t *page, int write)
+{
+    uint64_t start = c->t;
+    c->c.accesses++;
+    if (!page) {
+        if (write && address >= 0xd000) {
+            c->c.io_accesses++;
+            charge(c, c->p.io_capture + c->p.io_route, &c->c.io_clocks);
+            sync_cycle(c);
+        } else
+            io_access(c, m, address, write, value);
+    } else {
+        uint32_t phys = 0, offset = 0;
+        unsigned bank = 0;
+        if (where(m, page, &phys, &bank, &offset) == WHERE_RAMWORKS)
+            ramworks(c, bank, offset + (address & 0xff), write);
+        else if (!write) {
+            /* X_CAPTURE, X_ROUTE, X_MEM_CAPTURE (the word is filled),
+               X_MEM_DONE */
+            charge(c, c->p.turbo_read_miss, &c->c.fast_clocks);
+            if ((address >> 12) != 0xc)
+                slow_fill_word(c, address, phys);
+        } else {
+            int aux0 = phys >= 0x200;
+            if (c->phase_addr >= 0 && address == (unsigned)c->phase_addr &&
+                page == m->main + (address & 0xff00))
+                phase_to(c, value >> 1);
+            int posted = address < 0xc000 && m->wflag[address >> 8] != 0;
+            if (posted && aux0 && c->p.quiet_switches && c->phys_bank != 0)
+                reconcile(c, m, 1);
+            unsigned i = page_set(address >> 8);
+            c->map_valid[i] = 1;
+            c->map_tag[i] = (uint8_t)(address >> 8);
+            c->map_phys[i] = phys;
+            c->map_fast[i] = !posted && !(aux0 && (address >> 8) == 0x9d);
+            charge(c, posted ? c->p.posted_write : c->p.turbo_write_miss,
+                   posted ? &c->c.video_clocks : &c->c.fast_clocks);
+            if (posted)
+                post(c, m, (unsigned)(aux0 ? 0x10000 : 0) | address);
+        }
+    }
+    pace(c, start);
+    c->slow_left--;
+    c->c.slow_cycles++;
+    c->c.slow_clocks += c->t - start;
+}
+
+static void slow_after(a2vm_cost *c, uint16_t address, int write)
+{
+    if (slowdown_hit(c, address, write)) {
+        c->slow_left = c->p.slowdown_cycles;
+        c->c.slow_hits++;
+    }
+}
+
+static void slowdown_read(a2vm *m, uint16_t address, const uint8_t *page,
+                          int kind)
+{
+    a2vm_cost *c = m->cost;
+    int io = (address >> 12) == 0xc;
+    if (kind == CPU65C02_OPCODE)
+        c->instr_turbo = c->slow_left == 0;
+    if (c->slow_left)
+        slow_access(c, m, address, 0, page, 0);
+    else if (kind == CPU65C02_DUMMY && !io && c->instr_turbo) {
+        if (m->core == A2VM_CORE_W65C02S &&
+            m->cpu.state != CPU65C02_RUNNING)
+            charge(c, c->p.turbo_hit, &c->c.fast_clocks);
+        else
+            c->c.dropped++;
+        return;
+    } else
+        access_read(c, m, address, page);
+    slow_after(c, address, 0);
+}
+
+void a2vm_cost_read(a2vm *m, uint16_t address, const uint8_t *page, int kind)
+{
+    a2vm_cost *c = m->cost;
+    if (c->p.slowdown_slot4) {
+        slowdown_read(m, address, page, kind);
+        return;
+    }
+    int io = (address >> 12) == 0xc;
+    if (kind == CPU65C02_DUMMY && !io) {
+        /* TURBO omits dummy reads outside I/O (w65c02_core.sv:903-967),
+           but a waiting or stopped core still takes time */
+        if (m->core == A2VM_CORE_W65C02S &&
+            m->cpu.state != CPU65C02_RUNNING)
+            charge(c, c->p.turbo_hit, &c->c.fast_clocks);
+        else
+            c->c.dropped++;
+        return;
+    }
+    access_read(c, m, address, page);
+}
+
+void a2vm_cost_write(a2vm *m, uint16_t address, uint8_t value,
+                     const uint8_t *page, int kind)
+{
+    a2vm_cost *c = m->cost;
+    (void)kind;
+    if (c->p.slowdown_slot4) {
+        if (c->slow_left)
+            slow_access(c, m, address, value, page, 1);
+        else
+            access_write(c, m, address, value, page);
+        slow_after(c, address, 1);
+        return;
+    }
+    access_write(c, m, address, value, page);
+}
+
+void a2vm_cost_skip(a2vm *m, uint64_t clocks)
+{
+    a2vm_cost *c = m->cost;
+    if (!c->slow_left)
+        return;
+    /* the idle loop's cycles, each at least an Apple cycle */
+    uint64_t cycles = (uint64_t)((double)clocks / c->period);
+    c->slow_left = cycles >= c->slow_left ? 0
+                   : c->slow_left - (unsigned)cycles;
 }
 
 void a2vm_cost_after_io(a2vm *m, uint16_t address, int write, uint8_t value)
@@ -965,6 +1136,15 @@ static void write_counters(FILE *out, const a2vm_cost_counters *now,
 #undef FIELD
 }
 
+static void write_slow_counters(FILE *out, const a2vm_cost_counters *now,
+                                const a2vm_cost_counters *before)
+{
+#define FIELD(name) fprintf(out, ", \"" #name "\": %" PRIu64, \
+                            now->name - (before ? before->name : 0))
+    FIELD(slow_hits); FIELD(slow_cycles); FIELD(slow_clocks);
+#undef FIELD
+}
+
 void a2vm_cost_boundary(a2vm *m, uint64_t boundary)
 {
     a2vm_cost *c = m->cost;
@@ -978,6 +1158,8 @@ void a2vm_cost_boundary(a2vm *m, uint64_t boundary)
                     c->phase_clocks[i] - c->last_phase[i]);
         fputs("]", c->report);
         write_counters(c->report, &c->c, &c->last_c);
+        if (c->p.slowdown_slot4)
+            write_slow_counters(c->report, &c->c, &c->last_c);
         fprintf(c->report, ", \"irqs\": %" PRIu64 "}\n", m->irqs);
         fflush(c->report);
     }
@@ -996,5 +1178,7 @@ void a2vm_cost_final(a2vm *m, FILE *out)
         fprintf(out, "%s%" PRIu64, i ? ", " : "", c->phase_clocks[i]);
     fputs("]", out);
     write_counters(out, &c->c, NULL);
+    if (c->p.slowdown_slot4)
+        write_slow_counters(out, &c->c, NULL);
     fputs("},\n", out);
 }

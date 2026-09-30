@@ -49,6 +49,7 @@ These are firm. Breaking one is a defect even if the tests pass.
 | Emulated machines are deterministic: the same inputs give the same run, byte for byte. No host time, no randomness. | Lockstep comparison depends on it. |
 | Python tools use the standard library only and run on Python 3.9 to 3.14. C tools are C11, standard library only, built by a `Makefile` with `-Wall -Wextra` and no warnings. | Reproducible builds on the owner's Mac. |
 | Unit tests live in `tests/` and run with `python3 -m unittest discover -s tests` from this directory. Tests that need `build/` skip with a clear message when it is missing. | One command checks everything. |
+| Batch runs (cost tables, captures, many emulator runs) use at most 4 parallel jobs and run under `nice -n 10`. | The owner works on the same Mac; on 2026-09-30 seven emulator runs at full speed made it sluggish. |
 | Do not weaken a test, and do not special-case game addresses or file names to force a result. Report what does not work. | Earlier stages were independently reviewed for exactly this. |
 | Work on branch `claude/iigs-doom-port`. Commit only finished, tested milestones or documents. | The owner approved commits and pushes on this branch. |
 
@@ -106,7 +107,10 @@ binary and the owner's Mac has no Rosetta.
 | 2 | Reference machine runs the release; measured profiles | **Done**, see the results below. |
 | 3 | Target machine model with cost model; 65816 interpreter | **Done**, see the results below. |
 | 4 | Native rewrite: architecture (`NATIVE.md`), with a measured experiment | **Written and reviewed** (two reviews, findings applied). Awaits the owner's review and 10 answers; the licence (question 1) is answered: GPL-2. |
-| 5 to 13, S1 to S4 | Native rewrite milestones and the sound track | Defined in `NATIVE.md` section 13. S1 (MUS converter, player model, WAV renders; `tools/sound/`, `tests/test_sound_*.py`) built 2026-09-30 and reviewed once; the review's defects are applied. Every song's steals, drum steals, writes a second and p99 writes of a burst are at or below `summary50.md` in both layouts with no exception in the tests (mb6 D_E1M4 writes 72.47 a second against the prototype's 71.77, equal when rounded as `summary50.md` prints them; `tools/sound/README.md`, "Against the design"). The fixes were checked by rerunning all 955 tests, not by a second review. Renders in `build/sound/*.wav` (`python3 tools/sound/report.py --render`); awaits the owner's ear. S2 (the 65C02 player in `src/sound/`, a2vm's AY log, slot-4 slowdown and interrupt bounds, the card probe, compared write for write with `tools/sound/player.py`) built 2026-09-30 and reviewed once; the review's defects are applied (the build's linker warning, chip resets and final registers now checked, the IRQ contract checked at run time, the write lists' padding, the probe, bad stream indexes), uncommitted until the owner accepts it. S3, S4 and the rest not started. |
+| S1 | Sound: MUS to Phasor converter, player model, WAV renders (`tools/sound/`) | **Done**, commit `ae6a28bd`. Steals and writes at or below the design in every song. Awaits the owner's ear: `build/sound/*.wav`. |
+| S2 | Sound: the 65C02 player (`src/sound/`), a2vm's AY log, slot-4 slowdown and interrupt bounds | **Done** 2026-09-30, reviewed once, the review's 7 defects fixed and checked by rerunning the tests. AY writes equal the model's at every interrupt, 13 songs, both layouts, PAL and NTSC. Player's cost at window 512: 13.0-29.6 ms a second (native12). |
+| 5 | Native replay on captured records; byte-level memory map; ref816 capture and `--call` | In progress since 2026-09-30 |
+| 6 to 13, S3, S4 | The rest of the native rewrite and the sound track | Defined in `NATIVE.md` section 13. Not started. |
 
 ## Milestone 1: done
 

@@ -24,7 +24,11 @@
  *     waits until every pending byte is out;
  *   - a change of the memory mapping: both TURBO caches are cleared;
  *   - a memory API request: the CPU hold, the mirror and line flushes,
- *     and the ARM's per-descriptor and per-byte work (memory_api_hw.c).
+ *     and the ARM's per-descriptor and per-byte work (memory_api_hw.c);
+ *   - with the virtual Phasor enabled (slowdown_slot4, off in f121 and
+ *     fastpath), the slot-4 slowdown: after an access to $C400-$C4FF or
+ *     $C0C0-$C0CF, slowdown_cycles CPU cycles at 1 MHz, each paced to an
+ *     Apple data strobe (README.md, "The slot-4 slowdown").
  *
  * Its parameters come from a file of "name value" lines, which
  * tools/a2vm/costs.py writes from a profile of tools/a2vm/costs/appletini.json,
@@ -80,6 +84,14 @@ typedef struct {
         amem_read_word_axi, amem_read_setup_axi, amem_write_word_axi,
         amem_write_setup_axi, amem_write_byte_axi;
     int keep_lazy;                  /* fastpath: holds keep lazy bytes */
+    /* the slot-4 slowdown (README.md, "The slot-4 slowdown") */
+    unsigned slowdown_cycles;       /* the window, in CPU cycles */
+    int slowdown_slot4;             /* the virtual Phasor is enabled: slot
+                                       4 is in the slowdown mask */
+    int slowdown_via_exempt;        /* FW-S1: VIA port writes do not open
+                                       the window */
+    unsigned slow_done;             /* clocks from data_en to the end of a
+                                       paced memory cycle */
 } a2vm_cost_params;
 
 typedef struct {
@@ -97,6 +109,10 @@ typedef struct {
     uint64_t reconcile_cycles;
     uint64_t amem_requests, amem_bytes, amem_clocks;
     uint64_t fast_clocks, rw_clocks, io_clocks, video_clocks;
+    /* the slot-4 slowdown, reported only when it is on */
+    uint64_t slow_hits;             /* accesses that (re)open the window */
+    uint64_t slow_cycles;           /* cycles run at 1 MHz by the window */
+    uint64_t slow_clocks;           /* the clocks of those cycles */
 } a2vm_cost_counters;
 
 typedef struct a2vm_cost {
@@ -149,6 +165,12 @@ typedef struct a2vm_cost {
     uint64_t last_t, last_phase[COST_PHASES];
     a2vm_cost_counters last_c;
     int timed;
+
+    /* the slot-4 slowdown: CPU cycles left at 1 MHz (slow_cnt_q), and
+       whether the instruction running started in TURBO
+       (instruction_turbo_q of w65c02_core.sv) */
+    unsigned slow_left;
+    int instr_turbo;
 } a2vm_cost;
 
 /* Read a parameter file ("name value" lines, # comments). Returns 0 and
@@ -176,6 +198,9 @@ void a2vm_cost_write(struct a2vm *m, uint16_t address, uint8_t value,
                      const uint8_t *page, int kind);
 void a2vm_cost_after_io(struct a2vm *m, uint16_t address, int write,
                         uint8_t value);
+/* The machine skipped `clocks` of an idle loop (a2vm.c skip_idle): the
+   slowdown window runs out as it would have. */
+void a2vm_cost_skip(struct a2vm *m, uint64_t clocks);
 /* A memory API CONTROL request that the model executed. */
 void a2vm_cost_amem(struct a2vm *m, const uint8_t *request, size_t length);
 /* A frame boundary: one line of the report. */

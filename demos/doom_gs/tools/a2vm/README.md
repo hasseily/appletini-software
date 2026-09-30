@@ -21,7 +21,7 @@ the changes of the firmware design (below, "The cost model").
 | `prodos.h`, `prodos.c` | The MLI stand-in, `a2sim.py`'s `FakeProDOS` |
 | `cost.h`, `cost.c` | The cost model: every bus access charged in fabric clocks of the Appletini, with its TURBO caches, RamWorks line cache, PSRAM admission, bus cycles, video mirror and memory API |
 | `costs/appletini.json` | The cost parameters, each with its source in the firmware or `docs/firmware/`, and the two profiles `f121` and `fastpath` |
-| `costs.py` | A profile as the "name value" lines `--cost` reads |
+| `costs.py` | A profile as the "name value" lines `--cost` reads; `PROFILE+VARIANT` adds the variants (the slot-4 slowdown, NTSC) |
 | `cost_report.py` | The report on the existing port: frame and phase times under both profiles, against the hardware measurement |
 | `main.c` | The command line: start-up, runs, input events, snapshots, screen dumps, bus scripts |
 | `shot.py` | A screen dump or snapshot to a PNG (standard SHR and PAL256), with zlib only |
@@ -278,6 +278,10 @@ stage will not.
 - **Slot decoding.** `$C100-$CFFF` reads fall to the internal ROM unless
   the mouse card, the Phasor or the memory API answers; the Phasor
   answers at any address whose bits 8-10 are 4, `$CC00-$CCFF` included.
+- **The VIAs' register 15.** A write to ORA without handshake (`$Cn0F`,
+  `$Cn1F`, `$Cn8F`) changes nothing in `a2sim.Phasor`; the card's 6522
+  sets ORA (`hdl/apple/via6522.v:149`), and the drivers send AY data that
+  way. `--via-ora-nh` (off by default) follows the card.
 - **The memory API.** `FakeSmartPortMemory` leaves the result fields of
   the capability block (offsets 16-31 but 20-21) at zero, keeps the ready
   bit set after the first request, and rejects with an assertion a
@@ -321,6 +325,10 @@ rendered.
 | `--snapshot-dir DIR`, `--snapshot-boundaries`, `--final-snapshot` | Snapshots: `NAME.json` (the state) and `NAME.ram` (main 64 KB, main LC 16 KB, main LC bank 1 4 KB, then the 128 aux banks) |
 | `--state FILE` | The final state, as JSON, with the reason the run ended and its host time |
 | `--bus-script FILE` | Run bus commands instead of the CPU (below) |
+| `--ay-log FILE` | The AY log (below): each AY register write that reaches a chip, each chip reset, each interrupt and each RTI, with the time |
+| `--via-ora-nh` | A write to a Phasor VIA's register 15, ORA without handshake, sets ORA, as the card's 6522 does (`hdl/apple/via6522.v:149`). Off by default: `a2sim.py` ignores the register, and the comparison with it must stay exact |
+| `--phasor-mb-only` | The Phasor locked to Mockingboard mode, as the card's `audio_control` bit 26 does (`hdl/apple/mockingboard.sv:38-41`): accesses to `$C0C0-$C0CF` do not change its mode, so it keeps one AY behind each VIA. Off by default |
+| `--irq-bounds LO-HI[,LO-HI...]` | Interrupt bounds (below): the address ranges (hex, at most 8) an interrupt handler may read or write; any other access halts the run |
 
 **Input events**, one a line, `WHEN ACTION`. `WHEN` is `start`,
 `boundary N` (after the Nth boundary's snapshot), `cycle N` (after the
@@ -338,7 +346,57 @@ VALUE` (storage without side effects; kinds `main`, `aux`, `lc`, `lc1`),
 `map` (the page tables: what reads and writes of each page reach), `lc`,
 `counts`, `clock N`, `run STEPS`, `reg NAME=HEX`, `press KEY CYCLE`,
 `hold KEY`, `release`, `mouse DX DY`, `mouse-to X Y`, `buttons L R`,
-`button N VALUE`, `dump FILE` (the RAM, as a snapshot's), `state`.
+`button N VALUE`, `dump FILE` (the RAM, as a snapshot's), `state`,
+`cost` (the model's clock and counters; with the slot-4 slowdown on, also
+`slow_hits`, `slow_cycles`, `slow_clocks` and `slow_left`).
+
+### The AY log
+
+`--ay-log FILE` (milestone S2, for the music player of `src/sound`)
+writes one line for each event below, in the order the machine makes
+them. It only observes; without it nothing is written or changed.
+
+    # a2vm ay-log 1 (tools/a2vm/README.md, "The AY log")
+    # w CPU_CYCLES APPLE_CYCLE CLOCK CHIP REG VALUE
+    # reset CPU_CYCLES APPLE_CYCLE CLOCK CHIP
+    # irq N CPU_CYCLES APPLE_CYCLE CLOCK
+    # rti CPU_CYCLES APPLE_CYCLE CLOCK
+    # clock fabric 133.333333 MHz, apple cycle 131.2821 clocks
+    reset 111 44 5903 0
+    w 26649 1075 141255 0 0 0
+    irq 1 1234567 12345 1620111
+    rti 1236001 12400 1627811
+
+| Line | When |
+| --- | --- |
+| `w` | An AY register write reaches a chip: a VIA's ORB write with function 6 (write) on a chip that is selected, as `a2sim.Phasor` decides it. `CHIP` is 0-3 (0 and 1 behind VIA-A, 2 and 3 behind VIA-B, the drivers' numbering), `REG` the chip's latched register (0-15), `VALUE` the byte (decimal) |
+| `reset` | A VIA's ORB goes to reset (bit 2 low): both chips behind it are cleared; one line a chip |
+| `irq` | The machine delivers an interrupt; `N` counts them from 1 (the state's `irqs`) |
+| `rti` | An RTI instruction ran (logged after it) |
+
+The time fields: `CPU_CYCLES`, the core's cycle count; `APPLE_CYCLE`, the
+machine's 1 MHz bus clock (`a2vm_bus_clock`); `CLOCK`, the cost model's
+clock in fabric clocks (133.333 MHz) when `--cost` is on, else `-`. With
+`--cost-timed` the machine runs on that clock, so it is the time on the
+card. The writes of an interrupt are the `w` lines between its `irq` and
+the next `rti`; `tools/sound/run65.py` groups them so.
+
+### Interrupt bounds
+
+`--irq-bounds RANGES` (milestone S2) checks an interrupt contract such as
+the music player's (`docs/research/native-sound.md` 4.3: the interrupt
+touches only the zero page, the stack, the language card and I/O, so
+RAMRD, RAMWRT and `$C073` may be anything when it comes). From the first
+instruction of a handler to the end of its RTI, every bus access of the
+CPU (opcode, operand, data, stack, dummy) must fall in one of the
+ranges; the first that does not halts the run with `irq-bounds: read
+$0843 in an interrupt, pc $E123` (state `end` "halt", exit status 1).
+The interrupt entry's own cycles (its two reads of the interrupted
+program's PC, the pushes, the vector) are not checked, nor is anything
+outside handlers. It only observes: a run that stays inside is unchanged.
+`tools/sound/run65.py` passes `0000-01FF,C0A0-C0AF,C400-C4FF,D000-FFFF`
+(the zero page and stack, the mouse card, the Phasor, the card), which
+also refuses a mapping switch in the handler.
 
 ## The comparison with a2sim.py
 
@@ -576,6 +634,61 @@ The compatibility core with the model only observing (a2sim.py's timeline,
 py65's accesses without dummy reads, idle skips not charged) gives 243.9 ms
 a frame for the same frames.
 
+### The slot-4 slowdown
+
+Milestone S2 adds the firmware's slowdown of slot 4, **off unless a run
+asks for it**: f121 and fastpath keep `slowdown_slot4 0`, the firmware's
+default (the virtual Phasor is off by default, `config_menu.c:93`), so
+every run and every check above is unchanged. The variants of
+`costs/appletini.json` turn it on (`costs.py f121+phasor`, and
+`+window32`, `+fws1`; `+ntsc` is an NTSC //e).
+
+What the firmware does, from its source (appletini-one F1.2.1):
+
+- With the virtual Phasor enabled, `config_menu_apply_vtw_slowdown` puts
+  slot 4 into the slowdown mask "regardless of the per-slot config", with
+  the window `vtw_slowdown_cycles`, 512 by default (`ps_sources/frontend/
+  config_menu.c:4660-4692`, `:76`). A window of 0 then becomes 512
+  (`:4681-4683`); the profile key `vtw.slowdown.cycles` sets 1-65,535
+  (`:3550-3552`).
+- A **hit** is any access to `$C400-$C4FF` (`sd_iosel`: `$Cn00-$CnFF` of
+  slot n, whatever INTCXROM says) or `$C0C0-$C0CF` (`sd_slot_io`), read
+  or write, that the core completes (`vtw_core_top.sv:1119-1144`). A hit
+  loads `slow_cnt_q` with the window; every other completed CPU cycle
+  takes one off (`:1884-1898`). While it is not zero the effective speed
+  is 1 MHz (`:1153-1171`).
+- At 1 MHz a cycle completes only after an Apple data strobe that came
+  after the previous cycle ended (`pace_tick_pending_q`, `:1849-1856`;
+  `pace_ok`, `:1159-1162`), so each cycle is one Apple cycle, 0.985 us on
+  PAL. The core does not take its TURBO shortcuts: an instruction whose
+  opcode fetch ran slow keeps all its dummy cycles to its end, even when
+  the window closes inside it (`instruction_turbo_q`, `w65c02_core.sv:
+  1250`, `:903-967`). The TURBO caches are still filled on the way
+  (`turbo_map_fill`, `turbo_byte_fill`, `:1212-1215`).
+
+The model: `slow_left` is `slow_cnt_q`. With the window open, every cycle
+(dummy reads included) is charged its normal path, then paced to the
+first data strobe after the previous cycle's end plus `slow_done` (1
+clock); I/O keeps its bus-cycle timing, which already ends at a strobe.
+A hit reloads the window after its own cycle. An idle skip (`--idle`)
+uses the window up as the skipped cycles would have. **FW-S1**
+(`slowdown_via_exempt`, native-sound.md 4.4, a proposal): writes to a
+VIA's ORB, ORA, DDRB, DDRA, IFR, IER and ORA without handshake open no
+window; reads, writes to the timers, SR, ACR and PCR, writes with address
+bit 5 or 6 set (they also reach the SSI-263, `mockingboard.sv:100-103`)
+and the mode switch still do. `tests/test_sound_player65.py` checks the
+window at its edges (exactly 512 or 32 slow cycles, then TURBO; a hit
+inside the window reloads it), the regions, FW-S1's exemptions, and that
+f121 and fastpath have no window.
+
+Against `docs/research/native-sound.md` 2.3, the RTL agrees on the regions,
+the window and its length in CPU cycles (each an Apple cycle at 1 MHz), and
+on what FW-S1 would exempt. It adds what the design did not say: a hit's
+own cycle runs at the speed it had, the reload does not count down in the
+hit's cycle, a slow instruction keeps its dummy cycles, a window of 0
+cannot be set while the Phasor is on, and some `$C4xx` addresses also
+write the SSI-263.
+
 ### Checks
 
 `tests/test_a2vm_cost.py`:
@@ -607,9 +720,10 @@ a frame for the same frames.
 - The PS's latency to take a SmartPort request is 0 plus its AXI reads
   (bounded by the v12 batching result, well under 1 ms a request); AXI
   writes cost what reads do.
-- Slow regions, the Disk II, the USB joystick, the per-cycle slowdown of
-  the virtual Phasor: off, as in the measured setup (the port touches none
-  of them in a frame).
+- Slow regions other than slot 4, the Disk II, the USB joystick: off, as
+  in the measured setup (the port touches none of them in a frame). The
+  slot-4 slowdown of the virtual Phasor is modelled (above) but off in
+  f121 and fastpath.
 - The first access after a mapping change (`turbo_invalidate` still high
   at X_CAPTURE) is charged as a normal miss.
 - Refresh, PHI0 stretching and the long Apple cycle are not modelled: an

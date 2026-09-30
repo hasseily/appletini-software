@@ -4,6 +4,7 @@
  */
 #include "a2vm.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -238,8 +239,21 @@ static void phasor_chip_selects(const a2vm_phasor *f, unsigned index,
     }
 }
 
-static void phasor_port_b(a2vm_phasor *f, unsigned index)
+/* --ay-log: the time fields of a line (README.md, "The AY log"). */
+static void ay_log_time(const a2vm *m)
 {
+    uint64_t cycles = m->core == A2VM_CORE_PY65 ? m->py65_cycles
+                                                : m->cpu.cycles;
+    fprintf(m->ay_log, " %" PRIu64 " %" PRIu64, cycles, a2vm_bus_clock(m));
+    if (m->cost)
+        fprintf(m->ay_log, " %" PRIu64, m->cost->t);
+    else
+        fputs(" -", m->ay_log);
+}
+
+static void phasor_port_b(a2vm *m, unsigned index)
+{
+    a2vm_phasor *f = &m->phasor;
     unsigned bus = f->via[index].orb & f->via[index].ddrb;
     int cs0, cs1;
     phasor_chip_selects(f, index, &cs0, &cs1);
@@ -249,6 +263,12 @@ static void phasor_port_b(a2vm_phasor *f, unsigned index)
         memset(f->ay[index * 2], 0, 16);
         memset(f->ay[index * 2 + 1], 0, 16);
         f->selected[index][0] = f->selected[index][1] = 0;
+        if (m->ay_log)
+            for (unsigned chip = index * 2; chip < index * 2 + 2; chip++) {
+                fputs("reset", m->ay_log);
+                ay_log_time(m);
+                fprintf(m->ay_log, " %u\n", chip);
+            }
     } else if (function == 7) {
         if (!native) {
             f->latched[index * 2] = f->via[index].ora;
@@ -277,6 +297,12 @@ static void phasor_port_b(a2vm_phasor *f, unsigned index)
             unsigned chip = targets[i];
             f->ay[chip][f->latched[chip] & 15] = f->via[index].ora;
             f->ay_writes++;
+            if (m->ay_log) {
+                fputs("w", m->ay_log);
+                ay_log_time(m);
+                fprintf(m->ay_log, " %u %u %u\n", chip,
+                        f->latched[chip] & 15u, f->via[index].ora);
+            }
         }
     }
 }
@@ -302,11 +328,17 @@ static void phasor_write(a2vm *m, unsigned address, uint8_t value)
         if (!(vias & (1u << index)))
             continue;
         switch (address & 0x0f) {
-        case 0: f->via[index].orb = value; phasor_port_b(f, index); break;
+        case 0: f->via[index].orb = value; phasor_port_b(m, index); break;
         case 1: f->via[index].ora = value; break;
         case 2: f->via[index].ddrb = value; break;
         case 3: f->via[index].ddra = value; break;
         case 5: f->t1_start[index] = (int64_t)a2vm_bus_clock(m); break;
+        case 15:
+            /* ORA without handshake, as via6522.v:149 writes it; a2sim.py
+               ignores the register, so only --via-ora-nh does this */
+            if (m->via_ora_nh)
+                f->via[index].ora = value;
+            break;
         }
     }
 }
@@ -737,9 +769,10 @@ static uint8_t io_read(a2vm *m, uint16_t address)
         m->paddle_trigger = (int64_t)a2vm_bus_clock(m);
     else if (low >= 0x80 && low <= 0x8f)
         lc_switch(m, low, 1);
-    else if ((int)(low >> 4) == 8 + m->phasor_slot)
-        phasor_mode_switch(&m->phasor, low);
-    else if (m->mouse_on && (int)(low >> 4) == 8 + m->mouse_slot)
+    else if ((int)(low >> 4) == 8 + m->phasor_slot) {
+        if (!m->phasor_mb_only)
+            phasor_mode_switch(&m->phasor, low);
+    } else if (m->mouse_on && (int)(low >> 4) == 8 + m->mouse_slot)
         return mouse_read(&m->mouse, low & 0x0f);
     return 0x00;
 }
@@ -769,9 +802,10 @@ static void io_write(a2vm *m, uint16_t address, uint8_t value)
         a2vm_select_bank(m, value);
     else if (low >= 0x80 && low <= 0x8f)
         lc_switch(m, low, 0);
-    else if ((int)(low >> 4) == 8 + m->phasor_slot)
-        phasor_mode_switch(&m->phasor, low);
-    else if (m->mouse_on && (int)(low >> 4) == 8 + m->mouse_slot)
+    else if ((int)(low >> 4) == 8 + m->phasor_slot) {
+        if (!m->phasor_mb_only)
+            phasor_mode_switch(&m->phasor, low);
+    } else if (m->mouse_on && (int)(low >> 4) == 8 + m->mouse_slot)
         mouse_write(&m->mouse, low & 0x0f, value);
 }
 
@@ -846,8 +880,23 @@ static int mli_fetch(a2vm *m, uint16_t address)
     return target & 0xff;
 }
 
+/* --irq-bounds: an access inside an interrupt handler outside every
+   allowed range halts the run. */
+static void irq_bounds_check(a2vm *m, uint16_t address, int write)
+{
+    for (unsigned i = 0; i < m->irq_bound_count; i++)
+        if (address >= m->irq_bounds[i][0] && address <= m->irq_bounds[i][1])
+            return;
+    char text[96];
+    snprintf(text, sizeof text, "irq-bounds: %s $%04X in an interrupt, "
+             "pc $%04X", write ? "write" : "read", address, a2vm_pc(m));
+    halt(m, text);
+}
+
 static inline uint8_t bus_read(a2vm *m, uint16_t address, int kind)
 {
+    if (m->irq_guard)
+        irq_bounds_check(m, address, 0);
     if (m->cost)
         a2vm_cost_read(m, address, m->rpage[address >> 8], kind);
     if (m->prodos && m->core == A2VM_CORE_PY65) {
@@ -872,6 +921,8 @@ static inline uint8_t bus_read(a2vm *m, uint16_t address, int kind)
 static inline void bus_write(a2vm *m, uint16_t address, uint8_t value,
                              int kind)
 {
+    if (m->irq_guard)
+        irq_bounds_check(m, address, 1);
     uint8_t *page = m->wpage[address >> 8];
     if (m->write_hook)
         m->write_hook(m, address, page ? page + (address & 0xff) : NULL,
@@ -1013,6 +1064,8 @@ static void skip_idle(a2vm *m, uint16_t pc)
             target = (now / m->frame_cycles + 1) * m->frame_cycles;
         if (target > now) {
             m->idle_cycles += target - now;
+            if (m->cost)
+                a2vm_cost_skip(m, target - now);
             *m->clock = target;
             if (target >= m->next_vbl)
                 vbl_event(m);
@@ -1051,6 +1104,27 @@ static int native_mli(a2vm *m)
     return 1;
 }
 
+/* --ay-log: an interrupt taken, or an RTI about to run. */
+static void ay_log_irq(a2vm *m)
+{
+    fprintf(m->ay_log, "irq %" PRIu64, m->irqs);
+    ay_log_time(m);
+    fputc('\n', m->ay_log);
+}
+
+static int at_rti(const a2vm *m, uint16_t pc)
+{
+    const uint8_t *page = m->rpage[pc >> 8];
+    return page && page[pc & 0xff] == 0x40;
+}
+
+static void ay_log_rti(a2vm *m)
+{
+    fputs("rti", m->ay_log);
+    ay_log_time(m);
+    fputc('\n', m->ay_log);
+}
+
 void a2vm_step(a2vm *m)
 {
     if (a2vm_now(m) >= m->next_vbl)
@@ -1062,26 +1136,52 @@ void a2vm_step(a2vm *m)
             p65_irq(m);
             m->r.p &= (uint8_t)~P65_D;
             m->irqs++;
+            if (m->ay_log)
+                ay_log_irq(m);
+            m->irq_guard = m->irq_bound_count != 0;
         }
         uint16_t pc = m->r.pc;
         if (m->idle_map[pc >> 3] & (1u << (pc & 7)))
             skip_idle(m, pc);
         if (m->cost && m->cost->timed && m->r.waiting)
             m->cost->t += m->cost->p.turbo_hit;     /* WAI takes time */
+        int rti = (m->ay_log || m->irq_bound_count) && !m->r.waiting &&
+                  at_rti(m, m->r.pc);
         p65_step(m);
+        if (rti) {
+            if (m->ay_log)
+                ay_log_rti(m);
+            m->irq_guard = 0;
+        }
         return;
     }
     int irq = m->mouse_on && m->mouse.irq;
     cpu65c02_set_irq(&m->cpu, 1, irq);
-    if (irq && !(m->cpu.p & CPU65C02_I) && m->cpu.state != CPU65C02_STOPPED)
+    int taken = irq && !(m->cpu.p & CPU65C02_I) &&
+                m->cpu.state != CPU65C02_STOPPED;
+    if (taken) {
         m->irqs++;
+        if (m->ay_log)
+            ay_log_irq(m);
+    }
     uint16_t pc = m->cpu.pc;
     if (m->idle_map[pc >> 3] & (1u << (pc & 7)))
         skip_idle(m, pc);
     if (m->prodos && m->cpu.state == CPU65C02_RUNNING &&
         !(irq && !(m->cpu.p & CPU65C02_I)) && native_mli(m))
         return;
+    int rti = (m->ay_log || m->irq_bound_count) && !taken &&
+              m->cpu.state == CPU65C02_RUNNING && at_rti(m, m->cpu.pc);
     w65_step(&m->cpu);
+    /* the bounds hold from the handler's first instruction: the entry's
+       reads of the interrupted PC are the main program's */
+    if (taken && m->irq_bound_count)
+        m->irq_guard = 1;
+    if (rti) {
+        if (m->ay_log)
+            ay_log_rti(m);
+        m->irq_guard = 0;
+    }
 }
 
 int a2vm_add_idle(a2vm *m, const a2vm_idle *idle)
