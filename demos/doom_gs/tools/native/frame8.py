@@ -94,6 +94,17 @@ frames, the whole frame with NATIVE.md 6's tics against NATIVE.md 1.1
 and 6 FPS, and rdisk.py --check's FPS by VBL count when its results
 exist; --report-from JSON writes it again from a --timing run's --json.
 
+--levels loaded (milestone 9, stage B: docs/LEVELS.md 5.4, acceptance
+2): each frame's level is not levelconv.py's conversion of its level
+source but the level the native loader made from the store
+(tools/native/level_check.py --load keeps each map's last load,
+build/native/levels/loaded/e1mN.img), read back into the layout of the
+source's conversion (lrun.harness_level: every byte from the loaded
+machine; build/native/levels/loaded/src/), then the frame runs as
+always (its state injected from P0, so the level's dynamic fields are
+the frame's). A frame whose level source is synthetic (synth-*: a level
+made with pokes, not the WAD's) is excluded by name.
+
 Every run is bounded (cycles, time, file sizes), under nice, at most two
 at a time, in a directory under build/ deleted after it.
 """
@@ -888,6 +899,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument('--no-build', action='store_true')
     parser.add_argument('--obj', type=Path, default=RC.OBJ)
     parser.add_argument('--verbose', action='store_true')
+    parser.add_argument('--levels', choices=('converted', 'loaded'),
+                        default='converted')
     parser.add_argument('--report-from', type=Path,
                         help='write --report from this --json of a '
                         '--timing run, running nothing')
@@ -915,8 +928,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     prof = RC.load_build(args.obj, 'fprof') if args.timing else None
     pbase = RC.base_records(prof, 0xA5, window=True) if prof else None
     poison = set(d.name for d in poison_set(dirs)) if args.poisoned else set()
+    if args.levels == 'loaded':
+        from native import lrun
+        FS.LEVEL_HOOK = lrun.loaded_level_hook()
 
     def one(d: Path) -> List[Dict[str, Any]]:
+        if args.levels == 'loaded':
+            src = FS.Frame(d).meta['level_src']
+            if src.startswith('synth-'):
+                return [{'frame': d.name, 'problems': [],
+                         'excluded': 'level source %s (a level made with '
+                                     'pokes, not the WAD\'s)' % src}]
         try:
             case = prepare8(d, sym)
         except (FS.FrameError, levelconv.ConvError, rcanon.CanonError,
@@ -950,7 +972,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         for rs in pool.map(one, dirs):
             for r in rs:
                 results.append(r)
-                if r.get('known'):
+                if r.get('excluded'):
+                    status = 'EXCLUDED (%s)' % r['excluded']
+                elif r.get('known'):
                     known += 1
                     status = 'KNOWN DIVERGENCE (%s)' % r['known']
                 elif r['problems']:
@@ -977,13 +1001,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     t = r['timing']
                     line += ' f121 %.2f ms, fastpath %.2f ms' % (
                         t['f121']['total_ms'], t['fastpath']['total_ms'])
-                if r['problems'] or args.verbose or r.get('known'):
+                if r['problems'] or args.verbose or r.get('known') or \
+                        r.get('excluded'):
                     print(line, flush=True)
                 for p in r['problems'][:8]:
                     print('    ' + p)
+    excluded = sorted(r['frame'] for r in results if r.get('excluded'))
+    results = [r for r in results if not r.get('excluded')]
     frames = len({r['frame'] for r in results})
     equal = sum(1 for r in results if not r['problems'] and
                 not r.get('known'))
+    if args.levels == 'loaded':
+        print('levels: natively loaded (build/native/levels/loaded); '
+              'excluded by name: %s' % (', '.join(excluded) or 'none'))
     print('%d frames, %d runs: %d equal, %d failed, %d known divergences '
           '(%s); %d records, %d clip log calls compared' % (
               frames, len(results), equal, failed, known,

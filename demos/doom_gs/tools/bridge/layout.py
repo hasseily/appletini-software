@@ -44,6 +44,29 @@ layout native-verification.md section 4.3 proposes. Encodings:
     blob   {"max": n}: planes length low, length high, then one address:
            the n bytes (a lump such as BLOCKMAP)
 
+Milestone 9 (docs/LEVELS.md 3.3) adds the encodings of the native game
+layout, whose references are slots and small numbers rather than tags:
+
+    handle {"bytes": 1 or 2, "ranges": [{"lo", "n", "kind", "field"},
+           ...], "null": v}: one value of `bytes` planes; `null` (default
+           all ones) is NULL, a value in a range's [lo, lo + n) names
+           R(kind, value - lo, field); a range with "id" names R(kind, id,
+           value - lo) instead (a byte offset into a byte kind, such as
+           the blockmap lump)
+    sxbyte {}: one plane, a signed byte (an i16 kept in a byte; the writer
+           refuses a value out of -128..127)
+    bit    {"value": v}: one plane, the base of a bitmap: object i's bit
+           is bit i & 7 of byte base + (i >> 3); the canonical value is v
+           when it is set, 0 when not (the field's other values cannot be
+           held)
+
+A "list" leaf may carry handle ranges ("bytes", "ranges", "null") in
+place of "codes": its head is then a handle. A "seq" leaf may have "form":
+"end": its planes are then the start and the end (not the length). A pool
+may have "enc", a handle encoding of its elements (one plane per byte of
+an element: element k's byte j at planes[j] + k), in place of "codes". A
+kind's "count" may be an integer: a constant count, kept in no memory.
+
 A leaf may have "when": [field, value]: it exists only in objects whose
 field has that value (the fields of a sector node that is not free).
 
@@ -110,13 +133,17 @@ class Leaf:
         if e == 'raw':
             return self.enc['bytes']
         if e == 'list':
-            return 3
+            return self.enc.get('bytes', 2) if 'ranges' in self.enc else 3
         if e == 'seq':
             return 4
         if e == 'table':
             return 0
         if e == 'blob':
             return 3
+        if e == 'handle':
+            return self.enc['bytes']
+        if e in ('sxbyte', 'bit'):
+            return 1
         raise ValueError(e)
 
     def to_json(self) -> Dict[str, Any]:
@@ -152,9 +179,11 @@ class Manifest:
                       for k, v in data['pools'].items()}
         self.kinds = {}
         for kind, k in data['kinds'].items():
+            count = k['count']
             self.kinds[kind] = {
                 'capacity': k['capacity'],
-                'count': [port_address(p) for p in k['count']],
+                'count': count if isinstance(count, int) else
+                [port_address(p) for p in count],
                 'leaves': [Leaf.from_json(x) for x in k['leaves']]}
         self.globals = [Leaf.from_json(x) for x in data['globals']['leaves']]
 

@@ -149,10 +149,17 @@ class Frame:
 _LEVEL_LOCK = threading.Lock()
 
 
+# A hook that replaces the converted level of a source by another level
+# directory of the same layout (frame8.py --levels loaded, milestone 9:
+# the natively loaded level read back, tools/native/lrun.py): called
+# with levelconv.py's directory and the source's name, under the lock
+LEVEL_HOOK = None
+
+
 def level_of(frame: Frame, sym: blink.Symbols) -> Path:
     """The converted level of the frame's level source (levelconv.py),
     converted now when it is not yet (one thread at a time; the index
-    replaced whole)."""
+    replaced whole); through LEVEL_HOOK when one is set."""
     src = frame.meta['level_src']
     index = levelconv.LEVELS / 'by-source.json'
     with _LEVEL_LOCK:
@@ -162,13 +169,15 @@ def level_of(frame: Frame, sym: blink.Symbols) -> Path:
             info = json.loads((Path(got) / 'level.json').read_text())
             if info.get('format') == levelconv.FORMAT and \
                     info.get('revision') == levelconv.REVISION:
-                return Path(got)
+                return LEVEL_HOOK(Path(got), src) if LEVEL_HOOK else \
+                    Path(got)
         res = levelconv.run_one(levelconv.SOURCES / (src + '.ram.z'), sym)
         table[src] = res['dir']
         tmp = index.with_suffix('.tmp')
         tmp.write_text(json.dumps(table, indent=1) + '\n')
         tmp.replace(index)
-        return Path(res['dir'])
+        return LEVEL_HOOK(Path(res['dir']), src) if LEVEL_HOOK else \
+            Path(res['dir'])
 
 
 # ---------------------------------------------------------------------------

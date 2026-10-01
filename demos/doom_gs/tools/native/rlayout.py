@@ -133,8 +133,11 @@ SEC = {'FLOOR': 0, 'CEIL': 4, 'FPIC': 8, 'CPIC': 9, 'LIGHT': 10,
        'VALID': 11, 'THINGS': 13}      # milestone 8: the thing list's head
 SEC_SIZE = 16                          #   (a RTHING slot, $FFFF: none)
 # Side, render part, 8 bytes: texture offset, row offset (words), top,
-# bottom, mid texture (bytes), pad.
-SIDE = {'TEXOFS': 0, 'ROWOFS': 2, 'TOP': 4, 'BOTTOM': 5, 'MID': 6}
+# bottom, mid texture (bytes), and (milestone 9, docs/LEVELS.md 1.3:
+# "render-level 3") the side's sector, which the level load's GROUP step
+# reads (its pad until then; the renderer does not read it).
+SIDE = {'TEXOFS': 0, 'ROWOFS': 2, 'TOP': 4, 'BOTTOM': 5, 'MID': 6,
+        'SECTOR': 7}
 SIDE_SIZE = 8
 NO_SECTOR = 0xFF                # a seg's back sector when one sided
 # Drawseg, 32 bytes (RENDB): the seg (its number), x1, x2, scale1, scale2,
@@ -195,7 +198,9 @@ assert SCALES.end <= SPRBOUND_T and SPRBOUND_T + 4 * NUMSPRITES <= \
 RTHING = {'X': 0, 'Y': 4, 'Z': 8, 'ANG': 12, 'SPR': 14, 'FRAME': 15,
           'FLAGS': 17, 'SNEXT': 18}
 RTHING_SIZE = 24
-RTHINGS = Array('render thing', RTH, 0x0200, RTHING_SIZE, 768)
+# milestone 9 (docs/LEVELS.md 3.1): a slot is its mobj's: the pool's
+# slots, then the zone mobjs; 2,026 fill RTH's $0200-$BFFF (768 before)
+RTHINGS = Array('render thing', RTH, 0x0200, RTHING_SIZE, 2026)
 NO_THING = 0xFFFF
 # WPRO (stage C, RENDER-MASKED.md 1.5): WPIDX, each patch store index's
 # weapon profile (its address in WPRO; $FFFF: none, upstream's WP_NONE:

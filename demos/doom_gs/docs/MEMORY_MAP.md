@@ -172,7 +172,7 @@ the seg loops index at column rate start on a page boundary.
 | `$18E0-$197F` | 160 | `WTMP`: floor clip of a sprite in a frame that skips the weapon rows | render | no | R `lists.inc:127-128`, `:131` |
 | `$1980-$19FF` | 128 | `DSX1`: x1 of drawseg i | render | no | R `dscols.inc:3-11`; 416-624 reads a frame [M: §A.2] |
 | `$1A00-$1A7F` | 128 | `DSX2` | render | no | R `dscols.inc:12` |
-| `$1A80-$1FFF` | 1,408 | Persistent hot game globals (the rest of upstream's near game globals go to RamWorks). Milestone 7 (section 12): `TEXTRANS` `$1A80-$1B7F`, `LNMAP` `$1B80-$1BFF` | tics | yes | A |
+| `$1A80-$1FFF` | 1,408 | Persistent hot game globals (the rest of upstream's near game globals go to RamWorks). Milestone 7 (section 12): `TEXTRANS` `$1A80-$1B7F`, `LNMAP` `$1B80-$1C7F` (256 B: this line said `$1BFF` until milestone 9, but `rlayout.py` always gave 2,048 bits); milestone 9 (section 16): the game globals block `$1C80-$1E6E` | tics | yes | A |
 
 Tic phases never overlay `$0C00-$1A7F`.
 
@@ -200,7 +200,7 @@ saved back.
 
 | Phase | Range | Bytes | Content | Loaded |
 | --- | --- | ---: | --- | --- |
-| Tics | `$6000-$BFFF` | 24,576 | Tic code window (hot set 5.5 KB still, 24-27 KB in a fight [A: `NATIVE.md` §4.3]) plus tic scratch: `intercepts` 640 B [M: linkmap], the sound-flood work stack, about 600 B [A] | per frame, CPU copy |
+| Tics | `$6000-$BFFF` | 24,576 | Tic code window (hot set 5.5 KB still, 24-27 KB in a fight [A: `NATIVE.md` §4.3]) plus tic scratch: `intercepts` 640 B [M: linkmap], the sound-flood work stack, 1,536 B (milestone 9, `LEVELS.md` 5.5: the bound of every E1 map; the first estimate was about 600 B) | per frame, CPU copy |
 | Render | `$6000-$B9FF` | 23,040 | Render code window (hot set 19-26 KB [A: `NATIVE.md` §4.3]; the masked-phase code loads over the BSP code) | per frame, CPU copy |
 | Render | `$BA00-$BFFF` | 1,536 | `YHTAB` 1,026 B, written in the masked phase [M: linkmap `YHTABM`; §A.2]; render scratch | scratch |
 | Replay | `$6000-$7FFF` | 8,192 | Record buffer, one batch (section 8) | bucket pass from aux 0 and the records bank |
@@ -643,7 +643,7 @@ the rows marked B are stage B's, C stage C's.
 | main | `$1800-$189F`, `$18A0-$18C9` | C: `WCLIP`, `WPREV` (3.3) written by the weapon skip (`nr_wskip`); `FSSTT`, `FSSTB` (3.3) by the plane stamps (`nr_fillstamps`) |
 | main | `$1A80-$1B7F` | `TEXTRANS`: `texturetranslation` as bytes |
 | main | `$0DA0-$0DE1` | B: the wall setup's variables (inside 3.3's render scratch) |
-| main | `$1B80-$1BFF` | `LNMAP`: `ML_MAPPED` of 2,048 lines, a bit each |
+| main | `$1B80-$1C7F` | `LNMAP`: `ML_MAPPED` of 2,048 lines, a bit each (256 B; corrected from `$1BFF` in milestone 9) |
 | W | `$6000-$AFBF` | Render code: 4,342 B in stage A (`RENDERW` 3,061, the render subset of `MATHW` 1,281); 15,139 B with stage B (`rwall.s` 5,374, `rseg.s` and `rrec.s` 2,941, the 13 loops 2,482); 15,606 B with stage C (`rsky.s` 273, `rframe.s` 428). Loaded each frame by the phase loader: the code's pages and the tables' pages `$AF00-$B8FF` (18,176 B) |
 | W | `$AFC0-$B3FF` | `FLATCM`, per level |
 | W | `$B400-$B8FF` | `TXBANK`, `TXLO`, `TXHI`, `TXWM`, `TXHT`, per level; live in the masked phase |
@@ -731,6 +731,86 @@ Sizes are the build's [M: `render_check.py --sizes`, the link maps];
 The cost phases of the profiling builds (`$0300`, 2 × n) now reach 18:
 a2vm counts 32 (`tools/a2vm/cost.h` `COST_PHASES`, 16 before). Stage B
 marks phase 4 (the sprites and masked walls, upstream's number).
+
+## 14. Milestone 9, stage A: the level window and the store (built on the host)
+
+`docs/LEVELS.md` 1.6 proposed the game's bank map; stage A measured the
+store and fixed it in `tools/native/llayout.py` (in `rlayout.py`'s
+family; `check()` fails on a bank used twice), with these regions
+(`docs/LEVELS.md` "Stage A as built"). Nothing of milestones 7 and 8
+moved: their banks are `rlayout.py`'s, and their harness layout (texel
+banks 11-30, patch banks 32-47) stays theirs for the frame tests.
+
+| Space | Range | Content |
+| --- | --- | --- |
+| main | `$03A4` | `LV_VARMAP`: the map whose variant columns and tails are in the shared stores (0: the canonical ones, after the boot) |
+| main | `$03A6-$03AD` | The level's counts of lines, subsectors, segs and nodes (words; after `LVCOUNT`'s sectors and sides at `$03A0-$03A3`): the bridge manifest `native-level-1`'s counts, copied from the level's header at the load |
+| main | `$2000-$3FFF`, `$4000-$5FFF`, `$0400-$07FF` | The colormaps A and B (sections 3.2 and 3.4), written by the load's PRIVATE request from `LVC` |
+| aux 0 | `$0800-$08FF` | `FUZZDARK` (section 5), written by the same request |
+| `LVMAP` | each side record's byte 7 | The side's sector (`rlayout.SIDE['SECTOR']`; levelconv.py's format `render-level 3`): the load's `GROUP` step reads it; the renderer does not |
+| RamWorks | 9-31, 56-63 | `TEX`: the texel store, one block a texture any map can show and the sky, 128 B a column (31 banks; 1,302,528 B) |
+| RamWorks | 32-47, 64 | `SPR`: the patch store, each lump whole then its 128-byte tail (17 banks; 813,968 B) |
+| RamWorks | 48 | `SPRT`: `PHDR` global (`$5600`, 411 records), each map's `SPRFR` (`$7E00`) written at its load |
+| RamWorks | 49 | `WPRO`: global (`WPIDX` by the global patch index) |
+| RamWorks | 65 | `LVG0`: the lines, 32 B (`$0200`, at most 1,520) |
+| RamWorks | 66 | `LVG1`: the sectors' game part (32 B), then the map's line tables, flood index (8 B a sector), flood entries (1 B), blocklinks (2 B a block); the bases in the map's header |
+| RamWorks | 67 | `LVG2`: the blockmap, then the reject matrix (the game lumps) |
+| RamWorks | 68 | `LVC`: colormap A, B (8,704 B each), the `GSVIEWn` record (1,216), `FUZZDARK` (256) |
+| RamWorks | 77-90 | `STORE`: the store's directory and the nine level parts (after 203 KB of the texel banks' slack) |
+| RamWorks | 99 | `GTAB`: `states`, `mobjinfo`, `COLORMAP`, `switchlist`, `SW_IDX`, the slime's first texture (17,518 B) |
+| RamWorks | 69-76, 98, 100-124 | Reserved by `docs/LEVELS.md` 1.6 for later stages and milestones (`MOBJ`, `ZONE`, `LCODE`, songs, 2D, `LVS`, `LOGTAB`); unchanged by stage A |
+| RamWorks | 1-5, 91-97, 125, 126 | Spare (14) |
+
+## 15. Milestone 9, stage B: the load phase (built on a2vm)
+
+`docs/LEVELS.md` 4.2 and 4.3 placed the load phase; stage B builds it
+(`tools/native/llayout.py` holds every address and checks the overlaps;
+`src/native/level.cfg` fails the link on an overflow; "Stage B as built"
+in `docs/LEVELS.md`). The card is unchanged: the load uses milestone 7's
+`far_get`, `far_put` and `far_pload`, and the far layer still ends at
+`$DE8E` in the level builds.
+
+| Space | Range | Content |
+| --- | --- | --- |
+| zero page | `$38-$41` | `LP_*`: the map, the step, the counts, the program's bank, a step's argument, two pointers |
+| zero page | `$48-$74` | `AM_*` (the transport's pointer, count, wait) and `LG_*` (the static steps: the line and its count, the store's pointer, the window's, the lines' sector pointers, a sector, an entry and its count, the box's four high words and their two fresh flags, a 32-bit sum, a flood position, two words) |
+| main | `$03AE`, `$03AF` | `LV_STATUS` (a load's stop code, `llayout.LS`, then `BRK`), `LV_AMEM` (the memory API's result of a refused request) |
+| W | `$6000-$6592` | `MATHW`, `AUXW` (the render images' bytes, linked into the load image) |
+| W | `$6600-$71AB` | The load code (`LOADW`: `lload.s` 929 B, `lgeom.s` 2,059 B), room to `$9FFF` |
+| W | `$A000-$A113` | A memory-API request (20 B of SmartPort and `AMEM` header, 16 descriptors) |
+| W | `$A000-$B3FF` | During `GROUP` and `FLOOD` (no request runs inside a step): each line's front and back sector (`$A000`, `$A600`, 1,536 each), each sector's line count (`$AC00`, `$AD00`), first entry (`$AE00`, `$AF00`), two running positions (`$B000-$B3FF`) |
+| W | `$B400-$B7FF` | `CMAPS`: GSVIEWn's tables A and B, a page of `COLORMAP`, the page made; `FLOOD`: a page of zeros |
+| W | `$B000-$BC7F` | Reserved for stage C's `mobjinfo` copy; stage C reads each spawn's record from `GTAB` instead (section 16) |
+| W | `$BC80-$BEC5` | The map's header (173 B), the store's directory (64 B), the program's head and steps (186 B), each request's place (2 × 32 B), a line record, a compact line, a sector's game record, a subsector record, an 8-byte scratch |
+| RamWorks | 77 `$0200-$023F` | The store's directory at a fixed place (`STORE_DIR`): stage A put it at the first free place of the texel banks' slack, which the loader cannot know |
+| RamWorks | 98 | `LCODE`: the load phase's image at W's addresses (`$6000-$71FF` today), from the bank file `CODE.1` |
+| card `$E000` part | `$E000-$E08A` | Test builds only: `ldriver.s` (`drv_level`, its map list); `LEVELS.SYSTEM`'s runner (`lboot.s`, `$E000-$E54B`) on the disk |
+
+## 16. Milestone 9, stage C: the native P_SetupLevel and the zone (built on a2vm)
+
+`docs/LEVELS.md` 3.1-3.2 and 4.2-4.3 placed the game core; stage C builds
+it (`tools/native/llayout.py`'s stage C section holds every place and
+checks the overlaps; `gen/lgame.inc` carries them and upstream's
+constants to the 65C02; "Stage C as built" in `docs/LEVELS.md`). The card
+is unchanged (the far layer ends at `$DE8E`).
+
+| Space | Range | Content |
+| --- | --- | --- |
+| zero page | `$18-$36` | `GC_*`: the game core's registers (the mobj, a handle, a temporary, a record pointer, a sector, a flag, x, y, two 32-bit values, the list's previous, a sector node, a count) |
+| zero page | `$75-$AE` | `GS_*`: the spawn's and the specials' variables (indexes, the box, the block walk, a line's sides and slopes, a state, a psprite, `GS_GAME`: a load from `nl_setup`) |
+| zero page | `$B0-$D7` | The math's block (`math.inc`): the spawn's products and divisions |
+| main | `$03EE`, `$03EF` | `PRND`, `MRND`: `P_Random`'s and `M_Random`'s indexes (`math.inc`'s `MT_PRND`, `MT_MRND`) |
+| main | `$1C80-$1E6E` | The game globals block (`GBLOCK`, 495 B): the player (148 B at `$1C80`), the buttons (4 x 9), the thing pool's bitmap (64 B), the thinker list's ends, the sector nodes' free list and high-water mark, each special kind's count, the zone's mobj count, the blockmap's place and size, the reject's, `validcount`, the level time, the game's state (action, skill, map, tics, totals, the intermission's record, the demo's, the command ring); `$1E6F-$1FFF` free |
+| W | `$AC00-$AC5F` | The mobj being made: its `RTHING` record and its three game groups (24 B each) |
+| W | `$AC60-$AD77` | Its `mobjinfo` record (from `GTAB`), a state, a BSP node, a line, a map thing, a sector's render record, a thing's sector list (64), a special's record (32), a sector node (16) |
+| W | `$AD78-$AD97`, `$AE00-$AEFF` | A sector's game record (32); a block's line list, 256 B at a time |
+| RamWorks | 50 | `RTH`: 2,026 render-thing slots of 24 B (`$0200`; milestone 8's 768 grown, `rlayout.RTHINGS`) |
+| RamWorks | 69, 70, 71 | `MOBJA`, `MOBJB`, `MOBJC`: each mobj's game part in three groups of 24 B at the same address as its `RTH` slot (`$0200` + 24 slot): links, function, type, state, tics, health; floor, ceiling, drop-off, radius, height, flags; momenta, AI and sight fields |
+| RamWorks | 75 | `ZONE0`: the specials, 32 B records at `$0200`, a range of slots for each kind (plats 0-255, doors 256-511, floors 512-767, light flashes 768-895, strobes 896-1,023, glows 1,024-1,151, scrollers 1,152-1,279); a special's thinker handle is `$0800` + its slot |
+| RamWorks | 76 | `ZONE1`: the sector nodes, 16 B each, in pools of 32 as upstream's `newSecnode` |
+| RamWorks | 72, 73, 74 | Spare again (the design's `MOBJ3-5`: three groups of 24 B hold a mobj's game part) |
+| RamWorks | 4, 5 | Test data only (spare banks): `CRCLIST.1` (bank 4, the disk's CRC ranges and expected values), the pre-states (bank 5, 1,040 B each: the globals block and the two random indexes) |
+| card `$E000` part | `$E000-$EDFF` | Test builds: `ldriver.s` (`$E000-$E0E0`) gains each map's pre-state and `nl_setup`; `LEVELS.SYSTEM`'s runner (`lboot.s`, `$E000-$E6AF`, its variables page-aligned at `$E700-$EDFF`) gains the setups and their CRCs |
 
 ## Appendix: the measurements made for this map
 

@@ -2,8 +2,10 @@
 """The level converter of the native renderer (milestone 7,
 docs/RENDER.md sections 1.3, 1.4 and 1.10; milestone 8,
 docs/RENDER-MASKED.md 1.3-1.5 and 1.11): a reference state holding a
-level becomes the native level, format "render-level 2" ("render-level
-1" and the sprite part).
+level becomes the native level, format "render-level 3" ("render-level
+2" with the side's sector in byte 7 of its record: milestone 9,
+docs/LEVELS.md 1.3; "render-level 2" was "render-level 1" and the sprite
+part).
 
 Usage:  python3 tools/native/levelconv.py SOURCE... [--out DIR] [--check]
         python3 tools/native/levelconv.py --all [--check]
@@ -112,7 +114,7 @@ RENDER = BUILD / 'native' / 'render'
 LEVELS = RENDER / 'levels'
 SOURCES = LEVELS / 'src'
 BRIDGE_DUMPS = BUILD / 'bridge' / 'dumps'
-FORMAT = 'render-level 2'
+FORMAT = 'render-level 3'
 
 MM_COLDIR = 0x250000
 MM_SEGVTX = 0x240000
@@ -146,9 +148,9 @@ WP_ARENAS = ((0xD000, 0xE400), (0xED00, 0xFF00))
 # the spectre fuzz table, per level (i_viigs65.s FUZZ_DARKEN): the replay's
 # FUZZDARK (MEMORY_MAP.md 5)
 MM_FUZZ_DARKEN = 0x01A000
-# The conversion's revision within format "render-level 2": a level of an
+# The conversion's revision within format "render-level 3": a level of an
 # older one is converted again (framestate.level_of)
-REVISION = 3
+REVISION = 1
 
 
 class ConvError(Exception):
@@ -382,6 +384,8 @@ def sector_record(s: Dict[str, Any], i: int) -> bytearray:
 
 
 def side_record(s: Dict[str, Any], i: int) -> bytearray:
+    """The render part of side i; its sector (byte 7, "render-level 3")
+    when the canonical side has one (a reference to a sector)."""
     for key in ('toptexture', 'bottomtexture', 'midtexture'):
         if not 0 <= s[key] <= 255:
             raise ConvError('side %d: %s %d' % (i, key, s[key]))
@@ -391,6 +395,11 @@ def side_record(s: Dict[str, Any], i: int) -> bytearray:
     rec[R.SIDE['TOP']] = s['toptexture']
     rec[R.SIDE['BOTTOM']] = s['bottomtexture']
     rec[R.SIDE['MID']] = s['midtexture']
+    if 'sector' in s:
+        sector = ref_index(s['sector'], 'sector')
+        if not 0 <= sector < 255:
+            raise ConvError('side %d: sector %d' % (i, sector))
+        rec[R.SIDE['SECTOR']] = sector
     return rec
 
 
@@ -1314,7 +1323,8 @@ def decode(level: Level) -> Dict[str, List[Dict[str, Any]]]:
                       'rowoffset': s16(u16(r, 2)),
                       'toptexture': r[R.SIDE['TOP']],
                       'bottomtexture': r[R.SIDE['BOTTOM']],
-                      'midtexture': r[R.SIDE['MID']]})
+                      'midtexture': r[R.SIDE['MID']],
+                      'sector': r[R.SIDE['SECTOR']]})
     out['side'] = sides
     return out
 
@@ -1361,6 +1371,8 @@ def check_decode(level: Level, up_state: Dict[str, Any]) -> int:
         for i, s in enumerate(got[kind]):
             u = objs[kind][i]
             want = {k: u[k] for k in keys}
+            if kind == 'side':
+                want['sector'] = ref_index(u['sector'], 'sector')
             if s != want:
                 raise ConvError('%s %d: %r, upstream %r' % (kind, i, s,
                                                             want))

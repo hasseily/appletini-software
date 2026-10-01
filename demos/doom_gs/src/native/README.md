@@ -1,4 +1,4 @@
-# src/native: the native record replay (milestone 5), the math (milestone 6), the front end (milestone 7)
+# src/native: the native record replay (milestone 5), the math (milestone 6), the renderer (milestones 7, 8), the level load (milestone 9)
 
 The replay is described first; the math has its own
 [`MATH.md`](MATH.md); the renderer's front end is the last section, "The
@@ -1280,3 +1280,79 @@ bucket pass 7.39 at `demo3`'s median (30.27 worst), the replay 33.80
 `demo3` median, 4.9 at its worst frame (3 to 10 of 533 frames under 6
 FPS). The disk's 100 frames by VBL count: 10.5 FPS `f121`, 12.1
 `fastpath`, render only.
+
+## The level load (milestone 9)
+
+Design: `docs/LEVELS.md`; what was built: its "Stage B as built" and
+"Stage C as built"; the regions: `docs/MEMORY_MAP.md` sections 14-16.
+Stage B (2026-10-01) builds the store's boot load and the 65C02 loader
+into the level window, on a2vm; stage C (2026-10-01) adds the game core,
+`P_SetupLevel`'s game part (`SPAWN`, `SPECIALS`) and the zone.
+
+| File | What |
+| --- | --- |
+| `lload.s` | `nl_load(A = the map)`: the store's directory (RamWorks 77 `$0200`), the map's header and load program; the steps in order: `VARIANTS` (the undo requests of `LV_VARMAP`'s map, this map's apply requests, `LV_VARMAP`), `COPYREQ`/`PRIVREQ` (a request's descriptors fetched into W `$A000` behind its SmartPort and `AMEM` header, sent through slot 7's FIFO, interrupts masked), the static steps (`lgeom.s`), `SPAWN` and `SPECIALS` (stage C: only when `nl_setup` called the load, `GS_GAME`); a stop stores its code in `LV_STATUS` (`$03AE`) and executes `BRK` |
+| `lgeom.s` | `LINES` (the compact lines into `LVG0`'s 32-byte records), `GROUP` (the subsectors' sectors into `LVMAP`, the line tables, each sector's game record in `LVG1` with its sound origin), `FLOOD` (the flood lists and index), `CMAPS` (colormaps A and B in `LVC`) |
+| `lsetup.s` | `nl_setup(A = the map)`: `G_InitNew`'s and `G_DoLoadLevel`'s part before `P_SetupLevel` (the totals 0, par time, the player's counts, viewz), the thinker list and the zone empty, then `nl_load` with `SPAWN` and `SPECIALS` |
+| `gthink.s` | The thinker list, the mobj slots (`RTH` and the three game groups `MOBJA-C`), the thing pool (`poolTake`: the highest free slot) and the zone's slots, the specials' ranges in `ZONE0`, the sector nodes in pools of 32 (`ZONE1`), the game globals' far access, `P_Random` and its table |
+| `gpos.s` | `R_PointInSubsector` (upstream's side test, its whole-part compares and sign shortcut), `P_SetThingPosition` (the sector's list, `P_CreateSecNodeList`: the box walk x outer y inner, each block's lines after the first entry, the slanted-corner test, `addSecnode`), the block's list (head insert, none off the map) |
+| `gspawn.s` | `SPAWN`: the globals from the header, `P_SpawnMapThing` for each map thing (skill and mode flags, the player start with `G_PlayerReborn`, `P_SpawnMobj` with its `P_Random` and the tics, the thinker class, the counts) |
+| `gweap.s` | `P_SetupPsprites`: `bringUpWeapon`, `P_SetPsprite` and `A_Raise` (any other action is a stop, `LS_ACTION`) |
+| `gspec.s` | `SPECIALS`: `P_SpawnSpecials` (light flashes, strobes, glows with `P_FindMinSurroundingLight`, secrets, the buttons, the scrollers) |
+| `gvalid.s` | `validcount++`; the release builds (`lfix`, `lcard`) clear every stamp at the wrap and count from 1; the test builds (`-D VCWRAP_UPSTREAM`) wrap as upstream |
+| `ldriver.s` | The a2vm test driver (card `$E000`): the VBL interrupt, the load image into W (`far_pload` from `LCODE`), `nl_load` of each map of its list, `drv_loaded` after each; with a pre-state for a map (stage C), its game globals copied in and `nl_setup` instead |
+| `lboot.s` | `LEVELS.SYSTEM`: the 126-bank probe, the bank files of `CATALOG` into their banks through the MLI, the card image; then the runner: the mouse card, the memory API's probe, the load image, the catalog's maps set up in turn from their pre-states (their VBLs), each setup's CRCs of the window and the game state against the host's (`CRCLIST.1`), a table: "SETUPS OK" or the bad rows |
+| `level.cfg`, `level.mk` | The builds `ltest` (lockstep wrap), `lprof` (`-D LPROF`: cost phases 1 the image, 2 the variants, 3 the copies, 4-7 the static steps, 8 the PRIVATE copies, 9 the spawn, 10 the specials, 11 `nl_setup`), `lfix` (the release wrap, on a2vm), `lcard` (the disk), into `build/native/levels/obj` |
+
+Host tools: `llayout.py` (the load's and the game's addresses,
+`llayout.inc`, `lgame.inc`, the manifest `native-level-1` with the game
+kinds), `lrun.py` (image runs, the stray checks, `harness_level`,
+`--sizes`), `level_check.py --load` (checkpoint B), `--load-timing`,
+`--setup` (acceptance 1), `--flood` (acceptance 3), `--setup-timing`,
+`--report-md`, `setupcheck.py` (the pre-states, the canonical
+comparison), `ldisk.py` (`LEVELS.hdv`, `--check`), `frame8.py --levels
+loaded` (acceptance 2).
+
+### Commands
+
+```
+python3 tools/native/wadconv.py --store
+make -C src/native -f level.mk
+python3 tools/native/lrun.py --sizes
+python3 tools/native/level_check.py --load          # 40 loads, both fills
+python3 tools/native/level_check.py --load-timing
+python3 tools/native/ldisk.py --check                # build/native/LEVELS.hdv on a2vm
+python3 tools/native/frame8.py --levels loaded --sets m7,demo3
+python3 -m unittest discover -s tests -p 'test_native_level_load.py'
+python3 tools/native/level_check.py --setup         # acceptance 1 (3 min)
+python3 tools/native/level_check.py --flood --no-build
+python3 tools/native/level_check.py --setup-timing --no-build
+python3 tools/native/level_check.py --report-md     # build/native/levels/report.md
+python3 -m unittest discover -s tests -p 'test_native_level_setup.py'
+```
+
+### Results (a2vm; the card waits for milestone 12)
+
+Checkpoint B: 40 loads (the nine maps in a row, in reverse, E1M5 twice;
+`$A5` and `$5A`), each window equal to `window.img`, read back equal to
+levelconv.py's level of the map's W dump and to the converter's harness
+level, the static and derived canonical parts equal the R dumps', no
+stray write, nothing changed outside the loads' places, stack 13 B. The
+disk boots and loads the same 20 windows. Acceptance 2: 729 frames,
+1,458 runs on natively loaded levels, all equal. Sizes: `lload.s` 929 B,
+`lgeom.s` 2,059 B (W `$6600-$71AB`). Load time (model, `f121`): 101 ms
+(E1M8) to 275 ms (E1M6); `fastpath` 58-152 ms; the boot 1.14 s.
+
+Stage C: acceptance 1, the 54 setups (the 51 of the design, the two
+reloads, the wrap capture) from both poisoned machines, each canonical
+state equal to ref816's, no stray write, stack 27-29 B (+24 IRQ, of
+128), the reloads' static kinds equal to their first loads', every zone
+bound within the room (least margin 428); the release build's wrap fix
+equal to the plain setup renumbered. Acceptance 3: worst flood depths
+23-93, all within 512. The disk: 20 setups on a2vm under `f121` and
+`fastpath`, every CRC as expected. Load and setup (model, `f121`):
+191 ms (E1M8) to 654 ms (E1M6), the spawn 82-350 ms of it; `fastpath`
+116-399 ms. Sizes (`lcard`): `lsetup.s` 74, `gspawn.s` + `gweap.s`
+1,497, `gpos.s` 1,770, `gthink.s` + `gvalid.s` 1,252 (over its 700: the
+256-byte random table and the release wrap), `gspec.s` 741; W's load
+code `$6600-$8692`.

@@ -56,9 +56,49 @@ def set_path(obj: Dict[str, Any], path: Sequence[Any], value: Any,
     obj[last] = value
 
 
+def handle_null(enc: Dict[str, Any]) -> int:
+    return enc.get('null', (1 << (8 * enc.get('bytes', 2))) - 1)
+
+
+def handle_decode(enc: Dict[str, Any], v: int, where: str) -> Optional[R]:
+    """A handle's value as a reference (layout.py: "handle")."""
+    if v == handle_null(enc):
+        return None
+    for r in enc['ranges']:
+        if r['lo'] <= v < r['lo'] + r['n']:
+            if 'id' in r:
+                return R(r['kind'], r['id'], v - r['lo'])
+            return R(r['kind'], v - r['lo'], r.get('field'))
+    raise PortError('%s: handle $%X names nothing' % (where, v))
+
+
+def handle_encode(enc: Dict[str, Any], ref: Optional[R], where: str) -> int:
+    if ref is None:
+        return handle_null(enc)
+    for r in enc['ranges']:
+        if r['kind'] != ref.kind:
+            continue
+        if 'id' in r:
+            if ref.id == r['id'] and isinstance(ref.field, int) and \
+                    0 <= ref.field < r['n']:
+                return r['lo'] + ref.field
+        elif ref.field == r.get('field') and isinstance(ref.id, int) and \
+                0 <= ref.id < r['n']:
+            return r['lo'] + ref.id
+    raise PortError('%s: the layout cannot name %r' % (where, ref))
+
+
 class _Codec:
     def __init__(self, manifest: Manifest):
         self.mf = manifest
+
+    def pool_leaf(self, pool: Dict[str, Any]) -> Leaf:
+        """The encoding of a pool's elements: a handle, or a ref of its
+        codes."""
+        if 'enc' in pool:
+            return Leaf(('pool',), pool['enc'], pool['planes'])
+        return Leaf(('pool',), {'enc': 'ref', 'codes': pool['codes']},
+                    pool['planes'])
 
     def ref_parts(self, leaf: Leaf, ref: Optional[R]) -> Tuple[int, int,
                                                                int]:
@@ -178,7 +218,12 @@ class PortWriter(_Codec):
             if len(ids) > spec['capacity']:
                 raise PortError('%s: %d objects, capacity %d' % (
                     kind, len(ids), spec['capacity']))
-            self.put(spec['count'], 0, len(ids))
+            if isinstance(spec['count'], int):
+                if len(ids) > spec['count']:
+                    raise PortError('%s: %d objects, the layout holds %d'
+                                    % (kind, len(ids), spec['count']))
+            else:
+                self.put(spec['count'], 0, len(ids))
             for ident in ids:
                 o = table[ident]
                 for leaf in spec['leaves']:
@@ -213,10 +258,33 @@ class PortWriter(_Codec):
             self.m.put(p + index, value >> (8 * k), 1)
 
     def encode(self, leaf: Leaf, index: int, value: Any) -> None:
-        index *= leaf.stride            # records of `stride` bytes
         e = leaf.enc['enc']
         planes = leaf.planes
         where = '.'.join(map(str, leaf.path))
+        if e == 'bit':                  # a bitmap: the object's index
+            bit = leaf.enc['value']
+            if value not in (0, bit):
+                raise PortError('%s: %r is not 0 or %d' % (where, value,
+                                                           bit))
+            at = planes[0] + (index >> 3)
+            old = self.m.u8(at)
+            mask = 1 << (index & 7)
+            self.m.put(at, (old | mask) if value else (old & ~mask), 1)
+            return
+        index *= leaf.stride            # records of `stride` bytes
+        if e == 'handle':
+            self.put(planes, index, handle_encode(leaf.enc, value, where))
+            return
+        if e == 'sxbyte':
+            if not isinstance(value, int) or not -128 <= value < 128:
+                raise PortError('%s: %r does not fit a signed byte' % (
+                    where, value))
+            self.put(planes, index, value & 0xff)
+            return
+        if e == 'list' and 'ranges' in leaf.enc:
+            first = value[0] if value else None
+            self.put(planes, index, handle_encode(leaf.enc, first, where))
+            return
         if e == 'int':
             n = leaf.enc['bytes']
             if not isinstance(value, int):
@@ -255,15 +323,19 @@ class PortWriter(_Codec):
             if start + len(value) > pool['capacity']:
                 raise PortError('%s: the pool %s is full' % (
                     where, leaf.enc['pool']))
-            pleaf = Leaf(('pool',), {'enc': 'ref', 'codes': pool['codes']},
-                         pool['planes'])
+            pleaf = self.pool_leaf(pool)
             for k, ref in enumerate(value):
+                if 'enc' in pool:
+                    self.put(pool['planes'], start + k, handle_encode(
+                        pool['enc'], ref, where))
+                    continue
                 tag, ident, _ = self.ref_parts(pleaf, ref)
                 self.put(pool['planes'][:1], start + k, tag)
                 self.put(pool['planes'][1:3], start + k, ident)
             self.pool_fill[leaf.enc['pool']] = start + len(value)
             self.put(planes[:2], index, start)
-            self.put(planes[2:4], index, len(value))
+            self.put(planes[2:4], index, start + len(value)
+                     if leaf.enc.get('form') == 'end' else len(value))
         elif e == 'table':
             if value != R(leaf.enc['kind'], 0, None):
                 raise PortError('%s: %r is not the table %s' % (
@@ -306,7 +378,8 @@ class PortReader(_Codec):
         self.counts: Dict[str, int] = {}
         heads: List[Tuple[Dict, Tuple[Any, ...], str, Optional[R]]] = []
         for kind, spec in self.mf.kinds.items():
-            n = self.get(spec['count'], 0)
+            n = spec['count'] if isinstance(spec['count'], int) else \
+                self.get(spec['count'], 0)
             if n > spec['capacity']:
                 raise PortError('%s: count %d, capacity %d' % (
                     kind, n, spec['capacity']))
@@ -348,15 +421,24 @@ class PortReader(_Codec):
         return v
 
     def decode(self, leaf: Leaf, index: int) -> Any:
-        index *= leaf.stride            # records of `stride` bytes
         e = leaf.enc['enc']
         planes = leaf.planes
+        where = '.'.join(map(str, leaf.path))
+        if e == 'bit':                  # a bitmap: the object's index
+            byte = self.m.u8(planes[0] + (index >> 3))
+            return leaf.enc['value'] if byte >> (index & 7) & 1 else 0
+        index *= leaf.stride            # records of `stride` bytes
         if e == 'int':
             v = self.get(planes, index)
             n = leaf.enc['bytes']
             if leaf.enc['signed'] and v >> (8 * n - 1):
                 v -= 1 << (8 * n)
             return v
+        if e == 'handle' or (e == 'list' and 'ranges' in leaf.enc):
+            return handle_decode(leaf.enc, self.get(planes, index), where)
+        if e == 'sxbyte':
+            v = self.get(planes, index)
+            return v - 256 if v & 0x80 else v
         if e in ('ref', 'list'):
             tag = self.get(planes[:1], index)
             ident = self.get(planes[1:3], index)
@@ -375,8 +457,19 @@ class PortReader(_Codec):
             pool = self.mf.pools[leaf.enc['pool']]
             start = self.get(planes[:2], index)
             n = self.get(planes[2:4], index)
-            pleaf = Leaf(('pool',), {'enc': 'ref', 'codes': pool['codes']},
-                         pool['planes'])
+            if leaf.enc.get('form') == 'end':
+                if n < start:
+                    raise PortError('%s: a sequence from %d to %d' % (
+                        where, start, n))
+                n -= start
+            if start + n > pool['capacity']:
+                raise PortError('%s: a sequence past the pool %s' % (
+                    where, leaf.enc['pool']))
+            if 'enc' in pool:
+                return [handle_decode(pool['enc'], self.get(pool['planes'],
+                                                            k), where)
+                        for k in range(start, start + n)]
+            pleaf = self.pool_leaf(pool)
             return [self.ref_from(pleaf, self.get(pool['planes'][:1], k),
                                   self.get(pool['planes'][1:3], k), 0)
                     for k in range(start, start + n)]
@@ -384,6 +477,9 @@ class PortReader(_Codec):
             return R(leaf.enc['kind'], 0, None)
         if e == 'blob':
             n = self.get(planes[:2], index)
+            if n > leaf.enc['max']:
+                raise PortError('%s: %d bytes, at most %d' % (
+                    where, n, leaf.enc['max']))
             return self.m.read(planes[2], n).hex()
         raise PortError('encoding %s' % e)
 
