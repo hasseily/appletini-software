@@ -18,19 +18,29 @@
 ;               RT_X) on the state the harness put in the image, then the
 ;               record batch flushed; drv_seg the same for nr_segloop. The
 ;               build without LOCKSTEP (rwall) links the real wall code.
+;   drv_mframe  milestone 8 (the builds with -D MASKED, mtest and mprof):
+;               the frame to the masked phase's end: the front end's window
+;               (far_wload), nr_frame, then at drv_mload the masked phase's
+;               window (far_mload, RENDER-MASKED.md 3.2 phase 5) and
+;               nm_masked. The cost phases: 1 the front end's load, 13 the
+;               masked load (RENDER-MASKED.md 4.4).
+;   drv_fframe  milestone 8, stage C (-D FRAME8, the builds ftest and
+;               fprof): the whole frame, RENDER-MASKED.md 3.2 phases 1-13,
+;               from the front end's window to the replay's last SHR write:
+;               as drv_mframe to nm_masked (with the weapon), then at
+;               drv_mend nm_bkload (the bucket pass's code into main) and
+;               nb_frame (the bucket pass and the replay of each batch).
+;               This is the order the game's frame driver keeps (milestone
+;               11 puts it in the main loop: W is the phases' window).
 ;
 ; The checkpoint A builds (rtest, rprof: -D LOCKSTEP) link the lockstep
 ; stub below as nr_storewall; the stage B build (rwall) links rwall.s.
 ;
-; The seam and the lockstep data are in RamWorks bank SEAM (RENDER.md
-; 1.8, tools/native/rlayout.py):
+; The lockstep data are in RamWorks bank SEAM (RENDER.md 1.8,
+; tools/native/rlayout.py; milestone 8's stage C made the weapon's clip
+; pass native: the seam of floorclip, FR_VIS and MM_WPOK is gone):
 ;
 ;   SEAM_HDR    +0: the reference's R_StoreWallRange calls in this frame
-;   SEAM_FLOOR  floorclip after the weapon's clip pass (160 low bytes):
-;               wclip_pass copies it into FLOORCLIP (the seam, RENDER.md
-;               2.3)
-;   SEAM_FRVIS  FR_VIS after it (42 bytes: the weapon's vissprite), into
-;               FRVIS; SEAM_WPOK its MM_WPOK (1: $5AA5), into MM_WPOK
 ;   SEAM_CALLS  16 bytes a call of nr_storewall, written by the stub:
 ;               start, stop, the seg (2), the front sector, the floor and
 ;               ceiling colours (2 each), worldbottom (4)
@@ -42,9 +52,20 @@
         .include "math.inc"
 
         .import mt_init, nr_frame, nr_side, far_wload
+.ifdef MASKED
+        .import far_mload, nm_masked, nm_rsetup, nm_drawsprite, nm_visx
+        .import far_pload
+        .import nm_mwall, md_dsptr, mrec_flush
+        .export drv_mframe, drv_mload, drv_mroutine
+        .export mr_kind, mr_vis, mr_ds, mr_slot, mr_x1, mr_x2
+.endif
         .export drv_frame, drv_call, drv_ret, drv_halt, drv_crash
         .export drv_bulk, drv_desc, drv_stub, drv_irq, rt_side
-        .export wclip_pass, drv_wframe, drv_wload
+        .export drv_wframe, drv_wload
+.ifdef FRAME8
+        .import nm_bkload, nb_frame
+        .export drv_fframe, drv_mend, drv_fload
+.endif
 .ifdef LOCKSTEP
         .export nr_storewall, rec_start, rec_flush
 .else
@@ -106,6 +127,96 @@ drv_wload:
         stz PHASE
         bra drv_call
 
+.ifdef MASKED
+drv_mframe:
+        jsr drv_setup
+        cli
+        lda #2                  ; the cost phase 1: the front end's load
+        sta PHASE
+        jsr far_wload
+        stz PHASE
+        jsr nr_frame
+drv_mload:
+        lda #26                 ; the cost phase 13: the masked load
+        sta PHASE
+        jsr far_mload
+        stz PHASE
+        jsr nm_masked
+        jmp drv_ret
+
+.ifdef FRAME8
+drv_fframe:
+        jsr drv_setup
+        cli
+        lda #2                  ; the cost phase 1: the front end's load
+        sta PHASE
+        jsr far_wload
+        stz PHASE
+        jsr nr_frame
+drv_fload:
+        lda #26                 ; the cost phase 13: the masked load
+        sta PHASE
+        jsr far_mload
+        stz PHASE
+        jsr nm_masked
+drv_mend:
+        lda #36                 ; the cost phase 18: the bucket pass (its
+        sta PHASE               ;   code into main first)
+        jsr nm_bkload
+        jsr nb_frame            ; (it marks 18 and 12, the replay)
+        stz PHASE
+        jmp drv_ret
+.endif
+
+; drv_mroutine: routine mode of the masked phase (RENDER-MASKED.md 4.1,
+; 5.2 item 1): the windows (the front end's for the shared math and the
+; W tables, the masked image), the draw phase's constants, then one call
+; with the reference's state the harness injected: mr_kind 0 R_DrawSprite
+; of vissprite mr_vis, 1 R_DrawVisSprite of it with the clips, 2
+; R_RenderMaskedSegRange of drawseg mr_ds (its DSW slot mr_slot) for the
+; columns mr_x1 .. mr_x2; the last batch flushed
+drv_mroutine:
+        jsr drv_setup
+        cli
+        jsr far_wload
+        jsr far_mload
+        lda #<mr_runs           ; W's drawseg copy and vissprites (the
+        ldx #>mr_runs           ;   harness's, in bank MRTN_BANK)
+        ldy #MRTN_BANK
+        jsr far_pload
+        jsr nm_rsetup
+        lda mr_kind
+        beq @sprite
+        cmp #1
+        beq @vis
+        lda mr_ds
+        sta DS_K
+        lda mr_slot
+        sta DS_SLOT
+        jsr md_dsptr
+        lda mr_x1
+        sta MW_X
+        lda mr_x2
+        sta MW_X2
+        jsr nm_mwall
+        bra @done
+@sprite:
+        ldx mr_vis
+        jsr nm_drawsprite
+        bra @done
+@vis:   ldx mr_vis
+        jsr nm_visx
+@done:  jsr mrec_flush
+        jmp drv_ret
+mr_runs: .byte >DSW, (>(VIS + MAXVIS * VISREC_SIZE - 1)) - (>DSW) + 1, 0
+mr_kind: .byte 0
+mr_vis: .byte 0
+mr_ds:  .byte 0
+mr_slot: .byte 0
+mr_x1:  .byte 0
+mr_x2:  .byte 0
+.endif
+
 ; drv_setup: the IRQ vector, the counters, the lockstep stub's state, the
 ; mouse card's VBL interrupt (enabled by the caller's CLI)
 drv_setup:
@@ -154,33 +265,6 @@ drv_irq:
         pla
         rti
 @brk:   jmp drv_crash
-
-; ---------------------------------------------------------------------------
-; wclip_pass: FLOORCLIP, FRVIS and MM_WPOK = the seam's (the reference's
-; after the weapon's clip pass, RENDER.md 2.3). One RAMRD window; its code
-; in the card.
-; ---------------------------------------------------------------------------
-wclip_pass:
-        lda #SEAM
-        sta RWBANK
-        sta RAMRDON
-        ldx #VIEWWIDTH
-:       dex
-        lda SEAM_FLOOR,x
-        sta FLOORCLIP,x
-        txa
-        bne :-
-        ldx #VIS_SIZE
-:       dex
-        lda SEAM_FRVIS,x
-        sta FRVIS,x
-        txa
-        bne :-
-        lda SEAM_WPOK
-        sta MM_WPOK
-        sta RAMRDOFF
-        stz RWBANK
-        rts
 
 .ifndef LOCKSTEP
 ; ---------------------------------------------------------------------------

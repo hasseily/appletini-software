@@ -180,9 +180,17 @@ def load_build(obj: Path = OBJ, name: str = 'rtest') -> Build:
 
 def code_ranges(b: Build) -> List[Tuple[int, int]]:
     """The render code's PC ranges (inclusive), the driver's and the phase
-    loader's excluded."""
-    return [b.segments[s] for s in ('RENDERW', 'MATHW', 'MATHLC',
-                                    'MATHFAR', 'RFAR') if s in b.segments]
+    loader's excluded (milestone 8: the masked phase's too)."""
+    return [b.segments[s] for s in ('RENDERW', 'MATHW', 'AUXW', 'MATHLC',
+                                    'MATHFAR', 'RFAR', 'MASKW', 'MFAR')
+            if s in b.segments]
+
+
+def w_end(b: Build) -> int:
+    """The last byte of the front end's W image (MATHW, AUXW, then
+    RENDERW: render.cfg)."""
+    return max(b.segments[s][1] for s in ('MATHW', 'AUXW', 'RENDERW')
+               if s in b.segments)
 
 
 LOADER_WRITES = [('main', 0, 0x6000, R.TXTAB_END),    # the phase loader: W,
@@ -209,7 +217,7 @@ def base_records(b: Build, fill: int, window: bool = False
     squares = (TABLES / 'math' / 'squares.bin').read_bytes()
     lc1[0:len(squares)] = squares
     for seg, part in (('MATHLC', 'lc1'), ('MATHFAR', 'far'),
-                      ('RFAR', 'far'), ('RLOAD', 'far')):
+                      ('RFAR', 'far'), ('RLOAD', 'far'), ('MFAR', 'far')):
         if seg not in b.segments:
             continue
         start, end = b.segments[seg]
@@ -220,14 +228,45 @@ def base_records(b: Build, fill: int, window: bool = False
     start, end = b.segments['DRIVER']
     data = (b.obj / ('%s.lce' % b.name)).read_bytes()
     lc[start - 0xC000:end + 1 - 0xC000] = data[:end + 1 - start]
+    # milestone 8, stage C (the whole frame's builds): milestone 5's replay
+    # (card bank 2 $D000-$DFFF, its $F900 part) and the bucket pass's card
+    # part after it; the main and aux 0 tables and drawers below
+    for seg, part, base in (('TEXBLK', 'lc2', 0xD000),
+                            ('FILLE', 'lc2', 0xD000),
+                            ('FILLO', 'lc2', 0xD000),
+                            ('RHOT', 'lc2', 0xD000),
+                            ('RCODE', 'rc', 0xF900),
+                            ('BKNEAR', 'rc', 0xF900)):
+        if seg not in b.segments:
+            continue
+        start, end = b.segments[seg]
+        data = (b.obj / ('%s.%s' % (b.name, part))).read_bytes()
+        lc[start - 0xC000:end + 1 - 0xC000] = data[start - base:
+                                                   end + 1 - base]
     recs.append((2, 0, 0xC000, bytes(lc)))
+    if 'MAINTAB' in b.segments:
+        from native import layout as L5
+        m08 = (b.obj / ('%s.m08' % b.name)).read_bytes()
+        for lo, hi in L5.MAIN_TABLE_RANGES:
+            recs.append((0, 0, lo, m08[lo - L5.MAIN_TABLES:
+                                       hi - L5.MAIN_TABLES]))
+        a02 = (b.obj / ('%s.a02' % b.name)).read_bytes()
+        recs.append((1, 0, L5.AUXCODE, a02))
+        a08 = (b.obj / ('%s.a08' % b.name)).read_bytes()
+        for lo, hi in L5.AUX_TABLE_RANGES:
+            recs.append((1, 0, lo, a08[lo - L5.AUX_TABLES:
+                                       hi - L5.AUX_TABLES]))
     recs.append((3, 0, 0xD000, bytes(lc1)))
     w = (b.obj / ('%s.w' % b.name)).read_bytes()
-    wend = b.segments['MATHW'][1]
+    wend = w_end(b)
     if window:
         recs.append((1, R.WCODE_BANK, 0x6000, w[:wend + 1 - 0x6000]))
     else:
         recs.append((0, 0, 0x6000, w[:wend + 1 - 0x6000]))
+    if 'MASKW' in b.segments:           # milestone 8: the masked image
+        start, end = b.segments['MASKW']   # (stage C: with the bucket
+        wm = (b.obj / ('%s.wm' % b.name)).read_bytes()  # pass's BKFAR
+        recs.append((1, R.MCODE_BANK, start, wm))       # after the code)
     for kind, bank, address, data in levelconv.Image.parse(
             (TABLES / 'tables.img').read_bytes()):
         recs.append((kind, bank, address, data))
@@ -286,7 +325,8 @@ def prepare(directory: Path, sym: blink.Symbols) -> Case:
     for name in ('level.img', 'wtables.img'):
         recs += levelconv.Image.parse((level_dir / name).read_bytes())
     recs += FS.records(frame, inputs, level) + FS.seam_records(frame, sym)
-    return Case(frame, level_dir, level, recs, rcanon.reference(frame, sym))
+    return Case(frame, level_dir, level, recs, rcanon.reference(
+        frame, sym, FS.store_index(level)))
 
 
 # ---------------------------------------------------------------------------
@@ -379,7 +419,6 @@ def allowed_sets(b: Build, level: Dict[str, Any], stage_b: bool = False
     driver = [('aux', R.SEAM, 0, 0x10000),
               ('main', 0, R.SOLIDCOL, R.SOLIDCOL + 160),
               ('main', 0, R.FLOORCLIP, R.FLOORCLIP + 160),
-              ('main', 0, R.FRVIS, R.FRVIS + R.VIS_SIZE),
               ('main', 0, 0xD8, 0x100),
               ('main', 0, R.PHASE, R.PHASE + 1),
               ('lc', 0, 0xFFFE, 0x10000),
@@ -545,7 +584,8 @@ def prepare_full(directory: Path, sym: blink.Symbols) -> FullCase:
     texmap = json.loads((case.level_dir / 'texmap.json').read_text())
     sky = frozenset(v for k, v in texmap['slots'].items()
                     if k.startswith('sky:'))
-    return FullCase(case, rcanon.frame_truth(case.frame, sym, nlines),
+    return FullCase(case, rcanon.frame_truth(case.frame, sym, nlines,
+                                             FS.store_index(case.level)),
                     rcanon.slot_map(case.level_dir), nlines, sky)
 
 
@@ -1454,6 +1494,366 @@ def timing_report(results: List[Dict[str, Any]]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Milestone 8, stage A (docs/RENDER-MASKED.md 5.1, checkpoint A): the frame
+# to the masked phase's projection and sort
+# ---------------------------------------------------------------------------
+
+MASK_SNAP = FRAME_SNAP + ',main:9C00-BFFF,aux0:%04X-%04X,aux%d:%04X-%04X' \
+    % (R.SPRSEC, R.SPRSEC_END - 1, R.SPRT, R.PHDRS.base, R.PHDRS.end - 1) \
+    + ',aux%d:%04X-%04X' % (R.SEAM, R.SEAM_CLIPLOG, R.SEAM_CLIPLOG +
+                            R.CLIPLOG_REC * R.CLIPLOG_MAX - 1)
+KNOWN_DIVERGENCE = 'a known divergence (NATIVE.md 15.1 row 13)'
+
+
+class MaskCase(NamedTuple):
+    full: FullCase
+    vis: Dict[str, Any]             # rcanon.vis_truth
+    masked: Dict[str, Any]          # rcanon.masked_truth (stage B)
+    pmap: List[Tuple[int, int, int, int]]   # the level's patch map
+
+
+def prepare_masked(directory: Path, sym: blink.Symbols) -> MaskCase:
+    fc = prepare_full(directory, sym)
+    recs = list(fc.case.records)
+    for kind, bank, address, data in levelconv.Image.parse(
+            (fc.case.level_dir / 'mtables.img').read_bytes()):
+        if kind != 0:
+            raise CheckError('mtables.img has a record of kind %d' % kind)
+        recs.append((1, R.MCODE_BANK, address, data))
+    fc = fc._replace(case=fc.case._replace(records=recs))
+    return MaskCase(fc, rcanon.vis_truth(fc.case.frame, sym),
+                    rcanon.masked_truth(fc.case.frame, sym),
+                    rcanon.patch_map(fc.case.level_dir))
+
+
+def read_writes_timed(path: Path) -> List[Tuple[int, Write]]:
+    """The write log with each write's CPU cycles."""
+    out = []
+    with open(str(path)) as handle:
+        for line in handle:
+            if line.startswith('#'):
+                continue
+            f = line.split()
+            io = f[5] == 'io'
+            out.append((int(f[2]), Write(int(f[3], 16), int(f[4], 16), f[5],
+                                         0 if io else int(f[6]),
+                                         int(f[4], 16) if io else
+                                         int(f[7], 16))))
+    return out
+
+
+def masked_boundary(timed: List[Tuple[int, Write]], b: Build) -> int:
+    """The cycle the driver starts the masked phase's load (its write of
+    the cost phase 13 at drv_mload)."""
+    lo, hi = b.segments['DRIVER']
+    for cycles, w in timed:
+        if w.storage == 'main' and w.offset == R.PHASE and lo <= w.pc <= hi \
+                and w.pc >= b.labels['drv_mload']:
+            return cycles
+    raise CheckError('no masked load in the write log')
+
+
+def stray_masked(writes: Sequence[Write], b: Build,
+                 cliplog: bool = True,
+                 driver_extra: Sequence[Tuple[str, int, int, int]] = ()
+                 ) -> List[str]:
+    """The writes of the masked phase (after its load) outside its
+    allowed set: its code, the shared code (the far layer, the math, the
+    aux card's reads) and the card loops by rlayout.allowed_writes_masked
+    and their own data (by label); the loader W only; the driver's."""
+    lab = b.labels
+    render = [(s, bank, lo, hi) for s, bank, lo, hi, _ in
+              R.allowed_writes_masked(cliplog)]
+    for name in ('axv_rd', 'axt_b2', 'axt_b3', 'ax3_lo', 'ax3_hi',
+                 'ax4_b0', 'ax4_b1', 'ax4_b2', 'ax4_b3'):
+        render.append(('main', 0, lab[name] + 2, lab[name] + 3))
+    render.append(('main', 0, lab['ax_out'], lab['ax_out'] + 4))
+    for name in ('mt_far_count', 'mt_far_stride'):
+        render.append(('lc1', 0, lab[name] + 1, lab[name] + 2))
+    render.append(('lc1', 0, lab['dsw_n'], lab['dsw_idx'] + R.DSW_MAX))
+    # stage B: the posts' buffer of far_posts (pt_n to the end of pt_hi)
+    render.append(('lc1', 0, lab['pt_n'], lab['pt_hi'] + lab['PT_MAX']))
+    driver = [('main', 0, 0xD8, 0x100), ('main', 0, R.PHASE, R.PHASE + 1),
+              ('lc', 0, 0xFFFE, 0x10000)] + list(driver_extra)
+    code = code_ranges(b)
+    drv = [b.segments['DRIVER'], b.segments['DESC']]
+    loader = [b.segments['RLOAD']]
+
+    def inside(w: Write, allowed) -> bool:
+        for s, bank, lo, hi in allowed:
+            if s == w.storage and (s != 'aux' or bank == w.bank) and \
+                    lo <= w.offset < hi:
+                return True
+        return False
+    out = []
+    for w in writes:
+        in_code = any(lo <= w.pc <= hi for lo, hi in code)
+        in_drv = any(lo <= w.pc <= hi for lo, hi in drv)
+        in_loader = any(lo <= w.pc <= hi for lo, hi in loader)
+        if w.storage == 'io':
+            ok = ((in_code or in_loader) and w.address in IO_RENDER) or \
+                (in_drv and w.address in IO_DRIVER)
+        elif in_loader:
+            ok = inside(w, LOADER_WRITES)
+        elif in_code:
+            ok = inside(w, render)
+        elif in_drv:
+            ok = inside(w, driver)
+        else:
+            ok = False
+        if not ok:
+            out.append('pc $%04X wrote %s %d $%04X' % (
+                w.pc, w.storage, w.bank, w.offset))
+    return out
+
+
+def check_masked(mc: MaskCase, b: Build, fill: int, base: Sequence,
+                 keep: Optional[Path] = None) -> Dict[str, Any]:
+    """Checkpoint A of milestone 8 on one frame: the front end (milestone
+    7's outputs at the walk's end equal P3's, the walk's entry P0b's), then
+    the masked phase's window, the drawseg copy, the projection and the
+    sort (the vissprites equal P3's, the order, FR_SKIP and W_WSK P3s's,
+    the listed sectors the call log's R_AddSprites calls), no stray write
+    (each phase by its own allowed set)."""
+    fc = mc.full
+    case = fc.case
+    work = Path(tempfile.mkdtemp(prefix='tmp-m8-mask-', dir=str(BUILD)))
+    try:
+        lab = b.labels
+        events = ['pc %X snapshot bsp' % lab['nr_bsp'],
+                  'pc %X snapshot walk' % lab['drv_mload'],
+                  'pc %X snapshot psp' % lab['m_hook'],
+                  'pc %X snapshot end' % lab['drv_ret'],
+                  'pc %X snapshot crash' % lab['drv_crash']]
+        ranges = ','.join('%X-%X' % r for r in code_ranges(b))
+        extra = ['--speed', '1', '--snapshot-ranges', MASK_SNAP,
+                 '--irq-bounds', IRQ_BOUNDS, '--lowest-s-in', ranges,
+                 '--write-log', WRITE_LOG, '--write-log-file',
+                 str(work / 'writes.log'), '--write-log-limit',
+                 str(WRITE_LOG_LIMIT)]
+        state = a2vm_run(b, list(base) + to_window(case.records), work,
+                         events, extra, start='drv_mframe')
+        out: Dict[str, Any] = {'frame': case.frame.name, 'fill': fill,
+                               'problems': []}
+        if state.get('pc') == lab['drv_crash']:
+            try:
+                status = snapshot(work, 'crash').main(R.FRAME['STATUS'],
+                                                      1)[0]
+            except CheckError:
+                status = None
+            out['problems'].append('the frame stopped (BRK), status %s: %s'
+                                   % (status, STATUS_NAMES.get(status, '?')))
+            return out
+        if state.get('end') != 'stop-pc' or state.get('pc') != \
+                lab['drv_halt']:
+            out['problems'].append('the run ended with %s at $%04X' % (
+                state.get('end'), state.get('pc', -1)))
+            return out
+        bsp, walk, psp, end = (snapshot(work, n) for n in
+                               ('bsp', 'walk', 'psp', 'end'))
+        nsec = case.level['counts']['sectors']
+        rules = walk.main(R.FRAME['RULES'], 1)[0] | \
+            end.main(R.FRAME['RULES'], 1)[0]
+        out['rules'] = rules
+        if rules:
+            # a column seen from behind: the frame is not compared
+            out['known'] = 'rules %d: %s' % (rules, KNOWN_DIVERGENCE)
+            return out
+        out['problems'] += entry_diff(case.truth, rcanon.native(bsp, walk,
+                                                                nsec))
+        try:
+            nat = rcanon.frame_native(walk, fc.slots, nsec, fc.nlines)
+        except rcanon.CanonError as e:
+            out['problems'].append('the native outputs: %s' % e)
+            return out
+        if 'vtxangle' not in fc.truth:
+            del nat['vtxangle']
+        out['problems'] += ['walk\'s end: ' + p for p in
+                            rcanon.diff_frame(fc.truth, nat)]
+        # (stage C draws the weapon at the masked phase's end: stages A and
+        # B's outputs are those at the weapon's draw, nm_psp's entry)
+        vis = rcanon.vis_native(psp)
+        out['problems'] += rcanon.diff_vis(mc.vis, vis)
+        out['problems'] += [v['gzt'] for v in vis['vis'] if 'gzt' in v]
+        out['problems'] += rcanon.dsw_problems(end)
+        # stage B: the records, ranges, spans, page model, clips, marks and
+        # the clip log at the weapon's draw (P3w)
+        try:
+            mnat = rcanon.masked_native(psp, fc.slots, mc.pmap, True,
+                                        list(mc.masked['masked']),
+                                        batch=True)
+        except rcanon.CanonError as e:
+            out['problems'].append('the masked outputs: %s' % e)
+        else:
+            out['problems'] += rcanon.diff_masked(mc.masked, mnat)
+            out['records'] = sum(len(v) for v in
+                                 mnat['records'].values())
+            out['cliplog'] = len(mnat.get('cliplog', []))
+            if mc.masked['flushes']:
+                out['flushes'] = mc.masked['flushes']
+        irqs = int.from_bytes(end.main(0xD8, 2), 'little')
+        if irqs == 0:
+            out['problems'].append('no interrupt was taken')
+        timed = read_writes_timed(work / 'writes.log')
+        edge = masked_boundary(timed, b)
+        before = [w for c, w in timed if c < edge]
+        after = [w for c, w in timed if c >= edge]
+        strays = stray(before, b, case.level, stage_b=True) + \
+            stray_masked(after, b)
+        if strays:
+            out['problems'].append('%d stray writes: %s' % (
+                len(strays), '; '.join(strays[:5])))
+        low = None
+        for r in state.get('lowest_s', {}).get('ranges', []):
+            if r.get('s') is not None:
+                low = r['s'] if low is None else min(low, r['s'])
+        out.update({'vissprites': len(vis['vis']),
+                    'sectors': len(vis['sectors']),
+                    'drawsegs_copied': sum(
+                        1 for i in range(end.main(R.FRAME['DSCOUNT'], 1)[0])
+                        if end.main(R.DSX1 + i, 1)[0] != 0xFF),
+                    'irqs': irqs, 'writes': len(timed),
+                    'stack_bytes': None if low is None else DRV_STACK - low,
+                    'cycles': state.get('cycles')})
+        out['problems'] += stack_problem(out['stack_bytes'])
+        return out
+    finally:
+        if keep is not None:
+            shutil.copytree(str(work), str(keep), dirs_exist_ok=True)
+        shutil.rmtree(str(work), ignore_errors=True)
+
+
+MASK_PHASES = {1: 'window', 2: 'setup', 3: 'walk', 9: 'walls', 10: 'segs',
+               13: 'mwindow', 14: 'dscopy', 11: 'project', 15: 'sort',
+               4: 'sprites', 0: 'driver'}
+
+
+def timing_masked(mc: MaskCase, b: Build, base: Sequence) -> Dict[str, Any]:
+    """The frame to the sort under the cost model (the profiling build
+    mprof), f121 and fastpath: ms, 65C02 cycles and soft-switch accesses
+    by phase (RENDER-MASKED.md 4.4's numbers)."""
+    out: Dict[str, Any] = {}
+    for profile in ('f121', 'fastpath'):
+        work = Path(tempfile.mkdtemp(prefix='tmp-m8-mtime-',
+                                     dir=str(BUILD)))
+        try:
+            (work / 'cost.txt').write_text(costs.text(profile))
+            report = work / 'cost.json'
+            extra = ['--cost', str(work / 'cost.txt'), '--cost-timed',
+                     '--cost-phase', '%X' % R.PHASE, '--cost-report',
+                     str(report)]
+            state = a2vm_run(b, list(base) + to_window(mc.full.case.records),
+                             work, [], extra, start='drv_mframe')
+            if state.get('pc') != b.labels['drv_halt']:
+                raise CheckError('%s: the timing run ended at $%04X' % (
+                    mc.full.case.frame.name, state.get('pc', -1)))
+            text = report.read_text()
+            cost = json.loads(text[text.rfind('{"final"'):])['cost']
+            mhz = costs.parameters(profile)['fabric_mhz']
+            res = {}
+            for k, name in MASK_PHASES.items():
+                res[name] = {'ms': round(cost['phases'][k] /
+                                         (mhz * 1000.0), 4),
+                             'cycles': cost['phase_cycles'][k],
+                             'io': cost['phase_io'][k]}
+            out[profile] = res
+        finally:
+            shutil.rmtree(str(work), ignore_errors=True)
+    return out
+
+
+def masked_main(args) -> int:
+    """--masked: checkpoint A of milestone 8 (RENDER-MASKED.md 5.1 item
+    2) on the frames, both fills; --timing adds the phases."""
+    dirs = frame_dirs(args.frames, args.sets)
+    if not dirs:
+        print('no frames: run python3 tools/native/rendercap.py',
+              file=sys.stderr)
+        return 1
+    sym = blink.Symbols()
+    b = load_build(args.obj, 'mtest')
+    fills = [int(f, 16) for f in args.fills.split(',')]
+    bases = {f: base_records(b, f, window=True) for f in fills}
+    prof = load_build(args.obj, 'mprof') if args.timing else None
+    pbase = base_records(prof, 0xA5, window=True) if prof else None
+    results = []
+
+    def one(d: Path) -> List[Dict[str, Any]]:
+        try:
+            mc = prepare_masked(d, sym)
+        except (FS.FrameError, levelconv.ConvError, rcanon.CanonError,
+                CheckError) as e:
+            return [{'frame': d.name, 'problems': ['prepare: %s' % e]}]
+        out = []
+        for f in fills:
+            try:
+                out.append(check_masked(mc, b, f, bases[f], args.keep and
+                                        args.keep / ('%s-%02X' % (d.name,
+                                                                  f))))
+            except CheckError as e:
+                out.append({'frame': d.name, 'fill': f,
+                            'problems': [str(e)]})
+        if prof is not None:
+            try:
+                out[0]['timing'] = timing_masked(mc, prof, pbase)
+            except CheckError as e:
+                out[0]['problems'].append(str(e))
+        return out
+    failed = known = 0
+    with ThreadPoolExecutor(max(1, min(2, args.jobs))) as pool:
+        for rs in pool.map(one, dirs):
+            for r in rs:
+                results.append(r)
+                if r.get('known'):
+                    known += 1
+                    status = 'KNOWN DIVERGENCE (%s)' % r['known']
+                elif r['problems']:
+                    failed += 1
+                    status = 'DIFFERS'
+                else:
+                    status = 'equal'
+                line = '%-12s %s: %s' % (
+                    r['frame'], '%02X' % r['fill'] if 'fill' in r else '--',
+                    status)
+                if 'vissprites' in r:
+                    line += (' (%d vissprites, %d sectors, %d drawsegs '
+                             'copied, %s records, %s clip log calls, %d '
+                             'irqs, stack %s)' % (
+                                 r['vissprites'], r['sectors'],
+                                 r['drawsegs_copied'], r.get('records'),
+                                 r.get('cliplog'), r['irqs'],
+                                 r['stack_bytes']))
+                if 'timing' in r:
+                    t = r['timing']['f121']
+                    line += ' f121 ms: ' + ', '.join(
+                        '%s %.2f' % (k, t[k]['ms']) for k in
+                        ('mwindow', 'dscopy', 'project', 'sort',
+                         'sprites'))
+                if r['problems'] or getattr(args, 'verbose', False) or \
+                        r.get('known'):
+                    print(line, flush=True)
+                for p in r['problems'][:8]:
+                    print('    ' + p)
+    frames = len({r['frame'] for r in results})
+    equal = sum(1 for r in results if not r['problems'] and
+                not r.get('known'))
+    print('%d frames, %d runs: %d equal, %d failed, %d known divergences '
+          '(%s); %d vissprites, %d records, %d clip log calls compared' % (
+              frames, len(results), equal, failed, known,
+              ', '.join(sorted({r['frame'] for r in results
+                                if r.get('known')})) or 'none',
+              sum(r.get('vissprites', 0) for r in results
+                  if not r['problems']),
+              sum(r.get('records', 0) for r in results
+                  if not r['problems']),
+              sum(r.get('cliplog', 0) for r in results
+                  if not r['problems'])))
+    if args.json:
+        args.json.write_text(json.dumps(results, indent=1) + '\n')
+    return 1 if failed else 0
+
+
+# ---------------------------------------------------------------------------
 # Sizes
 # ---------------------------------------------------------------------------
 
@@ -1532,21 +1932,29 @@ def is_synthetic(d: Path) -> bool:
     return 'synthetic' in json.loads((d / 'frame.json').read_text())
 
 
+# The sets a run takes when none is named: milestone 7's 188 frames.
+# Milestone 8's demo3 set (every frame of demo3, rendercap.py) is taken
+# only when named (--sets demo3) or by name (--frames).
+OPT_IN_SETS = ('demo3',)
+
+
 def frame_dirs(names: Optional[str], sets: Optional[str]) -> List[Path]:
     root = RENDER / 'frames'
     dirs = sorted(p for p in root.iterdir() if (p / 'frame.json').exists()) \
         if root.exists() else []
     if names:
         wanted = names.split(',')
-        dirs = [root / n for n in wanted]
+        return [root / n for n in wanted]
     if sets:
         keep = sets.split(',')
-        groups = {'m5': ('still', 'demo', 'e1m3')}
+        groups = {'m5': ('still', 'demo', 'e1m3'),
+                  'm7': ('still', 'demo', 'e1m3', 'newgame', 'title',
+                         'tour', 'lights', 'synth')}
         prefixes = []
         for k in keep:
             prefixes += groups.get(k, (k,))
-        dirs = [d for d in dirs if d.name.rsplit('-', 1)[0] in prefixes]
-    return dirs
+        return [d for d in dirs if d.name.rsplit('-', 1)[0] in prefixes]
+    return [d for d in dirs if d.name.rsplit('-', 1)[0] not in OPT_IN_SETS]
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -1576,6 +1984,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument('--report', type=Path,
                         help='frame mode with --timing: write the timing '
                         'report (markdown) here')
+    parser.add_argument('--masked', action='store_true',
+                        help='milestone 8, checkpoint A: the frame to the '
+                        'masked phase\'s projection and sort (build mtest)')
+    parser.add_argument('--verbose', action='store_true')
     args = parser.parse_args(argv)
     if not args.no_build:
         make(args.obj, args.source)
@@ -1590,6 +2002,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return routines_main(args)
     if args.frame_mode:
         return frame_main(args)
+    if args.masked:
+        return masked_main(args)
     dirs = [d for d in frame_dirs(args.frames, args.sets)
             if not is_synthetic(d)]         # (checkpoint A: the call logs)
     if not dirs:

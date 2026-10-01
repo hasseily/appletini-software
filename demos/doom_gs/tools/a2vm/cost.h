@@ -60,7 +60,7 @@
 
 struct a2vm;
 
-enum { COST_PHASES = 16, COST_RW_LINES_MAX = 64 };
+enum { COST_PHASES = 32, COST_RW_LINES_MAX = 64 };   /* phases: milestone 8 numbers them to 18 (docs/RENDER-MASKED.md 4.4) */
 
 /* The parameters, in fabric clocks unless the name says otherwise. */
 typedef struct {

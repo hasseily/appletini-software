@@ -63,7 +63,12 @@ needs_replay = unittest.skipUnless(
 
 SOURCES = ('math.s', 'math.inc', 'rframe.s', 'rbsp.s', 'rlight.s',
            'auxlc.s', 'far.s', 'rdriver.s', 'rwall.s', 'rseg.s', 'rseg.inc',
-           'rsky.s', 'rrec.s', 'render.cfg', 'render.mk')
+           'rsky.s', 'rrec.s', 'render.cfg', 'render.mk',
+           # milestone 8 (render.mk builds them too)
+           'mmain.s', 'mproj.s', 'mfar.s', 'msprite.s', 'mvis.s',
+           'mwall.s', 'bucket.s',
+           'bdriver.s', 'bucket.cfg', 'wclip.s', 'wpsp.s', 'mpsp.s',
+           'rrunner.s', 'replay.s')
 
 
 def planted_build(tmp: Path, bugs) -> RC.Build:
@@ -102,7 +107,7 @@ class FrameMode(unittest.TestCase):
 
     def test_build_fits_its_budgets(self):
         s = self.b.segments
-        self.assertLessEqual(s['MATHW'][1], R.WCODE_END - 1)
+        self.assertLessEqual(RC.w_end(self.b), R.WCODE_END - 1)
         self.assertLessEqual(s['RLOAD'][1], R.FAR_CARD_END - 1)
         mods = RC.module_sizes(name='rwall')
         for key, (seg, budget) in RC.BUDGETS_B.items():
@@ -137,7 +142,7 @@ class FrameMode(unittest.TestCase):
         self.assertEqual(pages, {0x47})          # the fixed colormap 1
         for name in ('synth-noweapon', 'synth-shadow', 'synth-automap'):
             t = c[name].truth
-            self.assertEqual(t['wprev'][R.VIS_LUMP:R.VIS_LUMP + 2],
+            self.assertEqual(t['wprev'][R.FV['PATCH']:R.FV['PATCH'] + 2],
                              [0xFF, 0xFF], name)
             self.assertEqual(t['fr_skip'], 0, name)
         self.assertEqual(c['still-1'].case.truth['bsp_entry']['fr_skip'], 1)
@@ -158,9 +163,19 @@ class FrameMode(unittest.TestCase):
             for phase in ('window', 'setup', 'walk', 'walls', 'segs'):
                 self.assertGreater(t[profile][phase]['ms'], 0, phase)
                 self.assertGreater(t[profile][phase]['cycles'], 0, phase)
-        # the same code: the cycles do not depend on the firmware
-        self.assertEqual(t['f121']['segs']['cycles'],
-                         t['fastpath']['segs']['cycles'])
+        # the same code: the cycles do not depend on the firmware. The VBL
+        # interrupt comes at a time, not a cycle, so under the two profiles
+        # its handler can fall in neighbouring phases (milestone 8's page
+        # model moved one from segs to walls under fastpath on still-1):
+        # the phases' sum is equal, each phase within the handlers' cycles
+        phases = list(RC.PHASES.values())
+        self.assertEqual(t['f121']['irqs'], t['fastpath']['irqs'])
+        self.assertEqual(sum(t['f121'][p]['cycles'] for p in phases),
+                         sum(t['fastpath'][p]['cycles'] for p in phases))
+        for p in phases:
+            self.assertLessEqual(abs(t['f121'][p]['cycles'] -
+                                     t['fastpath'][p]['cycles']),
+                                 100 * t['f121']['irqs'], p)
         self.assertGreater(t['f121']['walk']['ms'],
                            t['fastpath']['walk']['ms'])
 
@@ -255,8 +270,9 @@ BUGS = (
          '        cmp #3\n        nop\n        nop\n'),),
      ('synth-automap',), ('fr_skip', 'wprev', 'w_wsk')),
     ('the shadow weapon not tested', (
-        ('rframe.s', '        ora FRVIS+VIS_COLORMAP+3\n        beq @none\n',
-         '        ora FRVIS+VIS_COLORMAP+3\n        nop\n        nop\n'),),
+        ('rframe.s', '        lda FRVIS+FV_PAGE       ; not the shadow weapon (no '
+         'colormap)\n        beq @none\n',
+         '        lda FRVIS+FV_PAGE\n        nop\n        nop\n'),),
      ('synth-shadow',), ('fr_skip', 'wprev', 'w_wsk')),
     ('no plane colours reset by R_FillStamps', (
         ('rframe.s', '        sta W_LCC+1             ;   colormaps can '
@@ -268,12 +284,12 @@ BUGS = (
          '        rts                     ; the last batch'),),
      ('still-1',), ('records',)),
     ('the phase loader one page of code short', (
-        ('far.s', '__MATHW_SIZE__ + $FF) >> 8) - WL_FIRST)',
-         '__MATHW_SIZE__ + $FF) >> 8) - WL_FIRST - 1)'),),
+        ('far.s', '__RENDERW_SIZE__ + $FF) >> 8) - WL_FIRST)',
+         '__RENDERW_SIZE__ + $FF) >> 8) - WL_FIRST - 1)'),),
      ('still-1',), ('records', 'stopped', 'ended', 'differ')),
     ('the phase loader without the per-level tables', (
-        ('far.s', '        ldx #WTABLES_PAGES\n        jsr @pages\n',
-         '        ldx #WTABLES_PAGES\n'),),
+        ('far.s', '        .byte WTABLES_PAGE, WTABLES_PAGES, 0\n',
+         '        .byte 0, 0, 0\n'),),
      ('still-1',), ('records', 'stopped', 'ended', 'no slot', 'differ')),
     ('a store into the hot game globals', (
         ('rsky.s', 'sky_col:\n        clc ', 'sky_col:\n        stz $1A80\n'

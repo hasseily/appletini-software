@@ -69,6 +69,9 @@
         .include "layout.inc"
 
         .export nat_replay, nat_hot, nat_rcode, nat_aux
+.ifdef RELEASE
+        .import bk_cut                  ; (the renderer's game build: bucket.s)
+.endif
 
 ; MARK n: in the profiling build (-D PROFILE, tools/native/replay_check.py
 ; --breakdown), the cost phase n + 1 starts: 1 the gather's walk, 2 its
@@ -217,7 +220,13 @@ nat_replay:
         bcs     @over
         inc     gcol
         bra     @next
-@over:  lda     cgtop                   ; the column does not fit: the
+@over:
+.ifdef RELEASE
+        lda     gcol                    ; (the game build: a column alone
+        cmp     sc0                     ;   past the stage, @cut below)
+        beq     @cut
+.endif
+        lda     cgtop                   ; the column does not fit: the
         sta     gtop                    ;   strip ends before it
         lda     cgtop+1
         sta     gtop+1
@@ -234,13 +243,44 @@ nat_replay:
         .byte   $01
 @full:  jsr     run_descriptors
         jsr     draw_strip
-        lda     gcol
+@drawn: lda     gcol
         cmp     cend
         bcs     :+
         jmp     @strip
 :       bit     LCBANK1                 ; bank 1 again
         bit     LCBANK1
         rts
+.ifdef RELEASE
+        ; the renderer's game build (docs/RENDER-MASKED.md 6.1): a column
+        ; alone past the stage (over 125 texture records) keeps its records
+        ; before the one that did not fit (rp): its end is rp while the
+        ; strip of that column alone is drawn with what was gathered,
+        ; without a covered range (its covering record may be past the
+        ; cut); STATUS ST_RECORDS. Then the next strip.
+@cut:   ldx     gcol
+        inx
+        lda     COLLO,x                 ; the next column's start, kept
+        pha
+        lda     COLHI,x
+        pha
+        lda     rp
+        sta     COLLO,x
+        lda     rp+1
+        sta     COLHI,x
+        stx     gcol
+        dex
+        stz     CVFIRST,x
+        stz     CVEND,x
+        jsr     bk_cut
+        jsr     run_descriptors
+        jsr     draw_strip
+        ldx     gcol
+        pla
+        sta     COLHI,x
+        pla
+        sta     COLLO,x
+        bra     @drawn
+.endif
 
 ; ---------------------------------------------------------------------------
 ; draw_strip: the columns sc0 .. gcol - 1, then their covered ranges 0

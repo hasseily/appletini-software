@@ -6,9 +6,10 @@
 ; derivative of Webifi's IIgs DOOM (build/upstream/src/iigs/r_frame65.s,
 ; r_list65.s), written for the 65C02.
 ;
-; The weapon's clip pass itself (weaponClip: sprite code) is milestone 8's;
-; until then the test driver's wclip_pass puts the reference's result in
-; its place (the seam of RENDER.md 2.3): FLOORCLIP, FRVIS, MM_WPOK.
+; The weapon's clip pass itself (weaponClip) is milestone 8's stage C
+; (wclip.s nw_clip, docs/RENDER-MASKED.md 3.2 phase 3): FLOORCLIP, FRVIS,
+; MM_WPOK; milestone 7's seam (the reference's result put in its place by
+; the test driver) is gone.
 ;
 ;   nr_frame    the frame block and the render inputs (RIN: the player's
 ;               view, rlayout.py), the level, the persistent state. Out:
@@ -26,10 +27,12 @@
 ;   nr_wskip    weaponClipSame's bookkeeping after the clip pass: FR_SKIP
 ;               = W_FSW when there is a weapon (PSPF 1: a weapon, no
 ;               flash), no automap overlay, a weapon that is not the
-;               shadow one (FRVIS's colormap) and the same vissprite as the
-;               frame before's (WPREV, which becomes FRVIS), else 0; WCLIP
-;               = FLOORCLIP at the first frame that skips; W_WSK = FR_SKIP;
-;               no weapon: WPREV's lump $FFFF
+;               shadow one (FRVIS's page 0) and the same vissprite as the
+;               frame before's (WPREV, which becomes FRVIS: the 12 native
+;               bytes of RENDER-MASKED.md 1.7, whose compare is upstream's
+;               of its 42), else 0; WCLIP = FLOORCLIP at the first frame
+;               that skips; W_WSK = FR_SKIP; no weapon: WPREV's patch
+;               $FFFF (upstream's lump)
 ;   nr_setup    VIEWX, VIEWY, VIEWZ, VIEWANGLE, VIEWA16, EXTRALIGHT from
 ;               the player; LT_BASE = extralight + gamma + 16; LT_FIXED =
 ;               the fixed colormap's offset (n * 256) or $FFFF;
@@ -38,13 +41,14 @@
 ;   nr_clear    SOLIDCOL all 0 (R_ClearClipSegs); CEILCLIP = viewtop + 1,
 ;               FLOORCLIP = viewbottom + 1 (the clip arrays hold the clips
 ;               + 1, as upstream's segvar.inc); no drawseg (R_ClearDrawSegs),
-;               no opening (R_ClearOpenings)
+;               no opening (R_ClearOpenings); milestone 8: no listed sector
+;               (SPRN 0: the walk lists them for the masked phase)
 
         .setcpu "65C02"
         .include "rlayout.inc"
         .include "math.inc"
 
-        .import nr_bsp, sineapprox, cosineapprox, wclip_pass
+        .import nr_bsp, sineapprox, cosineapprox, nw_clip
         .import rec_start, rec_flush
         .export nr_frame, nr_setup, nr_clear, nr_fillstamps, nr_wskip
 
@@ -64,7 +68,9 @@ nr_frame:
         jsr nr_fillstamps       ; (display, d_main65.s:485)
         jsr nr_setup
         jsr nr_clear
-        jsr wclip_pass          ; the weapon's clip pass (RENDER.md 2.3)
+        MARK 17                 ; the weapon's clip pass (RENDER-MASKED.md
+        jsr nw_clip             ;   4.4: phase 17)
+        MARK 2
         jsr nr_wskip
         jsr rec_start
         MARK 3
@@ -142,13 +148,10 @@ nr_wskip:
         and #3                  ;   AM_OVERLAY)
         cmp #3
         beq @none
-        lda FRVIS+VIS_COLORMAP  ; not the shadow weapon (no colormap)
-        ora FRVIS+VIS_COLORMAP+1
-        ora FRVIS+VIS_COLORMAP+2
-        ora FRVIS+VIS_COLORMAP+3
+        lda FRVIS+FV_PAGE       ; not the shadow weapon (no colormap)
         beq @none
         ldy W_FSW               ; Y = W_FSW: the view of the frame before
-        ldx #VIS_SIZE - 1       ;   shows; WPREV = FRVIS, Y = 0 when they
+        ldx #FV_SIZE - 1        ;   shows; WPREV = FRVIS, Y = 0 when they
 :       lda FRVIS,x             ;   are not the same
         cmp WPREV,x
         beq :+
@@ -171,8 +174,8 @@ nr_wskip:
         sta W_WSK
         rts
 @none:  lda #$FF                ; WPREV: none
-        sta WPREV+VIS_LUMP
-        sta WPREV+VIS_LUMP+1
+        sta WPREV+FV_PATCH
+        sta WPREV+FV_PATCH+1
         bra @done
 
 nr_setup:
@@ -266,4 +269,5 @@ nr_clear:
         stz DSCOUNT
         stz LASTOPEN
         stz LASTOPEN+1
+        stz SPRN                ; no listed sector yet (milestone 8)
         rts

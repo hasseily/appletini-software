@@ -23,18 +23,20 @@
 ; F1.2.1 the tics run in W before the frame, so the render window is
 ; loaded each frame from its image in RamWorks bank WCODE_BANK, at the
 ; same addresses: far_wload copies the code (from $6000 to the page after
-; the end of MATHW, the last segment of W) and the per-level tables' pages
-; (WTABLES_PAGE for WTABLES_PAGES) with RAMRD on, the stores going to main
-; W. It is its own segment, RLOAD, so that the harness can tell its writes
-; (W only) from the render code's.
+; the end of RENDERW, the last segment of W) and the per-level tables'
+; pages (WTABLES_PAGE for WTABLES_PAGES) with RAMRD on, the stores going
+; to main W. It is its own segment, RLOAD, so that the harness can tell
+; its writes (W only) from the render code's. Milestone 8 (RENDER-MASKED.md
+; 3.2): the loader takes a bank and a list of page runs (far_pload), and
+; mfar.s's far_mload loads the masked phase's image from MCODE_BANK.
 
         .setcpu "65C02"
         .include "rlayout.inc"
         .include "math.inc"
 
         .export far_get, far_put, far_vgather, far_vput, far_vclear
-        .export far_fstep, far_wload
-        .import __MATHW_RUN__, __MATHW_SIZE__
+        .export far_fstep, far_wload, far_pload
+        .import __RENDERW_RUN__, __RENDERW_SIZE__
         .export vg_n, vg_vlo, vg_vhi, vg_al, vg_ah, vg_s, vg_d
 
         .segment "RFAR"
@@ -324,37 +326,49 @@ vg_s:   .res VG_MAX
 vg_d:   .res VG_MAX
 
 ; ---------------------------------------------------------------------------
-; far_wload: the render window's image into main W (the phase loader). One
-; RAMRD window. Changes A, X, Y, FA_SRC.
+; far_wload: the render window's image into main W (the phase loader);
+; far_pload: the page runs of the list at A:X (A the low byte; each run
+; its first page and its count, a first page of 0 ends the list; in the
+; card, near in the window) of RamWorks bank Y into the same addresses of
+; main memory (milestone 8: the masked phase's image too, mfar.s). One
+; RAMRD window. Changes A, X, Y, FA_SRC, FA_DST, FA_N.
 ; ---------------------------------------------------------------------------
         .segment "RLOAD"
 
-WL_FIRST = $60                  ; the code's first page
+WL_FIRST = $60                  ; the front end's code: its first page
 far_wload:
-        lda #WCODE_BANK
-        sta RWBANK
+        lda #<wl_front
+        ldx #>wl_front
+        ldy #WCODE_BANK
+far_pload:
+        sta FA_DST
+        stx FA_DST+1
+        sty RWBANK
         sta RAMRDON
         stz FA_SRC
-        lda #WL_FIRST           ; the code
-        ldx #<(((__MATHW_RUN__ + __MATHW_SIZE__ + $FF) >> 8) - WL_FIRST)
-        jsr @pages
-        lda #WTABLES_PAGE       ; the per-level tables
-        ldx #WTABLES_PAGES
-        jsr @pages
-        sta RAMRDOFF
-        stz RWBANK
-        rts
-; X pages from page A: read from the image (RAMRD), written to main
-@pages: sta FA_SRC+1
+@run:   lda (FA_DST)            ; the run's first page, 0: no more
+        beq @done
+        sta FA_SRC+1
+        inc FA_DST
+        lda (FA_DST)            ; (a list does not cross a page)
+        sta FA_N
+        inc FA_DST
         ldy #0
-:       lda (FA_SRC),y
-        sta (FA_SRC),y
+:       lda (FA_SRC),y          ; read from the image (RAMRD), written to
+        sta (FA_SRC),y          ;   main
         iny
         lda (FA_SRC),y
         sta (FA_SRC),y
         iny
         bne :-
         inc FA_SRC+1
-        dex
+        dec FA_N
         bne :-
+        bra @run
+@done:  sta RAMRDOFF
+        stz RWBANK
         rts
+wl_front:
+        .byte WL_FIRST, <(((__RENDERW_RUN__ + __RENDERW_SIZE__ + $FF) >> 8) - WL_FIRST)
+        .byte WTABLES_PAGE, WTABLES_PAGES, 0
+.assert >wl_front = >(wl_front + 4), lderror, "the loader's list crosses a page"

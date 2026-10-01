@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """The level converter of the native renderer (milestone 7,
-docs/RENDER.md sections 1.3, 1.4 and 1.10): a reference state holding a
-level becomes the native level, format "render-level 1".
+docs/RENDER.md sections 1.3, 1.4 and 1.10; milestone 8,
+docs/RENDER-MASKED.md 1.3-1.5 and 1.11): a reference state holding a
+level becomes the native level, format "render-level 2" ("render-level
+1" and the sprite part).
 
 Usage:  python3 tools/native/levelconv.py SOURCE... [--out DIR] [--check]
         python3 tools/native/levelconv.py --all [--check]
@@ -41,6 +43,27 @@ first 16 hex digits of the SHA-256 of every source range):
                   sides' render fields (records with a stride: the
                   bridge's `stride`), which bridge.py from-port reads
 
+and, milestone 8 (RENDER-MASKED.md 1.3, 1.4, 1.11):
+
+    level.img     also the patch store (banks SPR_FIRST..: each patch lump
+                  the level's sprites use and the first patch of each
+                  texture a masked mid texture can show, upstream's bytes
+                  whole, each followed by the 128 bytes that follow it in
+                  the reference's memory; no lump crosses a bank), and in
+                  bank SPRT the patch headers (PHDR: width, leftoffset,
+                  topoffset, the store bank and address, upstream's lump;
+                  index 0 is upstream's placeholder, a patch of width 0)
+                  and the sprite frames (SPRFR: rotate, flipmask, the store
+                  index of each rotation's lump, a flag for a frame that
+                  is not one: SFIRST[s] + f, the frames the states use)
+    mtables.img   the masked image's per-level table: TXMP, the store index
+                  of each texture's first patch ($FFFF: none)
+    patchmap.json each stored lump's store range and upstream address
+                  (rcanon.py maps a record's texels back through it)
+    level.json    also the patch store's entries, the placeholder, the
+                  frames per sprite and the frames that are not, TXMP's
+                  textures, and --overrun's measure
+
 Checks, each a failure (the tool exits 1): every count within its native
 limit; no sector at an address whose low word is 0 (bspSub's "no sector"
 of CN_LSEC); the native level decoded back through rlayout.py equals
@@ -48,7 +71,24 @@ upstream's canonical objects in every rendered field; every made texture
 column has its slot and every slot's 128 bytes equal the reference's RAM
 at the column's texel pointer (read again from COLDIR, not from the
 texture map); skypatchnum names a lump of the WAD directory; with a
-second dump of the same level load, the static fields equal.
+second dump of the same level load, the static fields equal; milestone
+8: the WAD directory has one placeholder; every sprite frame's lumps
+resolve to a store index or the placeholder (a frame whose lump numbers
+leave the directory is flagged, not converted); each stored lump's bytes
+and tail equal the reference's RAM at its address (read back from the
+banks); no lump crosses a store bank; the first patch of every texture a
+masked mid texture can show (the closure through switchlist and the
+slime frames of animated_texture_basepic) is stored, or listed with TXMP
+$FFFF when upstream has not loaded the texture or its lump is not
+resident; the counts fit the native tables.
+
+    python3 tools/native/levelconv.py --overrun
+
+measures, over the records of every captured frame (their lists at
+R_DrawLists, P4, and the early flushes' P2) that read a stored lump, how
+far a record's texels reach past its post's last texel and past its
+lump's end (an upper bound from its rows and step: RENDER-MASKED.md 1.3),
+and writes it into each level's level.json and levels/overrun.json.
 """
 
 import argparse
@@ -72,7 +112,7 @@ RENDER = BUILD / 'native' / 'render'
 LEVELS = RENDER / 'levels'
 SOURCES = LEVELS / 'src'
 BRIDGE_DUMPS = BUILD / 'bridge' / 'dumps'
-FORMAT = 'render-level 1'
+FORMAT = 'render-level 2'
 
 MM_COLDIR = 0x250000
 MM_SEGVTX = 0x240000
@@ -87,6 +127,28 @@ ML_DONTPEGTOP, ML_DONTPEGBOTTOM, ML_MAPPED = 8, 16, 256
 TXFLAT_INDEX = R.TXFLAT             # 256 bytes: bitmap slot of texture t
 TXFLAT_MAPS = R.TXFLAT + 0x100      # 32 bytes a bitmap
 TXFLAT_SLOTS = (R.TXFLAT_END - TXFLAT_MAPS) // 32
+# milestone 8: the sprite data (offsets.inc, info.inc, memmap.inc)
+FI_ENTRY = 16                   # filelump_t: filepos (4), size (4), name
+OFS_SF_FLIPMASK, OFS_SF_ROTATE, SIZEOF_SF = 16, 17, 19
+OFS_TEX_PATCHES, OFS_TP_PATCHNUM = 8, 4
+OFS_TEX_WIDTHMASK = 0
+NUMSTATES, STATE_SIZE = 314, 16
+NUMSWITCHES2 = 38               # p_switch65.s NUMSW2
+TAIL = 128                      # the bytes after a lump a record can read
+# stage C: the weapons' profiles (RENDER-MASKED.md 1.5; r_sprite65.s:737-758,
+# :884-1178; offsets.inc: weaponinfo_t, state_t; info.inc STATE_SIZE)
+OFS_ST_NEXTSTATE = 10
+NUMWEAPONS, SIZEOF_WI = 9, 12
+OFS_WI_STATES = (2, 4, 6, 8, 10)        # up, down, ready, attack, flash
+MM_WPROF = 0x0AC800
+WP_NONE_ADDR = 0xC84C                   # MM_WPROF + $4C: a profile of width 0
+WP_ARENAS = ((0xD000, 0xE400), (0xED00, 0xFF00))
+# the spectre fuzz table, per level (i_viigs65.s FUZZ_DARKEN): the replay's
+# FUZZDARK (MEMORY_MAP.md 5)
+MM_FUZZ_DARKEN = 0x01A000
+# The conversion's revision within format "render-level 2": a level of an
+# older one is converted again (framestate.level_of)
+REVISION = 3
 
 
 class ConvError(Exception):
@@ -236,6 +298,9 @@ class Level(NamedTuple):
     wtables: Dict[int, bytes]           # W address -> bytes
     texmap: Dict[str, Any]
     manifest: Dict[str, Any]
+    mtables: Dict[int, bytes] = {}      # the masked image's W tables
+    patchmap: Dict[str, Any] = {}
+    fuzzdark: bytes = b''               # stage C: FUZZ_DARKEN (the replay)
 
 
 def native_vertices(segs: Sequence[Dict[str, Any]]) -> Tuple[
@@ -309,6 +374,10 @@ def sector_record(s: Dict[str, Any], i: int) -> bytearray:
                                   True)
     rec[R.SEC['LIGHT']] = s['lightlevel']
     rec[R.SEC['VALID']:R.SEC['VALID'] + 2] = pack16(s['validcount'])
+    # milestone 8: the thing list's head (framestate.py's; none in the
+    # level itself)
+    rec[R.SEC['THINGS']:R.SEC['THINGS'] + 2] = pack16(
+        s.get('things', R.NO_THING))
     return rec
 
 
@@ -408,6 +477,13 @@ def convert(memory: bmem.Memory, sym: blink.Symbols,
         data += rec
     banks.put(R.LVSEG, R.SEGS.base, bytes(data))
     source('segs', up.ptr('_g_segs'), 18 * len(segs))
+    # the lines' peg flags the segs take (milestone 8: a level source with
+    # other flags is another level; the rest of a line record changes in
+    # play, ML_MAPPED and the validcounts, and is not converted)
+    ranges.append({'what': 'line pegs', 'address': up.ptr('_g_lines'),
+                   'length': len(lines), 'sha256': hashlib.sha256(bytes(
+                       ln['flags'] & (ML_DONTPEGTOP | ML_DONTPEGBOTTOM)
+                       for ln in lines)).hexdigest()})
 
     # -- nodes, subsectors (LVMAP)
     data = bytearray()
@@ -568,12 +644,33 @@ def convert(memory: bmem.Memory, sym: blink.Symbols,
                R.TXHI: bytes(txhi), R.TXWM: bytes(txwm),
                R.TXHT: bytes(txht)}
 
+    # -- milestone 8: the sprite data (RENDER-MASKED.md 1.3-1.4)
+    sprite = sprite_part(up, m, sym, lines, sides, banks)
+    checks += sprite['checks']
+    # the width mask of each texture a masked mid texture can show (TXWM:
+    # the made textures' already, the same value)
+    for tex, wm in sprite['txmp_wm'].items():
+        if wm > 255:
+            raise ConvError('texture %d has width mask %d: TXWM holds '
+                            'bytes' % (tex, wm))
+        if tex in made and txwm[tex] != wm:
+            raise ConvError('texture %d: its width mask %d, its column '
+                            'tables\' %d' % (tex, wm, txwm[tex]))
+        txwm[tex] = wm
+    wtables[R.TXWM] = bytes(txwm)
+    ranges.append(sprite['source'])
+    # stage C: the spectre fuzz table of the level's palette, the replay's
+    # FUZZDARK (aux 0 $0800, MEMORY_MAP.md 5; i_viigs65.s:1014-1017)
+    fuzzdark = m.read(MM_FUZZ_DARKEN, 256)
+    source('FUZZ_DARKEN', MM_FUZZ_DARKEN, 256)
+
     key = hashlib.sha256(json.dumps(
         [(r['what'], r['address'], r['length'], r['sha256'])
          for r in ranges]).encode()).hexdigest()[:16]
     skyflat = up.g('skyflatnum')
     info = {
-        'format': FORMAT, 'source': source_name, 'map': 'E1M%d' % gamemap,
+        'format': FORMAT, 'revision': REVISION, 'source': source_name,
+        'map': 'E1M%d' % gamemap,
         'gamemap': gamemap, 'key': key,
         'counts': {'sectors': len(sectors), 'sides': len(sides),
                    'lines': len(lines), 'subsectors': len(subs),
@@ -598,9 +695,509 @@ def convert(memory: bmem.Memory, sym: blink.Symbols,
         'open_ended': open_ended, 'colmem': colmem,
         'sources': ranges, 'checks': checks,
         'sector_base': sec_base,
+        'sprites': sprite['info'],
     }
     texmap = {'format': 'render-texmap 1', 'slots': slots}
-    return Level(info, banks, wtables, texmap, sector_side_manifest())
+    return Level(info, banks, wtables, texmap, sector_side_manifest(),
+                 sprite['mtables'], sprite['patchmap'], fuzzdark)
+
+
+# ---------------------------------------------------------------------------
+# Milestone 8: the patch store, the sprite frames, the patch headers, TXMP
+# (RENDER-MASKED.md 1.3, 1.4, 1.11)
+# ---------------------------------------------------------------------------
+
+def wad_directory(m: bmem.Memory, sym: blink.Symbols
+                  ) -> Tuple[List[Tuple[int, int, str]], int]:
+    """The game's lump directory in RAM (fileinfo, numlumps): each lump's
+    (address, size, name), and the placeholder's address: the filepos
+    that several lumps of non-zero size share (upstream's empty patch for a
+    lump that is not resident, build/upstream/tools/levelimg.py)."""
+    fileinfo = m.uint(sym.address('fileinfo'), 3)
+    count = m.u16(sym.address('numlumps'))
+    out = []
+    starts: Dict[int, int] = {}
+    for i in range(count):
+        e = fileinfo + FI_ENTRY * i
+        pos, size = m.u32(e), m.u32(e + 4)
+        name = m.read(e + 8, 8).split(b'\0')[0].decode('latin-1')
+        address = (MM_WAD_BANK << 16) + pos & 0xFFFFFF
+        out.append((address, size, name))
+        if size:
+            starts[address] = starts.get(address, 0) + 1
+    shared = [a for a, n in starts.items() if n > 1]
+    if len(shared) != 1:
+        raise ConvError('the WAD directory has %d shared lump addresses, not '
+                        'one placeholder' % len(shared))
+    return out, shared[0]
+
+
+def sprite_frames(m: bmem.Memory, sym: blink.Symbols) -> List[int]:
+    """The frames of each sprite that the states use (boundInit's rule,
+    r_thing65.s:887-913; rtables.py writes the same SFIRST)."""
+    states = sym.address('states')
+    count = [0] * R.NUMSPRITES
+    for i in range(NUMSTATES):
+        s = m.u16(states + STATE_SIZE * i)
+        f = m.u16(states + STATE_SIZE * i + 2)
+        if s >= R.NUMSPRITES:
+            raise ConvError('state %d has sprite %d' % (i, s))
+        count[s] = max(count[s], (f & 0x7FFF) + 1)
+    return count
+
+
+def frame_address(m: bmem.Memory, sprites: int, sprite: int, f: int) -> int:
+    """sprites[sprite].spriteframes + 19 f as upstream adds it: 19 (f &
+    $7FFF) & $7FFF to the pointer's low word (r_thing65.s:319-343)."""
+    sf = m.uint(sprites + 4 * sprite, 4)
+    low = (sf + ((19 * (f & 0x7FFF)) & 0x7FFF)) & 0xFFFF
+    return (sf & 0xFF0000) | low
+
+
+def masked_textures(m: bmem.Memory, sym: blink.Symbols, lines, sides
+                    ) -> List[int]:
+    """The textures a masked mid texture can show (RENDER-MASKED.md 1.3):
+    the mid textures of the two-sided lines' sides, their switch partners
+    (switchlist: a switch changes a side's textures), and all three slime
+    frames when one of those is one (animated_texture_basepic: the only
+    textures upstream animates through texturetranslation)."""
+    mids = set()
+    for ln in lines:
+        s0, s1 = ln['sidenum']
+        if s1 in (-1, 0xFFFF):
+            continue
+        for s in (s0, s1):
+            tex = sides[s]['midtexture']
+            if tex:
+                mids.add(tex)
+    sw = [m.u16(sym.address('switchlist') + 2 * i)
+          for i in range(NUMSWITCHES2)]
+    out = set(mids)
+    for tex in mids:
+        for i, x in enumerate(sw):
+            if x == tex:
+                out.add(sw[i ^ 1])
+    base = m.u16(sym.address('animated_texture_basepic'))
+    if any(base <= tex <= base + 2 for tex in out):
+        out |= {base, base + 1, base + 2}
+    return sorted(out)
+
+
+def sprite_part(up: 'Upstream', m: bmem.Memory, sym: blink.Symbols,
+                lines, sides, banks: Banks) -> Dict[str, Any]:
+    checks: List[str] = []
+    directory, placeholder = wad_directory(m, sym)
+    nlumps = len(directory)
+
+    def resident(lump: int) -> bool:
+        a, size, _ = directory[lump]
+        return size > 0 and a != placeholder
+    # the sprite frames
+    sprites = m.uint(sym.address('sprites'), 3)
+    nframes = sprite_frames(m, sym)
+    frames = []                         # (sprite, f, rotate, flip, lumps, ok)
+    for s in range(R.NUMSPRITES):
+        for f in range(nframes[s]):
+            a = frame_address(m, sprites, s, f)
+            rotate = m.read(a + OFS_SF_ROTATE, 1)[0]
+            flip = m.read(a + OFS_SF_FLIPMASK, 1)[0]
+            lumps = [m.u16(a + 2 * r) for r in range(8)]
+            used = lumps if rotate else lumps[:1]
+            ok = all(lump < nlumps for lump in used)
+            frames.append((s, f, rotate, flip, lumps if rotate else
+                           lumps[:1], ok))
+    if len(frames) > R.SPRFRS.capacity:
+        raise ConvError('%d sprite frames: SPRFR holds %d'
+                        % (len(frames), R.SPRFRS.capacity))
+    # the masked textures' first patches
+    tex_ptrs = m.uint(sym.address('textures'), 3)
+    txmp_tex = masked_textures(m, sym, lines, sides)
+    txmp: Dict[int, Tuple[Optional[int], str]] = {}
+    txmp_wm: Dict[int, int] = {}
+    for tex in txmp_tex:
+        ptr = m.uint(tex_ptrs + 4 * tex, 4) & 0xFFFFFF
+        if not ptr:
+            txmp[tex] = (None, 'not loaded by upstream')
+            continue
+        # its width mask (maskedRange's FR_WMASK, r_frame65.s:532-534)
+        txmp_wm[tex] = m.u16(ptr + OFS_TEX_WIDTHMASK)
+        lump = m.u16(ptr + OFS_TEX_PATCHES + OFS_TP_PATCHNUM)
+        if lump >= nlumps or not resident(lump):
+            txmp[tex] = (None, 'its first patch (lump %d) is not '
+                               'resident' % lump)
+            continue
+        txmp[tex] = (lump, 'stored')
+    # the store: every resident lump of a converted frame and of TXMP, in
+    # lump order; index 0 the placeholder
+    wanted = set()
+    for _, _, _, _, lumps, ok in frames:
+        if ok:
+            wanted |= {x for x in lumps if resident(x)}
+    wanted |= {lump for lump, _ in txmp.values() if lump is not None}
+    order = sorted(wanted)
+    index = {lump: k + 1 for k, lump in enumerate(order)}
+    if len(order) + 1 > R.PHDRS.capacity:
+        raise ConvError('%d patches: PHDR holds %d' % (len(order) + 1,
+                                                      R.PHDRS.capacity))
+    bank, at = R.SPR_FIRST, R.BANK_ROOM[0]
+    store = []
+    phdr = bytearray()
+
+    def header(address: int, bank_: int, where: int, lump: int) -> bytes:
+        rec = bytearray(R.PHDR_SIZE)
+        for k, key in (('WIDTH', 0), ('LEFT', 4), ('TOP', 6)):
+            rec[R.PHDR[k]:R.PHDR[k] + 2] = m.read(address + key, 2)
+        rec[R.PHDR['BANK']] = bank_
+        rec[R.PHDR['ADDR']:R.PHDR['ADDR'] + 2] = pack16(where)
+        rec[R.PHDR['LUMP']:R.PHDR['LUMP'] + 2] = pack16(lump)
+        return bytes(rec)
+    phdr += header(placeholder, 0, 0, 0xFFFF)
+    for lump in order:
+        address, size, name = directory[lump]
+        need = size + TAIL
+        if need > R.BANK_ROOM[1] - R.BANK_ROOM[0]:
+            raise ConvError('lump %d (%s) of %d bytes does not fit a bank'
+                            % (lump, name, size))
+        if at + need > R.BANK_ROOM[1]:
+            bank, at = bank + 1, R.BANK_ROOM[0]
+        if bank > R.SPR_LAST:
+            raise ConvError('the patch store needs more than banks %d-%d'
+                            % (R.SPR_FIRST, R.SPR_LAST))
+        banks.put(bank, at, m.read(address, need))
+        store.append({'index': index[lump], 'lump': lump, 'name': name,
+                      'address': address, 'size': size, 'bank': bank,
+                      'at': at})
+        phdr += header(address, bank, at, lump)
+        at += need
+    banks.put(R.SPRT, R.PHDRS.base, bytes(phdr))
+    checks.append('%d patch lumps stored in banks %d-%d (%d bytes and '
+                  '%d-byte tails)' % (len(order), R.SPR_FIRST, bank,
+                                      sum(e['size'] for e in store), TAIL))
+    # SPRFR
+    data = bytearray()
+    bad = []
+    for s, f, rotate, flip, lumps, ok in frames:
+        rec = bytearray(R.SPRFR_SIZE)
+        rec[R.SPRFR['ROT']] = rotate
+        rec[R.SPRFR['FLIP']] = flip
+        if ok:
+            for r, lump in enumerate(lumps):
+                k = index.get(lump, 0)
+                if resident(lump) and not k:
+                    raise ConvError('sprite %d frame %d: lump %d is not '
+                                    'stored' % (s, f, lump))
+                rec[R.SPRFR['LUMPS'] + 2 * r:R.SPRFR['LUMPS'] + 2 * r + 2] \
+                    = pack16(k)
+        else:
+            rec[R.SPRFR['FLAGS']] = R.SPRFR_BAD
+            bad.append([s, f])
+        data += rec
+    banks.put(R.SPRT, R.SPRFRS.base, bytes(data))
+    checks.append('%d sprite frames resolve to a store index or the '
+                  'placeholder; %d are not frames (%s)' % (
+                      len(frames) - len(bad), len(bad),
+                      ', '.join('sprite %d frame %d' % tuple(x)
+                                for x in bad)))
+    # the masked image's TXMP (store index, $FFFF: none)
+    lo, hi = bytearray(b'\xff' * 256), bytearray(b'\xff' * 256)
+    for tex, (lump, why) in txmp.items():
+        if lump is not None:
+            lo[tex], hi[tex] = index[lump] & 0xFF, index[lump] >> 8
+    mtables = {R.TXMP: bytes(lo) + bytes(hi)}
+    checks.append('TXMP: %d textures a masked mid texture can show, %d '
+                  'stored' % (len(txmp), sum(1 for v in txmp.values()
+                                             if v[0] is not None)))
+    # stage C: the weapons' profiles (RENDER-MASKED.md 1.5)
+    weapons = weapon_part(m, sym, frames, index, directory, resident,
+                          banks)
+    checks += weapons.pop('checks')
+    info = {'placeholder': placeholder,
+            'frames_per_sprite': nframes, 'not_frames': bad,
+            'store': store, 'store_banks': [R.SPR_FIRST, bank],
+            'store_bytes': sum(e['size'] + TAIL for e in store),
+            'txmp': {str(tex): {'lump': lump, 'why': why}
+                     for tex, (lump, why) in txmp.items()},
+            'tail': TAIL, 'weapons': weapons}
+    patchmap = {'format': 'render-patchmap 1',
+                'entries': [[e['bank'], e['at'], e['size'] + TAIL,
+                             e['address']] for e in store]}
+    digest = hashlib.sha256()
+    digest.update(bytes(phdr))
+    digest.update(bytes(data))
+    for e in store:
+        digest.update(m.read(e['address'], e['size'] + TAIL))
+    source = {'what': 'sprite data (the stored lumps and tails, PHDR, '
+                      'SPRFR)', 'address': 0,
+              'length': len(phdr) + len(data) + info['store_bytes'],
+              'sha256': digest.hexdigest()}
+    return {'checks': checks, 'info': info, 'mtables': mtables,
+            'patchmap': patchmap, 'source': source, 'txmp_wm': txmp_wm}
+
+
+# ---------------------------------------------------------------------------
+# Stage C: the weapons' profiles (RENDER-MASKED.md 1.5)
+# ---------------------------------------------------------------------------
+
+def weapon_sprites(m: bmem.Memory, sym: blink.Symbols) -> List[int]:
+    """The sprites the psprites can show: those of the states reachable
+    from weaponinfo's up, down, ready, attack and flash states through
+    their next states (p_pspr65.s:1229-1250). A flash state that is chosen
+    by offset (the chaingun's CHAINFLASH1 + 1, p_pspr65.s:1153) has its
+    base's sprite."""
+    states = sym.address('states')
+    wi = sym.address('weaponinfo')
+    todo = []
+    for w in range(NUMWEAPONS):
+        for off in OFS_WI_STATES:
+            todo.append(m.u16(wi + SIZEOF_WI * w + off))
+    seen = set()
+    while todo:
+        st = todo.pop()
+        if st in seen or not 0 < st < NUMSTATES:
+            continue
+        seen.add(st)
+        todo.append(m.u16(states + STATE_SIZE * st + OFS_ST_NEXTSTATE))
+    return sorted({m.u16(states + STATE_SIZE * st) for st in seen})
+
+
+def wb_make(read, base: int, limit: int) -> Tuple[int, Dict[int, int]]:
+    """wbMake (r_sprite65.s:1009-1178) of the patch read(offset, n) at
+    `base`, below `limit`: (0, the bytes written: address -> byte) when
+    made, (1, {}) when there is no room, (2, {}) when the patch does not fit
+    the profile (a width of 0 or over 320, posts that overlap or end after
+    row 254 of the patch, 15 posts in a column). Every comparison is
+    upstream's, the strict ones included."""
+    out: Dict[int, int] = {}
+
+    def w16(at: int, v: int) -> None:
+        out[at] = v & 0xFF
+        out[at + 1] = (v >> 8) & 0xFF
+
+    def r16(off: int) -> int:
+        b = read(off & 0xFFFF, 2)
+        return b[0] | b[1] << 8
+    width = r16(0)
+    if width == 0 or width >= 321:
+        return 2, {}
+    free = base + 2 * width + 16
+    if free > 0xFFFF or free >= limit:
+        return 1, {}
+    neven, nodd = (width + 1) >> 1, width >> 1
+    w16(base + R.WPH['NEVEN'], neven)
+    w16(base + R.WPH['NODD'], nodd)
+    tabs = (base + 16, base + 16 + 2 * neven)
+    w16(base + R.WPH['TEVEN'], tabs[0])
+    w16(base + R.WPH['TODD'], tabs[1])
+    w16(base + R.WPH['EMPTY'], 0)
+    mina = 0xFFFF
+    for c in range(width):
+        ent = tabs[c & 1] + (c & 0xFFFE)
+        y = r16(8 + 4 * c)
+        pb = 0
+        rsa = 0
+        posts = []
+        while True:
+            tl = r16(y)
+            if tl & 0xFF == 0xFF:
+                break
+            a = (tl & 0xFF) + 1
+            off = y
+            length = tl >> 8
+            y = (y + length + 4) & 0xFFFF
+            if length == 0:
+                continue                # not drawn
+            b = length + a
+            if b >= 255 or a < pb:
+                return 2, {}
+            if a != pb:
+                rsa = a                 # a new run (else it touches)
+            mina = min(mina, a)
+            posts.append((a + 1, b + 1, rsa, (off + 3) & 0xFFFF))
+            pb = b
+            if len(posts) == R.WP_MAXPOSTS + 1:
+                return 2, {}
+        if not posts:
+            w16(ent, base + R.WPH['EMPTY'])
+            continue
+        if free + R.WP_POST * len(posts) >= limit:
+            return 1, {}
+        w16(ent, free)
+        at = free
+        for a1, b1, run, texels in reversed(posts):
+            out[at], out[at + 1], out[at + 2] = a1, b1, run & 0xFF
+            w16(at + 3, texels)
+            at += R.WP_POST
+        out[at] = 0
+        free = at + 1
+    w16(base + R.WPH['MINA'], mina)
+    w16(base + R.WPH['WIDTH'], width)
+    out['end'] = free          # type: ignore[index]
+    return 0, out
+
+
+def weapon_part(m: bmem.Memory, sym: blink.Symbols, frames, index,
+                directory, resident, banks: Banks) -> Dict[str, Any]:
+    """WPRO: WPIDX and the profile of each lump a psprite can show (lump[0]
+    of every frame of the weapon sprites: pspSprite takes the first), made
+    by wbMake's rules where upstream makes one: a profile is made exactly
+    when it fits an empty first arena ($D000-$E3FF), because each of
+    wpBuild's paths tries that arena empty before it gives up (three tries:
+    the arena in use, the other one from its start, then after a flush,
+    r_sprite65.s:946-1007), and the second arena is the smaller. Checked
+    against the reference's arenas wherever they hold a profile."""
+    wsprites = weapon_sprites(m, sym)
+    lumps: Dict[int, Dict[str, Any]] = {}
+    for s, f, rotate, flip, lumpl, ok in frames:
+        if s in wsprites and ok:
+            lumps.setdefault(lumpl[0], {'sprite': s, 'frame': f})
+    not_resident = sorted(x for x in lumps if not resident(x))
+    wpidx = bytearray(b'\xff' * (R.WPROF - R.WPIDX))
+    at = R.WPROF
+    made = 0
+    for lump in sorted(lumps):
+        e = lumps[lump]
+        if not resident(lump):
+            e['profile'] = None
+            e['why'] = 'not resident'
+            continue
+        address, size, name = directory[lump]
+        e['name'] = name
+        e['index'] = index[lump]
+
+        def read(off: int, n: int, a=address) -> bytes:
+            return m.read(a + off, n)
+        status, _ = wb_make(read, WP_ARENAS[0][0], WP_ARENAS[0][1])
+        if status:
+            e['profile'] = None
+            e['why'] = 'no room in an empty arena' if status == 1 else \
+                'the patch does not fit a profile'
+            continue
+        status, data = wb_make(read, at, R.WPROF_END)
+        if status:
+            raise ConvError('the weapon profiles do not fit bank %d' % R.WPRO)
+        end = data.pop('end')
+        blob = bytearray(end - at)
+        for k, v in data.items():
+            blob[k - at] = v
+        banks.put(R.WPRO, at, bytes(blob))
+        k = index[lump]
+        wpidx[2 * k:2 * k + 2] = pack16(at)
+        e['profile'] = at
+        e['bytes'] = end - at
+        at = end
+        made += 1
+    banks.put(R.WPRO, R.WPIDX, bytes(wpidx))
+    checks = ['%d weapon lumps (sprites %s): %d profiles in bank %d (%d '
+              'bytes), %d without%s' % (
+                  len(lumps), ','.join(str(s) for s in wsprites), made,
+                  R.WPRO, at - R.WPROF, len(lumps) - made,
+                  '; not resident: %s' % not_resident if not_resident
+                  else '')]
+    # the reference's arenas (tags WP_TAGL/WP_TAGB, r_sprite65.s:737-745)
+    sig = m.read(MM_WPROF + 0x46, 4)
+    checked = 0
+    if sig == bytes((0xA5, 0x5A, 0x3C, 0xC3)):
+        nt = m.u16(MM_WPROF + 0x40)
+        for t in range(min(nt, 32) // 2):
+            lump = m.u16(MM_WPROF + 2 * t)
+            addr = m.u16(MM_WPROF + 0x20 + 2 * t)
+            if lump not in lumps:
+                raise ConvError('the reference has a profile of lump %d, '
+                                'which no psprite state names' % lump)
+            e = lumps[lump]
+            if addr == WP_NONE_ADDR:
+                if e.get('profile') is not None:
+                    raise ConvError('lump %d: the reference has no profile, '
+                                    'the converter one' % lump)
+                checked += 1
+                continue
+            if e.get('profile') is None:
+                raise ConvError('lump %d: the reference has a profile at '
+                                '$%04X, the converter none' % (lump, addr))
+            limit = next((hi for lo, hi in WP_ARENAS if lo <= addr < hi),
+                         None)
+            if limit is None:
+                raise ConvError('lump %d: a profile at $%04X, in no arena'
+                                % (lump, addr))
+            a0 = directory[lump][0]
+            status, data = wb_make(lambda off, n: m.read(a0 + off, n),
+                                   addr, limit)
+            if status:
+                raise ConvError('lump %d: the reference made a profile at '
+                                '$%04X, the rules none' % (lump, addr))
+            data.pop('end')
+            for k, v in data.items():
+                if m.read((MM_WPROF & 0xFF0000) + k, 1)[0] != v:
+                    raise ConvError('lump %d: the profile at $%04X differs '
+                                    'from the reference at $%04X'
+                                    % (lump, addr, k))
+            # and the native copy is the same profile, rebased: its
+            # addresses (the tables' and the lists') less its base equal
+            # the reference's less theirs, every other byte equal
+            nat = banks.get(R.WPRO, e['profile'], e['bytes'])
+            width = data[addr] | data[addr + 1] << 8
+            words = {R.WPH['TEVEN'], R.WPH['TODD']} | {
+                16 + 2 * i for i in range(width)}
+            if max(data) - addr + 1 != len(nat):
+                raise ConvError('lump %d: the native profile is %d bytes, '
+                                'the reference\'s %d' % (
+                                    lump, len(nat), max(data) - addr + 1))
+            for rel in sorted(k - addr for k in data):
+                if rel - 1 in words:
+                    continue
+                if rel in words:
+                    ref = data[addr + rel] | data[addr + rel + 1] << 8
+                    got = nat[rel] | nat[rel + 1] << 8
+                    if ref - addr != got - e['profile']:
+                        raise ConvError('lump %d: the native profile\'s '
+                                        'address at +%d differs' % (lump,
+                                                                    rel))
+                elif nat[rel] != data[addr + rel]:
+                    raise ConvError('lump %d: the native profile differs at '
+                                    '+%d' % (lump, rel))
+            checked += 1
+    checks.append('%d profiles of the reference\'s arenas equal the '
+                  'converter\'s' % checked)
+    return {'checks': checks, 'sprites': wsprites,
+            'lumps': {str(k): v for k, v in sorted(lumps.items())},
+            'not_resident': not_resident, 'profiles': made,
+            'bytes': at - R.WPROF, 'checked': checked}
+
+
+def check_store(level: Level, memory: bmem.Memory) -> int:
+    """Each stored lump's bytes and tail read back from the banks equal
+    the reference's RAM at its address; no lump crosses a bank; every
+    PHDR and SPRFR entry names a stored lump or the placeholder. The
+    lumps' count."""
+    b = level.banks
+    info = level.info['sprites']
+    n = 0
+    for e in info['store']:
+        need = e['size'] + TAIL
+        if e['at'] < R.BANK_ROOM[0] or e['at'] + need > R.BANK_ROOM[1]:
+            raise ConvError('lump %d crosses its store bank' % e['lump'])
+        if b.get(e['bank'], e['at'], need) != memory.read(e['address'],
+                                                           need):
+            raise ConvError('lump %d: the store differs from the reference '
+                            'at $%06X' % (e['lump'], e['address']))
+        ph = b.get(R.SPRT, R.PHDRS.address(e['index']), R.PHDR_SIZE)
+        if (ph[R.PHDR['BANK']], u16(ph, R.PHDR['ADDR']),
+                u16(ph, R.PHDR['LUMP'])) != (e['bank'], e['at'], e['lump']):
+            raise ConvError('PHDR %d does not name lump %d' % (e['index'],
+                                                               e['lump']))
+        if ph[0:2] != memory.read(e['address'], 2):
+            raise ConvError('PHDR %d: the width differs' % e['index'])
+        n += 1
+    count = sum(info['frames_per_sprite'])
+    stored = {e['index'] for e in info['store']} | {0}
+    for k in range(count):
+        rec = b.get(R.SPRT, R.SPRFRS.address(k), R.SPRFR_SIZE)
+        for r in range(8):
+            idx = u16(rec, R.SPRFR['LUMPS'] + 2 * r)
+            if idx not in stored:
+                raise ConvError('SPRFR %d names patch %d, not stored'
+                                % (k, idx))
+    return n
 
 
 # ---------------------------------------------------------------------------
@@ -895,6 +1492,12 @@ def write(level: Level, out: Optional[Path] = None) -> Path:
     (out / 'texmap.json').write_text(json.dumps(level.texmap) + '\n')
     (out / 'sectors-sides.json').write_text(
         json.dumps(level.manifest, indent=1) + '\n')
+    mt = Image()
+    for address in sorted(level.mtables):
+        mt.add(0, 0, address, level.mtables[address])
+    (out / 'mtables.img').write_bytes(mt.bytes())
+    (out / 'patchmap.json').write_text(json.dumps(level.patchmap) + '\n')
+    (out / 'fuzzdark.bin').write_bytes(level.fuzzdark)
     return out
 
 
@@ -907,6 +1510,9 @@ def run_one(path: Path, sym: blink.Symbols, second: Optional[Path] = None
     level.info['checks'].append('decode equals upstream on %d objects' % n)
     slots = check_slots(level, memory)
     level.info['checks'].append('%d slots equal the reference' % slots)
+    lumps = check_store(level, memory)
+    level.info['checks'].append('%d stored lumps and their tails equal the '
+                                'reference' % lumps)
     fields = check_bridge(level, up.state)
     level.info['checks'].append('the bridge reads %d render fields back'
                                 % fields)
@@ -931,6 +1537,138 @@ def run_one(path: Path, sym: blink.Symbols, second: Optional[Path] = None
             'slots': slots, 'checks': level.info['checks']}
 
 
+# ---------------------------------------------------------------------------
+# --overrun (RENDER-MASKED.md 1.3): how far past a post's last texel, and
+# past its lump's end, the records that read the patch store reach
+# ---------------------------------------------------------------------------
+
+UP_KINDS = {0: 11, 2: 5, 6: 7, 8: 4, 10: 4}
+K_NEXT_UP = 12
+RECBANK = 0x1D0000
+
+
+def reach(tf: int, ti: int, sf: int, si: int, rows: int) -> int:
+    """An upper bound of the texel index a texture record's rows read: its
+    position one row before the first and its step as 7.8 values
+    (lists.inc:37-45), row k (1 to rows) reads the texel of (P0 + k S) >>
+    8, or of it rounded (the pairs' half-way texel of an even row),
+    masked to 7 bits as the row blocks do (a record never reads past 127;
+    the position before the first row may be below 0: 127 masked)."""
+    p0 = ti << 8 | tf
+    s = si << 8 | sf
+    top = 0
+    for k in range(1, rows + 1):
+        v = p0 + k * s
+        top = max(top, (v >> 8) & 0x7F, ((v + 0x80) >> 8) & 0x7F)
+    return top
+
+
+def overrun_of_frame(frame_dir: Path, store: List[Dict[str, Any]],
+                     sym: blink.Symbols, memory: bmem.Memory
+                     ) -> Dict[str, Any]:
+    """The frame's texture records (its lists at R_DrawLists, P4, and any
+    early flush) that read a stored lump: the most rows past a post's last
+    texel and bytes past its lump's end they reach (the post's length
+    from the level source's memory: the lumps do not change)."""
+    from native import rendercap
+    dumps = [rendercap.load_dump(frame_dir / 'p4.dump.z')]
+    for k in range(64):
+        path = frame_dir / ('p2m-%d.dump.z' % k)
+        if not path.exists():
+            break
+        dumps.append(rendercap.load_dump(path))
+    lumps = sorted((e['address'], e['address'] + e['size']) for e in store)
+    starts = [a for a, _ in lumps]
+    import bisect
+    out = {'records': 0, 'past_post': 0, 'past_lump': 0, 'posts_past': 0}
+    for d in dumps:
+        colw = d.get(sym.address('COLW'), 320)
+        for c in range(160):
+            from ref816 import lists as ulists
+            end = colw[2 * c] | colw[2 * c + 1] << 8
+            page, off = ulists.colpage(c), 0
+            bank = sf = si = 0
+            steps = 0
+            while (page << 8 | off) != end:
+                steps += 1
+                if steps > 4096 or off >= 256:
+                    raise ConvError('%s: column %d does not end'
+                                    % (frame_dir.name, c))
+                at = RECBANK + (page << 8) + off
+                kind = d.get(at, 1)[0]
+                if kind == K_NEXT_UP:
+                    page, off = d.get(at + 1, 1)[0], 0
+                    continue
+                if kind not in UP_KINDS:
+                    raise ConvError('%s: a record of kind %d' % (
+                        frame_dir.name, kind))
+                r = d.get(at, UP_KINDS[kind])
+                off += UP_KINDS[kind]
+                if kind == 0:
+                    bank, sf, si = r[9], r[5], r[6]
+                    src = r[7] | r[8] << 8 | r[9] << 16
+                elif kind == 6:
+                    src = bank << 16 | r[5] | r[6] << 8
+                else:
+                    continue
+                k = bisect.bisect_right(starts, src) - 1
+                if k < 0 or src >= lumps[k][1]:
+                    continue                    # not the patch store
+                out['records'] += 1
+                top = reach(r[3], r[4], sf, si, r[2] - r[1])
+                length = memory.read(src - 2, 1)[0]
+                past = top - (length - 1)
+                if past > 0:
+                    out['posts_past'] += 1
+                    out['past_post'] = max(out['past_post'], past)
+                out['past_lump'] = max(out['past_lump'],
+                                       src + top - (lumps[k][1] - 1))
+    return out
+
+
+def measure_overrun(frame_dirs: Sequence[Path], sym: blink.Symbols
+                    ) -> Dict[str, Any]:
+    """--overrun over the frames: by level conversion, written into its
+    level.json and into levels/overrun.json."""
+    table = json.loads((LEVELS / 'by-source.json').read_text())
+    by_level: Dict[str, Dict[str, Any]] = {}
+    memories: Dict[str, bmem.Memory] = {}
+    for d in sorted(frame_dirs, key=lambda d: json.loads(
+            (d / 'frame.json').read_text())['level_src']):
+        meta = json.loads((d / 'frame.json').read_text())
+        level_dir = Path(table[meta['level_src']])
+        info = json.loads((level_dir / 'level.json').read_text())
+        if meta['level_src'] not in memories:
+            memories.clear()
+            memories[meta['level_src']] = load_memory(
+                SOURCES / (meta['level_src'] + '.ram.z'))
+        res = overrun_of_frame(d, info['sprites']['store'], sym,
+                               memories[meta['level_src']])
+        acc = by_level.setdefault(level_dir.name, {
+            'frames': 0, 'records': 0, 'past_post': 0, 'past_lump': 0,
+            'posts_past': 0})
+        acc['frames'] += 1
+        acc['records'] += res['records']
+        acc['posts_past'] += res['posts_past']
+        acc['past_post'] = max(acc['past_post'], res['past_post'])
+        acc['past_lump'] = max(acc['past_lump'], res['past_lump'])
+    for name, acc in by_level.items():
+        path = LEVELS / name / 'level.json'
+        info = json.loads(path.read_text())
+        info['sprites']['overrun'] = acc
+        path.write_text(json.dumps(info, indent=1) + '\n')
+    summary = {'levels': by_level,
+               'past_post': max((a['past_post'] for a in by_level.values()),
+                                default=0),
+               'past_lump': max((a['past_lump'] for a in by_level.values()),
+                                default=0),
+               'records': sum(a['records'] for a in by_level.values()),
+               'frames': sum(a['frames'] for a in by_level.values())}
+    (LEVELS / 'overrun.json').write_text(json.dumps(summary, indent=1) +
+                                         '\n')
+    return summary
+
+
 def bridge_dump_of(gamemap: int) -> Optional[Path]:
     """The bridge's tour dump of a map (the same level load as
     rendercap.py's tour run: the same script, deterministic)."""
@@ -947,8 +1685,29 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument('sources', nargs='*', type=Path)
     parser.add_argument('--all', action='store_true')
     parser.add_argument('--second', type=Path)
+    parser.add_argument('--overrun', action='store_true',
+                        help='measure the records\' reach past their posts '
+                        'and lumps over every captured frame')
     args = parser.parse_args(argv)
     sym = symbols()
+    if args.overrun:
+        from native import rendercap
+        dirs = sorted(d for d in rendercap.FRAMES.iterdir()
+                      if (d / 'p4.dump.z').exists())
+        try:
+            s = measure_overrun(dirs, sym)
+        except ConvError as error:
+            print('overrun: FAILED: %s' % error)
+            return 1
+        print('%d frames, %d records reading the patch store: at most %d '
+              'texels past a post\'s last, %d bytes past a lump\'s end'
+              % (s['frames'], s['records'], s['past_post'], s['past_lump']))
+        for name, a in sorted(s['levels'].items()):
+            print('  %s: %d frames, %d records, %d past their post (at '
+                  'most %d), %d past the lump\'s end' % (
+                      name, a['frames'], a['records'], a['posts_past'],
+                      a['past_post'], a['past_lump']))
+        return 0
     todo: List[Tuple[Path, Optional[Path]]] = []
     if args.all:
         found = sorted(SOURCES.glob('*.ram.z'))
@@ -989,6 +1748,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.all:
         (LEVELS / 'levelconv.json').write_text(json.dumps(report, indent=1)
                                                + '\n')
+        if not failed:
+            # every source's conversion (framestate.py's index), and no
+            # conversion of another format or source left behind
+            table = {r['source'][:-len('.ram.z')]: r['dir'] for r in report
+                     if r['source'].endswith('.ram.z')}
+            (LEVELS / 'by-source.json').write_text(
+                json.dumps(table, indent=1) + '\n')
+            keep = {Path(d).name for d in table.values()}
+            for d in LEVELS.iterdir():
+                if d.is_dir() and d.name != 'src' and d.name not in keep \
+                        and (d / 'level.json').exists():
+                    import shutil
+                    shutil.rmtree(str(d))
     return 1 if failed else 0
 
 

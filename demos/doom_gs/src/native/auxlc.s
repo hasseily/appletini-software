@@ -29,7 +29,7 @@ ALTZPON  = $C009
 LCBANK2  = $C083
 LCBANK1  = $C08B
 
-        .segment "RENDERW"
+        .segment "AUXW"         ; (both W images: RENDER-MASKED.md 1.10)
 
 ; ---------------------------------------------------------------------------
 ; ax_vtox: A = viewangletoxTable[i], i = A:X (A the high byte, 0-7; i at

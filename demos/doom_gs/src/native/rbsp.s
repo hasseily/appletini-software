@@ -896,8 +896,19 @@ nr_sub:
         jmp @batch
 :       rts
 
-; nr_addsprites: R_AddSprites of the subsector's sector (milestone 8)
+; nr_addsprites: R_AddSprites of the subsector's sector, deferred
+; (milestone 8, RENDER-MASKED.md 0.3 row 1): the walk reads nothing the
+; projection makes, so the sector (SC_CUR) goes on the list SPRSEC (aux 0,
+; one RAMWRT window) and the masked phase projects the listed sectors'
+; things in this order. SPRN + 1 (at most 254 sectors, each once a frame:
+; its validcount stamp). Changes A, X.
 nr_addsprites:
+        ldx SPRN
+        lda SC_CUR
+        sta RAMWRTON
+        sta SPRSEC,x
+        sta RAMWRTOFF
+        inc SPRN
         rts
 
 ; vgather: the native vertex numbers of the batch's segs (v1 at 2k, v2 at

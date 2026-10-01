@@ -205,7 +205,7 @@ for a strip's first record), and a shadow of no rows would draw 256.
 | The replay does not write into records nor reset `COLW` or `XPNEXT` | Upstream writes back `R_TF` (`texStart`) and swaps `R_B1`/`R_B2` (`fillStart`); the native replay keeps those in zero page. Resetting the lists is the producers' business |
 | The covered ranges are zeroed after each strip's draw, for its columns | Upstream zeroes each column's range as it starts it; the map says after the last batch; per strip is the same state at the end |
 | Fuzz records queued and drawn after each strip's columns; the loader marks the ones that must be drawn in place (`K_FUZZNOW`) | Upstream draws each in place: on the IIgs a screen read costs nothing more. On F1.2.1 the RAMRD writes around each would wait for the coalescer's scan of scattered bytes ("The fuzz queue") |
-| One column needing more than the 16 KB stage stops the replay (`BRK`, code 1) | It needs over 125 texture records in one column; the loader's stage model refuses such a frame first. Upstream has no such limit |
+| One column needing more than the 16 KB stage stops the replay (`BRK`, code 1) | It needs over 125 texture records in one column; the loader's stage model refuses such a frame first. Upstream has no such limit. In the renderer's game build (`-D RELEASE`, milestone 8, `docs/RENDER-MASKED.md` 6.1) the column is cut instead: drawn with the records gathered before the first that did not fit, its covered range cleared, `STATUS` = `ST_RECORDS` (through the bucket pass's `bk_cut`) |
 | The copies run in groups of 12 descriptors, each group with its own RAMRD window and one `$C073` write for each texel bank it copies from; NATIVE.md 5.2 says "open one window per texel bank" | One window a bank for a whole strip would need its queue near in every RAMRD state: 100 or more descriptors of 12 bytes, and neither page 1 nor the card has room. Measured (the profiling build's "switches" phase): 69-221 soft-switch writes a captured frame, 0.10-0.34 ms on f121 (0.27 still, 0.34 on demo-10), 0.01-0.05 ms on fastpath; one group a strip would take about 7 writes a strip, 0.01 ms |
 
 ## Verification
@@ -1070,3 +1070,213 @@ the frame's own (the caches warm from the walk into the walls), close to
 the sums of stage B's routine mode (cold caches per call). Standing
 still a frame opens 362 read windows, 117 write windows and 322 aux-card
 windows and writes `$C073` 971 times.
+
+## The masked phase (milestone 8)
+
+Design: `docs/RENDER-MASKED.md`; what was built and why it differs:
+its "Stage A as built" and "Stage B as built"; the regions:
+`docs/MEMORY_MAP.md` section 13. Stage A (2026-09-30) builds the sprite
+data, the projection in walk order, the vissprites and their sort, and a
+prototype of the bucket pass. Stage B (2026-09-30) builds the masked
+phase's drawing: the sprites clipped against the drawsegs, their records
+(the magnified runs, the shadows with the fuzz position), the masked mid
+textures in the middle of the sprites and after them, the model of
+upstream's list pages, the covered ranges and spans. Stage C
+(2026-10-01) builds the weapon (its clip pass in the front end, its draw
+at the masked phase's end), finishes the bucket pass, and runs the whole
+frame into the SHR through milestone 5's replay; `rrunner.s` runs it on
+the card from a disk image.
+
+| File | What |
+| --- | --- |
+| `rbsp.s` | `nr_addsprites`: the walk appends the sector's number to `SPRSEC` (aux 0 `$1600`, one `RAMWRT` window), `SPRN` counts; upstream projects there, natively the masked phase does in the same order |
+| `mmain.s` | `nm_masked`: the drawsegs whose `DSX1` is not 255 copied into W's `DSW` (`far_dscopy`), `SPRBOUND` into W, then `nm_project` and `nm_sort`; stage B: `drawMasked`'s loops (the sprites back to front, then the drawsegs' masked columns, the last first) and the last batch; routine mode's entries `nm_rsetup`, `nm_visx` |
+| `msprite.s` | Stage B: `nm_drawsprite` (`R_DrawSprite`: the clips of the sprite's columns, the drawsegs from the last to the first with their scales and `nm_ptseg`'s side test, the masked range of a drawseg behind the sprite drawn at once, the silhouettes on the columns not clipped yet, `dsVisible`, then `nm_vis`), `md_dsptr` (a drawseg in `DSW`, or fetched past `DSW_MAX`), `md_cliprun` (a clip run through `far_get`, or a marker's constant), `md_phdr` |
+| `mvis.s` | Stage B: `nm_vis` (`R_DrawVisSprite`: the loop page, `wclipSprite`, then `visCol`/`visPost`, the magnified `vrCol`/`vrPost` runs, or the shadows' `visColF`), `YHTAB` filled lazily, `FSCUT`, `CVSET`, the clip log of the test builds |
+| `mwall.s` | Stage B: `nm_mwall` (`R_RenderMaskedSegRange`: `rw_scalestep`, spryscale, the seg, side and sectors, texturemid by the peg flag, `R_WallLight`, `TXMP`'s patch, `smul48`'s 48-bit products, one or each column's light, the masked columns and both clips, the posts as `K_TEX` and `K_TEXC` by the page model, the drawn marks back into the openings) |
+| `rrec.s` | Stage B: `rec_room` models upstream's list pages (`UPOFS`, `XPUSED`, `UPFLUSH`) and counts the records (`RECSEQ`); assembled again with `-D MREC` for the masked image (`mrec_room`, `mrec_flush`) |
+| `mproj.s` | `nm_project`: for each listed sector, its things (the `RTHING` chain from the sector record's head) projected exactly as upstream's `R_AddSprites` and `R_ProjectSprite` (the G parts with `qmulh` for fractional things and exact for whole ones, the `TZTEST` and `SPRBOUND` rejections, `labsTZ`, the rotation and flip, the width test, `xl`/`xr` with the `FixedMul` fallbacks, the clip to 160, `MAXVISSPRITES`, the scale record's `xiscale` and `FSTEP`, the colormap page from `CMOP`); `nm_sort`: the stable insertion sort largest scale first into `FRORD`, and `sortSkip` (a shadow clears `FR_SKIP` and `W_WSK`) |
+| `mfar.s` | Card bank 1 (`MFAR`): `far_mload` (the masked image's page runs from `MCODE_BANK` through `far_pload`) and `far_dscopy`; stage B: `far_posts`, `far_postsc` (a patch column's posts in one read window) |
+| `far.s` | `far_pload`: the phase loader takes a bank and a list of page runs; `far_wload` passes the front end's |
+| `rdriver.s` | `-D MASKED`: `drv_mframe`, the front end then `far_mload` and `nm_masked`; stage B: `drv_mroutine` (routine mode: one call of the masked phase from the reference's state); stage C (`-D FRAME8`, builds `ftest`, `fprof`): `drv_fframe`, the whole frame (the front end with the weapon's clip pass, the masked phase with the weapon's draw, `nm_bkload`, `nb_frame`: the bucket pass and each batch's replay) |
+| `wclip.s` | Stage C: `nw_clip`, the weapon's clip pass in the front end (upstream's `weaponClip`: `psSetup`/`pspSprite` into `FRVIS`, the shadow weapon skipped, `MM_WPOK`, the profile's runs `wcProf` into `FLOORCLIP`, or the unit-scale `visCol`/`visPost` fallback when the lump has no profile or `wpStart` refuses it) |
+| `wpsp.s` | Stage C: the weapon code both phases share, assembled twice (`-D MPSP` with `m` names for the masked image): `ps_vis` (`pspSprite` into the 12-byte `FRVIS`), `wp_head`, `wp_find`, `wp_start` (the profile's column entries fetched into `WPENT`), `wp_list` (a column's posts) |
+| `mpsp.s` | Stage C: `nm_psp` (`playerSkip`/`playerSprites`: the weapon by `wdDraw` from its profile, `wdProf`'s records from each column's lowest post up, or `R_DrawVisSprite` of `FRVIS` through `nm_vis`; then the flash by `pspSprite`) |
+| `rrunner.s` | Stage C: `RENDER.SYSTEM`, the card test of acceptance 2 (boot under ProDOS: `CATALOG`, `LEVEL`, `FRAMES` into RamWorks, the card image into the language card; then the static tables by one PRIVATE request, and for each frame its data, the whole frame, its VBLs and the CRC of aux 0 `$2000-$9FFF`; a table at the end; C chained, F full) |
+| `bucket.s`, `bdriver.s`, `bucket.cfg` | Stage C: the bucket pass finished (RENDER-MASKED.md 3.4): `nm_bkload` copies `BKFAR` (main `$0C00`, 709 B) and `BKFAR2` (main `$0200`, 253 B) from the masked image; `nb_frame` counts, cuts the batches (whole columns, at most `RECBUF_SPAN`, 26), scatters them three at a time into W's regions, parks batches 2 and 3 in `RECW`, turns each covered range's record into its W address (`CVDONE`), marks `K_FUZZNOW`, and calls milestone 5's `nat_replay` for each batch; `BKNEAR` (238 B, the card) copies the staging's chunks into page 1. Stage A's prototype: |
+| `bucket.s` (stage A) | The bucket pass's prototype (RENDER-MASKED.md 3.4): the staging read in chunks of 180 B into page 1 (`BKNEAR`, in the card), with `RAMRD` off a count walk and a scatter walk into up to three W regions (`BKFAR`, main `$0C00-$0EFF`), the covered ranges turned into W addresses, batches 2 and 3 parked in `RECW` and brought back, the `K_FUZZNOW` marks; `bdriver.s` drives it on a2vm |
+
+Host tools: `levelconv.py` (the patch store with 128-byte tails,
+`PHDR`, `SPRFR`, `TXMP`, the sectors' thing heads; `--overrun`),
+`rtables.py` (the scale records, `CMOP`, `SFIRST`), `framestate.py` (the
+render things, psprites, the player's sector light and invisibility,
+`SPRBOUND`, `FZ_POS`), `rendercap.py` (points P3s, P3w, PS, P4, P5, the
+call logs of `R_AddSprites`, `R_DrawVisSprite`,
+`R_RenderMaskedSegRange`, `maskedSeg`, `wcProf`, `wdProf`; the `demo3`
+set), `rcanon.py` (the vissprites, order and skip), `projmodel.py` (the
+host model of upstream's projection and sort, and its path coverage),
+`bucketcheck.py` (the prototype against `loader.py`),
+`render_check.py --masked`. Stage B: `maskmodel.py` (the host model of
+upstream's masked phase from P3s to P3w, and its path coverage),
+`maskcap.py` (routine captures: every masked-phase call of milestone 7's
+captured frames at its entry and return), `maskroutine.py` (routine mode
+on a2vm), `rcanon.py` (the records of every kind by column with the
+patch map, the covered ranges and their records, the spans, the page
+model, the clips, the marks, the clip log against the call log),
+`framesynth.py` (`synth-mwlong`, `pagefull`, `mwclose`, `mwlight`; a spec
+whose early flushes are its point keeps their P2 dumps), `framestate.py`
+(`WTMP`), `levelconv.py` (`TXWM` of the masked textures; the lines' peg
+flags in the level's key).
+
+### Commands
+
+```
+python3 tools/native/rendercap.py          # all sets, demo3 included (309 MB of frames)
+python3 tools/native/framesynth.py         # 16 synthetic frames
+python3 tools/native/levelconv.py --all    # 18 level sources, every check
+python3 tools/native/levelconv.py --overrun
+python3 tools/native/rtables.py
+make -C src/native -f render.mk            # mtest, mprof, btest among the rest
+python3 tools/native/projmodel.py --coverage build/native/render/proj-coverage.json
+python3 tools/native/render_check.py --masked                 # 193 frames, both fills
+python3 tools/native/render_check.py --masked --sets demo3    # 533 frames
+python3 tools/native/render_check.py --masked --timing --jobs 2
+python3 tools/native/bucketcheck.py --timing                  # 192 frames
+python3 tools/native/maskmodel.py --coverage FILE             # the host model, 197 frames (--sets demo3)
+python3 tools/native/maskcap.py            # stage B's routine captures (72 MB)
+python3 tools/native/maskroutine.py --jobs 2                  # routine mode, every captured call
+python3 tools/native/render_check.py --frame-mode             # milestone 7 again, with the page model
+python3 -m unittest discover -s tests -p 'test_native_masked*.py'
+# stage C
+python3 tools/native/framesynth.py --specs invis,flash,skipwall,wphigh
+python3 tools/native/frame8.py                                # the whole frame, 201 frames, both fills
+python3 tools/native/frame8.py --sets demo3 --json build/native/render/frame8-demo3.json
+python3 tools/native/frame8.py --sets m7,demo3 --timing --poisoned --report build/native/render/report8.md
+python3 tools/native/rdisk.py --check                         # RENDER.hdv, 100 demo3 frames on a2vm
+python3 -m unittest discover -s tests -p 'test_native_frame8.py'
+```
+
+### Verification (checkpoint A, RENDER-MASKED.md 5.1)
+
+- **Converter and tables:** all 17 level sources (18 since stage B) pass every check; the
+  scale records, `CMOP` and `SFIRST` equal the reference's. The overrun:
+  up to 127 texels past a post and 124 bytes past a lump's end in
+  70,446 records, so the tails are kept whole.
+- **Frames:** 193 frames (milestone 7's 188 and 5 synthetic) and 533
+  `demo3` frames, both fills: 1,452 runs, every vissprite (15,930), the
+  order, `FR_SKIP`, `W_WSK` and the listed sectors equal `ref816`'s,
+  milestone 7's outputs at the walk's end unchanged, no stray write,
+  at most 82 B of stack. No frame takes milestone 7's rules.
+- **Model:** `projmodel.py` equals P3 and P3s on 725 frames and reaches
+  every path of the projection.
+- **Bucket prototype:** 192 frames, 384 runs equal to `loader.py`
+  (records by column, `COLLO`/`COLHI`, covered ranges, 133 `K_FUZZNOW`
+  marks).
+- **Planted bugs**, in scratch copies under `build/`, each caught
+  (`tests/test_native_masked.py`): ten in the walk's append, the
+  projection, the sort and the masked image, three in the bucket pass,
+  two in the converter (RENDER-MASKED.md "Stage A as built" names them).
+
+### Verification (checkpoint B, RENDER-MASKED.md 5.2)
+
+- **Routine mode:** 2,145 captured calls (`R_DrawSprite` 1,391,
+  `R_DrawVisSprite` 719, `R_RenderMaskedSegRange` 10 and
+  `maskedSeg` 25), both fills, 4,290 runs equal, 27,834 records.
+- **Frames:** 197 frames, both fills, 394 runs equal (3,598 vissprites,
+  245,734 records, 2,014 clip-log calls against the call log); `demo3`
+  533 frames, 1,066 runs equal (12,554 vissprites, 589,770 records). Records by column with their kinds, `UPOFS`/`XPUSED`
+  against `COLW`/`XPNEXT`, covered ranges, spans, `FZ_POS`, no stray
+  write. Milestone 7's frame mode: 197 frames, 394 runs, 0 failed.
+- **Page model:** `synth-mwlong` (a `K_TEXC` refused at a page's end)
+  and `synth-pagefull` (50 extra pages and a flush) equal.
+- **Model:** `maskmodel.py` equals P3w on 730 frames, 26 paths.
+- **Planted bugs:** 14 on frames, one in routine mode, each caught; the
+  fallbacks (`DSW` of 4, a post buffer of 2) equal
+  (`tests/test_native_masked_b.py`).
+
+### Verification (checkpoint C, RENDER-MASKED.md 5.3)
+
+- **Acceptance 1** (`frame8.py --sets m7,demo3 --timing --poisoned`):
+  734 frames (milestone 7's 188, 13 synthetic, 533 `demo3`), both
+  fills, 1,468 runs equal: the clip pass at P1, the front end, the
+  masked phase at the weapon and at its end (926,390 records, 9,137
+  clip-log calls), each batch against `loader.py`, all of aux 0
+  `$2000-$9FFF` against P5, the SHR writes against the model, 0 stray
+  writes, at most 83 B of stack; 0 frames with `RULES` ≠ 0; the 69
+  poisoned screens equal their `--call` truth.
+- **Acceptance 2** (`rdisk.py --check`): `RENDER.hdv`, 100 `demo3`
+  frames (`demo3-020` .. `119`), every CRC equal to `ref816`'s chained and
+  full, `f121` and `fastpath`; the CRCs in `build/native/render/
+  rdisk.json` for the owner's card run (milestone 12).
+- **Tests** (`tests/test_native_frame8.py`): the whole frame on 10
+  frames, both fills; the poisoned screen; the timing; 2 KB batches (a
+  scratch build: groups of three, parked batches); the release build's
+  `ST_RECORDS` policy; the disk's first 3 frames in both modes; 11
+  planted bugs and the runner's one, each caught (RENDER-MASKED.md
+  "Stage C as built").
+- **Verified** 2026-10-01 (RENDER-MASKED.md "Verification of stage C"):
+  the game build's last area taken to its last byte (`rrec.s`), the
+  batch list's bound (45 batches, proved in `rlayout.py`; `BK_FIRST` in
+  zero page `$71-$9E`), 6.1's column cuts in the game build (`bucket.s`
+  `bk_cut`/`bk_kept`, `replay.s` under `-D RELEASE`), the bucket check
+  after a stop, `W_WSK` captured at P4, the staging margin measured by
+  `frame8.py`. After them acceptance 1 1,537 runs equal, acceptance 2
+  400 of 400 CRCs, 1,289 tests OK; 12 planted bugs and the runner's one
+  caught; the new tests `ReleasePolicy` (3), `BucketLimits` (2),
+  `StagingMargin`.
+
+### Sizes
+
+Stage C: the front end's `wclip.s` 420 B and `wpsp.s` 1,097 B (`RENDERW`
+15,793 B to `$A343`); the masked image's `mpsp.s` 421 B, `wpsp.s` 902 B,
+`nm_bkload` 48 B (`MASKW` 8,810 B, 9,772 with the bucket pass's parts as
+data, of 13,312); the bucket pass `BKNEAR` 238 B (card), `BKFAR` 709 B
+(main `$0C00`), `BKFAR2` 253 B (main `$0200`); `RENDER.SYSTEM`'s runner
+1,993 B and 4,007 B of data at `$E000-$F76F`.
+
+Stage B: `msprite.s` 1,157 B, `mvis.s` 1,417 (1,333 without the clip
+log), `mwall.s` 1,778, `mmain.s` 260, `rrec.s` again 198: the masked
+image 7,425 of 13,312 B (`$6800-$8500`). Card bank 1 989 of 1,024 B
+(`mfar.s` 334 B), 35 left. The front end's `rec_room` grew by 77 B.
+Stage A:
+
+`mproj.s` 2,615 B (427 of constants), `mmain.s` 68 B: the masked image
+2,683 of 13,312 B (`$6800-$727A`). Card bank 1 818 of 1,024 B (`mfar.s`
+163 B). The bucket prototype 1,073 B: 366 of 371 B in the card's `$F900`
+part, 707 B in main `$0C00-$0EFF`.
+
+### Timing (a2vm's cost model, not the card)
+
+Milliseconds on `f121`, median (worst); the bucket pass median (range):
+
+| Set | Frames | Masked window | Drawseg copy, `SPRBOUND` | Projection and sort | Bucket pass | Staged bytes, median |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| still (E1M1) | 3 | 0.83 | 0.36 | 1.33 | 8.88 | 6,690 |
+| newgame | 50 | 0.83 | 0.29 (0.36) | 1.13 (1.87) | 8.58 (2.71-18.35) | 6,501 |
+| m5 demo | 11 | 0.83 | 0.15 (0.34) | 1.60 (4.43) | 4.86 (3.01-15.51) | 3,480 |
+| title (demo3) | 50 | 0.83 | 0.22 (0.40) | 2.38 (5.35) | 6.54 (2.68-19.25) | 4,818 |
+| tour | 50 | 0.83 | 0.24 (0.43) | 1.20 (5.93) | 7.20 (2.71-15.86) | 5,116 |
+
+`fastpath` is 4-20% faster. The bucket pass costs 1.37 µs a staged byte
+(1.26-1.77), about 96 cycles; the projection 0.19 ms a vissprite, mostly
+the card's windows. RENDER-MASKED.md 6.2 carries these into the whole
+frame: 5.9-6.2 FPS in the heaviest fight by the estimate. Over all 533
+`demo3` frames (`--masked --sets demo3 --timing`) the projection and
+sort take 2.44 ms (median, worst 6.19), the masked phase so far 3.48 ms
+(worst 7.37).
+
+Stage B (`--masked --timing`, fill `$A5`): the masked window 1.96 ms
+(29 pages); the sprites and masked walls median (worst): `still` 1.59,
+`newgame` 1.56 (2.42), `demo` 1.84 (7.18), `title` 2.01 (12.61), `tour`
+1.77 (5.74), `demo3` 2.55 (17.34); `synth-crowd` 55.5 ms, `synth-pagefull`
+64.7 ms.
+
+Stage C, the whole frame (`frame8.py --timing`, `build/native/render/
+report8.md`), `f121` median (worst): `still` 64.26 ms, `demo3` 72.54
+(164.53, `demo3-036`), `tour` 57.15, `newgame` 64.26; `fastpath` 8-15%
+less. The clip pass 0.46-0.61 ms, the weapon's draw 0.63-0.97, the
+bucket pass 7.39 at `demo3`'s median (30.27 worst), the replay 33.80
+(80.90). With `NATIVE.md` 6's tics: 14.1-14.9 FPS still, 8.8-11.0 at the
+`demo3` median, 4.9 at its worst frame (3 to 10 of 533 frames under 6
+FPS). The disk's 100 frames by VBL count: 10.5 FPS `f121`, 12.1
+`fastpath`, render only.

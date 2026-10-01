@@ -50,7 +50,12 @@ needs_build = unittest.skipUnless(READY, WHY)
 
 SOURCES = ('math.s', 'math.inc', 'rframe.s', 'rbsp.s', 'rlight.s',
            'auxlc.s', 'far.s', 'rdriver.s', 'rwall.s', 'rseg.s', 'rseg.inc',
-           'rsky.s', 'rrec.s', 'render.cfg', 'render.mk')
+           'rsky.s', 'rrec.s', 'render.cfg', 'render.mk',
+           # milestone 8 (render.mk builds them too)
+           'mmain.s', 'mproj.s', 'mfar.s', 'msprite.s', 'mvis.s',
+           'mwall.s', 'bucket.s',
+           'bdriver.s', 'bucket.cfg', 'wclip.s', 'wpsp.s', 'mpsp.s',
+           'rrunner.s', 'replay.s')
 
 
 def planted_build(tmp: Path, bugs) -> RC.Build:
@@ -85,7 +90,7 @@ class FrontEnd(unittest.TestCase):
 
     def test_build_fits_its_areas(self):
         s = self.b.segments
-        self.assertLessEqual(s['MATHW'][1], R.WCODE_END - 1)
+        self.assertLessEqual(RC.w_end(self.b), R.WCODE_END - 1)
         self.assertLessEqual(s['RFAR'][1], R.FAR_CARD_END - 1)
         self.assertEqual(s['RFAR'][0], R.FAR_CARD)
         self.assertLessEqual(s['MATHLC'][1], 0xDBFF)

@@ -30,9 +30,21 @@ of checkpoint A, the reference's R_StoreWallRange count and solidcol
 after each call (calls.json). The level (levelconv.py), the tables
 (rtables.py) and the code are the harness's (render_check.py).
 
+Milestone 8 (docs/RENDER-MASKED.md 2.3), stage A, adds: the render
+things (RTHING, bank RTH: every mobj on a sector's thing list, by pool
+slot; a zone mobj past the pool takes the next slot in the order the
+sectors' lists first reach it) and each sector's list head in its record;
+each psprite's sprite, frame, sx and sy, the player's sector light and
+invisibility power (render inputs); SPRBOUND ($22:7800, into bank SPRT:
+upstream makes it at the first frame after a level load, RENDER-MASKED.md
+0.3); FZ_POS (FZPOS). `slot_map` gives upstream's mobj pointers' slots
+(rcanon.py compares a vissprite's thing by it).
+
 Values the native layout cannot hold are refused (FrameError): a pic the
 byte encoding of levelconv.py does not hold, a light index outside SMAP,
-a view that is not the full view.
+a view that is not the full view; milestone 8: a thing whose sprite or
+frame the states do not use, more things than RTH's slots, FZ_POS past
+49.
 """
 
 import argparse
@@ -63,6 +75,18 @@ OFS_PL_MO, OFS_PL_VIEWZ = 0, 11
 OFS_PL_EXTRALIGHT, OFS_PL_FIXEDCOLORMAP = 125, 127
 OFS_PL_PSPRITES, SIZEOF_PSP = 129, 12
 OFS_MO_X, OFS_MO_Y, OFS_MO_ANGLE = 12, 16, 32
+# milestone 8: the things (offsets.inc) and the player
+OFS_MO_Z, OFS_MO_SNEXT, OFS_MO_SPRITE, OFS_MO_FRAME = 20, 24, 36, 38
+OFS_MO_SUBSECTOR, OFS_MO_FLAGS = 48, 94
+SIZEOF_MO = 120
+MF_SHADOW = 1 << 18
+OFS_SEC_THINGLIST = 22
+OFS_SUB_SECTOR = 0
+OFS_PSP_STATE, OFS_PSP_SX, OFS_PSP_SY = 0, 6, 8
+OFS_ST_SPRITE, OFS_ST_FRAME = 0, 2
+OFS_PL_POWERS, PW_INVISIBILITY = 41, 2
+MM_SPRBOUND = 0x227800
+FUZZ_POSITIONS = 50
 ML_MAPPED = 256
 WPAGE = 0x000A00
 W = {'W_FSC': 0xE8, 'W_FSP': 0xE9, 'W_TOPR': 0xEA, 'W_BOTR': 0xEB,
@@ -135,7 +159,10 @@ def level_of(frame: Frame, sym: blink.Symbols) -> Path:
         table = json.loads(index.read_text()) if index.exists() else {}
         got = table.get(src)
         if got and (Path(got) / 'level.json').exists():
-            return Path(got)
+            info = json.loads((Path(got) / 'level.json').read_text())
+            if info.get('format') == levelconv.FORMAT and \
+                    info.get('revision') == levelconv.REVISION:
+                return Path(got)
         res = levelconv.run_one(levelconv.SOURCES / (src + '.ram.z'), sym)
         table[src] = res['dir']
         tmp = index.with_suffix('.tmp')
@@ -187,6 +214,11 @@ def read_inputs(frame: Frame, sym: blink.Symbols,
         out[k] = p0.u(WPAGE + off, 2 if k == 'W_WSK' else 1)
     if out['W_WSK'] > 255:
         raise FrameError('%s: W_WSK $%04X' % (frame.name, out['W_WSK']))
+    # stage C: the native clip pass takes no wclipSprite (wclip.s): W_WSK is
+    # 0 at every frame's start, as every frame's end leaves it
+    if out['W_WSK']:
+        raise FrameError('%s: W_WSK %d at R_FillStamps' % (frame.name,
+                                                           out['W_WSK']))
     out['FR_SKIP'] = g2('FR_SKIP')
     # the renderer's state kept from frame to frame (RENDER.md 2.2):
     # rw_scalestep (a one-column wall of scaleSlow reads the last one), the
@@ -196,6 +228,14 @@ def read_inputs(frame: Frame, sym: blink.Symbols,
     for k, off in WPLANE.items():
         out[k] = p0.u(WPAGE + off, 2)
     out['MM_WPOK'] = p0.u(MM_WPOK, 2)
+    # stage C: the weapon's vissprite (FR_VIS, persistent: a frame that does
+    # not write it keeps it) and WPREV, in their native 12 bytes
+    # (RENDER-MASKED.md 1.7 as built)
+    index = store_index(level)
+    full = a('fullcolormap')
+    out['frvis'] = native_vis(p0.read(a('FR_VIS'), SIZEOF_VIS), index, full)
+    out['wprev'] = native_vis(p0.read(MM_WCLIP + 0x180, SIZEOF_VIS), index,
+                              full)
     out['VA_FRAME'] = g2('VA_FRAME')
     out['VA_VX'] = g2('VA_VX')
     out['VA_VY'] = g2('VA_VY')
@@ -242,10 +282,163 @@ def read_inputs(frame: Frame, sym: blink.Symbols,
         cache.append(p0.u(MM_SEGANGLE + 2 * u, 2) if valid else None)
     out['vertex_cache'] = cache
     out['spans'] = p0.read(MM_FS, 0xC00)
-    out['weapon'] = p0.read(MM_WCLIP, 0x200)
+    out['weapon'] = p0.read(MM_WCLIP, 0x300)     # WCLIP, WPREV, WTMP
     out['colormaps'] = p0.read(a('iigs_shrcmapA'), 2 * 34 * 256)
     out['flatcm'] = p0.read(a('FLATCM'), 34 * 32)
+    # milestone 8 (RENDER-MASKED.md 2.3): the things, the psprites, the
+    # player's sector light and invisibility, SPRBOUND, FZ_POS
+    heads, things, slots = read_things(p0, sym, secs, c['sectors'], level)
+    out['heads'], out['things'], out['slots'] = heads, things, slots
+    for i, s in enumerate(sectors):
+        s['things'] = heads[i]
+    pspr = []
+    for k in (0, 1):
+        at = pl + OFS_PL_PSPRITES + SIZEOF_PSP * k
+        state = p0.u(at + OFS_PSP_STATE, 4) & 0xFFFFFF
+        spr = p0.u(state + OFS_ST_SPRITE, 2) if state else 0xFF
+        frm = p0.u(state + OFS_ST_FRAME, 2) if state else 0xFFFF
+        if spr > 255:
+            raise FrameError('%s: psprite %d has sprite %d' % (frame.name,
+                                                                k, spr))
+        pspr.append({'sprite': spr, 'frame': frm,
+                     'sx': p0.u(at + OFS_PSP_SX, 2),
+                     'sy': p0.u(at + OFS_PSP_SY, 4)})
+    out['pspr'] = pspr
+    sub = p0.u(mo + OFS_MO_SUBSECTOR, 4) & 0xFFFFFF
+    sec = p0.u(sub + OFS_SUB_SECTOR, 4) & 0xFFFFFF
+    light = p0.u(sec + OFS_SEC['lightlevel'], 2)
+    if light > 255:
+        raise FrameError('%s: the player\'s sector light %d' % (frame.name,
+                                                               light))
+    out['player_light'] = light
+    out['invis'] = p0.u(pl + OFS_PL_POWERS + 2 * PW_INVISIBILITY, 2)
+    out['sprbound'] = p0.read(MM_SPRBOUND, 4 * R.NUMSPRITES)
+    fz = p0.u(a('FZ_POS'), 2)
+    if fz >= FUZZ_POSITIONS:
+        raise FrameError('%s: FZ_POS %d' % (frame.name, fz))
+    out['fzpos'] = fz
     return out
+
+
+SIZEOF_VIS = 42                 # upstream's vissprite_t (offsets.inc)
+OFS_VIS = {'X1': 0, 'X2': 2, 'TMID': 28, 'SFRAC': 16, 'LUMP': 34,
+           'COLORMAP': 38}
+UNKNOWN_PATCH = 0xFFFE          # a lump no stored patch is (a stale field)
+
+
+def store_index(level: Dict[str, Any]) -> Dict[int, int]:
+    """Each stored lump's patch store index (levelconv.py)."""
+    return {e['lump']: e['index'] for e in level['sprites']['store']}
+
+
+def native_vis(data: bytes, index: Dict[int, int], full: int) -> bytes:
+    """Upstream's vissprite_t of the weapon (FR_VIS, WPREV) as the native
+    12 bytes (rlayout.FV): the lump as its patch store index ($FFFF stays,
+    WPREV's none; a lump no stored patch is, a field no frame has written
+    yet, UNKNOWN_PATCH), texturemid, x1 (its low byte), x2, startfrac's
+    high word, the colormap as its record page (0: NULL; $FF: no colormap
+    page, a stale field). The fields pspSprite does not write are its
+    constants or never written (RENDER-MASKED.md 1.7), so the compare of
+    the 42 bytes is the compare of these."""
+    def u(o: int, n: int) -> int:
+        return int.from_bytes(data[o:o + n], 'little')
+    lump = u(OFS_VIS['LUMP'], 2)
+    patch = 0xFFFF if lump == 0xFFFF else index.get(lump, UNKNOWN_PATCH)
+    cm = u(OFS_VIS['COLORMAP'], 3)
+    if cm == 0:
+        page = 0
+    elif (cm - full) % 256 == 0 and 0 <= (cm - full) // 256 < 34:
+        page = 0x46 + (cm - full) // 256
+    else:
+        page = 0xFF
+    out = bytearray(R.FV_SIZE)
+    F = R.FV
+    out[F['PATCH']:F['PATCH'] + 2] = patch.to_bytes(2, 'little')
+    out[F['TMID']:F['TMID'] + 4] = data[OFS_VIS['TMID']:OFS_VIS['TMID'] + 4]
+    out[F['X1']] = data[OFS_VIS['X1']]
+    out[F['X2']:F['X2'] + 2] = data[OFS_VIS['X2']:OFS_VIS['X2'] + 2]
+    out[F['SFRAC']:F['SFRAC'] + 2] = data[OFS_VIS['SFRAC'] + 2:
+                                          OFS_VIS['SFRAC'] + 4]
+    out[F['PAGE']] = page
+    return bytes(out)
+
+
+def slot_map(p0, sym: blink.Symbols, sector_base: int, nsectors: int
+             ) -> Dict[int, int]:
+    """Each mobj on a sector's thing list, upstream's pointer to its
+    RTHING slot: a mobj of the pool (_g_thingPool) its index, as
+    upstream's pool slot policy keeps it (NATIVE.md 6); a zone mobj past
+    the pool the next free slot, in the order the sectors' lists (sector
+    0 first) first reach it."""
+    a = sym.address
+    pool = p0.u(a('_g_thingPool'), 3)
+    size = p0.u(a('_g_thingPoolSize'), 2)
+    out: Dict[int, int] = {}
+    extra = size
+    for i in range(nsectors):
+        ptr = p0.u(sector_base + SIZEOF_SEC * i + OFS_SEC_THINGLIST, 4) & \
+            0xFFFFFF
+        steps = 0
+        while ptr:
+            steps += 1
+            if steps > 10000 or ptr in out:
+                raise FrameError('sector %d: its thing list does not end'
+                                 % i)
+            if pool <= ptr < pool + SIZEOF_MO * size and \
+                    (ptr - pool) % SIZEOF_MO == 0:
+                out[ptr] = (ptr - pool) // SIZEOF_MO
+            else:
+                out[ptr] = extra
+                extra += 1
+            ptr = p0.u(ptr + OFS_MO_SNEXT, 4) & 0xFFFFFF
+    if extra > R.RTHINGS.capacity:
+        raise FrameError('%d thing slots: RTH holds %d'
+                         % (extra, R.RTHINGS.capacity))
+    return out
+
+
+def read_things(p0, sym: blink.Symbols, sector_base: int, nsectors: int,
+                level: Dict[str, Any]) -> Tuple[List[int], Dict[int, Dict],
+                                                Dict[int, int]]:
+    """Each sector's list head (a slot, NO_THING), each thing's render
+    fields by slot, and the pointer-to-slot map."""
+    slots = slot_map(p0, sym, sector_base, nsectors)
+    nframes = level['sprites']['frames_per_sprite']
+    heads: List[int] = []
+    things: Dict[int, Dict] = {}
+    for i in range(nsectors):
+        ptr = p0.u(sector_base + SIZEOF_SEC * i + OFS_SEC_THINGLIST, 4) & \
+            0xFFFFFF
+        heads.append(slots[ptr] if ptr else R.NO_THING)
+        while ptr:
+            nxt = p0.u(ptr + OFS_MO_SNEXT, 4) & 0xFFFFFF
+            sprite = p0.u(ptr + OFS_MO_SPRITE, 2)
+            frm = p0.u(ptr + OFS_MO_FRAME, 2)
+            if sprite >= R.NUMSPRITES or (frm & 0x7FFF) >= nframes[sprite]:
+                raise FrameError('a thing of sprite %d frame %d, which the '
+                                 'states do not use' % (sprite, frm))
+            things[slots[ptr]] = {
+                'x': p0.u(ptr + OFS_MO_X, 4), 'y': p0.u(ptr + OFS_MO_Y, 4),
+                'z': p0.u(ptr + OFS_MO_Z, 4),
+                'angle': p0.u(ptr + OFS_MO_ANGLE + 2, 2),
+                'sprite': sprite, 'frame': frm,
+                'shadow': bool(p0.u(ptr + OFS_MO_FLAGS, 4) & MF_SHADOW),
+                'snext': slots[nxt] if nxt else R.NO_THING}
+            ptr = nxt
+    return heads, things, slots
+
+
+def rthing_record(th: Dict[str, Any]) -> bytes:
+    rec = bytearray(R.RTHING_SIZE)
+    T = R.RTHING
+    for k, key in (('X', 'x'), ('Y', 'y'), ('Z', 'z')):
+        rec[T[k]:T[k] + 4] = th[key].to_bytes(4, 'little')
+    rec[T['ANG']:T['ANG'] + 2] = th['angle'].to_bytes(2, 'little')
+    rec[T['SPR']] = th['sprite']
+    rec[T['FRAME']:T['FRAME'] + 2] = th['frame'].to_bytes(2, 'little')
+    rec[T['FLAGS']] = 1 if th['shadow'] else 0
+    rec[T['SNEXT']:T['SNEXT'] + 2] = th['snext'].to_bytes(2, 'little')
+    return bytes(rec)
 
 
 def cross_check(frame: Frame, inputs: Dict[str, Any],
@@ -266,6 +459,8 @@ def cross_check(frame: Frame, inputs: Dict[str, Any],
     for i, s in enumerate(inputs['sectors']):
         u = objs['sector'][i]
         for k, v in s.items():
+            if k == 'things':           # (a slot: milestone 8's own)
+                continue
             if u[k] != v:
                 raise FrameError('%s: sector %d %s: direct %r, Reader %r'
                                  % (frame.name, i, k, v, u[k]))
@@ -330,6 +525,21 @@ def records(frame: Frame, inputs: Dict[str, Any], level: Dict[str, Any]
          le(level['counts']['sides'], 2))
     main(F['STATUS'], b'\0')
     main(F['RULES'], b'\0')
+    # milestone 8: FZ_POS (persistent), the psprites, the player's sector
+    # light and invisibility, SPRBOUND, the render things
+    main(F['FZPOS'], bytes([inputs['fzpos']]))
+    for k, ps in enumerate(inputs['pspr']):
+        pre = 'PSP%d_' % k
+        main(rin[pre + 'SPR'], bytes([ps['sprite']]))
+        main(rin[pre + 'FRAME'], le(ps['frame'], 2))
+        main(rin[pre + 'SX'], le(ps['sx'], 2))
+        main(rin[pre + 'SY'], le(ps['sy'], 4))
+    main(rin['PL_SECLIGHT'], bytes([inputs['player_light']]))
+    main(rin['PL_INVIS'], le(inputs['invis'], 2))
+    aux(R.SPRT, R.SPRBOUND_T, inputs['sprbound'])
+    for slot in sorted(inputs['things']):
+        aux(R.RTH, R.RTHINGS.address(slot),
+            rthing_record(inputs['things'][slot]))
     main(F['VA_COUNT'], b'\0\0')
     main(F['RW_STEP'], le(inputs['rw_scalestep'], 4))
     for k in WPLANE:
@@ -378,7 +588,12 @@ def records(frame: Frame, inputs: Dict[str, Any], level: Dict[str, Any]
     main(R.CVFIRST, cv)
     wp = inputs['weapon']
     main(R.WCLIP, bytes(wp[2 * c] for c in range(160)))
-    main(R.WPREV, wp[0x180:0x180 + 42])
+    main(R.WPREV, inputs['wprev'])
+    main(R.FRVIS, inputs['frvis'])
+    # milestone 8, stage B: WTMP, wclipSprite's floor clip, which a sprite
+    # drawn past x2 + 1 reads as the sprites before left it (words, their
+    # low bytes: the stores are 8-bit)
+    main(R.WTMP, bytes(wp[0x1C0 + 2 * c] for c in range(160)))
     # the colormaps: A levels 0-31 at $2000, B at $4000; 32, 33 at $0400
     cm = inputs['colormaps']
     a_maps, b_maps = cm[:34 * 256], cm[34 * 256:]
@@ -391,14 +606,9 @@ def records(frame: Frame, inputs: Dict[str, Any], level: Dict[str, Any]
 
 def seam_records(frame: Frame, sym: blink.Symbols
                  ) -> List[Tuple[int, int, int, bytes]]:
-    """The seam (floorclip, FR_VIS and MM_WPOK after the weapon's clip
-    pass) and checkpoint A's lockstep data in bank SEAM."""
-    p1 = frame.dump('p1')
-    fc = p1.read(sym.address('floorclip'), 320)
-    if any(fc[2 * c + 1] for c in range(160)):
-        raise FrameError('%s: floorclip has a high byte' % frame.name)
-    vis = p1.read(sym.address('FR_VIS'), R.VIS_SIZE)
-    wpok = p1.u(MM_WPOK, 2)
+    """Checkpoint A's lockstep data in bank SEAM (milestone 8's stage C
+    made the weapon's clip pass native: the seam of floorclip, FR_VIS and
+    MM_WPOK after it is gone)."""
     walls = frame.calls['storewall']
     if len(walls) > R.SEAM_SOLID_MAX:
         raise FrameError('%s: %d walls, the seam holds %d' % (
@@ -409,10 +619,7 @@ def seam_records(frame: Frame, sym: blink.Symbols
         if len(mem) != 160:
             raise FrameError('a call without its solidcol')
         solids += mem
-    out = [(1, R.SEAM, R.SEAM_HDR, bytes([len(walls)])),
-           (1, R.SEAM, R.SEAM_FLOOR, bytes(fc[2 * c] for c in range(160))),
-           (1, R.SEAM, R.SEAM_FRVIS, vis),
-           (1, R.SEAM, R.SEAM_WPOK, bytes([1 if wpok == 0x5AA5 else 0]))]
+    out = [(1, R.SEAM, R.SEAM_HDR, bytes([len(walls)]))]
     if solids:
         out.append((1, R.SEAM, R.SEAM_SOLID, bytes(solids)))
     return out

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Frame captures of upstream's renderer front end for milestone 7
-(docs/RENDER.md section 4.1): the reference's state at chosen frames,
-from R_FillStamps to drawMasked, with the calls of R_StoreWallRange and
-vtxAngle in between.
+"""Frame captures of upstream's renderer for milestones 7 and 8
+(docs/RENDER.md section 4.1, docs/RENDER-MASKED.md 4.1): the reference's
+state at chosen frames, from R_FillStamps to the return of R_DrawLists,
+with the calls of R_StoreWallRange, vtxAngle, R_AddSprites and the masked
+phase's routines in between.
 
 Usage:  python3 tools/native/rendercap.py [--runs newgame,m5demo,title,tour]
                                           [--out DIR] [--jobs 2]
@@ -14,8 +15,10 @@ frames, the second to capture them), give the four frame sets:
     newgame  coverage/newgame.script          still (m5: still-1..3),
                                               newgame (50)
     m5demo   coverage/title.script            demo (m5: demo-01..11)
-    title    the title loop to demo3's end    title (50)
-             (tools/ref816/lumps.py demo_script(7), written under build/)
+    title    the title loop to demo3's end    title (50), demo3 (every
+             (tools/ref816/lumps.py demo_script(7),   frame from the note
+             written under build/)                    "demo" to "demo-end",
+                                                      533: milestone 8)
     tour     coverage/tour.script, with the   e1m3 (m5: e1m3-1), tour (50:
              note "e1m3" after "shot e1m3"    5 or 6 a map, E1M1-E1M9)
              (as tools/ref816/capture.py)
@@ -31,7 +34,10 @@ evenly over all the run's level frames; `title` 50 evenly from the note
 "demo" to "demo-end"; `tour` 5 or 6 evenly over each map's frames, the
 map's first frame among them. The last frame of a run is never chosen, a
 frame whose view is not the full view (VW_CUR) is never chosen, and a
-frame must reach drawMasked.
+frame must reach drawMasked. `demo3` takes every usable frame of demo3,
+named by its index among the run's frames (demo3-000 ...); render_check.py
+leaves it out unless it is asked for (milestone 7's 188 frames stay its
+default).
 
 The first run marks R_FillStamps, R_RenderBSPNode, the return of
 weaponClip in weaponClipSame (weaponClipSame + 3), drawAllL (an early
@@ -61,18 +67,36 @@ range is dumped and the others dropped as the stream is read):
     P3   drawMasked            the truth: bank $02, bank $1D, the spans,
                                $0A:B500-$B9FF, $0A:C500-$C8FF,
                                $00:0900-$0BFF, the zone $06-$09
+    P3s  drawMasked + 3        after sortSkip (milestone 8): bank $02
+                               (FR_ORDER, FR_SKIP), $00:0A00-$0AFF (W_WSK)
+    P3w  playerSkip            before the weapon's draw: bank $1D, bank $02
+                               (COLW, XPNEXT), the spans
+    PS   stripEarly            the render's end: $E1:2000-$9FFF
+    P4   R_DrawLists           bank $1D, bank $02 (COLW, XPNEXT, FZ_POS),
+                               the spans, $0A:C500-$C8FF, $E1:2000-$9FFF,
+                               $00:0AB0-$0AB1 (W_WSK, milestone 8)
+    P5   R_DrawLists' return   $E1:2000-$9FFF
+
+and P0 also holds SPRBOUND ($22:7800, 220 bytes), P2 the screen. An early
+flush in the masked phase (drawAllL after drawMasked) is a p2m-K dump.
 
 and logs the calls of R_StoreWallRange (the start in A; the stop, BSPDP,
 the plane colours, worldbottom and ds_p at the entry; solidcol at the
 return), vtxAngle (entries), R_FillStamps (entries), R_MakeTextureColumns
-(entries, the texture in A) and the first call of viewSide (its registers
-and return address, for the side check of tools/native/sidecheck.py).
+(entries, the texture in A), the first call of viewSide (its registers
+and return address, for the side check of tools/native/sidecheck.py),
+and for milestone 8 the entries of R_AddSprites (the sector at _Dp+4, the
+light in A), R_DrawVisSprite (the vissprite, VS_CLIP, mfloorclip,
+mceilingclip, floorclip and ceilingclip), R_RenderMaskedSegRange (FR_DS,
+_Dp+4, A), wcProf and wdProf. A frame's walk calls are those from its
+R_FillStamps to drawMasked; its masked-phase calls those from drawMasked
+to the next frame's R_FillStamps.
 The second run must end with the first run's RAM and marks.
 
 The stream is read from a pipe as the machine writes it; each chosen
 frame's dumps are stored at once, zlib-compressed, in
-build/native/render/frames/SET-NN/ (p0, p1, p0b, p2-K, p3 .dump.z: a
-dump's JSON header line then its bytes), with frame.json (the frame, its
+build/native/render/frames/SET-NN/ (p0, p1, p0b, p2-K, p3, p3s, p3w,
+p2m-K, ps, p4, p5 .dump.z: a dump's JSON header line then its bytes), with frame.json (the frame, its
 hits, the level source) and calls.json (its calls); the full dumps go to
 build/native/render/levels/src/NAME.ram.z (banks $00-$7F, $E0, $E1).
 Nothing else is kept. All runs are under nice, bounded in time, in
@@ -116,16 +140,26 @@ LIMIT_SECONDS = 900             # machine seconds of a script (not demo3)
 DEMO_LIMIT_SECONDS = 3000       # demo3's own bound (lumps.demo_script)
 CALL_LOG_LIMIT = 512 << 20
 MAX_FILE = 1 << 30              # no file of a run past this
-CLUSTERS = 11                   # ranges of frames: 5 points each
+MAX_POINTS = 64                 # ref816's --dump-at points
 FULL_VIEW = 0xA50A              # VW_CUR: VW_TAG | 10 (viewwin.inc)
-DUMP_BYTES = {'P0': 590000, 'P1': 70000, 'P0b': 100000, 'P2': 140000,
-              'P3': 530000, 'P0F': 130 * 0x10000, 'SMALL': 64}
+DUMP_BYTES = {'P0': 590220, 'P1': 70000, 'P0b': 100000, 'P2': 173000,
+              'P3': 530000, 'P3s': 66000, 'P3w': 135000, 'PS': 32768,
+              'P4': 168000, 'P5': 32768, 'P0F': 130 * 0x10000, 'SMALL': 64}
+# the points of each chosen frame (a --dump-at point per range of frames
+# each): kind, the Frame's hit field, the stored name
+FRAME_POINTS = (('P0', 'fs_hit', 'p0'), ('P1', 'seam_hit', 'p1'),
+                ('P0b', 'bsp_hit', 'p0b'), ('P3', 'dm_hit', 'p3'),
+                ('P3s', 'dm3_hit', 'p3s'), ('P3w', 'ps_hit', 'p3w'),
+                ('PS', 'se_hit', 'ps'), ('P4', 'dl_hit', 'p4'),
+                ('P5', 'dlr_hit', 'p5'))
 
 # symbols (the link map) and upstream constants (memmap.inc, viewwin.inc)
 MM_BV = 0x0A0000
 VW_CUR = MM_BV + 0xB802
 MM_WPOK = 0x0AC84A
 FS_SPANS = (0x23EF00, 0xC00)            # FS_*, CV_* (lists.inc)
+MM_SPRBOUND = (0x227800, 4 * 55)        # memmap.inc, CONST_NUMSPRITES
+SCREEN = (0xE12000, 0x8000)
 
 
 class RunSpec(NamedTuple):
@@ -172,7 +206,7 @@ LIGHTS_SIZE = 12
 RUNS = (
     RunSpec('newgame', 'newgame', None, ('still', 'newgame')),
     RunSpec('m5demo', 'title', None, ('demo',)),
-    RunSpec('title', None, None, ('title',)),
+    RunSpec('title', None, None, ('title', 'demo3')),
     RunSpec('tour', 'tour', ('shot e1m3', 'e1m3'), ('e1m3', 'tour')),
     RunSpec('lights', 'lights', None, ('lights',)),
 )
@@ -312,11 +346,33 @@ class Frame(NamedTuple):
     dm_hit: int
     dm_cycles: int
     dl_hit: int                 # the R_DrawLists call after it (0: none)
-    flush_hits: Tuple[int, ...]  # drawAllL arrivals inside the frame
+    flush_hits: Tuple[int, ...]  # drawAllL arrivals before drawMasked
     gamemap: int
     view: int                   # VW_CUR
     textures_made: int          # R_MakeTextureColumns calls before it,
                                 #   since the run's start
+    dm3_hit: int = 0            # drawMasked + 3 (after sortSkip)
+    ps_hit: int = 0             # playerSkip
+    se_hit: int = 0             # stripEarly
+    dlr_hit: int = 0            # R_DrawLists' return
+    mflush_hits: Tuple[int, ...] = ()   # drawAllL arrivals after
+                                        #   drawMasked, before R_DrawLists
+
+
+def drawlists_return(symbols: script.Symbols) -> int:
+    """The address after display's JSL R_DrawLists (d_main65.s:502), read
+    from the release's memory image: the JSL is found by its bytes
+    after the label dmLevel77, never assumed."""
+    from ref816 import refimage
+    mem = refimage.load(refimage.read(title.MEMORY))
+    start = symbols.address('d_main65.s:dmLevel77')
+    target = symbols.address(capture.ENTRY)
+    want = bytes([0x22]) + target.to_bytes(3, 'little')
+    code = mem.get(start, 32)
+    at = code.find(want)
+    if at < 0:
+        raise RuntimeError('no JSL R_DrawLists after dmLevel77')
+    return start + at + 4
 
 
 def routines(symbols: script.Symbols) -> Dict[str, int]:
@@ -328,13 +384,22 @@ def routines(symbols: script.Symbols) -> Dict[str, int]:
         'dm': symbols.address('drawMasked'),
         'dl': symbols.address(capture.ENTRY),
         'tex': symbols.address('R_MakeTextureColumns'),
+        'dm3': symbols.address('drawMasked') + 3,
+        'ps': symbols.address('playerSkip'),
+        'se': symbols.address('stripEarly'),
+        'dlr': drawlists_return(symbols),
     }
+
+
+MARKED = ('fs', 'bsp', 'seam', 'flush', 'dm', 'dl', 'tex', 'dm3', 'ps',
+          'se', 'dlr')
 
 
 def mark_options(r: Dict[str, int]) -> List[str]:
     out = []
-    for key in ('fs', 'bsp', 'seam', 'flush', 'dm', 'dl', 'tex'):
-        out += ['--mark', '%06X' % r[key]]
+    for key in MARKED:
+        if key in r:
+            out += ['--mark', '%06X' % r[key]]
     return out
 
 
@@ -362,7 +427,8 @@ def frames_of(log: Sequence[marks.Entry], small: Dict[int, Tuple[int, int]],
             cur = {'index': len(frames), 'fs_hit': hit, 'cycles': e.cycles,
                    'bsp_hit': 0, 'seam_hit': 0, 'dm_hit': 0,
                    'dm_cycles': 0, 'dl_hit': 0, 'flush_hits': [],
-                   'textures_made': textures}
+                   'textures_made': textures, 'dm3_hit': 0, 'ps_hit': 0,
+                   'se_hit': 0, 'dlr_hit': 0, 'mflush_hits': []}
             frames.append(cur)
         elif key == 'tex':
             textures += 1
@@ -374,23 +440,31 @@ def frames_of(log: Sequence[marks.Entry], small: Dict[int, Tuple[int, int]],
             cur['seam_hit'] = hit
         elif key == 'flush' and not cur['dm_hit']:
             cur['flush_hits'].append(hit)
+        elif key == 'flush' and not cur['dl_hit']:
+            cur['mflush_hits'].append(hit)
         elif key == 'dm' and not cur['dm_hit']:
             cur['dm_hit'] = hit
             cur['dm_cycles'] = e.cycles
         elif key == 'dl' and not cur['dl_hit']:
             cur['dl_hit'] = hit
+        elif key in ('dm3', 'ps', 'se', 'dlr') and cur['dm_hit'] and \
+                not cur[key + '_hit']:
+            cur[key + '_hit'] = hit
     out = []
     for f in frames:
         gamemap, view = small.get(f['fs_hit'], (0, 0))
         out.append(Frame(f['index'], f['fs_hit'], f['cycles'], f['bsp_hit'],
                          f['seam_hit'], f['dm_hit'], f['dm_cycles'],
                          f['dl_hit'], tuple(f['flush_hits']), gamemap, view,
-                         f['textures_made']))
+                         f['textures_made'], f['dm3_hit'], f['ps_hit'],
+                         f['se_hit'], f['dlr_hit'],
+                         tuple(f['mflush_hits'])))
     return out
 
 
 def usable(f: Frame) -> bool:
-    return bool(f.bsp_hit and f.seam_hit and f.dm_hit) and \
+    return bool(f.bsp_hit and f.seam_hit and f.dm_hit and f.dm3_hit and
+                f.ps_hit and f.se_hit and f.dl_hit and f.dlr_hit) and \
         f.view == FULL_VIEW
 
 
@@ -432,6 +506,9 @@ def choose(spec: RunSpec, log: Sequence[marks.Entry],
             lo, hi = notes['demo'], notes['demo-end']
             out[name] = evenly([f for f in level if lo < f.cycles < hi],
                                SET_SIZE)
+        elif name == 'demo3':
+            lo, hi = notes['demo'], notes['demo-end']
+            out[name] = [f for f in level if lo < f.cycles < hi]
         elif name == 'lights':
             lo, hi = notes['lights'], notes['lights-end']
             out[name] = evenly([f for f in level if lo < f.cycles < hi],
@@ -458,6 +535,8 @@ def names_of(chosen: Dict[str, List[Frame]]) -> List[Tuple[str, Frame]]:
             width = len(str(M5[name].count))
             out += [('%s-%0*d' % (name, width, i), f)
                     for i, f in enumerate(frames, 1)]
+        elif name == 'demo3':
+            out += [('%s-%03d' % (name, f.index), f) for f in frames]
         else:
             out += [('%s-%02d' % (name, i), f)
                     for i, f in enumerate(frames, 1)]
@@ -487,20 +566,29 @@ def ranges_of(kind: str, s: script.Symbols) -> str:
     bv = '%06X:1280' % (MM_BV + 0xB500)
     weapon = '0AC500:1024'
     spans = '%06X:%d' % FS_SPANS
+    screen = '%06X:%d' % SCREEN
     if kind == 'P0':
         return '+'.join([near, dp, zone, bv, weapon,
                          '%06X:%d' % (s.address('FLATCM'), 34 * 32),
                          '%06X:%d' % (s.address('iigs_shrcmapA'),
                                       2 * 34 * 256),
-                         '230000:32768', spans])
+                         '230000:32768', spans, '%06X:%d' % MM_SPRBOUND])
     if kind == 'P0b':
         return '+'.join([near, dp, bv, weapon, spans])
     if kind == 'P1':
         return '+'.join([near, '%06X:2' % MM_WPOK])
     if kind == 'P2':
-        return '+'.join(['1D', near])
+        return '+'.join(['1D', near, screen])
     if kind == 'P3':
         return '+'.join([near, '1D', spans, bv, weapon, dp, zone])
+    if kind == 'P3s':
+        return '+'.join([near, '000A00:256'])
+    if kind == 'P3w':
+        return '+'.join(['1D', near, spans])
+    if kind in ('PS', 'P5'):
+        return screen
+    if kind == 'P4':
+        return '+'.join(['1D', near, spans, weapon, screen, '000AB0:2'])
     raise ValueError(kind)
 
 
@@ -512,29 +600,9 @@ class Plan(NamedTuple):
 
 
 def plan(spec: RunSpec, frames: Sequence[Frame],
-         chosen: List[Tuple[str, Frame]], symbols: script.Symbols) -> Plan:
+         chosen: List[Tuple[str, Frame]], symbols: script.Symbols,
+         r: Dict[str, int]) -> Plan:
     by_index = {f.index: f for f in frames}
-    ranges = clusters([f.index for _, f in chosen], CLUSTERS)
-    points = [('SMALL', small_point(symbols))]
-    count, size = 0, 0
-    for lo, hi in ranges:
-        a, b = by_index[lo], by_index[hi]
-        for kind, first, last, where in (
-                ('P0', a.fs_hit, b.fs_hit, 'R_FillStamps'),
-                ('P1', a.seam_hit, b.seam_hit, 'weaponClipSame+3'),
-                ('P0b', a.bsp_hit, b.bsp_hit, 'R_RenderBSPNode'),
-                ('P3', a.dm_hit, b.dm_hit, 'drawMasked')):
-            points.append((kind, dumps.resolve(
-                'pc=%s,hits=%d-%d,ranges=%s' % (
-                    where, first, last, ranges_of(kind, symbols)), symbols)))
-        n = hi - lo + 1
-        count += 4 * n
-        size += n * sum(DUMP_BYTES[k] for k in ('P0', 'P1', 'P0b', 'P3'))
-    points.append(('P2', dumps.resolve('pc=drawAllL,ranges=%s'
-                                       % ranges_of('P2', symbols), symbols)))
-    flushes = sum(len(f.flush_hits) for f in frames)
-    count += flushes
-    size += flushes * DUMP_BYTES['P2']
     # the full dumps: the first chosen frame of each map, and the first
     # chosen frame after each texture made in play
     full = {}
@@ -546,13 +614,36 @@ def plan(spec: RunSpec, frames: Sequence[Frame],
         seen[key] = f
         full[f.fs_hit] = '%s-e1m%d-t%d' % (spec.key, f.gamemap,
                                            f.textures_made)
+    # ranges of frames: the points each takes, within ref816's 64
+    most = (MAX_POINTS - 2 - len(full)) // len(FRAME_POINTS)
+    ranges = clusters([f.index for _, f in chosen], most)
+    points = [('SMALL', small_point(symbols))]
+    count, size = 0, 0
+    where = {'P0': 'fs', 'P1': 'seam', 'P0b': 'bsp', 'P3': 'dm',
+             'P3s': 'dm3', 'P3w': 'ps', 'PS': 'se', 'P4': 'dl', 'P5': 'dlr'}
+    for lo, hi in ranges:
+        a, b = by_index[lo], by_index[hi]
+        for kind, field, _ in FRAME_POINTS:
+            points.append((kind, dumps.resolve(
+                'pc=%06X,hits=%d-%d,ranges=%s' % (
+                    r[where[kind]], getattr(a, field), getattr(b, field),
+                    ranges_of(kind, symbols)), symbols)))
+        n = hi - lo + 1
+        count += len(FRAME_POINTS) * n
+        size += n * sum(DUMP_BYTES[k] for k, _, _ in FRAME_POINTS)
+    points.append(('P2', dumps.resolve('pc=drawAllL,ranges=%s'
+                                       % ranges_of('P2', symbols), symbols)))
+    flushes = sum(len(f.flush_hits) + len(f.mflush_hits) for f in frames)
+    count += flushes
+    size += flushes * DUMP_BYTES['P2']
     for hit in sorted(full):
         points.append(('P0F', dumps.resolve('pc=R_FillStamps,hits=%d' % hit,
                                             symbols)))
     count += len(full) + len(frames)
     size += len(full) * DUMP_BYTES['P0F'] + len(frames) * 4096
-    if len(points) > 64:
-        raise RuntimeError('%d points: ref816 takes 64' % len(points))
+    if len(points) > MAX_POINTS:
+        raise RuntimeError('%d points: ref816 takes %d' % (len(points),
+                                                           MAX_POINTS))
     return Plan(points, full, size, count)
 
 
@@ -565,7 +656,24 @@ def call_routines() -> List[str]:
         'R_FillStamps,entry=1',
         'R_MakeTextureColumns,entry=1',
         'r_bsp65.s:viewSide,entry=1,hits=1,in=s+1:2',
+        # milestone 8 (RENDER-MASKED.md 4.1): the listed sectors, and the
+        # masked phase's calls
+        'R_AddSprites,entry=1,in=dp:_Dp+4:3',
+        # (R_DrawSprite and the weapon enter R_DrawVisSprite by JML)
+        'R_DrawVisSprite,entry=1,jumps=1,in=dp:_Dp:4+VS_CLIP:2+'
+        'mfloorclip:4+mceilingclip:4+floorclip:320+ceilingclip:320',
+        'R_RenderMaskedSegRange,entry=1,in=FR_DS:2+dp:_Dp+4:4',
+        'r_frame65.s:maskedSeg,entry=1,in=FR_DS:2',
+        'wcProf,entry=1',
+        'wdProf,entry=1',
     ]
+
+
+# the masked phase's routines of the call log, by the key calls.json
+# stores their calls under (a frame's calls from drawMasked on)
+MASKED_CALLS = {'R_DrawVisSprite': 'drawvis',
+                'R_RenderMaskedSegRange': 'maskedseg',
+                'r_frame65.s:maskedSeg': 'maskeddrawseg', 'wdProf': 'wdprof'}
 
 
 def write_dump(path: Path, d: dumps.Dump) -> None:
@@ -651,7 +759,7 @@ def run_one(spec: RunSpec, symbols: script.Symbols, out: Path,
             % (len(frames), len(chosen), len(textures), time.time() - start))
 
         # -- the second run
-        p = plan(spec, frames, chosen, symbols)
+        p = plan(spec, frames, chosen, symbols, r)
         check_disk(out)
         w2 = tmp / 'second'
         w2.mkdir()
@@ -671,10 +779,12 @@ def run_one(spec: RunSpec, symbols: script.Symbols, out: Path,
         kinds = [k for k, _ in p.points]
         by_hit: Dict[Tuple[str, int], List[Tuple[str, str]]] = {}
         for name, f in chosen:
-            keys = [(('P0', f.fs_hit), 'p0'), (('P1', f.seam_hit), 'p1'),
-                    (('P0b', f.bsp_hit), 'p0b'), (('P3', f.dm_hit), 'p3')]
+            keys = [((kind, getattr(f, field)), what)
+                    for kind, field, what in FRAME_POINTS]
             keys += [(('P2', h), 'p2-%d' % k)
                      for k, h in enumerate(f.flush_hits)]
+            keys += [(('P2', h), 'p2m-%d' % k)
+                     for k, h in enumerate(f.mflush_hits)]
             for key, what in keys:
                 by_hit.setdefault(key, []).append((name, what))
         staging = tmp / 'frames'
@@ -721,14 +831,31 @@ def run_one(spec: RunSpec, symbols: script.Symbols, out: Path,
         head, lines, end = calllog.read(call_log)
         rnames = [x['name'] for x in head['routines']]
         bounds = sorted((f.cycles, f.dm_cycles, name) for name, f in chosen)
+        # the masked phase: drawMasked to the next frame's R_FillStamps
+        after = {f.index: f for f in frames}
+        mbounds = sorted((f.dm_cycles, after[f.index + 1].cycles
+                          if f.index + 1 in after else 1 << 62, name)
+                         for name, f in chosen)
         per: Dict[str, Dict] = {name: {'storewall': [], 'vtxangle': 0,
-                                       'textures': []}
+                                       'textures': [], 'addsprites': [],
+                                       'wcprof': 0, 'drawvis': [],
+                                       'maskedseg': [], 'maskeddrawseg': [],
+                                       'wdprof': 0}
                                 for name, _ in chosen}
         viewside = None
         for line in lines:
             routine = rnames[line['routine']]
             if routine == 'r_bsp65.s:viewSide':
                 viewside = line
+                continue
+            if routine in MASKED_CALLS:
+                for name in frames_of_cycles(mbounds, line['cycles']):
+                    key = MASKED_CALLS[routine]
+                    if key == 'wdprof':
+                        per[name][key] += 1
+                    else:
+                        per[name][key].append({'in': line['in'],
+                                               'from': line.get('from')})
                 continue
             for name in frames_of_cycles(bounds, line['cycles']):
                 if routine == 'R_StoreWallRange':
@@ -737,13 +864,21 @@ def run_one(spec: RunSpec, symbols: script.Symbols, out: Path,
                     per[name]['vtxangle'] += 1
                 elif routine == 'R_MakeTextureColumns':
                     per[name]['textures'].append(line['in']['a'])
+                elif routine == 'R_AddSprites':
+                    per[name]['addsprites'].append(
+                        [int.from_bytes(bytes.fromhex(line['in']['mem'][0]),
+                                        'little'), line['in']['a']])
+                elif routine == 'wcProf':
+                    per[name]['wcprof'] += 1
 
         # -- the frames
         sources = sorted(p.full.items())
         results = []
         for name, f in chosen:
-            missing = {'p0', 'p1', 'p0b', 'p3'} - got[name] | {
-                'p2-%d' % k for k in range(len(f.flush_hits))} - got[name]
+            missing = ({what for _, _, what in FRAME_POINTS} | {
+                'p2-%d' % k for k in range(len(f.flush_hits))} | {
+                'p2m-%d' % k for k in range(len(f.mflush_hits))}) - \
+                got[name]
             if missing:
                 raise RuntimeError('%s: no dumps %s' % (name,
                                                         sorted(missing)))
@@ -761,7 +896,8 @@ def run_one(spec: RunSpec, symbols: script.Symbols, out: Path,
                     'set': name.rsplit('-', 1)[0], 'run': spec.key,
                     'script': spec.script or 'demo3',
                     'frame': f._asdict(), 'level_src': level_src,
-                    'flushes': len(f.flush_hits)}
+                    'flushes': len(f.flush_hits),
+                    'mflushes': len(f.mflush_hits)}
             (directory / 'frame.json').write_text(
                 json.dumps(meta, indent=1) + '\n')
             (directory / 'calls.json').write_text(

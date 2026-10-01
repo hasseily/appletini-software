@@ -56,7 +56,12 @@ needs_build = unittest.skipUnless(READY, WHY)
 
 SOURCES = ('math.s', 'math.inc', 'rframe.s', 'rbsp.s', 'rlight.s',
            'auxlc.s', 'far.s', 'rdriver.s', 'rwall.s', 'rseg.s', 'rseg.inc',
-           'rsky.s', 'rrec.s', 'render.cfg', 'render.mk')
+           'rsky.s', 'rrec.s', 'render.cfg', 'render.mk',
+           # milestone 8 (render.mk builds them too)
+           'mmain.s', 'mproj.s', 'mfar.s', 'msprite.s', 'mvis.s',
+           'mwall.s', 'bucket.s',
+           'bdriver.s', 'bucket.cfg', 'wclip.s', 'wpsp.s', 'mpsp.s',
+           'rrunner.s', 'replay.s')
 
 
 def sample_cases():
@@ -127,7 +132,7 @@ class Walls(unittest.TestCase):
 
     def test_build_fits_its_budgets(self):
         s = self.b.segments
-        self.assertLessEqual(s['MATHW'][1], R.WCODE_END - 1)
+        self.assertLessEqual(RC.w_end(self.b), R.WCODE_END - 1)
         self.assertLessEqual(s['RFAR'][1], R.FAR_CARD_END - 1)
         mods = RC.module_sizes(name='rwall')
         for key, (seg, budget) in RC.BUDGETS_B.items():

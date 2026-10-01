@@ -684,7 +684,10 @@ the final report also gives, by phase, the core's cycles
 (`phase_cycles`: the accesses charged and the dummy reads TURBO omits)
 and the soft-switch accesses (`phase_io`: `io_accesses` of the phase);
 a run without it writes the same report as before (milestone 7, stage C;
-`tools/native/render_check.py --frame-mode --timing`).
+`tools/native/render_check.py --frame-mode --timing`). There are 32
+phases (0-31; a larger value counts in 31): milestone 8 numbers the
+renderer's to 18 (`docs/RENDER-MASKED.md` 4.4); the reports' `phases`
+lists have 32 entries.
 
     python3 tools/a2vm/doom.py --frames 21 --core w65c02s --amem --cost f121 --timed
     python3 tools/a2vm/cost_report.py          # both profiles, the tables below

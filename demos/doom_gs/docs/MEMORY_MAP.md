@@ -666,6 +666,72 @@ the rows marked B are stage B's, C stage C's.
 | RamWorks | 112 | C: the render window's image (`WCODE_BANK`, at W's addresses): the code and the per-level tables (the harness's bank; the game's allocation is milestone 11's) |
 | RamWorks | 116-119 | `FSTEP_TABLE`, low plane `$2000-$5FFF`, high plane `$6000-$9FFF` |
 
+## 13. Milestone 8, stages A, B and C: the whole renderer's regions (built)
+
+`docs/RENDER-MASKED.md` risk 14 proposed these changes to this map (its
+section 1.10); stages A, B and C of milestone 8 build the ones below (the
+rows marked B are stage B's, C stage C's; a stage C row replaces the
+earlier rows it names)
+(`tools/native/rlayout.py` holds every address and checks the overlaps;
+`src/native/render.cfg` and `bucket.cfg` fail the link on an overflow).
+Sizes are the build's [M: `render_check.py --sizes`, the link maps];
+"proposed" rows are the design's for stages B and C, reserved now.
+
+| Space | Range | Content |
+| --- | --- | --- |
+| zero page | `$18-$35`, `$48-$AC` | The masked phase's overlays (`rlayout.OVM1`, `OVM2`): the projection's state; the thing's `RTHING`, its scale record and patch header fetched whole into overlay 2; free once the walk ends (milestone 7's overlays) |
+| zero page | `$18-$2D`, `$70-$7A` | The bucket pass's prototype (after the masked phase): the chunk and walk pointers, the batch list (`BK_NB`, first columns, sizes); the replay keeps to `$48-$6F` |
+| zero page | `$18-$3B`, `$48-$9E` | B: the draw phase (after the sort, over the projection's bytes: `rlayout.OVD1`, `OVD2`): R_DrawSprite's scan (the vissprite, its columns, the drawseg and its slot, r1, r2), the masked range's state, the record batch's count `MRB` and the record's sequence number `RSEQ`, the clip log's pointer; R_DrawVisSprite's (upstream's `V_*` names: frac, xiscale, spryscale, E - 1, the patch, K, the rows of a post, the clip pointers), `mwCols`' (spryscale, its step, texturemid × spryscale and its step, 48 bits each, sprtopscreen + $FFFF, the step) |
+| main | `$0310-$036F` | The frame block: 95 of 96 B with `SPRN`, `FZPOS`, `NVIS`, `XPUSED`, `UPFLUSH`, `RECSEQ`, `RECDROP` (the last four for stages B and C) |
+| main | `$0370-$039F` | The render inputs: 43 of 48 B with each psprite's sprite, frame, sx, sy (4 B), the player's sector light, `powers[pw_invisibility]` (stage C reads them; `framestate.py` injects them now) |
+| main | `$1680-$171F` | `UPOFS` (stage B's page model), in milestone 5's `COLLO` during the render |
+| main | `$1720-$176F` | `FRORD`: the sort's order, vissprite indexes, until the bucket pass writes `COLLO`/`COLHI` |
+| main | `$0C00-$0EFF` | After the masked phase (dead then: `FLOORCLIP`, `CEILCLIP`, `SOLIDCOL` and the render scratch after each): the bucket pass's code that runs with `RAMRD` off (`BKFAR`, 707 of 768 B in stage A; stage C's finished pass 709 B), copied there from the masked image at the phase's end by `nm_bkload` (stage C) |
+| main | `$18E0-$197F`, `$1980-$1A1F` | After the masked phase: the bucket pass's `CVWHI` (over `WTMP`) and `CVWLO` (over `DSX1`, `DSX2`): each covered column's record in its batch region. (The design had them over `SOLIDCOL`; the code took `$0C00-$0EFF`) |
+| main | `$1980-$1A1F`, `$1A20-$1A6F` | C (replaces the row above): after the masked phase, over `DSX1`/`DSX2` (dead then), `CVDONE` (160 B: a covered column's record found; the record's W address goes straight into `CVRECLO`/`HI`, the sequence number compared before it is overwritten) and the batch list (`BK_FIRST` 27 B, `BK_SZLO`, `BK_SZHI` 26 B each: at most 26 batches). `WTMP` (`$18E0-$197F`) is no longer written: it stays the renderer's persistent state |
+| main, zero page | `$1980-$1A1F`, `$1A20-$1A7B`, `$70-$9E` | C, after its verification (2026-10-01; replaces the row above for the batch list): 26 batches were too few (whole columns only promise that two adjacent batches pass 8,192 bytes together), so `rlayout.py` proves the bound, 45 batches (`MAXB`). `CVDONE` stays over `DSX1` (bit 0 the covering record found; bit 7, game build only, the column cut at a batch's limit, RENDER-MASKED.md 6.1); the sizes `BK_SZLO`, `BK_SZHI` (45 B each) over `DSX2`; the first columns `BK_FIRST` (46 B) in zero page `$71-$9E` after the count `BK_NB` (`$70`), in the bucket pass's `$70-$AF`, which the replay leaves alone |
+| main | `$0200-$02FC` | C: `BKFAR2` (253 of 256 B), the bucket pass's second `RAMRD`-off part (the batch's bring-back and fuzz marks, the scatter's record copy), copied with `BKFAR` from the masked image by `nm_bkload` at the masked phase's end; main page 2 is dead in the render |
+| main | `$18A0-$18AB`, `$18B0-$18BB` | C: `WPREV` and `FRVIS`, 12 B each (patch index, texturemid, x1, x2 as two bytes, startfrac's high word, the colormap page; RENDER-MASKED.md 1.7 said 11 B and `FRVIS` per frame at `$0CA0`): both persistent, as upstream's `FR_VIS` keeps what an off-screen or absent weapon does not write and `weaponClipSame` compares it |
+| W | `$BA00-$BBBF` | C: the weapon's profile entries (`WPENT`, 2 B a column), a column's post list (`WPLST`, 72 B), the psprite's patch header (`WPHB`), sprite frame (`WSFR`) and profile header (`WPHD`): over the node frames in the front end's clip pass (before the walk) and over `YHTAB` in the masked phase's weapon draw (the sprites are done) |
+| W | `$B198-$B1BF` | C: `WVIS`, the weapon's vissprite for `nm_vis` (the fallback `R_DrawVisSprite`), over the seg, side and front-sector fetch buffers |
+| RamWorks | 49 | C: `WPRO`: `WPIDX` (`$0200`, a patch index to its profile, `$FFFF` none) and the profiles from `$0700` (header, then 2 B a column and each column's posts, 5 B each): 26,793 B for the 28 weapon lumps of E1M7, made iff upstream's `wbMake` would fit them into an empty arena 0 |
+| card `$E000` part | `$FD8D-$FE7A` | C (replaces the prototype's row): `BKNEAR` 238 B (the chunk copy with a 24-bit count, the parking and bring-back, `bstop`); `BKCARD` is gone (its routines moved to `BKFAR`/`BKFAR2`). With the replay's `RCODE` (`$F900-$FD8C`), `$F900-$FE7A` holds 1,403 B |
+| main | page 1 `$0100-$01B3` | The bucket pass's chunk of the staging (180 B), between gathers |
+| W | `$6000-$6592` | Both W images' shared part: `MATHW` (1,281 B) then `AUXW` (`auxlc.s`, 146 B), loaded with the front end's image; the masked load leaves it in place. The front end's code (`RENDERW`) follows, to `$9D0F` (15,632 B of W code in all) |
+| W | `$6800-$8500` | The masked phase's code and constants (`MASKW`; stage A: `mmain.s` 68 B, `mproj.s` 2,615 B with 427 B of tables, to `$727A`; B: `mmain.s` 260 B, `msprite.s` 1,157, `mvis.s` 1,417 with the test builds' clip log, `mwall.s` 1,778 with `PGT`, `rrec.s` again 198: 7,425 B; C: `mpsp.s` 421 B, `wpsp.s` again 902, `nm_bkload` 48, then the bucket pass's `BKFAR` and `BKFAR2` as loaded data: `ftest` to `$8A69` plus 962 B, `$6800-$8E2B`, 9,772 B), loaded by `far_mload` from `MCODE_BANK`; its room to `$9BFF` (13,312 B) |
+| W | `$9C00-$A3FF` | `DSW`: the drawsegs whose `DSX1` is not 255, 32 B each, at most 64 |
+| W | `$A400-$B07F` | The vissprites, 80 of 40 B (`rlayout.VISREC`) |
+| W | `$B080-$B15B` | `SPRBOUND` for the frame (220 B, from `SPRT`) |
+| W | `$B160-$B18F` | Fetch buffers: the sprite frame (24 B), the listed sector's record (16 B) |
+| W | `$B200-$B3FF` | `TXMP`, per level (`mtables.img`), over `FLATCM`'s end (dead in the masked phase) |
+| W | `$BA00-$BAFF` | The listed sectors' copy (`SECLIST`) during the projection, in `YHTAB`'s place (stage B) |
+| W | `$BA00-$BDFF` | B: `YHTAB` after the projection, two planes of 512 (`YHL`, `YHH`: the high word of E - 1 of texel row t) |
+| W | `$BE02-$BEA1`, `$BEA2-$BFE1` | B: `CLIPBUF` (a drawseg's clip run: a sprite's silhouette, a masked range's `mfloorclip`), `MTCLO`, `MTCHI` (a masked range's texture columns and their drawn marks) |
+| W | `$B188-$B1F7` | B: fetch buffers after the projection's: the patch header `PHB`, a seg `SEGB`, a side `SIDEB`, the front and back sectors `MSEC_F`, `MSEC_B`, a drawseg past `DSW` `DSB` |
+| main | `$0E00-$0E9F` | B: `MCCLIP`, a masked range's `mceilingclip` (`sprtopclip`), over `SOLIDCOL` (dead once the walk ends; compared at the walk's end) |
+| main | `$1680-$171F`, frame block | B: the page model (`UPOFS`, `XPUSED`, `UPFLUSH`) and `RECSEQ`, written by every producer through `rec_room` (both images) from `rec_start` on |
+| main | `$18E0-$197F` | B: `WTMP` is persistent (RENDER-MASKED.md 2.1: a sprite drawn past x2 + 1 reads what an earlier one left); stage C moved the bucket pass off it (`CVDONE` above) |
+| card bank 1 | `$DE4D-$DE8E` | The phase loader: `far_wload` and `far_pload` (a bank and a list of page runs), 66 B (53 before) |
+| card bank 1 | `$DE8F-$DF31` | `mfar.s` (`MFAR`, 163 B): `far_mload` (the masked image's page list) and `far_dscopy` with its 65 B of drawseg indexes |
+| card bank 1 | `$DF32-$DFDC` | B: `far_posts`, `far_postsc` (a patch column's posts in one read window) and their buffer `pt_n` .. `pt_hi` (16 posts: topdelta, length, the post's address; the only bytes of `MFAR` the masked code writes), 171 B. No `far_open` or aux-0 copy: the far layer's `far_get` reads the openings' runs (aux 0, `RENDB`). Card bank 1 holds 989 of 1,024 B, 35 left |
+| card `$E000` part | `$FD8D-$FEFA` | The bucket pass's prototype (`BKNEAR` 230 B: the chunk copy, the batches' parking and return; `BKCARD` 136 B: its shared small routines): 366 of the 371 B after milestone 5's replay. With the replay's 1,165 B, `$F900-$FEFF` would hold 1,531 of 1,536 B |
+| aux 0 | `$1600-$16FF` | `SPRSEC`: the listed sectors (the walk writes one byte a sector in a `RAMWRT` window) |
+| RamWorks | 9, 10 | Free: the record spill moved to 51-54 |
+| RamWorks | 32-47 | `SPR0`..: the patch store, lumps whole with 128-byte tails (10-14 banks a level, 457,024-659,776 B [M: `levelconv.py --all`]: 32-41 for E1M2, 32-42 for E1M1, 32-44 for E1M4, E1M5, E1M7 and E1M9, 32-45 for E1M3, E1M6 and E1M8) |
+| RamWorks | 48 | `SPRT`: the scale records (`$0200`, 1,281 of 16 B), `SPRBOUND` (`$5400`, injected), `PHDR` (`$5600`, 16 B a patch, 640), `SPRFR` (`$7E00`, 24 B a frame, 400) |
+| RamWorks | 49 | `WPRO`: the weapons' profiles (stage C's row above) |
+| RamWorks | 50 | `RTH`: the render things, 24 B a slot from `$0200`, 768 slots |
+| RamWorks | 51-54 | `RECSP`: the record spill (four banks) |
+| RamWorks | 55 | `RECW`: batches 2 and 3 parked by the bucket pass |
+| RamWorks | 113 | `MCODE_BANK`: the masked phase's image (`MASKW` at its addresses, `TXMP` at `$B200`) |
+| RamWorks | 114 | B, harness only: routine mode's copy of W's `DSW` and vissprites (`MRTN_BANK`, loaded by the driver after the images) |
+| RamWorks | 31 | B, test builds only: the clip log from `$1400` (`SEAM_CLIPLOG`, where the walk's lockstep build keeps `SEAM_SOLID`: the two builds are exclusive), 322 B a call, at most 82 |
+| main | `LVMAP` sector records | Offset 13 of each sector's 16-byte render part: its thing list's head (a `RTHING` slot, `$FFFF` none) |
+
+The cost phases of the profiling builds (`$0300`, 2 × n) now reach 18:
+a2vm counts 32 (`tools/a2vm/cost.h` `COST_PHASES`, 16 before). Stage B
+marks phase 4 (the sprites and masked walls, upstream's number).
+
 ## Appendix: the measurements made for this map
 
 ### A.1 Records and texels in the captures

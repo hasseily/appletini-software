@@ -111,10 +111,15 @@ class Wall(NamedTuple):
 # ---------------------------------------------------------------------------
 
 def frames_of_run(key: str, root: Path = RC.FRAMES) -> List[Path]:
+    """The captured frames of a run: milestone 7's sets (not milestone 8's
+    demo3 set, every frame of demo3, which frame mode checks whole)."""
     out = []
     for d in sorted(root.iterdir()) if root.exists() else []:
         meta = d / 'frame.json'
-        if meta.exists() and json.loads(meta.read_text())['run'] == key:
+        if not meta.exists():
+            continue
+        info = json.loads(meta.read_text())
+        if info['run'] == key and info.get('set') != 'demo3':
             out.append(d)
     return out
 
