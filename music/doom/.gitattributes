@@ -1,0 +1,4 @@
+# the song files and the disk images must keep their exact bytes
+*.AY binary
+*.hdv binary
+*.po binary
