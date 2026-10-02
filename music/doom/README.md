@@ -5,16 +5,18 @@ four AY chips of the Phasor, on an enhanced Apple //e with an Appletini.
 
 ## Hardware
 
-- An enhanced Apple //e (65C02) with an Appletini.
-- The Phasor in slot 4, in native mode: in the Appletini menu, the Phasor
-  on and its Mockingboard only option off. A card that stays in
-  Mockingboard mode has two AY chips; the program then says it has no
-  music.
-- The mouse card in slot 2: its VBL interrupt is the music's clock.
-- RamWorks with banks 1 to 14 (one song in each of banks 1 to 13, ProDOS's
-  language card saved in bank 14).
+- An enhanced Apple //e (65C02) with 128K: the 64K auxiliary memory card.
+- An Appletini with the Phasor in slot 4, in native mode: in the Appletini
+  menu, the Phasor on and its Mockingboard only option off. A card that
+  stays in Mockingboard mode has two AY chips; the program then says it
+  has no music.
 
-PAL and NTSC are detected at boot.
+Each song loads from the disk when it is chosen. The program uses the
+auxiliary memory, so ProDOS's /RAM disk is off until the next boot.
+
+PAL and NTSC are detected at boot. Timer 1 of the Phasor's second VIA
+times the music: it interrupts once a frame, 50.08 times a second on PAL
+and 59.92 on NTSC.
 
 ## Build
 

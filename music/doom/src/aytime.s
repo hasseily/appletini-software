@@ -1,5 +1,5 @@
 ; The AY timing test: what an AY register write and the slow window after
-; a burst cost on the card, measured by VBL counts. Key T of MUSIC.SYSTEM.
+; a burst cost on the card, measured by frame counts. Key T of MUSIC.SYSTEM.
 ;
 ; Every access to slot 4 ($C400-$C4FF, $C0C0-$C0CF) runs the CPU at 1 MHz
 ; for the next `vtw.slowdown.cycles` CPU cycles (512 by default, 32 with
@@ -8,18 +8,22 @@
 ; burst loop, 41 cycles, to take 40.4 us, and the window after the last
 ; write to run 512 cycles at 1 MHz (504 us) or 32 (31.5 us).
 ;
-; The measure. The VBL interrupt (irq.s) counts frames. Three phases of
-; AYT_FRAMES frames each; in each frame, right after the VBL, a burst of K
-; writes (R8 of chip 0 = 0: a silent level) with the player's own
-; 41-cycle loop, then a spin loop that counts its turns until the next VBL:
-;   F: K = 0, the reference: the frame's time is all spin, in TURBO;
+; The measure. The timer interrupt (irq.s) counts frames: it comes once a
+; frame's bus cycles, and its acknowledge, a slot-4 access, opens a window
+; too. Three phases of AYT_FRAMES frames each; in each frame, after the
+; interrupt, AYT_AFTER spin turns that outlast that window, then a burst
+; of K writes (R8 of chip 0 = 0: a silent level) with the player's own
+; 41-cycle loop, then a spin loop that counts its turns until the next
+; interrupt (the AYT_AFTER turns included):
+;   F: K = 0, the reference: the frame's time is all spin, in TURBO but
+;      for the interrupt's window, W cycles at 1 MHz;
 ;   1: K = AYT_K1;   2: K = AYT_K2.
 ; With cF, c1, c2 the phases' spin counts and b the Apple bus cycle, the
 ; time a burst of K writes took from the frame, in bus cycles, is
-;   D = (cF - c) / cF x (the frame's bus cycles)
+;   D = (cF - c) / cF x (the frame's bus cycles - W)
 ; and, the window being W cycles after the last write of the burst,
 ;   D = 41 K - 12 + W  -  (W - 6) s          (in b)
-; where s is a spin cycle's time in TURBO, (the frame / cF) / 13: the
+; where s is a spin cycle's time in TURBO, ((the frame - W) / cF) / 13: the
 ; burst's first 7 cycles run in TURBO before the first slot-4 access
 ; opens the window, that access is one bus cycle, the last write's DEX
 ; and BNE and the spin's LDY (6 cycles) are the window's first cycles,
@@ -28,11 +32,16 @@
 ;   a write:  t = (D2 - D1) / (K2 - K1)             (41 b by the design)
 ;   the tail: E = D1 - K1 t = (W - 12) - (W - 6) s,
 ;             W = (E + 12 - 6 s) / (1 - s)           (512 or 32 cycles)
-; When a write takes less than 20 bus cycles the port writes open no
-; window (FW-S1): the tail is 0 by the design, and E, what a burst costs
-; beyond its writes, is shown instead. All arithmetic is in thousandths of
-; a bus cycle ("mc"), 32 and 64 bits; microseconds are cycles x b, with b
-; 984,615 ps on PAL (1,015,625 Hz) and 979,927 ps on NTSC (1,020,484 Hz).
+; W is on both sides: ayt_math solves with the whole frame, then again
+; with the frame less the W found, which leaves W a relative error of
+; about (W / frame)^2, under half a cycle. When a write takes less than
+; 20 bus cycles the port writes open no window (FW-S1): the tail is 0 by
+; the design, and E, what a burst costs beyond its writes, is shown
+; instead, from the whole frame (the interrupt's window, unmeasured then,
+; makes t and E about W / frame too high: 2.5 % with 512 cycles). All
+; arithmetic is in thousandths of a bus cycle ("mc"), 32 and 64 bits;
+; microseconds are cycles x b, with b 984,615 ps on PAL (1,015,625 Hz) and
+; 979,927 ps on NTSC (1,020,484 Hz).
 ;
 ; Results (in build/music.lbl): ayt_cf, ayt_c1,
 ; ayt_c2 (spin counts), ayt_d1, ayt_d2, ayt_tw, ayt_e (signed), ayt_s (all
@@ -42,9 +51,9 @@
         .setcpu "65C02"
         .include "sound.inc"
 
-        .import put_at, put_char, put_str, clear_rows, wait_vbl
+        .import put_at, put_char, put_str, clear_rows, wait_irq
         .import mus_stop
-        .importzp vbl_count, ptr, ntsc
+        .importzp irq_count, ptr, ntsc
         .export ayt_run, ayt_done
         .export ayt_cf, ayt_c1, ayt_c2, ayt_d1, ayt_d2, ayt_tw, ayt_e
         .export ayt_s, ayt_w10, ayt_verdict, ayt_spin, ayt_burst
@@ -52,6 +61,7 @@
 AYT_FRAMES      = 32
 AYT_K1          = 16
 AYT_K2          = 208
+AYT_AFTER       = 128           ; turns before the burst: 1,664 cycles at 1 MHz
 SPIN_CYCLES     = 13            ; one turn of the spin loop (no carry)
 FWS1_LIMIT      = 20000         ; mc: a write this fast opens no window
 ROW             = 17
@@ -94,7 +104,7 @@ ROW             = 17
         .segment "MUSZP": zeropage
 kcur:   .res 1          ; the phase's K
 frames: .res 1          ; frames left in the phase
-vseen:  .res 1          ; the VBL count the frame began at
+vseen:  .res 1          ; the interrupt count the frame began at
 spinhi: .res 2          ; the spin count's bytes 1 and 2 (Y is byte 0)
 
         .segment "MUSBSS"
@@ -128,8 +138,8 @@ digits: .res 12
 
 ayt_run:
         jsr     mus_stop                ; the music stops (its burst goes
-        jsr     wait_vbl                ;   out at the next interrupt)
-        jsr     wait_vbl
+        jsr     wait_irq                ;   out at the next interrupt)
+        jsr     wait_irq
         lda     #ROW
         ldx     #7
         jsr     clear_rows
@@ -145,9 +155,9 @@ ayt_run:
         stz     wvalt,x
         inx
         bne     :-
-        jsr     wait_vbl                ; the text's bytes drain (the
-        jsr     wait_vbl                ;   interrupt's I/O waits for them)
-        jsr     wait_vbl
+        jsr     wait_irq                ; the text's bytes drain (the
+        jsr     wait_irq                ;   interrupt's I/O waits for them)
+        jsr     wait_irq
         lda     #0
         jsr     ayt_phase
         COPY32  ayt_cf, sum
@@ -163,7 +173,7 @@ ayt_done:
         rts
 
 ; ayt_phase: A = K; sum = the spin turns of AYT_FRAMES frames, each a
-; burst of K writes then the spin to the next VBL
+; burst of K writes then the spin to the next interrupt
 ayt_phase:
         sta     kcur
         stz     sum
@@ -172,14 +182,22 @@ ayt_phase:
         stz     sum+3
         lda     #AYT_FRAMES
         sta     frames
-        lda     vbl_count               ; start at a VBL
-:       cmp     vbl_count
+        lda     irq_count               ; start at an interrupt
+:       cmp     irq_count
         beq     :-
-        lda     vbl_count
+        lda     irq_count
         sta     vseen
 ayt_frame:
         stz     spinhi
         stz     spinhi+1
+        ldy     #0
+ayt_after:                              ; AYT_AFTER spin turns, past the
+        iny                             ;   interrupt's window
+        nop
+        nop
+        nop
+        cpy     #AYT_AFTER
+        bne     ayt_after
         ldx     kcur
         beq     ayt_spun
         ldy     #ORB_IDLE0
@@ -197,11 +215,11 @@ ayt_burst:                              ; 41 cycles a write, as player.s's
         dex
         bne     ayt_burst
 ayt_spun:
-        ldy     #0
+        ldy     #AYT_AFTER              ; the turns so far
 ayt_spin:                               ; 13 cycles a turn
         iny
         beq     @carry
-@check: lda     vbl_count
+@check: lda     irq_count
         cmp     vseen
         beq     ayt_spin
         sta     vseen                   ; the frame ended: its count
@@ -225,6 +243,7 @@ ayt_spin:                               ; 13 cycles a turn
         bne     @check
         inc     spinhi+1
         bra     @check
+        .assert >ayt_after = >(ayt_burst - 6), error, "the wait crosses a page"
         .assert >ayt_burst = >(ayt_spun - 1), error, "the burst crosses a page"
         .assert >ayt_spin = >(@check + 6), error, "the spin crosses a page"
 
@@ -247,6 +266,45 @@ ayt_math:
         dex
         bpl     :-
 @machine:
+        jsr     ayt_solve               ; W, from the whole frame
+        COPY32  ma, ayt_w10             ; the frame less the interrupt's
+        LOAD32  mb, 100                 ;   window (W x 100 mc), and again
+        LOAD32  md, 1
+        jsr     muldiv
+        SUB32   fmc, fmc, mp
+        jsr     ayt_solve
+        ; the regime
+        LOAD32  t32, FWS1_LIMIT
+        SUB32   t32, ayt_tw, t32
+        bcs     @verdict                ; t >= FWS1_LIMIT
+        lda     #3
+        sta     ayt_verdict
+        rts
+@verdict:
+        lda     #1                      ; 504-520 cycles: the default
+        ldx     #<5040
+        ldy     #>5040
+        jsr     w10_at_least
+        bcc     :+
+        ldx     #<5201
+        ldy     #>5201
+        jsr     w10_at_least
+        bcc     @set
+:       lda     #2                      ; 28-36 cycles: the profile's 32
+        ldx     #<280
+        ldy     #>280
+        jsr     w10_at_least
+        bcc     @other
+        ldx     #<361
+        ldy     #>361
+        jsr     w10_at_least
+        bcc     @set
+@other: lda     #0
+@set:   sta     ayt_verdict
+        rts
+
+; ayt_solve: D1, D2, t, E, s and W (ayt_w10) from the spin counts and fmc
+ayt_solve:
         ; D1, D2: (cF - c) x frame / cF
         SUB32   ma, ayt_cf, ayt_c1
         COPY32  mb, fmc
@@ -280,17 +338,15 @@ ayt_math:
         LOAD32  mb, AYT_FRAMES
         jsr     muldiv
         COPY32  ayt_s, mp
-        ; the regime
+        ; W, 0 when a write opens no window (FW-S1) or below 0
         stz     ayt_w10
         stz     ayt_w10+1
         stz     ayt_w10+2
         stz     ayt_w10+3
         LOAD32  t32, FWS1_LIMIT
         SUB32   t32, ayt_tw, t32
-        bcs     @window                 ; t >= FWS1_LIMIT
-        lda     #3
-        sta     ayt_verdict
-        rts
+        bcs     @window
+        rts                             ; t < FWS1_LIMIT
 @window:
         ; W x 10 = (E + 12000 - 6 s) x 10 / (1000 - s)
         COPY32  ma, ayt_s
@@ -301,34 +357,13 @@ ayt_math:
         ADD32   t32, t32, ayt_e
         SUB32   ma, t32, mp
         lda     ma+3
-        bmi     @verdict                ; below 0: W = 0
+        bmi     @done                   ; below 0: W = 0
         LOAD32  mb, 10
         LOAD32  t32, 1000
         SUB32   md, t32, ayt_s
         jsr     muldiv
         COPY32  ayt_w10, mp
-@verdict:
-        lda     #1                      ; 504-520 cycles: the default
-        ldx     #<5040
-        ldy     #>5040
-        jsr     w10_at_least
-        bcc     :+
-        ldx     #<5201
-        ldy     #>5201
-        jsr     w10_at_least
-        bcc     @set
-:       lda     #2                      ; 28-36 cycles: the profile's 32
-        ldx     #<280
-        ldy     #>280
-        jsr     w10_at_least
-        bcc     @other
-        ldx     #<361
-        ldy     #>361
-        jsr     w10_at_least
-        bcc     @set
-@other: lda     #0
-@set:   sta     ayt_verdict
-        rts
+@done:  rts
 
 ; w10_at_least: carry set when ayt_w10 >= Y:X (A is kept)
 w10_at_least:

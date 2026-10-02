@@ -3,17 +3,18 @@
 ;
 ; Where it runs:
 ;
-;   snd_tick     in the mouse card's VBL interrupt (irq.s calls it after
-;                the acknowledge), 50 or 60 times a second: the ticks due,
-;                the levels, then one burst of the registers that changed.
+;   snd_tick     in VIA-B's timer interrupt (irq.s calls it after the
+;                acknowledge), once a frame, 50 or 60 times a second: the
+;                ticks due, the levels, then one burst of the registers
+;                that changed.
 ;                It touches only the zero page, the stack, the language
 ;                card and the Phasor, and never a mapping switch.
-;   snd_start    in the main loop: reads a song file from a RamWorks bank
-;                through a read window (RAMRD and $C073), keeps its tables
-;                in the card, fills the ring, writes the first burst.
+;   snd_start    in the main loop: reads a song file in main memory, keeps
+;                its tables in the card, fills the ring, writes the first
+;                burst.
 ;   snd_refill   in the main loop, as often as it likes (once a frame is
 ;                enough): when half the ring is free, copies 512 bytes of
-;                the stream into it by CPU copy through a read window.
+;                the stream from the song file into it.
 ;   snd_stop     in the main loop: the next interrupt silences the music
 ;                voices and the player stops.
 ;   snd_init     once: the VIAs, the chips' reset, the card mode.
@@ -21,9 +22,8 @@
 ; The stream reaches the player through a ring of RING_SIZE bytes in the
 ; card, refilled a page at a time. When the bytes of
 ; the next command are not all in the ring (an underrun: the main loop did
-; not refill, during a disk access), the player silences
-; every music voice and holds its position; the commands go on when the
-; bytes arrive.
+; not refill), the player silences every music voice and holds its
+; position; the commands go on when the bytes arrive.
 ;
 ; The voice layout is native12, the only one: 12 voices on the 4 AY chips
 ; of the card in native mode (there is no 6-voice fallback). tables.inc
@@ -36,7 +36,7 @@
         .include "tables.inc"
 
         .export snd_init, snd_start, snd_stop, snd_refill, snd_tick
-        .export snd_song_bank, snd_song_addr, snd_song_flags, snd_song_matt
+        .export snd_song_addr, snd_song_flags, snd_song_matt
         .export snd_error, snd_playing
         ; the player's state, for a debugger (build/music.lbl)
         .export ring, want, shadow, wreg, wval, wn, period_pal, period_ntsc
@@ -116,7 +116,6 @@ tint:           .res 1
 matt:           .res 1          ; music attenuation
 wpos_hi:        .res 1          ; stream bytes in the ring / 256 (a page at a time)
 exhausted:      .res 1          ; the stream is all in the ring (no loop)
-srcbank:        .res 1          ; the song in RamWorks
 srcpos:         .res 2          ; the next stream byte to copy
 srcend:         .res 2
 srcloop:        .res 2
@@ -124,8 +123,7 @@ hdr:            .res 8
 envtab:         .res MAX_ENVELOPES * ENV_SIZE
 drumtab:        .res MAX_DRUMS * DRUM_SIZE
 ; snd_start's arguments and result
-snd_song_bank:  .res 1          ; the song file: RamWorks bank (1-127) ...
-snd_song_addr:  .res 2          ; ... and address, in $0200-$BFFF
+snd_song_addr:  .res 2          ; the song file, in main $0200-$BFFF
 snd_song_flags: .res 1          ; SONG_LOOP, SONG_NTSC
 snd_song_matt:  .res 1          ; music attenuation, 0-80 (0.5 dB steps)
 snd_error:      .res 1
@@ -147,7 +145,7 @@ chip_in_layout: .byte   LAYOUT_CHIPS & 1, (LAYOUT_CHIPS >> 1) & 1
         .segment "SNDCODE"
 
 ; ---------------------------------------------------------------------------
-; snd_tick: one VBL interrupt. A, X, Y: clobbered.
+; snd_tick: one timer interrupt (a frame). A, X, Y: clobbered.
 ; ---------------------------------------------------------------------------
 snd_tick:
         lda     snd_playing
@@ -870,7 +868,7 @@ snd_stop:
 :       rts
 
 ; ---------------------------------------------------------------------------
-; snd_start: play the song file at snd_song_bank:snd_song_addr with
+; snd_start: play the song file at snd_song_addr with
 ; snd_song_flags and snd_song_matt.
 ; Carry clear: playing. Carry set: refused, A = snd_error. Runs in the
 ; main loop with interrupts on; the player is off until it ends.
@@ -878,13 +876,10 @@ snd_stop:
 snd_start:
         stz     snd_playing
         stz     stop_req
-        lda     snd_song_bank
-        sta     srcbank
         lda     snd_song_addr
         sta     src
         lda     snd_song_addr+1
         sta     src+1
-        jsr     window_open
         ldy     #7
 @header:
         lda     (src),y
@@ -925,7 +920,6 @@ snd_start:
         tya
         jsr     skip_src
 @stream:
-        jsr     window_close
         lda     src                     ; srcpos: the stream
         sta     srcpos
         clc
@@ -1003,8 +997,6 @@ snd_start:
         rts
 @refuse:
         sta     snd_error
-        jsr     window_close
-        lda     snd_error
         sec
         rts
 
@@ -1122,16 +1114,14 @@ refill:
         bne     @done
         cpy     #0
         bne     @done
-@copy:  jsr     window_open
-        jsr     copy_page
+@copy:  jsr     copy_page
         lda     exhausted
-        bne     @close
+        bne     @again
         jsr     copy_page
-@close: jsr     window_close
         bra     @again
 @done:  rts
 
-; copy_page: the next ring page from the stream (the window is open).
+; copy_page: the next ring page from the stream.
 ; A page is published (wpos_hi + 1, one byte, so the interrupt never sees
 ; half of it) once all its bytes are in.
 copy_page:
@@ -1207,18 +1197,4 @@ copy_page:
         lda     ring+2
         sta     ring_mirror+2
 :       inc     wpos_hi
-        rts
-
-; the read window on the song's RamWorks bank. The interrupt may come
-; while it is open: it uses only the zero page, the stack and the card,
-; which RAMRD does not move.
-window_open:
-        lda     srcbank
-        sta     RAMWORKS
-        sta     RAMRD_ON
-        rts
-
-window_close:
-        sta     RAMRD_OFF
-        stz     RAMWORKS
         rts

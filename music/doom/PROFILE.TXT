@@ -31,14 +31,14 @@ WHERE PROFILES LIVE (firmware F1.2.1, ps_sources/frontend)
     resets every setting to its default, then applies the file's keys
     (config_menu.c, config_menu_read_settings_from_path), then saves the
     result as 0:/appletini_cfg.txt, so it stays after a reboot. A file
-    holding only the keys above would therefore turn off the Phasor, the
-    mouse card, RamWorks and TURBO: start from a full profile instead.
+    holding only the keys above would therefore turn off the Phasor and
+    TURBO: start from a full profile instead.
 
 INSTALL
-    1. Boot into the Appletini menu with this setup: TURBO on,
-       RamWorks on (8 MB), the mouse card in slot 2, the Phasor in slot 4
-       on and its Mockingboard only option off. In the Phasor tab, move
-       to AY3 C and press RETURN: RETURN centres a pan (8).
+    1. Boot into the Appletini menu with this setup: TURBO on, the
+       Phasor in slot 4 on and its Mockingboard only option off. In the
+       Phasor tab, move to AY3 C and press RETURN: RETURN centres a pan
+       (8).
     2. Profiles tab: Save As, name DOOM. This writes every current setting
        to 0:/profiles/DOOM/appletini_cfg.txt.
     3. Open that file on the SD volume (the SD card in a computer, or the
@@ -49,7 +49,6 @@ INSTALL
        Check these lines while there:
            phasor.slot4.enabled=ON
            phasor.mockingboard.only=OFF
-           slot2.card=MOUSE
            vtw.turbo.enabled=ON
            phasor.pan.10=5
            phasor.pan.11=11
