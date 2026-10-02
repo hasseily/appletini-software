@@ -41,7 +41,7 @@ MUSIC.hdv: $(BUILD)/MUSIC.SYSTEM $(SONG_FILES) PROFILE.TXT $(MASTER) \
            tools/mkdisk.py
 	$(PYTHON) tools/mkdisk.py -o $@ -v $(VOLUME) -m $(MASTER) \
 	    $(BUILD)/MUSIC.SYSTEM,SYS,2000 \
-	    $(foreach f,$(SONG_FILES),$(f),BIN,1000) \
+	    $(foreach f,$(SONG_FILES),$(f),BIN,6000) \
 	    PROFILE.TXT,TXT,0000
 
 clean:

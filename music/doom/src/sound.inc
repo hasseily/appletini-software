@@ -14,8 +14,15 @@ VIA_A_ORA_NH    = $C41F         ; ORA without handshake (keeps CA1 for the SSI)
 VIA_B_ORB       = $C480
 VIA_B_DDRB      = $C482
 VIA_B_DDRA      = $C483
+VIA_B_T1CL      = $C484         ; VIA-B's timer 1: the music's clock
+VIA_B_T1CH      = $C485
+VIA_B_T1LL      = $C486
+VIA_B_T1LH      = $C487
+VIA_B_ACR       = $C48B
+VIA_B_IFR       = $C48D
 VIA_B_IER       = $C48E
 VIA_B_ORA_NH    = $C48F
+IFR_T1          = $40           ; IFR and IER bit 6: timer 1
 PHASOR_MB       = $C0C8         ; Mockingboard mode
 PHASOR_NATIVE   = $C0C5         ; then native mode: four AYs
 
@@ -30,14 +37,8 @@ ORB_IDLE1       = $14
 ORB_READ0       = $0D           ; the probe's read of the first AY
 
 ; ---- the machine ----------------------------------------------------------
-RAMRD_OFF       = $C002
-RAMRD_ON        = $C003
-RAMWORKS        = $C073         ; the RamWorks bank of aux memory
-MOUSE_STATUS    = $C0A0         ; the mouse card in slot 2
-MOUSE_MODE      = $C0AE
-MOUSE_ACK       = $C0AF
-MOUSE_VBL       = $08           ; status and mode bit: the VBL interrupt
-LC_RW_BANK2     = $C083         ; read twice: read and write the card, bank 2
+RAMRD_OFF       = $C002         ; reads of $0200-$BFFF from main memory
+RAMRD_ON        = $C003         ;   or from the aux 64K
 
 ; ---- the player's state --------------------------------------------------
 IDLE            = 0             ; phase[v]

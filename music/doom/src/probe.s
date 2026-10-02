@@ -17,8 +17,8 @@
 ; snd_start. Otherwise carry set and A = SND_NO_MUSIC: the program says it
 ; has no music and never calls snd_start (nor snd_refill or snd_stop, which
 ; would do nothing); it still calls snd_init once, which leaves the player
-; stopped, so the VBL interrupt counts its VBLs and snd_tick returns at
-; once. The chips behind VIA-A are left reset, the card in the mode it
+; stopped, so the timer interrupt counts its frames and snd_tick returns
+; at once. The chips behind VIA-A are left reset, the card in the mode it
 ; accepted. Main loop, once, before snd_init. It is boot code, not part of
 ; the player in the card.
 
