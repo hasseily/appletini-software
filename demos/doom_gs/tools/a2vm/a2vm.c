@@ -204,6 +204,206 @@ static void phasor_init(a2vm_phasor *f)
 {
     memset(f, 0, sizeof *f);
     f->ssi_dur = 0xc0;
+    for (unsigned i = 0; i < 2; i++) {
+        f->t1[i].latch_lo = f->t1[i].latch_hi = 0xff;  /* power_reset */
+        f->t1[i].load = 0xffff;
+        f->t1[i].flag_bus = -1;
+    }
+    f->t1_clock = UINT64_MAX;
+}
+
+/* ---- --via-timers: timer 1 of each VIA, as via6522.v runs it ----
+
+   The counter steps once an Apple bus cycle (via_timer_clock, sss_en:
+   mockingboard.sv:86). Loaded with N (a write to T1C-H, which also loads
+   the low latch), it reads N, N-1, ..., 0, then $FFFF, then the latch L
+   again (via6522.v:338-352): the time-out, every L + 2 cycles. A
+   time-out sets IFR bit 6 in free-run mode (ACR bit 6) and, in one-shot
+   mode, the first one after the T1C-H write only (via6522.v:369-381).
+   Reading T1C-L, writing T1C-H or T1L-H, or writing IFR with bit 6 set
+   clears the flag (via6522.v:382-386); the VIA's IRQ is any IFR bit set
+   whose IER bit is set (via6522.v:543). In Phasor native mode a read of
+   T1C-L steps the counter once more (mockingboard.sv:87-97). The other
+   IFR sources (CA1, CA2, CB1, CB2, the shift register, timer 2) are not
+   modelled and stay clear. */
+
+static uint16_t t1_latch(const a2vm_phasor *f, unsigned i)
+{
+    return (uint16_t)(f->t1[i].latch_hi << 8 | f->t1[i].latch_lo);
+}
+
+/* the counter at bus clock b; *undf: it is the $FFFF before a reload */
+static uint16_t t1_counter(const a2vm_phasor *f, unsigned i, int64_t b,
+                           int *undf)
+{
+    int64_t e = b - f->t1_start[i], load = f->t1[i].load;
+    int64_t latch = t1_latch(f, i);
+    *undf = 0;
+    if (e < 0)
+        e = 0;
+    if (e <= load)
+        return (uint16_t)(load - e);
+    e -= load + 1;                  /* 0: the first $FFFF */
+    int64_t r = e == 0 ? latch + 1 : (e - 1) % (latch + 2);
+    if (r <= latch)
+        return (uint16_t)(latch - r);
+    *undf = 1;
+    return 0xffff;
+}
+
+static uint64_t bus_to_clock(const a2vm *m, int64_t bus)
+{
+    if (bus < 0)
+        return UINT64_MAX;
+    uint64_t n = (uint64_t)bus * m->frame_cycles;
+    return (n + m->frame_1mhz - 1) / m->frame_1mhz;
+}
+
+static void t1_reclock(a2vm *m)
+{
+    a2vm_phasor *f = &m->phasor;
+    uint64_t a = bus_to_clock(m, f->t1[0].flag_bus);
+    uint64_t b = bus_to_clock(m, f->t1[1].flag_bus);
+    f->t1_clock = a < b ? a : b;
+}
+
+/* the next flag: the first time-out from t1_start, if one would flag */
+static void t1_schedule(a2vm_phasor *f, unsigned i)
+{
+    if (!(f->t1[i].acr & 0x40) && !f->t1[i].armed)
+        f->t1[i].flag_bus = -1;
+    else
+        f->t1[i].flag_bus = f->t1_start[i] + f->t1[i].load + 2;
+}
+
+/* the time-outs up to bus clock b */
+static void t1_advance(a2vm_phasor *f, unsigned i, int64_t b)
+{
+    int64_t at = f->t1[i].flag_bus;
+    if (at < 0 || at > b)
+        return;
+    f->t1[i].ifr |= 0x40;
+    if (f->t1[i].acr & 0x40) {
+        int64_t period = (int64_t)t1_latch(f, i) + 2;
+        f->t1[i].flag_bus = at + ((b - at) / period + 1) * period;
+    } else {
+        f->t1[i].armed = 0;
+        f->t1[i].flag_bus = -1;
+    }
+}
+
+void a2vm_via_timers_update(a2vm *m)
+{
+    int64_t b = (int64_t)a2vm_bus_clock(m);
+    t1_advance(&m->phasor, 0, b);
+    t1_advance(&m->phasor, 1, b);
+    t1_reclock(m);
+}
+
+/* before the latch or the mode changes: the counter's state now becomes
+   the new origin, so the reloads to come use the new values */
+static void t1_rebase(a2vm_phasor *f, unsigned i, int64_t b)
+{
+    int undf;
+    uint16_t value = t1_counter(f, i, b, &undf);
+    if (undf) {                     /* the $FFFF before a reload */
+        f->t1_start[i] = b - 1;
+        f->t1[i].load = 0;
+    } else {
+        f->t1_start[i] = b;
+        f->t1[i].load = value;
+    }
+}
+
+static int via_irq(const a2vm *m)
+{
+    if (!m->via_timers)
+        return 0;
+    const a2vm_phasor *f = &m->phasor;
+    return ((f->t1[0].ifr & f->t1[0].ier) | (f->t1[1].ifr & f->t1[1].ier))
+           != 0;
+}
+
+/* a write to register reg of VIA i; 0 for a register this does not
+   model (the caller's own handling then applies) */
+static int t1_write(a2vm *m, unsigned i, unsigned reg, uint8_t value)
+{
+    a2vm_phasor *f = &m->phasor;
+    int64_t b = (int64_t)a2vm_bus_clock(m);
+    t1_advance(f, i, b);
+    switch (reg) {
+    case 4: case 6:                 /* T1C-L, T1L-L: the low latch */
+        t1_rebase(f, i, b);
+        f->t1[i].latch_lo = value;
+        break;
+    case 5:                         /* T1C-H: load and start */
+        f->t1[i].latch_hi = value;
+        f->t1_start[i] = b;
+        f->t1[i].load = t1_latch(f, i);
+        f->t1[i].ifr &= (uint8_t)~0x40;
+        f->t1[i].armed = 1;
+        break;
+    case 7:                         /* T1L-H */
+        t1_rebase(f, i, b);
+        f->t1[i].latch_hi = value;
+        f->t1[i].ifr &= (uint8_t)~0x40;
+        break;
+    case 11:
+        t1_rebase(f, i, b);
+        f->t1[i].acr = value;
+        break;
+    case 13:
+        f->t1[i].ifr &= (uint8_t)~(value & 0x7f);
+        return 1;
+    case 14:
+        if (value & 0x80)
+            f->t1[i].ier |= value & 0x7f;
+        else
+            f->t1[i].ier &= (uint8_t)~(value & 0x7f);
+        return 1;
+    default:
+        return 0;
+    }
+    t1_schedule(f, i);
+    t1_advance(f, i, b);
+    t1_reclock(m);
+    return 1;
+}
+
+/* a read of register reg of VIA i: the value, or -1 for a register this
+   does not model */
+static int t1_read(a2vm *m, unsigned i, unsigned reg)
+{
+    a2vm_phasor *f = &m->phasor;
+    int64_t b = (int64_t)a2vm_bus_clock(m);
+    int undf, value;
+    /* a read returns the counter before this cycle's step
+       (timer1_bus_value, via6522.v:319-332): its value at the end of the
+       cycle before */
+    int64_t before = b > f->t1_start[i] ? b - 1 : b;
+    t1_advance(f, i, b);
+    switch (reg) {
+    case 4:
+        value = t1_counter(f, i, before, &undf) & 0xff;
+        f->t1[i].ifr &= (uint8_t)~0x40;
+        if (f->mode == NATIVE) {    /* one more step: the whole run of
+                                       the counter one cycle sooner */
+            f->t1_start[i]--;
+            if (f->t1[i].flag_bus >= 0)
+                f->t1[i].flag_bus--;
+            t1_advance(f, i, b);
+            t1_reclock(m);
+        }
+        return value;
+    case 5: return t1_counter(f, i, before, &undf) >> 8;
+    case 6: return f->t1[i].latch_lo;
+    case 7: return f->t1[i].latch_hi;
+    case 11: return f->t1[i].acr;
+    case 13:
+        return ((f->t1[i].ifr & f->t1[i].ier) ? 0x80 : 0) | f->t1[i].ifr;
+    case 14: return 0x80 | f->t1[i].ier;
+    default: return -1;
+    }
 }
 
 static void phasor_mode_switch(a2vm_phasor *f, unsigned address)
@@ -327,6 +527,8 @@ static void phasor_write(a2vm *m, unsigned address, uint8_t value)
     for (unsigned index = 0; index < 2; index++) {
         if (!(vias & (1u << index)))
             continue;
+        if (m->via_timers && t1_write(m, index, address & 0x0f, value))
+            continue;
         switch (address & 0x0f) {
         case 0: f->via[index].orb = value; phasor_port_b(m, index); break;
         case 1: f->via[index].ora = value; break;
@@ -358,6 +560,11 @@ static uint8_t phasor_read(a2vm *m, unsigned address)
         if (!(vias & (1u << index)))
             continue;
         unsigned reg = address & 0x0f;
+        if (m->via_timers) {
+            int value = t1_read(m, index, reg);
+            if (value >= 0)
+                return (uint8_t)value;
+        }
         int64_t t1 = (0xffff - ((int64_t)a2vm_bus_clock(m) -
                                 f->t1_start[index])) & 0xffff;
         switch (reg) {
@@ -1281,6 +1488,11 @@ static void skip_idle(a2vm *m, uint16_t pc)
             target = m->next_vbl;
         else
             target = (now / m->frame_cycles + 1) * m->frame_cycles;
+        /* a VIA timer's interrupt comes first: the skip ends there */
+        if (m->via_timers &&
+            ((m->phasor.t1[0].ier | m->phasor.t1[1].ier) & 0x40) &&
+            m->phasor.t1_clock < target)
+            target = m->phasor.t1_clock;
         if (target > now) {
             m->idle_cycles += target - now;
             if (m->cost)
@@ -1348,10 +1560,13 @@ void a2vm_step(a2vm *m)
 {
     if (a2vm_now(m) >= m->next_vbl)
         vbl_event(m);
+    if (m->via_timers && a2vm_now(m) >= m->phasor.t1_clock)
+        a2vm_via_timers_update(m);
     m->instructions++;
     if (m->core == A2VM_CORE_PY65) {
         m->instruction_pc = m->r.pc;
-        if (m->mouse_on && m->mouse.irq && !(m->r.p & P65_I)) {
+        if (((m->mouse_on && m->mouse.irq) || via_irq(m)) &&
+            !(m->r.p & P65_I)) {
             m->r.waiting = 0;
             p65_irq(m);
             m->r.p &= (uint8_t)~P65_D;
@@ -1379,7 +1594,7 @@ void a2vm_step(a2vm *m)
         }
         return;
     }
-    int irq = m->mouse_on && m->mouse.irq;
+    int irq = (m->mouse_on && m->mouse.irq) || via_irq(m);
     cpu65c02_set_irq(&m->cpu, 1, irq);
     int taken = irq && !(m->cpu.p & CPU65C02_I) &&
                 m->cpu.state != CPU65C02_STOPPED;

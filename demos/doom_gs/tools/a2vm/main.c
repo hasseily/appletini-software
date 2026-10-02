@@ -19,6 +19,10 @@
  *   --via-ora-nh        a write to a Phasor VIA's register 15 (ORA without
  *                       handshake) sets ORA, as the card's 6522 does;
  *                       a2sim.py ignores it (the default)
+ *   --via-timers        each Phasor VIA's timer 1 as the card's 6522 runs
+ *                       it: latches, one-shot and free-run, IFR, IER and
+ *                       its interrupt; a2sim.py has a free-running counter
+ *                       only (the default)
  *   --phasor-mb-only    the Phasor locked to Mockingboard mode (the
  *                       card's audio_control bit 26): $C0C0-$C0CF mode
  *                       switches are ignored
@@ -305,7 +309,7 @@ typedef struct {
     uint16_t stop_word_at;
     uint64_t stop_word_value;
     int snapshot_boundaries, final_snapshot;
-    int via_ora_nh, phasor_mb_only;
+    int via_ora_nh, via_timers, phasor_mb_only;
 } options;
 
 static void add(const char **list, unsigned *count, const char *value)
@@ -360,6 +364,10 @@ static void parse(int argc, char **argv, options *o)
         }
         if (!strcmp(arg, "--via-ora-nh")) {
             o->via_ora_nh = 1;
+            continue;
+        }
+        if (!strcmp(arg, "--via-timers")) {
+            o->via_timers = 1;
             continue;
         }
         if (!strcmp(arg, "--phasor-mb-only")) {
@@ -971,6 +979,21 @@ static void write_state_body(FILE *out, a2vm *m)
     }
     if (m->write_log)
         fprintf(out, "  \"write_logged\": %" PRIu64 ",\n", m->write_logged);
+    if (m->via_timers) {
+        a2vm_via_timers_update(m);
+        fputs("  \"via_timers\": [", out);
+        for (unsigned i = 0; i < 2; i++) {
+            const a2vm_phasor *f = &m->phasor;
+            fprintf(out, "%s{\"latch\": %u, \"acr\": %u, \"ifr\": %u, "
+                    "\"ier\": %u, \"armed\": %u, \"load\": %u, "
+                    "\"start\": %" PRId64 ", \"flag_bus\": %" PRId64 "}",
+                    i ? ", " : "",
+                    (unsigned)(f->t1[i].latch_hi << 8 | f->t1[i].latch_lo),
+                    f->t1[i].acr, f->t1[i].ifr, f->t1[i].ier, f->t1[i].armed,
+                    f->t1[i].load, f->t1_start[i], f->t1[i].flag_bus);
+        }
+        fputs("],\n", out);
+    }
 
     const a2vm_prodos *p = m->prodos;
     if (p) {
@@ -1608,6 +1631,7 @@ int main(int argc, char **argv)
         fail("%s", error);
     a2vm_amem_options(m, o.amem_supported, o.amem_available, 1);
     m->via_ora_nh = o.via_ora_nh;
+    m->via_timers = o.via_timers;
     m->phasor_mb_only = o.phasor_mb_only;
     if (o.irq_bounds)
         irq_bounds(m, o.irq_bounds);

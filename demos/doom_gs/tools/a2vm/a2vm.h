@@ -95,6 +95,17 @@ typedef struct {
     int64_t ssi_started;
     uint64_t ssi_phonemes;
     uint64_t ay_writes;             /* a2sim's log, counted */
+    /* --via-timers (README.md, "The VIA timers"): timer 1 of each VIA as
+       via6522.v runs it; unused otherwise. At bus clock t1_start the
+       counter held `load`; it counts down to 0, then $FFFF, then reloads
+       the latch, one step an Apple bus cycle. */
+    struct {
+        uint8_t latch_lo, latch_hi, acr, ifr, ier;
+        uint8_t armed;              /* one-shot: the next time-out flags */
+        uint16_t load;
+        int64_t flag_bus;           /* the next IFR bit 6, bus clock; -1 */
+    } t1[2];
+    uint64_t t1_clock;              /* the earliest flag, machine clock */
 } a2vm_phasor;
 
 /* The memory API of README_MEMORY_API.md (version 1) behind the FIFO at
@@ -263,6 +274,12 @@ typedef struct a2vm {
        a2sim.py ignores the register, so it is off by default. */
     int via_ora_nh;
 
+    /* --via-timers: each VIA's timer 1 as the card's 6522 runs it
+       (via6522.v): its latches, ACR (one-shot or free-run), IFR bit 6,
+       IER and its IRQ, delivered like the mouse card's. a2sim.py models
+       timer 1 as a free-running counter only, so it is off by default. */
+    int via_timers;
+
     /* --phasor-mb-only: the card locked to Mockingboard mode, as the
        card's audio_control bit 26 does (mockingboard.sv:38-41): the
        $C0C0-$C0CF mode switch is ignored, so the card keeps one AY behind
@@ -330,6 +347,8 @@ void a2vm_amem_options(a2vm *m, int supported, int available,
 /* One step of a2sim.Machine.step: the VBL event, interrupt delivery and
    the idle skip, then one instruction. */
 void a2vm_step(a2vm *m);
+/* --via-timers: the timer flags due by now (a2vm_step does it) */
+void a2vm_via_timers_update(a2vm *m);
 
 /* The clock, in the cycles of the core in use. */
 static inline uint64_t a2vm_now(const a2vm *m) { return *m->clock; }

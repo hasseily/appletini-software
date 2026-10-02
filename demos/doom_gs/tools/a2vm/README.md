@@ -36,6 +36,7 @@ options every run is what it was, byte for byte.
 | `py65check.c` | The compatibility core on a flat memory, for `py65_diff.py` |
 | `fetch_vectors.py` | Fetches the SingleStepTests WDC 65C02 vectors into `build/vectors/` |
 | `vectors.c` | Runs the vectors and compares state, cycle counts and the bus |
+| `viatest.py` | The tests of `--via-timers` (`make viatest`): the VIAs' timer-1 registers against `via6522.v`'s logic stepped a bus cycle at a time, the interrupt on both cores, the idle skip, and nothing changed without the option |
 | `selftest.c` | What the vectors do not cover: IRQ, NMI, BRK, WAI, STP, reset, cycle kinds, the data_ea classification of every opcode against the Appletini core's states, `cpu65c02_run`, lengths, datasheet cycles, exhaustive decimal mode |
 | `bench.c` | Instructions per second of the core on the host |
 | `vm816.c` | The checks of the 65816 interpreter of `src/vm` on a2vm: the SingleStepTests 65816 vectors, a lockstep with `tools/ref816`'s core on random programs, and a self test ([`src/vm/README.md`](../../src/vm/README.md)); with `--cost`, the cost of each case under a cost profile |
@@ -242,7 +243,7 @@ above `$2000`).
 | `$C061-$C063` | Buttons: Open Apple, Solid Apple, button 2 |
 | `$C064-$C067`, `$C070` | Paddles: 1,400 cycles of the 1 MHz bus clock from the trigger |
 | `$C0A0-$C0AF`, `$C200-$C2FF` | The Appletini mouse card in slot 2 (`mouse_card.sv`): status, position, buttons, sequence, clamps, commands, mode, acknowledge, its slot ROM. A VBL interrupt (mode bit 3) is raised at the start of each vertical blanking and delivered while I is clear, until the program acknowledges it |
-| `$C0C0-$C0CF`, `$C400-$C4FF` | The Phasor in slot 4: mode switch, two 6522 VIAs (ports, directions, timer 1 as a free-running counter), four AY chips' registers through the VIA port protocol in Mockingboard and native modes, the SSI-263's phoneme timer. No sound, no timer interrupts |
+| `$C0C0-$C0CF`, `$C400-$C4FF` | The Phasor in slot 4: mode switch, two 6522 VIAs (ports, directions, timer 1 as a free-running counter; with `--via-timers` timer 1 as the card's 6522 runs it, with its interrupt: "The VIA timers" below), four AY chips' registers through the VIA port protocol in Mockingboard and native modes, the SSI-263's phoneme timer. No sound |
 | `$C700-$C7FF`, `$CFF0-$CFF2`, `$CFFF` | With `--amem`, the memory API of appletini-one's `README_MEMORY_API.md`, version 1, behind its raw FIFO transport, as `FakeSmartPortMemory` models it: the slot-7 ROM ID bytes, C8 selection and release, STATUS with the 32-byte capability block, CONTROL with COPY, FILL and PRIVATE, and every validation error: `$21` (unsupported selector, command or firmware), `$60` (unavailable), `$61` (header), `$62` (descriptor), `$63` (range), `$64` (overlap), `$65` (PRIVATE required). All descriptors are checked before any is executed. `--amem-unsupported` and `--amem-unavailable` select the two failing firmware answers |
 
 ### Time and interrupts
@@ -280,6 +281,35 @@ the link's labels and symbols). Without the two conditions the skip of
 `dl_bwait` jumped to the next VBL when a tic was already due, and
 whenever another group's instruction sat at that address: 9.9 ms a frame
 standing still, up to 49.5 ms a frame after a re-placement.
+
+### The VIA timers
+
+With `--via-timers` each of the Phasor's two VIAs has timer 1 as
+appletini-one's `hdl/apple/via6522.v` runs it, stepped once an Apple bus
+cycle (the card's `via_timer_clock`, `sss_en`, `mockingboard.sv:86`):
+
+- T1C-L and T1L-L write the low latch, T1L-H the high latch (and clear
+  IFR bit 6), T1C-H the high latch, then loads the counter with the
+  latch, clears IFR bit 6 and arms the one-shot.
+- Loaded with N, the counter reads N, N-1 ... 0, $FFFF, then the latch L
+  again: a time-out every L + 2 cycles. A read returns the counter before
+  its step in that cycle (`timer1_bus_value`).
+- A time-out sets IFR bit 6 in free-run mode (ACR bit 6), and in one-shot
+  mode the first one after the T1C-H write only. Reading T1C-L, writing
+  T1C-H or T1L-H, or writing IFR with bit 6 set clears it; in Phasor
+  native mode the T1C-L read also steps the counter once more
+  (`mockingboard.sv:87-97`).
+- IFR reads bit 7 set when a flag is set whose IER bit is set; IER reads
+  bit 7 set; ACR, IER and IFR write as on the 6522. The VIA's IRQ (any
+  flag with its IER bit) reaches the CPU like the mouse card's, on both
+  cores, and an idle skip ends at the next time-out when an IER bit 6 is
+  set.
+- Only timer 1 flags: timer 2, the shift register and CA1, CA2, CB1, CB2
+  never set theirs; PB7 output (ACR bit 7) is not modelled.
+
+The state JSON then has `via_timers`, each VIA's latch, ACR, IFR, IER,
+the one-shot's arming, and the counter's origin (`load` at bus clock
+`start`) and next flag (`flag_bus`, -1 for none).
 
 ### The two cores
 
@@ -372,6 +402,7 @@ rendered.
 | `--bus-script FILE` | Run bus commands instead of the CPU (below) |
 | `--ay-log FILE` | The AY log (below): each AY register write that reaches a chip, each chip reset, each interrupt and each RTI, with the time |
 | `--via-ora-nh` | A write to a Phasor VIA's register 15, ORA without handshake, sets ORA, as the card's 6522 does (`hdl/apple/via6522.v:149`). Off by default: `a2sim.py` ignores the register, and the comparison with it must stay exact |
+| `--via-timers` | Each Phasor VIA's timer 1 as the card's 6522 runs it, with its interrupt ("The VIA timers", below). Off by default: `a2sim.py` has a free-running counter only, and the comparison with it must stay exact |
 | `--phasor-mb-only` | The Phasor locked to Mockingboard mode, as the card's `audio_control` bit 26 does (`hdl/apple/mockingboard.sv:38-41`): accesses to `$C0C0-$C0CF` do not change its mode, so it keeps one AY behind each VIA. Off by default |
 | `--irq-bounds LO-HI[,LO-HI...]` | Interrupt bounds (below): the address ranges (hex, at most 8) an interrupt handler may read or write; any other access halts the run |
 
@@ -707,6 +738,15 @@ and the first phase swaps) and three a frame.
   files, QUIT), and the volume directory against the existing port's
   `tools/build_disk.py` before and after the program changes the files.
 - **Screens**: `shot.py` on hand-made standard and PAL256 screens.
+
+`viatest.py` (`make viatest`), `--via-timers`: 80 random sequences of
+accesses to VIA-B's timer-1 registers, in Mockingboard and native mode,
+against a model stepping `via6522.v`'s timer-1 logic a cycle at a time
+(every read's value, cycle for cycle); a program whose handler checks and
+acknowledges IFR bit 6 gets one interrupt every latch + 2 bus cycles (998,
+17,028 and 20,278) on both cores, none with IER clear, and as many with
+an idle loop of the VBL kind; without the option the registers read as
+before and no interrupt comes.
 - **With build/venv**, against `a2sim.py` itself: random programs of 1,200
   loads, stores and read-modify-writes over every soft switch, the slots
   and memory, with keyboard, mouse and button input between them, at

@@ -9,6 +9,8 @@
 #                      build/a2vm/vm816 (the interpreter's vector harness)
 #   make selftest      run the core tests the vectors do not cover
 #                      (IRQ, NMI, WAI, STP, reset, BRK, cycle kinds)
+#   make viatest       the tests of --via-timers, the Phasor VIAs' timer 1
+#                      and its interrupt (viatest.py)
 #   make vectors       run every SingleStepTests case (after
 #                      python3 tools/a2vm/fetch_vectors.py)
 #   make sample        run the first 20 cases of each vector file
@@ -58,7 +60,7 @@ PY65CHECK := $(OUT)/py65check
 VM816 := $(OUT)/vm816
 GAME816 := $(OUT)/game816
 
-.PHONY: all selftest vectors sample bench compare costreport clean \
+.PHONY: all selftest viatest vectors sample bench compare costreport clean \
 	check-vectors check-vectors816 vm vmsample vmvectors vmselftest \
 	contact interpreter
 
@@ -118,6 +120,9 @@ check-vectors:
 
 selftest: $(SELFTEST)
 	$(SELFTEST)
+
+viatest: $(MACHINE)
+	python3 $(HERE)viatest.py --a2vm $(MACHINE)
 
 vectors: $(HARNESS) check-vectors
 	$(HARNESS) $(VECTOR_FILES)
