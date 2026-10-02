@@ -81,6 +81,7 @@ Who writes where (`PREBUILD` and `SHARED` in `tools/testpar.py`):
 | `native/render/obj` | `render.mk` (`render_check.make()`) | native_frame8, native_masked, native_masked_b, native_render, native_render_frame, native_render_walls | native_level_load, native_game_skeleton | prebuild |
 | `native/levels/obj` | `level.mk` (`lrun.make()`) | native_level_load, native_level_setup, native_game_skeleton | | prebuild |
 | `native/game/shared`, `native/game/skel` | `game.mk shared skel` (`grun.make()`): milestone 10's generated includes, `game.cfg`, the game manifests, the call graph, and the skeleton's test image | native_game_skeleton, native_game_lockstep (`ticrun.run()` makes the lockstep image `game`, `gprof` for its timing) | every part's test (`test_native_game_<part>`, from wave 1: they only read them; their skip message names `make -s -C src/native -f game.mk shared skel ROOT=$PWD`) | prebuild |
+| `native/play` | `playdisk.make()` (`make -f play.mk`) in the module's `setUpClass` | play_runs, play_bench | playtime (`ExactIdle` copies the directory, then runs its disk) | exclusive (speed wave 1) |
 
 Nothing but the table says who writes where, so a module added later that
 writes shared files would race the others unseen: a plain failure now and
@@ -89,7 +90,7 @@ then, or no failure and a different `build/`. `Tables` in
 `WRITER_CALLS` in `tools/testpar.py` (`support.frontend_results`,
 `match_results`, `release_targets`, `make_image.main` without `--out`,
 `title.build_machine`, `title.ensure_image`, `render_check.make`,
-`lrun.make` and `grun.make` into their own build, and a module's own `make` of a makefile of
+`lrun.make`, `grun.make` and `playdisk.make` into their own build, and a module's own `make` of a makefile of
 `src/native`), directly or through functions of `tests/` and `tools/` at
 any depth, must be among the writers of its entry. `NOT_WRITES` lists the
 calls the scan follows that do not write at run time (two:

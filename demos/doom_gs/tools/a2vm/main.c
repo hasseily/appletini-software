@@ -42,7 +42,10 @@
  *                       (DOOM.SYSTEM) the trap reports
  *   --idle SPEC         an idle loop to skip: PC:vbl or PC:line0, then
  *                       conditions :main (ALTZP off), :invbl, :eq=A,B
- *                       (main words at A and B equal); hex addresses
+ *                       (the words at A and B equal: main, or the main
+ *                       language card with lc. before the address),
+ *                       :byte=A,V (the main byte at A holds V, at most 4
+ *                       a loop); hex addresses and values
  *
  * Run
  *   --boundary ADDR     a frame boundary: the CPU at ADDR after a step,
@@ -54,6 +57,11 @@
  *                       "cycle-cap" and exit status 3; "none" runs with no
  *                       limit
  *   --stop-pc ADDR      stop at ADDR (hex; ALTZP off with a :main suffix)
+ *   --stop-word ADDR:N  stop once the 32-bit little-endian main word at
+ *                       ADDR (hex), after a step where it was below N, is
+ *                       at least N (end "stop-word"): a game's tic
+ *                       counter, say, whatever the memory held before
+ *                       the game set it
  *   --input FILE        events, one a line: WHEN ACTION (README.md)
  *   --snapshot-dir DIR  where snapshots, shots and the state go
  *   --snapshot-boundaries
@@ -106,6 +114,15 @@
  *   --write-log-limit N at most N lines (default 10,000,000, about
  *                       500 MB); the write that would be line N + 1 halts
  *                       the run
+ *   --pclog FILE        a line for each instruction run at the PCs of
+ *                       --pclog-pcs (README.md, "The PC log"): the clock,
+ *                       the registers and the main bytes of --pclog-bytes
+ *   --pclog-pcs LIST    hex PCs, commas (at most 64)
+ *   --pclog-bytes LIST  hex main addresses, or lc.HEX for the main
+ *                       language card's, commas (at most 16)
+ *   --pclog-from N      log from the clock N on (default 0)
+ *   --pclog-limit N     at most N lines (default 1,000,000, about 50 MB);
+ *                       the visit that would be line N + 1 halts the run
  *   --lowest-s          the lowest S the run reaches, in the state
  *   --lowest-s-in RANGES
  *                       also the lowest S reached by the instructions whose
@@ -143,11 +160,13 @@
 #define DEFAULT_CYCLES 20000000000ull
 #define WRITE_LOG_LINES 10000000ull
 #define EVERY_LIMIT 100ull
+#define PCLOG_LINES 1000000ull
 
 enum {
     MAX_LIST = 64, MAX_EVENTS = 4096,
     SHOT_BYTES = 0x8000,
-    MAX_S_RANGES = 16
+    MAX_S_RANGES = 16,
+    MAX_PCLOG_PCS = 64, MAX_PCLOG_BYTES = 16
 };
 
 static void fail(const char *format, ...)
@@ -263,6 +282,8 @@ typedef struct {
     const char *cost, *cost_report, *ay_log, *irq_bounds;
     const char *write_log, *write_log_file, *snapshot_ranges, *lowest_s_in;
     const char *snapshot_stream;
+    const char *pclog, *pclog_pcs, *pclog_bytes;
+    uint64_t pclog_from, pclog_limit;
     uint64_t snapshot_limit;
     int snapshot_limit_given;
     int zpbank, lowest_s;
@@ -280,6 +301,9 @@ typedef struct {
     uint64_t write_log_limit, every_limit;
     stop_pc stops[MAX_LIST];
     unsigned stop_count;
+    int stop_word;              /* --stop-word given */
+    uint16_t stop_word_at;
+    uint64_t stop_word_value;
     int snapshot_boundaries, final_snapshot;
     int via_ora_nh, phasor_mb_only;
 } options;
@@ -298,6 +322,7 @@ static void parse(int argc, char **argv, options *o)
     o->amem_supported = o->amem_available = 1;
     o->boundaries = o->cycles = UINT64_MAX;
     o->write_log_limit = WRITE_LOG_LINES;
+    o->pclog_limit = PCLOG_LINES;
     o->every_limit = EVERY_LIMIT;
     o->volume = "DOOM";
     o->cost_phase = -1;
@@ -451,6 +476,28 @@ static void parse(int argc, char **argv, options *o)
             o->snapshot_limit = number(value, 0);
             o->snapshot_limit_given = 1;
         }
+        else if (!strcmp(arg, "--stop-word")) {
+            char text[64];
+            snprintf(text, sizeof text, "%s", value);
+            char *colon = strchr(text, ':');
+            if (!colon)
+                fail("--stop-word takes ADDR:N");
+            *colon = 0;
+            o->stop_word = 1;
+            o->stop_word_at = address16(text);
+            o->stop_word_value = number(colon + 1, 0);
+            if (o->stop_word_at > 0xfffc)
+                fail("--stop-word: the word passes $FFFF");
+        } else if (!strcmp(arg, "--pclog"))
+            o->pclog = value;
+        else if (!strcmp(arg, "--pclog-pcs"))
+            o->pclog_pcs = value;
+        else if (!strcmp(arg, "--pclog-bytes"))
+            o->pclog_bytes = value;
+        else if (!strcmp(arg, "--pclog-from"))
+            o->pclog_from = number(value, 0);
+        else if (!strcmp(arg, "--pclog-limit"))
+            o->pclog_limit = number(value, 0);
         else if (!strcmp(arg, "--lowest-s-in")) {
             o->lowest_s_in = value;
             o->lowest_s = 1;
@@ -479,6 +526,12 @@ static void parse(int argc, char **argv, options *o)
         fail("--snapshot-limit needs --snapshot-stream");
     if (o->snapshot_limit_given && !o->snapshot_limit)
         fail("--snapshot-limit takes a count of bytes from 1");
+    if ((o->pclog_pcs || o->pclog_bytes) && !o->pclog)
+        fail("--pclog-pcs and --pclog-bytes need --pclog");
+    if (o->pclog && !o->pclog_pcs)
+        fail("--pclog needs --pclog-pcs");
+    if (!o->pclog_limit)
+        fail("--pclog-limit takes a count from 1");
     if (!o->cycles_given)
         o->cycles = DEFAULT_CYCLES;
 }
@@ -603,9 +656,24 @@ static void set_switch(a2vm *m, const char *spec)
     a2vm_remap(m);
 }
 
+/* An --idle word's address: HEX (main) or lc.HEX (the main language
+   card, $C000-$FFFE). */
+static uint16_t idle_word(const char *text, uint8_t *store)
+{
+    *store = 0;
+    if (!strncmp(text, "lc.", 3)) {
+        *store = 2;
+        uint16_t address = address16(text + 3);
+        if (address < 0xc000 || address == 0xffff)
+            fail("--idle: lc.%s is not in $C000-$FFFE", text + 3);
+        return address;
+    }
+    return address16(text);
+}
+
 static void add_idle(a2vm *m, const char *spec)
 {
-    char text[128];
+    char text[256];
     snprintf(text, sizeof text, "%s", spec);
     a2vm_idle idle;
     memset(&idle, 0, sizeof idle);
@@ -633,8 +701,21 @@ static void add_idle(a2vm *m, const char *spec)
                 fail("--idle: eq=A,B");
             *comma = 0;
             idle.compare = 1;
-            idle.word_a = address16(part + 3);
-            idle.word_b = address16(comma + 1);
+            idle.word_a = idle_word(part + 3, &idle.store_a);
+            idle.word_b = idle_word(comma + 1, &idle.store_b);
+        } else if (!strncmp(part, "byte=", 5)) {
+            char *comma = strchr(part + 5, ',');
+            if (!comma)
+                fail("--idle: byte=A,V");
+            *comma = 0;
+            if (idle.byte_count == A2VM_IDLE_BYTES)
+                fail("--idle: at most %d byte conditions", A2VM_IDLE_BYTES);
+            uint64_t value = number(comma + 1, 16);
+            if (value > 0xff)
+                fail("--idle: byte=%s,%s: the value is a byte", part + 5,
+                     comma + 1);
+            idle.byte_addr[idle.byte_count] = address16(part + 5);
+            idle.byte_value[idle.byte_count++] = (uint8_t)value;
         } else
             fail("--idle: unknown condition %s", part);
     }
@@ -1423,6 +1504,100 @@ static void lowest_s_json(char *out, size_t size, const lowest_s *lows,
         fail("the lowest S does not fit the state");
 }
 
+/* ---- the PC log (README.md, "The PC log") ---- */
+
+static struct {
+    FILE *file;
+    uint8_t map[8192];
+    uint16_t bytes[MAX_PCLOG_BYTES];
+    uint8_t stores[MAX_PCLOG_BYTES];    /* a2vm_storage's kinds: 0, 2 */
+    unsigned byte_count;
+    uint64_t from, limit, lines;
+} pclog;
+
+/* A list of hex numbers separated by commas, each at most 0xFFFF. */
+static unsigned hex_list(const char *option, const char *text,
+                         uint16_t *out, unsigned most)
+{
+    char buffer[2048];
+    if (strlen(text) >= sizeof buffer)
+        fail("%s: too long", option);
+    snprintf(buffer, sizeof buffer, "%s", text);
+    unsigned count = 0;
+    for (char *item = strtok(buffer, ","); item; item = strtok(NULL, ",")) {
+        if (count == most)
+            fail("%s: at most %u entries", option, most);
+        out[count++] = address16(item);
+    }
+    if (!count)
+        fail("%s: an empty list", option);
+    return count;
+}
+
+static void pclog_line(a2vm *m, uint16_t pc)
+{
+    uint64_t now = a2vm_now(m);
+    if (now < pclog.from)
+        return;
+    if (pclog.lines == pclog.limit) {
+        snprintf(m->halt, sizeof m->halt, "pclog: past --pclog-limit %"
+                 PRIu64 " lines", pclog.limit);
+        return;
+    }
+    pclog.lines++;
+    fprintf(pclog.file, "%" PRIu64 " %04X %02X %02X %02X %02X %u", now, pc,
+            a2vm_register(m, 'a'), a2vm_register(m, 'x'),
+            a2vm_register(m, 'y'), a2vm_register(m, 's'),
+            m->sw[SW_ALTZP] ? 1u : 0u);
+    for (unsigned i = 0; i < pclog.byte_count; i++)
+        fprintf(pclog.file, " %02X",
+                *a2vm_storage(m, pclog.stores[i], 0, pclog.bytes[i]));
+    fputc('\n', pclog.file);
+}
+
+static void pclog_start(a2vm *m, const options *o)
+{
+    uint16_t pcs[MAX_PCLOG_PCS];
+    unsigned count = hex_list("--pclog-pcs", o->pclog_pcs, pcs,
+                              MAX_PCLOG_PCS);
+    for (unsigned i = 0; i < count; i++)
+        pclog.map[pcs[i] >> 3] |= (uint8_t)(1u << (pcs[i] & 7));
+    if (o->pclog_bytes) {
+        char buffer[1024];
+        if (strlen(o->pclog_bytes) >= sizeof buffer)
+            fail("--pclog-bytes: too long");
+        snprintf(buffer, sizeof buffer, "%s", o->pclog_bytes);
+        for (char *item = strtok(buffer, ","); item;
+             item = strtok(NULL, ",")) {
+            unsigned i = pclog.byte_count;
+            if (i == MAX_PCLOG_BYTES)
+                fail("--pclog-bytes: at most %d entries", MAX_PCLOG_BYTES);
+            pclog.stores[i] = 0;
+            if (!strncmp(item, "lc.", 3)) {
+                pclog.stores[i] = 2;
+                item += 3;
+            }
+            pclog.bytes[i] = address16(item);
+            if (pclog.stores[i] && pclog.bytes[i] < 0xc000)
+                fail("--pclog-bytes: lc.%s is not in $C000-$FFFF", item);
+            pclog.byte_count++;
+        }
+    }
+    pclog.from = o->pclog_from;
+    pclog.limit = o->pclog_limit;
+    pclog.file = fopen(o->pclog, "w");
+    if (!pclog.file)
+        fail("cannot write %s", o->pclog);
+    fprintf(pclog.file, "# a2vm pclog 1 (tools/a2vm/README.md, \"The PC "
+            "log\")\n# pcs %s\n# bytes %s\n# clock %s\n"
+            "# CLOCK PC A X Y S ALTZP BYTE...\n", o->pclog_pcs,
+            o->pclog_bytes ? o->pclog_bytes : "-",
+            m->cost && m->cost->timed ? "fabric clocks (--cost-timed)"
+                                       : "cycles");
+    m->pc_hook_map = pclog.map;
+    m->pc_hook = pclog_line;
+}
+
 int main(int argc, char **argv)
 {
     options o;
@@ -1518,6 +1693,8 @@ int main(int argc, char **argv)
             fail("cannot write the snapshot stream");
         snap_stream_bytes = (uint64_t)n;
     }
+    if (o.pclog)
+        pclog_start(m, &o);
     if (o.ay_log) {
         m->ay_log = fopen(o.ay_log, "w");
         if (!m->ay_log)
@@ -1536,6 +1713,8 @@ int main(int argc, char **argv)
 
     if (o.bus_script) {
         bus_script(m, o.bus_script);
+        if (pclog.file && fclose(pclog.file))
+            fail("cannot write %s", o.pclog);
         if (m->ay_log)
             fclose(m->ay_log);
         if (m->write_log && fclose(m->write_log))
@@ -1570,7 +1749,7 @@ int main(int argc, char **argv)
             next_cycle_event = events[i].value;
     }
 
-    int stop = 0;
+    int stop = 0, word_below = 0;
     const char *reason = NULL;
     uint64_t boundaries = 0, start_cycles = a2vm_now(m);
     uint64_t start_instructions = m->instructions;
@@ -1648,6 +1827,12 @@ int main(int argc, char **argv)
         }
         if (stop && !reason)
             reason = "stop";
+        if (!reason && o.stop_word) {
+            if (le(m->main + o.stop_word_at, 4) < o.stop_word_value)
+                word_below = 1;
+            else if (word_below)
+                reason = "stop-word";
+        }
         if (!reason && m->prodos && m->prodos->quit)
             reason = "quit";
         if (!reason && boundaries >= o.boundaries)
@@ -1684,6 +1869,9 @@ int main(int argc, char **argv)
     if (m->write_log && fclose(m->write_log))
         fail("cannot write the write log");
     m->write_log = NULL;
+    if (pclog.file && fclose(pclog.file))
+        fail("cannot write %s", o.pclog);
+    pclog.file = NULL;
     int status = !strcmp(reason, "halt") ? 1 : 0;
     if (!strcmp(reason, "cycle-cap")) {
         fprintf(stderr, "a2vm: the run reached the default limit of %llu "

@@ -23,9 +23,19 @@
 ;   E_EVENT   after AMAPW's am_responder had the queue's head: taken, or
 ;             on to G_Responder
 ;   E_MENU    after the menu's frames: its request (a new game, the end of
-;             the game, the quit; a save: the failed save's message, the
-;             menu again; a load, the benchmark, saving the settings: none
+;             the game, the quit, the benchmark; a save: the failed save's
+;             message, the menu again; a load, saving the settings: none
 ;             in this version), then a frame
+;
+; The menu benchmark (m_menu65.s's bmStart, bmStop, bmDone; docs/speed-
+; parts/bench.md): REQ_BENCH sets timingdemo and plays demo3 at the normal
+; tic rate (G_DeferedPlayDemo); its frames are the level views drawn
+; (DL_VIEWS, dl_disp.s's count) from then on. At demo3's end G_CheckDemo-
+; Status's timingdemo branch calls the hook G_TimeDemoEnd (dl_hook.s): the
+; FPS text into MENUW's M_BFPS, the message MSG_BENCH, DL_BENCH $80; the
+; brain then opens the menu (its page m2_bench) before the frame's other
+; tics, and the next tic ends the demo (the title loop goes on). Escape
+; while it runs stops it with no result (bmStop), then opens the menu.
 ;
 ; Every byte that lives from one entry to the next is in main's DLM block
 ; (play.inc): the tic image's own bytes are reloaded with it every frame.
@@ -53,6 +63,8 @@
         .import gt_loop
 .endif
         .export dl_brain, b_starttitle, dl_bwait, b_tick
+        .export DL_BENCH, DL_BVIEW, DL_BRT      ; (in the label file: the
+                                                ;   tests' benchmark bytes)
 
         .segment "DLGB"
 FC_HERE .set DLG_BRAIN
@@ -118,7 +130,9 @@ b_cont: jsr b_events            ; C set: a list (the menu, the automap)
         lda DL_MAKETIC
         sbc G_GAMETIC
         sta DL_RUN
-b_run:  lda DL_RUN
+b_run:  bit DL_BENCH              ; the benchmark's result: the menu's
+        bmi b_bres              ;   page now (bmDone's uiOpen)
+        lda DL_RUN
         beq b_disp
         jsr b_runtic
         bcs b_rts               ; (a load: its list)
@@ -127,6 +141,9 @@ b_run:  lda DL_RUN
 b_disp: DLCALL DLG_HOOK, sc_update      ; S_UpdateSounds (musFrame)
         DLCALL DLG_DISP, c_display      ; the frame's list
 b_rts:  rts
+b_bres: stz DL_BENCH
+        DLCALL DLG_DISP, c_menulist
+        rts
 
 ; b_runtic: runTic: the demo sequence when it advances, G_Ticker, gametic
 ; + 1 (M_Ticker: the menu's, MENUW's, runs in its paused frames only:
@@ -170,7 +187,7 @@ b_resume:
         jsr b_tickr             ; G_Ticker again, from its action loop
         bcs b_rts
         dec DL_RUN
-        bra b_run
+        jmp b_run
 b_tickr:
         GTRESUME
         bra b_after
@@ -226,11 +243,47 @@ b_menu:
 @title: jsr b_starttitle
         bra @frame
 :       cmp #REQ_QUIT
-        bne @frame
+        bne :+
         DLCALL DLG_DISP, c_quitlist
         rts
-@frame: jmp b_frame             ; (REQ_LOAD, REQ_BENCH, REQ_SAVESET: none
-                                ;   in this version)
+:       cmp #REQ_BENCH
+        bne @frame
+        jsr b_bench
+@frame: jmp b_frame             ; (REQ_LOAD, REQ_SAVESET: none in this
+                                ;   version)
+
+; b_bench: bmStart (the menu is closed: s2_menu.s's r_vwitem): timingdemo
+; 1, the frames counted from the views drawn now, G_DeferedPlayDemo
+; ("demo3": dl_snd.s's reference to its name). starttime is doPlayDemo's
+; (I_GetTime after the load), as upstream's.
+b_bench:
+        lda #1
+        sta G_TIMINGDEMO
+        stz G_TIMINGDEMO+1
+        sta DL_BENCH
+        lda DL_VIEWS
+        sta DL_BVIEW
+        lda DL_VIEWS+1
+        sta DL_BVIEW+1
+        lda #1                  ; (tag 1, the symbol, offset 0)
+        sta GA_0
+        lda #<SYM_d_main_strDemo3
+        sta GA_1
+        lda #>SYM_d_main_strDemo3
+        sta GA_2
+        stz GA_3
+        stz GA_4
+        FCALL G_DeferedPlayDemo
+        rts
+
+; b_bstop: bmStop: Escape while the benchmark runs: timingdemo 0, no
+; result, G_CheckDemoStatus (the demo ends: the title loop's next step)
+b_bstop:
+        stz DL_BENCH
+        stz G_TIMINGDEMO
+        stz G_TIMINGDEMO+1
+        FCALL G_CheckDemoStatus
+        rts
 ; m_reqarg: far_get's arguments for the 3 request bytes into GT_0-2
 m_reqarg:
         lda #S2STATE
@@ -333,7 +386,10 @@ ev_route:
         lda DL_EV+1
         cmp #KEY_ESCAPE
         bne @zoom
-        DLCALL DLG_DISP, c_menulist
+        lda DL_BENCH            ; the benchmark runs: bmStop first
+        beq :+
+        jsr b_bstop
+:       DLCALL DLG_DISP, c_menulist
         lda #1
         rts
 @zoom:  cmp #KEY_ZOOMOUT        ; the view's size: the full view only

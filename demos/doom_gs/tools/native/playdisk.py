@@ -514,9 +514,22 @@ def script_events(disk: Disk, text: str) -> str:
 
 def run(disk: Disk, script: str, work: Path, profile: str = 'f121',
         seconds: float = 60.0, timeout: float = 1800.0,
-        snap_ranges: str = 'main:0000-BFFF,lc,lc1,aux0:2000-9FFF') -> Run:
+        snap_ranges: str = 'main:0000-BFFF,lc,lc1,aux0:2000-9FFF',
+        extra: Sequence[str] = (), a2vm: Path = A2VM,
+        idle: str = 'exact') -> Run:
     """Boot the disk and play the script for at most `seconds` of model
-    time; the run's state, its snapshots and shots."""
+    time; the run's state, its snapshots and shots. `extra`: more a2vm
+    options (playtime.py's --pclog); `a2vm`: the machine to run.
+
+    `idle`: how a2vm skips the two loops that wait for a tic, the
+    kernel's menu wait (dl_mwait) and the brain's frame wait (dl_bwait).
+    'exact' (the default) skips to the next VBL only while the loop would
+    spin on the card: no tic due (I_GetTime's low word, CLK_TICS in the
+    main card, equal to DL_LASTM, the word both loops compare) and, for
+    dl_bwait, the brain's group in the slot that holds that address
+    (another group's code may sit there). 'old' is the unconditioned
+    skip of milestone 11 (docs/SPEED.md 1, "The measurement artifact"),
+    kept to measure it; 'none' skips nothing (the loops run)."""
     work = Path(work).resolve()
     work.mkdir(parents=True, exist_ok=True)
     manifest = []
@@ -534,7 +547,20 @@ def run(disk: Disk, script: str, work: Path, profile: str = 'f121',
     fabric_hz = costs.parameters(prof)['fabric_mhz'] * 1e6
     (work / 'events.txt').write_text(script_events(disk, script))
     lab = labels(disk)
-    args = [str(A2VM), '--rom', str(work / 'rom.bin'),
+    sym = symbols(disk.play)
+    bwait = lab['dl_bwait']
+    slot = [n for n in (1, 2) if sym['TW_SLOT%d' % n] <= bwait <
+            sym['TW_SLOT%d_END' % n]]
+    if len(slot) != 1:
+        raise PlayError('dl_bwait $%04X is in no slot' % bwait)
+    no_tic = 'eq=lc.%X,%X' % (sym['CLK_TICS'], sym['DL_LASTM'])
+    idles = {'exact': ['%X:vbl:main:%s' % (lab['dl_mwait'], no_tic),
+                       '%X:vbl:main:byte=%X,%X:%s' % (
+                           bwait, sym['SLOT_GRP'] + slot[0],
+                           sym['XS_DLG_BRAIN'], no_tic)],
+             'old': ['%X:vbl' % lab['dl_mwait'], '%X:vbl' % bwait],
+             'none': []}[idle]
+    args = [str(a2vm), '--rom', str(work / 'rom.bin'),
             '--core', 'w65c02s', '--via-ora-nh',
             '--image', str(work / 'poison.img'),
             '--prodos', str(work / 'prodos.txt'),
@@ -543,8 +569,6 @@ def run(disk: Disk, script: str, work: Path, profile: str = 'f121',
             '--reg', 'pc=2000', '--reg', 's=FF',
             '--cost', str(work / 'cost.txt'), '--cost-timed',
             '--irq-bounds', IRQ_BOUNDS,
-            '--idle', '%X:vbl' % lab['dl_mwait'],
-            '--idle', '%X:vbl' % lab['dl_bwait'],
             '--stop-pc', '%X' % lab['bt_halt'],
             '--stop-pc', '%X' % lab['pl_crash'],
             '--stop-pc', '%X' % lab['dl_halt'],
@@ -556,6 +580,9 @@ def run(disk: Disk, script: str, work: Path, profile: str = 'f121',
             '--ay-log', str(work / 'ay.log'),
             '--amem',
             '--state', str(work / 'state.json'), '--final-snapshot']
+    for spec in idles:
+        args += ['--idle', spec]
+    args += list(extra)
     try:
         result = bounded.run(args, timeout=timeout, max_bytes=MAX_BYTES,
                              stdout=subprocess.PIPE,

@@ -125,6 +125,9 @@ DLM_FIELDS = [
     ('DL_FPSN', 2),             # idrate: the frames since the last second
     ('DL_FPST', 2),             #   and its start (I_GetTime's low word)
     ('DL_VIEWS', 2),            # the 3D views drawn (the frame rate's count)
+    ('DL_BENCH', 1),            # the menu benchmark: 0 none, 1 runs, $80 its result to show
+    ('DL_BVIEW', 2),            #   DL_VIEWS at its start; at its end the frames
+    ('DL_BRT', 4),              #   at its end the realtics
 ]
 FLAGS = [
     ('DF_PALLEVEL', 0x01),      # PALW palw_level before the next 2D

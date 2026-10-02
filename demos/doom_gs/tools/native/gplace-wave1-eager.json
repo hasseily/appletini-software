@@ -1,0 +1,1656 @@
+{
+ "format": "game-placement 1",
+ "groups": [
+  {
+   "slot": 1,
+   "bytes": 188,
+   "routines": [
+    "?:P_UpdateAnimatedFlat",
+    "p_spec65.s:P_UpdateSpecials"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 357,
+   "routines": [
+    "g_game65.s:G_CheckDemoStatus",
+    "g_game65.s:doLoadLevel",
+    "p_user65.s:hurt32",
+    "p_user65.s:specialSector"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 1966,
+   "routines": [
+    "g_game65.s:G_DeferedInitNew",
+    "g_game65.s:doWorldDone",
+    "p_map65.s:P_BoxOnLineSide",
+    "p_map65.s:P_DelSeclist",
+    "p_map65.s:P_DelSecnode",
+    "p_map65.s:P_TryMove",
+    "p_map65.s:P_UnsetThingPosition",
+    "p_map65.s:blockOf",
+    "p_map65.s:link",
+    "p_map65.s:mvBlock",
+    "p_map65.s:mvSector",
+    "p_map65.s:unlist"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 1772,
+   "routines": [
+    "g_game65.s:G_DeferedPlayDemo",
+    "p_inter65.s:P_DamageMobj",
+    "p_inter65.s:killMobj",
+    "p_inter65.s:lastEnemy",
+    "p_inter65.s:playerDamage",
+    "p_inter65.s:setState",
+    "p_inter65.s:thrust"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 206,
+   "routines": [
+    "g_game65.s:G_ExitLevel",
+    "p_spawn65.s:P_RemoveMobj",
+    "p_think65.s:P_RemoveThing",
+    "r_list65.s:linkRemove"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 1300,
+   "routines": [
+    "g_game65.s:G_ReloadDefaults",
+    "g_game65.s:readDemoHeader",
+    "wi_stuff65.s:WI_Ticker"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 412,
+   "routines": [
+    "g_game65.s:G_SecretExitLevel",
+    "p_spawn65.s:poolFree",
+    "p_think65.s:P_RemoveThingDelayed",
+    "p_think65.s:P_RemoveThinkerDelayed",
+    "p_think65.s:unlink"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 376,
+   "routines": [
+    "g_game65.s:G_Ticker",
+    "g_game65.s:checkOverrun",
+    "hu_stuff65.s:HU_Ticker",
+    "st_stuff65.s:ST_Ticker"
+   ]
+  },
+  {
+   "slot": 2,
+   "bytes": 654,
+   "routines": [
+    "g_game65.s:G_WorldDone",
+    "p_switch65.s:lnLight",
+    "p_use65.s:PTR_NoWayTraverse",
+    "p_use65.s:PTR_UseTraverse",
+    "p_use65.s:P_UseLines",
+    "p_use65.s:times64"
+   ]
+  },
+  {
+   "slot": 2,
+   "bytes": 1297,
+   "routines": [
+    "g_game65.s:div1000",
+    "p_doors65.s:T_VerticalDoor",
+    "p_doors65.s:mulExt",
+    "p_doors65.s:partLight",
+    "p_enemy65.s:A_Explode",
+    "p_plats65.s:T_PlatRaise"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 1803,
+   "routines": [
+    "g_game65.s:doCompleted",
+    "g_game65.s:victory",
+    "p_attack65.s:PIT_RadiusAttack",
+    "p_attack65.s:P_RadiusAttack",
+    "p_enemy65.s:PIT_AvoidDropoff",
+    "p_enemy65.s:avoidDropoff",
+    "p_pspr65.s:P_DropWeapon"
+   ]
+  },
+  {
+   "slot": 2,
+   "bytes": 1974,
+   "routines": [
+    "g_game65.s:doNewGame",
+    "g_game65.s:signLong",
+    "p_user65.s:P_PlayerThink",
+    "p_user65.s:angleToAttacker",
+    "p_user65.s:calcHeight",
+    "p_user65.s:fixedSquare",
+    "p_user65.s:movePlayer",
+    "p_user65.s:onGround",
+    "p_user65.s:thrustMul"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 1817,
+   "routines": [
+    "g_game65.s:doPlayDemo",
+    "p_map65.s:P_TeleportMove",
+    "p_map65.s:farFrom",
+    "p_map65.s:stompThing",
+    "p_pspr65.s:A_FireMissile",
+    "p_spawn65.s:P_SpawnPlayerMissile",
+    "p_switch65.s:lnExit",
+    "p_switch65.s:lnTele",
+    "p_telept65.s:EV_Teleport",
+    "p_telept65.s:destination",
+    "p_telept65.s:fogSound",
+    "p_telept65.s:times20",
+    "wi_stuff65.s:WI_checkForAccelerate"
+   ]
+  },
+  {
+   "slot": 2,
+   "bytes": 871,
+   "routines": [
+    "g_game65.s:initNew",
+    "p_enemy65.s:A_BossDeath",
+    "p_map65.s:P_BlockThingsIterator",
+    "p_switch65.s:P_ChangeSwitchTexture"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 1434,
+   "routines": [
+    "g_game65.s:loadLevel",
+    "p_doors65.s:EV_DoDoor",
+    "p_doors65.s:EV_VerticalDoor",
+    "p_doors65.s:newDoor",
+    "p_plats65.s:EV_DoPlat",
+    "p_switch65.s:lnDoor",
+    "p_switch65.s:lnPlat",
+    "p_switch65.s:lnVDoor",
+    "wi_stuff65.s:WI_Start"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 372,
+   "routines": [
+    "g_game65.s:readDemoTiccmd",
+    "p_spec65.s:buttonDone"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 430,
+   "routines": [
+    "m_cheat65.s:C_Responder",
+    "m_cheat65.s:giveAmmo",
+    "m_cheat65.s:power"
+   ]
+  },
+  {
+   "slot": 2,
+   "bytes": 1976,
+   "routines": [
+    "p_attack65.s:PTR_AimTraverse",
+    "p_attack65.s:PTR_ShootTraverse",
+    "p_attack65.s:mul3",
+    "p_attack65.s:puffPos",
+    "p_attack65.s:rangeMul",
+    "p_attack65.s:shootSpecial",
+    "p_map65.s:P_LineOpening",
+    "p_map65.s:P_LineOpeningXY"
+   ]
+  },
+  {
+   "slot": 2,
+   "bytes": 1976,
+   "routines": [
+    "p_attack65.s:P_AimLineAttack",
+    "p_attack65.s:P_LineAttack",
+    "p_trace65.s:gOf",
+    "p_trace65.s:ivSetup",
+    "p_trace65.s:smul",
+    "p_trace65.s:thFast",
+    "p_trace65.s:thSide",
+    "p_trace65.s:traceLines",
+    "p_trace65.s:traceThings",
+    "p_trace65.s:vsC"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 344,
+   "routines": [
+    "p_attack65.s:P_IsAttackRangeMeleeRange",
+    "p_spawn65.s:P_SpawnBlood",
+    "p_spawn65.s:P_SpawnPuff",
+    "p_spawn65.s:spawnXYZ",
+    "p_spawn65.s:ticsNoise",
+    "p_spawn65.s:zNoise"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 999,
+   "routines": [
+    "p_enemy65.s:A_BruisAttack",
+    "p_enemy65.s:A_CyberAttack",
+    "p_enemy65.s:A_PosAttack",
+    "p_enemy65.s:A_SPosAttack",
+    "p_enemy65.s:A_SargAttack",
+    "p_enemy65.s:A_TroopAttack",
+    "p_enemy65.s:aimLine",
+    "p_enemy65.s:damageTarget",
+    "p_enemy65.s:lineAttack",
+    "p_enemy65.s:spawnMissile",
+    "p_enemy65.s:spreadAngle",
+    "p_map65.s:blockRange"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 1912,
+   "routines": [
+    "p_enemy65.s:A_FaceTarget",
+    "p_enemy65.s:A_Look",
+    "p_enemy65.s:P_CheckMeleeRange",
+    "p_enemy65.s:P_CheckMissileRange",
+    "p_enemy65.s:angleToAT",
+    "p_enemy65.s:behindFast",
+    "p_enemy65.s:checkMeleeRange",
+    "p_enemy65.s:checkMissileRange",
+    "p_enemy65.s:distanceAT",
+    "p_enemy65.s:faceTarget",
+    "p_enemy65.s:loadTarget",
+    "p_enemy65.s:lookForPlayers",
+    "p_mobj65.s:P_ExplodeMissile",
+    "p_sight65.s:opening",
+    "p_sight65.s:sightSlope"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 510,
+   "routines": [
+    "p_enemy65.s:A_Fall",
+    "p_enemy65.s:A_Pain",
+    "p_enemy65.s:A_PlayerScream",
+    "p_enemy65.s:A_Scream",
+    "p_enemy65.s:A_XScream",
+    "p_enemy65.s:randMod",
+    "p_enemy65.s:startSound",
+    "p_trace65.s:divlineSide",
+    "p_trace65.s:vtxSlow",
+    "p_trace65.s:vtxSlowR"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 750,
+   "routines": [
+    "p_enemy65.s:P_NewChaseDir",
+    "p_enemy65.s:doNewChaseDir",
+    "p_enemy65.s:newChaseDir"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 760,
+   "routines": [
+    "p_enemy65.s:P_TryWalk",
+    "p_enemy65.s:pMove",
+    "p_enemy65.s:tryWalk",
+    "p_tick65.s:P_MobjBrainlessThinker"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 1722,
+   "routines": [
+    "p_floor65.s:EV_BuildStairs",
+    "p_floor65.s:EV_DoDonut",
+    "p_floor65.s:EV_DoFloor",
+    "p_floor65.s:P_FindNextHighestFloor",
+    "p_floor65.s:floorUp",
+    "p_floor65.s:halfSpeed",
+    "p_floor65.s:newFloor",
+    "p_floor65.s:nextStep",
+    "p_floor65.s:setDest",
+    "p_floor65.s:stairStep",
+    "p_lights65.s:EV_LightTurnOn",
+    "p_lights65.s:nextSector",
+    "p_spec65.s:P_FindHighestFloorSurrounding",
+    "p_spec65.s:P_FindLowestCeilingSurrounding",
+    "p_spec65.s:P_FindLowestFloorSurrounding",
+    "p_spec65.s:P_FindSectorFromLineTag",
+    "p_spec65.s:around",
+    "p_switch65.s:lnDonut",
+    "p_switch65.s:lnFloor",
+    "p_switch65.s:lnStairs"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 1213,
+   "routines": [
+    "p_floor65.s:T_MoveFloor",
+    "p_floor65.s:T_MovePlaneCeiling",
+    "p_floor65.s:T_MovePlaneFloor",
+    "p_floor65.s:changeSector",
+    "p_floor65.s:checkSector",
+    "p_floor65.s:heightClip"
+   ]
+  },
+  {
+   "slot": 2,
+   "bytes": 1630,
+   "routines": [
+    "p_inter65.s:P_GivePower",
+    "p_inter65.s:P_TouchSpecialThing",
+    "p_inter65.s:giveAmmo",
+    "p_inter65.s:giveBody",
+    "p_inter65.s:givePower",
+    "p_inter65.s:giveWeapon",
+    "p_inter65.s:pkAmmo",
+    "p_inter65.s:pkArmor",
+    "p_inter65.s:pkArmorBonus",
+    "p_inter65.s:pkBackpack",
+    "p_inter65.s:pkBody",
+    "p_inter65.s:pkCard",
+    "p_inter65.s:pkClip",
+    "p_inter65.s:pkHealthBonus",
+    "p_inter65.s:pkPower",
+    "p_inter65.s:pkSoul",
+    "p_inter65.s:pkWeapon",
+    "p_think65.s:P_NextThinker"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 1440,
+   "routines": [
+    "p_lights65.s:T_Glow",
+    "p_lights65.s:T_LightFlash",
+    "p_lights65.s:T_StrobeFlash",
+    "p_mobj65.s:P_MobjIsPlayer",
+    "p_mobj65.s:explode",
+    "p_spec65.s:T_Scroll",
+    "p_tick65.s:P_MobjThinker",
+    "p_tick65.s:P_RunThinkers",
+    "p_tick65.s:P_SetMobjState",
+    "p_tick65.s:rocketCheat"
+   ]
+  },
+  {
+   "slot": 2,
+   "bytes": 1936,
+   "routines": [
+    "p_map65.s:P_BlockLinesIterator",
+    "p_trace65.s:PIT_AddLineIntercepts",
+    "p_trace65.s:addIntercept",
+    "p_trace65.s:icInsert",
+    "p_trace65.s:interceptVector3",
+    "p_trace65.s:ivAxis",
+    "p_trace65.s:ivProd",
+    "p_trace65.s:ivTest",
+    "p_trace65.s:lineCross"
+   ]
+  },
+  {
+   "slot": 2,
+   "bytes": 1908,
+   "routines": [
+    "p_map65.s:P_CheckPosition",
+    "p_map65.s:checkPos",
+    "p_map65.s:cpCopy",
+    "p_map65.s:lineBlocks",
+    "p_map65.s:setBox",
+    "p_map65.s:walkRange",
+    "p_think65.s:P_Ticker"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 365,
+   "routines": [
+    "p_map65.s:checkThing"
+   ]
+  },
+  {
+   "slot": 2,
+   "bytes": 1530,
+   "routines": [
+    "p_mobj65.s:PTR_SlideTraverse",
+    "p_mobj65.s:bestMul",
+    "p_mobj65.s:bobClip",
+    "p_mobj65.s:hitSlideLine",
+    "p_mobj65.s:labs",
+    "p_mobj65.s:slideMove",
+    "p_mobj65.s:slideTrace"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 1162,
+   "routines": [
+    "p_mobj65.s:P_XYMovement",
+    "p_mobj65.s:clampMove",
+    "p_mobj65.s:friction",
+    "p_mobj65.s:frictionAP",
+    "p_mobj65.s:frictionNear",
+    "p_mobj65.s:quarterOut",
+    "p_mobj65.s:skyHit",
+    "p_mobj65.s:slow"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 575,
+   "routines": [
+    "p_mobj65.s:P_ZMovement",
+    "p_mobj65.s:isPlayer",
+    "p_mobj65.s:missileHit",
+    "p_mobj65.s:shr3"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 1874,
+   "routines": [
+    "p_path65.s:P_PathTraverse",
+    "p_path65.s:a1Shr7",
+    "p_path65.s:axisStep",
+    "p_path65.s:early",
+    "p_path65.s:fromOrigin",
+    "p_path65.s:offLine",
+    "p_path65.s:ptBody",
+    "p_path65.s:ptStuck",
+    "p_path65.s:traverseTo",
+    "p_trace65.s:longTrace",
+    "p_trace65.s:sideSetup"
+   ]
+  },
+  {
+   "slot": 2,
+   "bytes": 1089,
+   "routines": [
+    "p_pspr65.s:A_FireCGun",
+    "p_pspr65.s:A_FirePistol",
+    "p_pspr65.s:A_FireShotgun",
+    "p_pspr65.s:A_Punch",
+    "p_pspr65.s:A_Saw",
+    "p_pspr65.s:angleToTarget",
+    "p_pspr65.s:bulletSlope",
+    "p_pspr65.s:gunShot",
+    "p_pspr65.s:meleeAngle",
+    "p_pspr65.s:meleeAttack",
+    "p_pspr65.s:randMod",
+    "p_pspr65.s:spread",
+    "p_pspr65.s:useAmmo",
+    "p_spec65.s:getNextSector",
+    "wi_stuff65.s:WI_End"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 864,
+   "routines": [
+    "p_pspr65.s:A_GunFlash",
+    "p_pspr65.s:A_Light0",
+    "p_pspr65.s:A_Light1",
+    "p_pspr65.s:A_Light2",
+    "p_pspr65.s:A_Lower",
+    "p_pspr65.s:A_ReFire",
+    "p_pspr65.s:A_WeaponReady",
+    "p_pspr65.s:P_CheckAmmo",
+    "p_pspr65.s:P_MovePsprites",
+    "p_pspr65.s:checkAmmo",
+    "p_pspr65.s:fireSomething",
+    "p_pspr65.s:fireWeapon",
+    "p_pspr65.s:lowerWeapon",
+    "p_pspr65.s:setMoState",
+    "p_pspr65.s:signExt0",
+    "p_pspr65.s:signExt4",
+    "p_pspr65.s:startSound",
+    "p_pspr65.s:tickPsprite"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 1636,
+   "routines": [
+    "p_pspr65.s:recursiveSound"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 766,
+   "routines": [
+    "p_sight65.s:interceptFrac",
+    "p_sight65.s:smul48"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 213,
+   "routines": [
+    "p_sight65.s:zSetup"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 1080,
+   "routines": [
+    "p_spawn65.s:P_NightmareRespawn",
+    "p_spawn65.s:P_SpawnMissile",
+    "p_spawn65.s:angleMom",
+    "p_spawn65.s:checkMissile",
+    "p_spawn65.s:halfMom",
+    "p_spawn65.s:seeTarget",
+    "p_spawn65.s:srcAbove",
+    "p_spawn65.s:thSpeed"
+   ]
+  },
+  {
+   "slot": 1,
+   "bytes": 533,
+   "routines": [
+    "p_switch65.s:P_CrossSpecialLine",
+    "p_switch65.s:P_UseSpecialLine",
+    "p_switch65.s:findSpecial"
+   ]
+  }
+ ],
+ "routines": {
+  "?:P_UpdateAnimatedFlat": 1,
+  "g_game65.s:G_CheckDemoStatus": 2,
+  "g_game65.s:G_DeferedInitNew": 3,
+  "g_game65.s:G_DeferedPlayDemo": 4,
+  "g_game65.s:G_ExitLevel": 5,
+  "g_game65.s:G_ReloadDefaults": 6,
+  "g_game65.s:G_SecretExitLevel": 7,
+  "g_game65.s:G_Ticker": 8,
+  "g_game65.s:G_WorldDone": 9,
+  "g_game65.s:checkOverrun": 8,
+  "g_game65.s:div1000": 10,
+  "g_game65.s:doCompleted": 11,
+  "g_game65.s:doLoadLevel": 2,
+  "g_game65.s:doNewGame": 12,
+  "g_game65.s:doPlayDemo": 13,
+  "g_game65.s:doWorldDone": 3,
+  "g_game65.s:initNew": 14,
+  "g_game65.s:loadLevel": 15,
+  "g_game65.s:readDemoHeader": 6,
+  "g_game65.s:readDemoTiccmd": 16,
+  "g_game65.s:signLong": 12,
+  "g_game65.s:victory": 11,
+  "hu_stuff65.s:HU_Ticker": 8,
+  "m_cheat65.s:C_Responder": 17,
+  "m_cheat65.s:giveAmmo": 17,
+  "m_cheat65.s:power": 17,
+  "p_attack65.s:PIT_RadiusAttack": 11,
+  "p_attack65.s:PTR_AimTraverse": 18,
+  "p_attack65.s:PTR_ShootTraverse": 18,
+  "p_attack65.s:P_AimLineAttack": 19,
+  "p_attack65.s:P_IsAttackRangeMeleeRange": 20,
+  "p_attack65.s:P_LineAttack": 19,
+  "p_attack65.s:P_RadiusAttack": 11,
+  "p_attack65.s:mul3": 18,
+  "p_attack65.s:puffPos": 18,
+  "p_attack65.s:rangeMul": 18,
+  "p_attack65.s:shootSpecial": 18,
+  "p_doors65.s:EV_DoDoor": 15,
+  "p_doors65.s:EV_VerticalDoor": 15,
+  "p_doors65.s:T_VerticalDoor": 10,
+  "p_doors65.s:mulExt": 10,
+  "p_doors65.s:newDoor": 15,
+  "p_doors65.s:partLight": 10,
+  "p_enemy65.s:A_BossDeath": 14,
+  "p_enemy65.s:A_BruisAttack": 21,
+  "p_enemy65.s:A_CyberAttack": 21,
+  "p_enemy65.s:A_Explode": 10,
+  "p_enemy65.s:A_FaceTarget": 22,
+  "p_enemy65.s:A_Fall": 23,
+  "p_enemy65.s:A_Look": 22,
+  "p_enemy65.s:A_Pain": 23,
+  "p_enemy65.s:A_PlayerScream": 23,
+  "p_enemy65.s:A_PosAttack": 21,
+  "p_enemy65.s:A_SPosAttack": 21,
+  "p_enemy65.s:A_SargAttack": 21,
+  "p_enemy65.s:A_Scream": 23,
+  "p_enemy65.s:A_TroopAttack": 21,
+  "p_enemy65.s:A_XScream": 23,
+  "p_enemy65.s:PIT_AvoidDropoff": 11,
+  "p_enemy65.s:P_CheckMeleeRange": 22,
+  "p_enemy65.s:P_CheckMissileRange": 22,
+  "p_enemy65.s:P_NewChaseDir": 24,
+  "p_enemy65.s:P_TryWalk": 25,
+  "p_enemy65.s:aimLine": 21,
+  "p_enemy65.s:angleToAT": 22,
+  "p_enemy65.s:avoidDropoff": 11,
+  "p_enemy65.s:behindFast": 22,
+  "p_enemy65.s:checkMeleeRange": 22,
+  "p_enemy65.s:checkMissileRange": 22,
+  "p_enemy65.s:damageTarget": 21,
+  "p_enemy65.s:distanceAT": 22,
+  "p_enemy65.s:doNewChaseDir": 24,
+  "p_enemy65.s:faceTarget": 22,
+  "p_enemy65.s:lineAttack": 21,
+  "p_enemy65.s:loadTarget": 22,
+  "p_enemy65.s:lookForPlayers": 22,
+  "p_enemy65.s:newChaseDir": 24,
+  "p_enemy65.s:pMove": 25,
+  "p_enemy65.s:randMod": 23,
+  "p_enemy65.s:spawnMissile": 21,
+  "p_enemy65.s:spreadAngle": 21,
+  "p_enemy65.s:startSound": 23,
+  "p_enemy65.s:tryWalk": 25,
+  "p_floor65.s:EV_BuildStairs": 26,
+  "p_floor65.s:EV_DoDonut": 26,
+  "p_floor65.s:EV_DoFloor": 26,
+  "p_floor65.s:P_FindNextHighestFloor": 26,
+  "p_floor65.s:T_MoveFloor": 27,
+  "p_floor65.s:T_MovePlaneCeiling": 27,
+  "p_floor65.s:T_MovePlaneFloor": 27,
+  "p_floor65.s:changeSector": 27,
+  "p_floor65.s:checkSector": 27,
+  "p_floor65.s:floorUp": 26,
+  "p_floor65.s:halfSpeed": 26,
+  "p_floor65.s:heightClip": 27,
+  "p_floor65.s:newFloor": 26,
+  "p_floor65.s:nextStep": 26,
+  "p_floor65.s:setDest": 26,
+  "p_floor65.s:stairStep": 26,
+  "p_inter65.s:P_DamageMobj": 4,
+  "p_inter65.s:P_GivePower": 28,
+  "p_inter65.s:P_TouchSpecialThing": 28,
+  "p_inter65.s:giveAmmo": 28,
+  "p_inter65.s:giveBody": 28,
+  "p_inter65.s:givePower": 28,
+  "p_inter65.s:giveWeapon": 28,
+  "p_inter65.s:killMobj": 4,
+  "p_inter65.s:lastEnemy": 4,
+  "p_inter65.s:pkAmmo": 28,
+  "p_inter65.s:pkArmor": 28,
+  "p_inter65.s:pkArmorBonus": 28,
+  "p_inter65.s:pkBackpack": 28,
+  "p_inter65.s:pkBody": 28,
+  "p_inter65.s:pkCard": 28,
+  "p_inter65.s:pkClip": 28,
+  "p_inter65.s:pkHealthBonus": 28,
+  "p_inter65.s:pkPower": 28,
+  "p_inter65.s:pkSoul": 28,
+  "p_inter65.s:pkWeapon": 28,
+  "p_inter65.s:playerDamage": 4,
+  "p_inter65.s:setState": 4,
+  "p_inter65.s:thrust": 4,
+  "p_lights65.s:EV_LightTurnOn": 26,
+  "p_lights65.s:T_Glow": 29,
+  "p_lights65.s:T_LightFlash": 29,
+  "p_lights65.s:T_StrobeFlash": 29,
+  "p_lights65.s:nextSector": 26,
+  "p_map65.s:P_BlockLinesIterator": 30,
+  "p_map65.s:P_BlockThingsIterator": 14,
+  "p_map65.s:P_BoxOnLineSide": 3,
+  "p_map65.s:P_CheckPosition": 31,
+  "p_map65.s:P_DelSeclist": 3,
+  "p_map65.s:P_DelSecnode": 3,
+  "p_map65.s:P_LineOpening": 18,
+  "p_map65.s:P_LineOpeningXY": 18,
+  "p_map65.s:P_TeleportMove": 13,
+  "p_map65.s:P_TryMove": 3,
+  "p_map65.s:P_UnsetThingPosition": 3,
+  "p_map65.s:blockOf": 3,
+  "p_map65.s:blockRange": 21,
+  "p_map65.s:checkPos": 31,
+  "p_map65.s:checkThing": 32,
+  "p_map65.s:cpCopy": 31,
+  "p_map65.s:farFrom": 13,
+  "p_map65.s:lineBlocks": 31,
+  "p_map65.s:link": 3,
+  "p_map65.s:mvBlock": 3,
+  "p_map65.s:mvSector": 3,
+  "p_map65.s:setBox": 31,
+  "p_map65.s:stompThing": 13,
+  "p_map65.s:unlist": 3,
+  "p_map65.s:walkRange": 31,
+  "p_mobj65.s:PTR_SlideTraverse": 33,
+  "p_mobj65.s:P_ExplodeMissile": 22,
+  "p_mobj65.s:P_MobjIsPlayer": 29,
+  "p_mobj65.s:P_XYMovement": 34,
+  "p_mobj65.s:P_ZMovement": 35,
+  "p_mobj65.s:bestMul": 33,
+  "p_mobj65.s:bobClip": 33,
+  "p_mobj65.s:clampMove": 34,
+  "p_mobj65.s:explode": 29,
+  "p_mobj65.s:friction": 34,
+  "p_mobj65.s:frictionAP": 34,
+  "p_mobj65.s:frictionNear": 34,
+  "p_mobj65.s:hitSlideLine": 33,
+  "p_mobj65.s:isPlayer": 35,
+  "p_mobj65.s:labs": 33,
+  "p_mobj65.s:missileHit": 35,
+  "p_mobj65.s:quarterOut": 34,
+  "p_mobj65.s:shr3": 35,
+  "p_mobj65.s:skyHit": 34,
+  "p_mobj65.s:slideMove": 33,
+  "p_mobj65.s:slideTrace": 33,
+  "p_mobj65.s:slow": 34,
+  "p_path65.s:P_PathTraverse": 36,
+  "p_path65.s:a1Shr7": 36,
+  "p_path65.s:axisStep": 36,
+  "p_path65.s:early": 36,
+  "p_path65.s:fromOrigin": 36,
+  "p_path65.s:offLine": 36,
+  "p_path65.s:ptBody": 36,
+  "p_path65.s:ptStuck": 36,
+  "p_path65.s:traverseTo": 36,
+  "p_plats65.s:EV_DoPlat": 15,
+  "p_plats65.s:T_PlatRaise": 10,
+  "p_pspr65.s:A_FireCGun": 37,
+  "p_pspr65.s:A_FireMissile": 13,
+  "p_pspr65.s:A_FirePistol": 37,
+  "p_pspr65.s:A_FireShotgun": 37,
+  "p_pspr65.s:A_GunFlash": 38,
+  "p_pspr65.s:A_Light0": 38,
+  "p_pspr65.s:A_Light1": 38,
+  "p_pspr65.s:A_Light2": 38,
+  "p_pspr65.s:A_Lower": 38,
+  "p_pspr65.s:A_Punch": 37,
+  "p_pspr65.s:A_ReFire": 38,
+  "p_pspr65.s:A_Saw": 37,
+  "p_pspr65.s:A_WeaponReady": 38,
+  "p_pspr65.s:P_CheckAmmo": 38,
+  "p_pspr65.s:P_DropWeapon": 11,
+  "p_pspr65.s:P_MovePsprites": 38,
+  "p_pspr65.s:angleToTarget": 37,
+  "p_pspr65.s:bulletSlope": 37,
+  "p_pspr65.s:checkAmmo": 38,
+  "p_pspr65.s:fireSomething": 38,
+  "p_pspr65.s:fireWeapon": 38,
+  "p_pspr65.s:gunShot": 37,
+  "p_pspr65.s:lowerWeapon": 38,
+  "p_pspr65.s:meleeAngle": 37,
+  "p_pspr65.s:meleeAttack": 37,
+  "p_pspr65.s:randMod": 37,
+  "p_pspr65.s:recursiveSound": 39,
+  "p_pspr65.s:setMoState": 38,
+  "p_pspr65.s:signExt0": 38,
+  "p_pspr65.s:signExt4": 38,
+  "p_pspr65.s:spread": 37,
+  "p_pspr65.s:startSound": 38,
+  "p_pspr65.s:tickPsprite": 38,
+  "p_pspr65.s:useAmmo": 37,
+  "p_sight65.s:interceptFrac": 40,
+  "p_sight65.s:opening": 22,
+  "p_sight65.s:sightSlope": 22,
+  "p_sight65.s:smul48": 40,
+  "p_sight65.s:zSetup": 41,
+  "p_spawn65.s:P_NightmareRespawn": 42,
+  "p_spawn65.s:P_RemoveMobj": 5,
+  "p_spawn65.s:P_SpawnBlood": 20,
+  "p_spawn65.s:P_SpawnMissile": 42,
+  "p_spawn65.s:P_SpawnPlayerMissile": 13,
+  "p_spawn65.s:P_SpawnPuff": 20,
+  "p_spawn65.s:angleMom": 42,
+  "p_spawn65.s:checkMissile": 42,
+  "p_spawn65.s:halfMom": 42,
+  "p_spawn65.s:poolFree": 7,
+  "p_spawn65.s:seeTarget": 42,
+  "p_spawn65.s:spawnXYZ": 20,
+  "p_spawn65.s:srcAbove": 42,
+  "p_spawn65.s:thSpeed": 42,
+  "p_spawn65.s:ticsNoise": 20,
+  "p_spawn65.s:zNoise": 20,
+  "p_spec65.s:P_FindHighestFloorSurrounding": 26,
+  "p_spec65.s:P_FindLowestCeilingSurrounding": 26,
+  "p_spec65.s:P_FindLowestFloorSurrounding": 26,
+  "p_spec65.s:P_FindSectorFromLineTag": 26,
+  "p_spec65.s:P_UpdateSpecials": 1,
+  "p_spec65.s:T_Scroll": 29,
+  "p_spec65.s:around": 26,
+  "p_spec65.s:buttonDone": 16,
+  "p_spec65.s:getNextSector": 37,
+  "p_switch65.s:P_ChangeSwitchTexture": 14,
+  "p_switch65.s:P_CrossSpecialLine": 43,
+  "p_switch65.s:P_UseSpecialLine": 43,
+  "p_switch65.s:findSpecial": 43,
+  "p_switch65.s:lnDonut": 26,
+  "p_switch65.s:lnDoor": 15,
+  "p_switch65.s:lnExit": 13,
+  "p_switch65.s:lnFloor": 26,
+  "p_switch65.s:lnLight": 9,
+  "p_switch65.s:lnPlat": 15,
+  "p_switch65.s:lnStairs": 26,
+  "p_switch65.s:lnTele": 13,
+  "p_switch65.s:lnVDoor": 15,
+  "p_telept65.s:EV_Teleport": 13,
+  "p_telept65.s:destination": 13,
+  "p_telept65.s:fogSound": 13,
+  "p_telept65.s:times20": 13,
+  "p_think65.s:P_NextThinker": 28,
+  "p_think65.s:P_RemoveThing": 5,
+  "p_think65.s:P_RemoveThingDelayed": 7,
+  "p_think65.s:P_RemoveThinkerDelayed": 7,
+  "p_think65.s:P_Ticker": 31,
+  "p_think65.s:unlink": 7,
+  "p_tick65.s:P_MobjBrainlessThinker": 25,
+  "p_tick65.s:P_MobjThinker": 29,
+  "p_tick65.s:P_RunThinkers": 29,
+  "p_tick65.s:P_SetMobjState": 29,
+  "p_tick65.s:rocketCheat": 29,
+  "p_trace65.s:PIT_AddLineIntercepts": 30,
+  "p_trace65.s:addIntercept": 30,
+  "p_trace65.s:divlineSide": 23,
+  "p_trace65.s:gOf": 19,
+  "p_trace65.s:icInsert": 30,
+  "p_trace65.s:interceptVector3": 30,
+  "p_trace65.s:ivAxis": 30,
+  "p_trace65.s:ivProd": 30,
+  "p_trace65.s:ivSetup": 19,
+  "p_trace65.s:ivTest": 30,
+  "p_trace65.s:lineCross": 30,
+  "p_trace65.s:longTrace": 36,
+  "p_trace65.s:sideSetup": 36,
+  "p_trace65.s:smul": 19,
+  "p_trace65.s:thFast": 19,
+  "p_trace65.s:thSide": 19,
+  "p_trace65.s:traceLines": 19,
+  "p_trace65.s:traceThings": 19,
+  "p_trace65.s:vsC": 19,
+  "p_trace65.s:vtxSlow": 23,
+  "p_trace65.s:vtxSlowR": 23,
+  "p_use65.s:PTR_NoWayTraverse": 9,
+  "p_use65.s:PTR_UseTraverse": 9,
+  "p_use65.s:P_UseLines": 9,
+  "p_use65.s:times64": 9,
+  "p_user65.s:P_PlayerThink": 12,
+  "p_user65.s:angleToAttacker": 12,
+  "p_user65.s:calcHeight": 12,
+  "p_user65.s:fixedSquare": 12,
+  "p_user65.s:hurt32": 2,
+  "p_user65.s:movePlayer": 12,
+  "p_user65.s:onGround": 12,
+  "p_user65.s:specialSector": 2,
+  "p_user65.s:thrustMul": 12,
+  "r_list65.s:linkRemove": 5,
+  "st_stuff65.s:ST_Ticker": 8,
+  "wi_stuff65.s:WI_End": 37,
+  "wi_stuff65.s:WI_Start": 15,
+  "wi_stuff65.s:WI_Ticker": 6,
+  "wi_stuff65.s:WI_checkForAccelerate": 13
+ },
+ "core": [
+  "p_enemy65.s:A_Chase",
+  "p_map65.s:P_MapEnd",
+  "p_map65.s:P_PointOnLineSide",
+  "p_map65.s:baseFloor",
+  "p_map65.s:baseFloorL",
+  "p_map65.s:baseLite",
+  "p_map65.s:pointSector",
+  "p_map65.s:posMul",
+  "p_map65.s:sectorFloor",
+  "p_pspr65.s:wInfo",
+  "p_pspr65.s:wInfoOf",
+  "p_sight65.s:P_CheckSight",
+  "p_spec65.s:P_CheckTag",
+  "p_spec65.s:mod3",
+  "p_think65.s:P_RemoveThinker"
+ ],
+ "core_bytes": 3208,
+ "core_room": 3233,
+ "core_reserve": 16,
+ "core_fixed": {
+  "play": 9791,
+  "game": 10053,
+  "gprof": 10063
+ },
+ "a_chase_rule": true,
+ "apart_rule": true,
+ "a_chase_in_core": true,
+ "model": {
+  "page_us": 63.8,
+  "call_us": 5.0,
+  "restore": "eager",
+  "train": [
+   "still",
+   "walk",
+   "demo3",
+   "lock3a"
+  ],
+  "hold": [
+   "fight",
+   "demo3b",
+   "lock3b"
+  ],
+  "sweeps": 4,
+  "anneal": 200000,
+  "seed": 22,
+  "search": true,
+  "scenes": {
+   "still": {
+    "before": {
+     "loads_a_tic": 16.69,
+     "pages_a_tic": 80.49,
+     "cross_a_tic": 10.6,
+     "ms_a_tic": 5.188
+    },
+    "after": {
+     "loads_a_tic": 18.69,
+     "pages_a_tic": 84.09,
+     "cross_a_tic": 10.6,
+     "ms_a_tic": 5.418
+    }
+   },
+   "walk": {
+    "before": {
+     "loads_a_tic": 31.65,
+     "pages_a_tic": 168.32,
+     "cross_a_tic": 20.88,
+     "ms_a_tic": 10.843
+    },
+    "after": {
+     "loads_a_tic": 29.15,
+     "pages_a_tic": 151.33,
+     "cross_a_tic": 18.81,
+     "ms_a_tic": 9.749
+    }
+   },
+   "demo3": {
+    "before": {
+     "loads_a_tic": 108.99,
+     "pages_a_tic": 612.03,
+     "cross_a_tic": 73.17,
+     "ms_a_tic": 39.413
+    },
+    "after": {
+     "loads_a_tic": 86.05,
+     "pages_a_tic": 470.79,
+     "cross_a_tic": 65.29,
+     "ms_a_tic": 30.363
+    }
+   },
+   "lock3a": {
+    "before": {
+     "loads_a_tic": 134.91,
+     "pages_a_tic": 695.4,
+     "cross_a_tic": 120.81,
+     "ms_a_tic": 44.971
+    },
+    "after": {
+     "loads_a_tic": 128.38,
+     "pages_a_tic": 660.77,
+     "cross_a_tic": 117.78,
+     "ms_a_tic": 42.746
+    }
+   },
+   "fight": {
+    "before": {
+     "loads_a_tic": 33.68,
+     "pages_a_tic": 175.1,
+     "cross_a_tic": 24.05,
+     "ms_a_tic": 11.292
+    },
+    "after": {
+     "loads_a_tic": 31.97,
+     "pages_a_tic": 167.95,
+     "cross_a_tic": 21.62,
+     "ms_a_tic": 10.823
+    }
+   },
+   "demo3b": {
+    "before": {
+     "loads_a_tic": 114.19,
+     "pages_a_tic": 622.7,
+     "cross_a_tic": 81.58,
+     "ms_a_tic": 40.136
+    },
+    "after": {
+     "loads_a_tic": 94.84,
+     "pages_a_tic": 505.44,
+     "cross_a_tic": 74.53,
+     "ms_a_tic": 32.62
+    }
+   },
+   "lock3b": {
+    "before": {
+     "loads_a_tic": 153.45,
+     "pages_a_tic": 798.88,
+     "cross_a_tic": 125.2,
+     "ms_a_tic": 51.594
+    },
+    "after": {
+     "loads_a_tic": 146.23,
+     "pages_a_tic": 780.9,
+     "cross_a_tic": 120.75,
+     "ms_a_tic": 50.425
+    }
+   }
+  },
+  "top_loads": {
+   "still": [
+    [
+     "call",
+     "g_game65.s:G_Ticker",
+     "p_think65.s:P_Ticker",
+     1.0,
+     8.0
+    ],
+    [
+     "call",
+     "p_think65.s:P_Ticker",
+     "p_user65.s:P_PlayerThink",
+     1.0,
+     8.0
+    ],
+    [
+     "return",
+     "p_think65.s:P_Ticker",
+     "p_user65.s:P_PlayerThink",
+     1.0,
+     8.0
+    ],
+    [
+     "call",
+     "@core",
+     "@glue:DLG_H",
+     1.0,
+     7.0
+    ],
+    [
+     "call",
+     "p_think65.s:P_Ticker",
+     "p_tick65.s:P_RunThinkers",
+     1.0,
+     6.0
+    ],
+    [
+     "call",
+     "@core",
+     "@glue:DLG_S",
+     1.0,
+     5.0
+    ],
+    [
+     "return",
+     "@glue:DLG_B",
+     "g_game65.s:G_Ticker",
+     1.0,
+     5.0
+    ],
+    [
+     "call",
+     "p_tick65.s:P_SetMobjState",
+     "p_enemy65.s:A_Look",
+     0.6,
+     4.76
+    ],
+    [
+     "call",
+     "p_user65.s:P_PlayerThink",
+     "p_pspr65.s:P_MovePsprites",
+     1.0,
+     4.0
+    ],
+    [
+     "return",
+     "g_game65.s:G_Ticker",
+     "p_think65.s:P_Ticker",
+     1.0,
+     4.0
+    ],
+    [
+     "return",
+     "p_tick65.s:P_SetMobjState",
+     "p_enemy65.s:A_Look",
+     0.6,
+     3.57
+    ],
+    [
+     "call",
+     "@glue:DLG_B",
+     "g_game65.s:G_Ticker",
+     1.0,
+     2.0
+    ]
+   ],
+   "walk": [
+    [
+     "call",
+     "g_game65.s:G_Ticker",
+     "p_think65.s:P_Ticker",
+     1.0,
+     8.0
+    ],
+    [
+     "call",
+     "p_think65.s:P_Ticker",
+     "p_user65.s:P_PlayerThink",
+     1.0,
+     8.0
+    ],
+    [
+     "return",
+     "p_think65.s:P_Ticker",
+     "p_user65.s:P_PlayerThink",
+     1.0,
+     8.0
+    ],
+    [
+     "call",
+     "p_mobj65.s:P_XYMovement",
+     "p_map65.s:P_TryMove",
+     1.0,
+     7.96
+    ],
+    [
+     "call",
+     "p_path65.s:ptBody",
+     "p_map65.s:P_BlockLinesIterator",
+     0.91,
+     7.25
+    ],
+    [
+     "call",
+     "p_mobj65.s:slideTrace",
+     "p_path65.s:P_PathTraverse",
+     0.88,
+     7.07
+    ],
+    [
+     "call",
+     "@core",
+     "@glue:DLG_H",
+     1.01,
+     7.06
+    ],
+    [
+     "call",
+     "p_think65.s:P_Ticker",
+     "p_tick65.s:P_RunThinkers",
+     1.0,
+     6.0
+    ],
+    [
+     "return",
+     "p_tick65.s:P_MobjThinker",
+     "p_mobj65.s:P_XYMovement",
+     1.0,
+     5.97
+    ],
+    [
+     "return",
+     "p_path65.s:ptBody",
+     "p_map65.s:P_BlockLinesIterator",
+     0.91,
+     5.44
+    ],
+    [
+     "call",
+     "@core",
+     "@glue:DLG_S",
+     1.0,
+     5.0
+    ],
+    [
+     "return",
+     "@glue:DLG_B",
+     "g_game65.s:G_Ticker",
+     1.0,
+     5.0
+    ]
+   ],
+   "demo3": [
+    [
+     "call",
+     "p_tick65.s:P_SetMobjState",
+     "p_enemy65.s:A_Look",
+     7.21,
+     57.66
+    ],
+    [
+     "return",
+     "p_tick65.s:P_SetMobjState",
+     "p_enemy65.s:A_Look",
+     7.21,
+     43.24
+    ],
+    [
+     "call",
+     "p_enemy65.s:pMove",
+     "p_map65.s:P_TryMove",
+     4.16,
+     33.26
+    ],
+    [
+     "return",
+     "p_enemy65.s:A_Chase",
+     "p_enemy65.s:pMove",
+     2.9,
+     17.41
+    ],
+    [
+     "call",
+     "p_mobj65.s:P_XYMovement",
+     "p_map65.s:P_TryMove",
+     2.11,
+     16.87
+    ],
+    [
+     "call",
+     "p_enemy65.s:A_Chase",
+     "p_enemy65.s:checkMeleeRange",
+     1.83,
+     14.67
+    ],
+    [
+     "return",
+     "p_tick65.s:P_MobjThinker",
+     "p_mobj65.s:P_XYMovement",
+     2.11,
+     12.66
+    ],
+    [
+     "return",
+     "p_enemy65.s:pMove",
+     "p_map65.s:P_TryMove",
+     4.16,
+     12.47
+    ],
+    [
+     "return",
+     "p_sight65.s:P_CheckSight",
+     "p_sight65.s:interceptFrac",
+     1.56,
+     12.45
+    ],
+    [
+     "return",
+     "p_tick65.s:P_MobjThinker",
+     "p_mobj65.s:P_ZMovement",
+     2.05,
+     12.31
+    ],
+    [
+     "return",
+     "p_enemy65.s:A_Chase",
+     "p_enemy65.s:checkMeleeRange",
+     1.83,
+     11.0
+    ],
+    [
+     "call",
+     "p_tick65.s:P_MobjThinker",
+     "p_mobj65.s:P_XYMovement",
+     2.11,
+     10.55
+    ]
+   ],
+   "lock3a": [
+    [
+     "call",
+     "p_enemy65.s:pMove",
+     "p_map65.s:P_TryMove",
+     15.81,
+     126.48
+    ],
+    [
+     "return",
+     "p_enemy65.s:pMove",
+     "p_map65.s:P_TryMove",
+     15.81,
+     47.43
+    ],
+    [
+     "return",
+     "p_enemy65.s:A_Chase",
+     "p_enemy65.s:pMove",
+     7.59,
+     45.54
+    ],
+    [
+     "call",
+     "p_enemy65.s:A_Chase",
+     "p_enemy65.s:checkMeleeRange",
+     4.62,
+     36.92
+    ],
+    [
+     "call",
+     "p_tick65.s:P_SetMobjState",
+     "p_enemy65.s:A_Look",
+     4.12,
+     32.96
+    ],
+    [
+     "return",
+     "p_enemy65.s:A_Chase",
+     "p_enemy65.s:checkMeleeRange",
+     4.62,
+     27.69
+    ],
+    [
+     "call",
+     "p_enemy65.s:doNewChaseDir",
+     "p_enemy65.s:tryWalk",
+     8.55,
+     25.65
+    ],
+    [
+     "return",
+     "p_enemy65.s:doNewChaseDir",
+     "p_enemy65.s:tryWalk",
+     8.55,
+     25.65
+    ],
+    [
+     "return",
+     "p_tick65.s:P_SetMobjState",
+     "p_enemy65.s:A_Look",
+     4.12,
+     24.72
+    ],
+    [
+     "call",
+     "p_enemy65.s:A_Chase",
+     "p_enemy65.s:pMove",
+     7.59,
+     22.77
+    ],
+    [
+     "call",
+     "p_mobj65.s:P_XYMovement",
+     "p_map65.s:P_TryMove",
+     1.93,
+     15.44
+    ],
+    [
+     "return",
+     "p_tick65.s:P_MobjThinker",
+     "p_mobj65.s:P_ZMovement",
+     2.44,
+     14.64
+    ]
+   ],
+   "fight": [
+    [
+     "call",
+     "g_game65.s:G_Ticker",
+     "p_think65.s:P_Ticker",
+     1.0,
+     8.0
+    ],
+    [
+     "call",
+     "p_think65.s:P_Ticker",
+     "p_user65.s:P_PlayerThink",
+     1.0,
+     8.0
+    ],
+    [
+     "return",
+     "p_think65.s:P_Ticker",
+     "p_user65.s:P_PlayerThink",
+     1.0,
+     8.0
+    ],
+    [
+     "call",
+     "@core",
+     "@glue:DLG_H",
+     1.14,
+     8.0
+    ],
+    [
+     "call",
+     "p_path65.s:traverseTo",
+     "p_attack65.s:PTR_AimTraverse",
+     0.93,
+     7.43
+    ],
+    [
+     "return",
+     "p_path65.s:traverseTo",
+     "p_attack65.s:PTR_AimTraverse",
+     0.93,
+     7.43
+    ],
+    [
+     "call",
+     "p_trace65.s:traceLines",
+     "p_trace65.s:lineCross",
+     0.86,
+     6.86
+    ],
+    [
+     "return",
+     "p_trace65.s:traceLines",
+     "p_trace65.s:lineCross",
+     0.86,
+     6.86
+    ],
+    [
+     "return",
+     "p_tick65.s:P_MobjThinker",
+     "p_mobj65.s:P_ZMovement",
+     1.04,
+     6.23
+    ],
+    [
+     "call",
+     "p_think65.s:P_Ticker",
+     "p_tick65.s:P_RunThinkers",
+     1.0,
+     6.0
+    ],
+    [
+     "return",
+     "@glue:DLG_C",
+     "p_pspr65.s:P_CheckAmmo",
+     1.0,
+     5.0
+    ],
+    [
+     "call",
+     "@core",
+     "@glue:DLG_S",
+     1.0,
+     5.0
+    ]
+   ],
+   "demo3b": [
+    [
+     "call",
+     "p_enemy65.s:pMove",
+     "p_map65.s:P_TryMove",
+     7.35,
+     58.79
+    ],
+    [
+     "call",
+     "p_tick65.s:P_SetMobjState",
+     "p_enemy65.s:A_Look",
+     6.14,
+     49.13
+    ],
+    [
+     "return",
+     "p_tick65.s:P_SetMobjState",
+     "p_enemy65.s:A_Look",
+     6.14,
+     36.85
+    ],
+    [
+     "return",
+     "p_enemy65.s:A_Chase",
+     "p_enemy65.s:pMove",
+     4.27,
+     25.62
+    ],
+    [
+     "return",
+     "p_enemy65.s:pMove",
+     "p_map65.s:P_TryMove",
+     7.35,
+     22.05
+    ],
+    [
+     "call",
+     "p_enemy65.s:A_Chase",
+     "p_enemy65.s:checkMeleeRange",
+     2.3,
+     18.4
+    ],
+    [
+     "return",
+     "p_enemy65.s:A_Chase",
+     "p_enemy65.s:checkMeleeRange",
+     2.3,
+     13.8
+    ],
+    [
+     "call",
+     "p_enemy65.s:A_Chase",
+     "p_enemy65.s:pMove",
+     4.27,
+     12.81
+    ],
+    [
+     "call",
+     "p_mobj65.s:P_XYMovement",
+     "p_map65.s:P_TryMove",
+     1.3,
+     10.36
+    ],
+    [
+     "return",
+     "p_sight65.s:P_CheckSight",
+     "p_sight65.s:interceptFrac",
+     1.29,
+     10.29
+    ],
+    [
+     "call",
+     "p_enemy65.s:doNewChaseDir",
+     "p_enemy65.s:tryWalk",
+     3.11,
+     9.32
+    ],
+    [
+     "return",
+     "p_enemy65.s:doNewChaseDir",
+     "p_enemy65.s:tryWalk",
+     3.11,
+     9.32
+    ]
+   ],
+   "lock3b": [
+    [
+     "call",
+     "p_enemy65.s:pMove",
+     "p_map65.s:P_TryMove",
+     15.35,
+     122.82
+    ],
+    [
+     "return",
+     "p_enemy65.s:A_Chase",
+     "p_enemy65.s:pMove",
+     7.76,
+     46.57
+    ],
+    [
+     "return",
+     "p_enemy65.s:pMove",
+     "p_map65.s:P_TryMove",
+     15.35,
+     46.06
+    ],
+    [
+     "call",
+     "p_enemy65.s:A_Chase",
+     "p_enemy65.s:checkMeleeRange",
+     4.91,
+     39.27
+    ],
+    [
+     "call",
+     "p_tick65.s:P_SetMobjState",
+     "p_enemy65.s:A_Look",
+     3.69,
+     29.55
+    ],
+    [
+     "return",
+     "p_enemy65.s:A_Chase",
+     "p_enemy65.s:checkMeleeRange",
+     4.91,
+     29.45
+    ],
+    [
+     "call",
+     "p_enemy65.s:doNewChaseDir",
+     "p_enemy65.s:tryWalk",
+     8.47,
+     25.4
+    ],
+    [
+     "return",
+     "p_enemy65.s:doNewChaseDir",
+     "p_enemy65.s:tryWalk",
+     8.47,
+     25.4
+    ],
+    [
+     "call",
+     "p_enemy65.s:A_Chase",
+     "p_enemy65.s:pMove",
+     7.76,
+     23.28
+    ],
+    [
+     "return",
+     "p_tick65.s:P_SetMobjState",
+     "p_enemy65.s:A_Look",
+     3.69,
+     22.16
+    ],
+    [
+     "return",
+     "p_tick65.s:P_MobjThinker",
+     "p_mobj65.s:P_ZMovement",
+     2.98,
+     17.86
+    ],
+    [
+     "return",
+     "p_enemy65.s:A_Chase",
+     "p_enemy65.s:newChaseDir",
+     2.86,
+     17.18
+    ]
+   ]
+  }
+ },
+ "size_source": "measured: play, game, gprof",
+ "margins": {
+  "group": 64,
+  "core": 16
+ }
+}

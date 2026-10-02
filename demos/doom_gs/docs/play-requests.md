@@ -21,6 +21,10 @@ lockstep and test builds do what they did.
 
 ## P2. Milestone 10, `gplace`: count `dl_hook.o`'s core part
 
+**Done** in speed wave 1 (`docs/speed-parts/place.md`): `gplace.py`'s core
+budget is the largest fixed core of every build, the play link's
+`dl_hook.o` and the lockstep's `ghook.o`/`grec.o` included.
+
 **What.** The play link replaces `ghook.o` by `dl_hook.o`, whose core part
 is 207 B (`ghook.o`'s 69 B): the trampolines of `S_StartSound*`,
 `I_GetTime`, `AM_Stop`, `D_PageTicker`, `s2t_pos`. `gplace.py`'s core

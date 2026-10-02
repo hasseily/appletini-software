@@ -1261,11 +1261,19 @@ static void skip_idle(a2vm *m, uint16_t pc)
             continue;
         if (idle->need_main_zp && m->sw[SW_ALTZP])
             return;
-        if (idle->compare &&
-            (m->main[idle->word_a] != m->main[idle->word_b] ||
-             m->main[(uint16_t)(idle->word_a + 1)] !=
-                 m->main[(uint16_t)(idle->word_b + 1)]))
-            return;
+        if (idle->compare) {
+            const uint8_t *a = a2vm_storage(m, idle->store_a, 0, idle->word_a);
+            const uint8_t *b = a2vm_storage(m, idle->store_b, 0, idle->word_b);
+            const uint8_t *a1 = a2vm_storage(m, idle->store_a, 0,
+                                             (uint16_t)(idle->word_a + 1));
+            const uint8_t *b1 = a2vm_storage(m, idle->store_b, 0,
+                                             (uint16_t)(idle->word_b + 1));
+            if (!a || !b || !a1 || !b1 || *a != *b || *a1 != *b1)
+                return;
+        }
+        for (unsigned j = 0; j < idle->byte_count; j++)
+            if (m->main[idle->byte_addr[j]] != idle->byte_value[j])
+                return;
         if (idle->need_vbl && !a2vm_in_vbl(m))
             return;
         uint64_t now = a2vm_now(m), target;
@@ -1356,6 +1364,9 @@ void a2vm_step(a2vm *m)
         m->instruction_pc = pc;
         if (m->idle_map[pc >> 3] & (1u << (pc & 7)))
             skip_idle(m, pc);
+        if (m->pc_hook && !m->r.waiting &&
+            (m->pc_hook_map[pc >> 3] & (1u << (pc & 7))))
+            m->pc_hook(m, pc);
         if (m->cost && m->cost->timed && m->r.waiting)
             m->cost->t += m->cost->p.turbo_hit;     /* WAI takes time */
         int rti = (m->ay_log || m->irq_bound_count) && !m->r.waiting &&
@@ -1381,6 +1392,9 @@ void a2vm_step(a2vm *m)
     m->instruction_pc = pc;     /* an interrupt entry's too */
     if (m->idle_map[pc >> 3] & (1u << (pc & 7)))
         skip_idle(m, pc);
+    if (m->pc_hook && !taken && m->cpu.state == CPU65C02_RUNNING &&
+        (m->pc_hook_map[pc >> 3] & (1u << (pc & 7))))
+        m->pc_hook(m, pc);
     if (m->prodos && m->cpu.state == CPU65C02_RUNNING &&
         !(irq && !(m->cpu.p & CPU65C02_I)) && native_mli(m))
         return;

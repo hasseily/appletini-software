@@ -11,6 +11,7 @@ Every run is bounded (playdisk.run: bounded.run, its time, its files'
 sizes) in a directory under build/ deleted after it.
 """
 
+import math
 import shutil
 import struct
 import sys
@@ -284,8 +285,13 @@ class Level(PlayRun):
         self.assertGreater(ac, ab + 20)
         xc, yc, _ = self.player(m['c'])
         xd, yd, _ = self.player(m['d'])
-        # (facing about 130 degrees: west of the view's left is south-west)
-        self.assertLess(xd - xc, -10)
+        # A strafes to the view's left: along the angle + 90 degrees. The
+        # angle the held left arrow reached depends on the frames a second
+        # (the input runs on model time): about 130 degrees before speed
+        # wave 1, more since, so the direction comes from the angle at c.
+        left = math.radians(ac + 90)
+        self.assertGreater((xd - xc) * math.cos(left) +
+                           (yd - yc) * math.sin(left), 10)
 
     def test_pickup_and_message_timeout(self):
         """The health bonus north-east of the start (1312, -3520): picked

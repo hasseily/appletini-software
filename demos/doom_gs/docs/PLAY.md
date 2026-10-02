@@ -87,7 +87,7 @@ The brain's entries (`DL_CODE`): `E_BOOT` (the boot's inits, the title),
 `E_FRAME` (a frame), `E_RESUME` (after a load: `g_resume`, the level's
 frame-block fields, `S_Start`, `G_Ticker` again), `E_EVENT` (the
 automap's answer for the queue's head), `E_MENU` (the menu's request: new
-game, end game, quit, save).
+game, end game, quit, save, the benchmark).
 
 **The load protocol** (GAME.md 3.4): a tic whose action loads a level
 returns `GT_LOAD`; the brain writes the load list (`fin_load` when
@@ -100,13 +100,14 @@ and `S_Start`, then `G_Ticker` again at its action loop (part tic's
 
 The kernel keeps nothing in zero page between steps: its state is `KV_*`
 (card `$FE7B-$FE7F`) and the brain's `DL_*` (main `DLM`, `$1F00-$1F7F`,
-75 of 128 B: `python3 tools/native/playlayout.py --report`).
+82 of 128 B with the benchmark's `DL_BENCH`, `DL_BVIEW`, `DL_BRT`:
+`python3 tools/native/playlayout.py --report`).
 
 ## 4. Memory
 
 | Space | Range | Holds |
 | --- | --- | --- |
-| Main card | `$FF00-$FFBD` | the kernel (190 of 250 B before the vectors) |
+| Main card | `$FF00-$FFBD`, `$FFD5-$FFF9` | the kernel (190 B; `$FFBE-$FFD4` free) and, since speed wave 1, `far_gcopy` at `KERN_GCOPY` (`glayout.py`): `gr_load`'s copy of a whole group in one `RAMRD` window (the 250 B before the vectors are all used: `dl_kern.s` pads to `KERN_GCOPY`) |
 | Main card | `$FE80-$FEFF`, `$FE7B-$FE7F` | `DLBUF` (the step list), `KV_*` |
 | Main | `$0880-$08FF`, `$0B94-$0BFF` | the kernel's menu loop (read-only code, copied by DLINIT's PRIVATE request with the static tables: MEMORY_MAP.md 3.2's free bytes, never `$0878-$087F`) |
 | Main | `$1F00-$1F7F` | `DLM`: the brain's state (`DL_*`) |
@@ -119,12 +120,14 @@ The kernel keeps nothing in zero page between steps: its state is `KV_*`
 | RamWorks 104 (`S2STATE`) | `$0200-` | the 2D state's first values (the palette state, the automap's, the HUD's, the menu's save slots' text, the settings' defaults) |
 
 **The tic image** (glayout's game layout, linked by `play.mk` with
-`playlink.py --tic-cfg`): W `$6000-$65FF`, core `$6600-$98DB` (13,020 of
-13,312 B), slot 1 `$9E00-$A5FF`, slot 2 `$A600-$ADFF`, the planes
-`$B400-$BFFF`. The glue's groups follow milestone 10's 28: `DLG_B` 956,
-`DLG_C` 1,081, `DLG_D` 1,242, `DLG_H` 1,594, `DLG_S` 1,270 B (of
-2,048: `python3 tools/native/playlink.py --sizes --play build/native/play`). `gcall.s`'s slot cache tags (`SLOT_GRP`) are reset at
-each `K_TIC` because every other image overwrites the slots.
+`playlink.py --tic-cfg`): W `$6000-$65FF`, core `$6600-$98CE` (13,007 of
+13,312 B with speed wave 1's placement), slot 1 `$9E00-$A5FF`, slot 2
+`$A600-$ADFF`, the planes `$B400-$BFFF`. The glue's groups follow
+milestone 10's, 43 since speed wave 1: `DLG_B` 1,049, `DLG_C` 1,081,
+`DLG_D` 1,242, `DLG_H` 1,902, `DLG_S` 1,270 B (of 2,048: `make -f
+play.mk sizes`). `gcall.s`'s slot cache tags (`SLOT_GRP`) and, since
+speed wave 1, the lazy restore's `SLOT_NEED` are reset at each `K_TIC`
+because every other image overwrites the slots.
 
 **Zero page.** Each image uses its own (MEMORY_MAP.md 13, SCREENS.md 4.3).
 The glue in the tic image uses the game's temporaries `GT_0-6`
@@ -179,7 +182,7 @@ far layer, phase loader, replay), and the bank files: the level store
 render images, the 2D images, `OVLW`), `CODE.2` (the tic image, its group
 directory written into the core), `PLAY.1` (`DLBANK`, `DEMOB`,
 `S2STATE`'s first values, `SPRBOUND`), `RTABLES.1`, `SONGS.1`, `SFX.1`,
-`GFX.1`, `HUDTXT.1`. 4,027,392 bytes.
+`GFX.1`, `HUDTXT.1`. 4,027,904 bytes (speed wave 1).
 
 `DOOM.SYSTEM` probes the card, loads every bank file into RamWorks and the
 card images into the card, checks the CRCs, starts the mouse card's clock
@@ -190,7 +193,29 @@ static tables and the menu loop; black palettes), `MENUW`'s `m_init`,
 `WIW`'s `wi_init`, `FINW`'s `fin_init`, then the first frame. On a2vm the
 title page shows about 6 s after the start of `DOOM.SYSTEM`.
 
-## 8. Frame rate (a2vm, f121, measured, not optimised)
+## 8. Frame rate (a2vm, f121, measured)
+
+**After speed wave 1 (2026-10-02; section 14, `docs/SPEED.md` 5).**
+`python3 tools/native/playtime.py --scene still|demo3 [--profile
+fastpath]` on `build/native/DOOM.hdv`, card-equivalent (the exact idle),
+and the menu's BENCHMARK played whole from the menu:
+
+| Scene | f121 before | f121 after | fastpath after | `K_TIC` after (f121) | Render after (`nr_frame` + `nm_masked` + `nm_bkload` + `nb_frame`, f121) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| E1M1's start, standing still (15-25 s) | 180.7 ms, **5.53 FPS**, 21.9 tics/s | 87.9 ms, **11.37 FPS**, 34.9 tics/s | 84.3 ms, 11.86 FPS | 24.4 ms (11.5 group loads a tic) | 52.2 ms |
+| demo3 on E1M7, gametics 1052-1796 (186 frames of 4 tics) | 873.3 ms mean, **1.15 FPS**, max 1,656 | 271.6 ms mean, **3.68 FPS**, max 635 | 243.8 ms, 4.10 FPS | 188.4 ms (63.5 loads a tic) | 70.1 ms |
+| OPTIONS, BENCHMARK: the whole of demo3, 534 frames | FPS **0.912** | FPS **3.318** (5,632 realtics) | FPS 3.842 | | |
+
+"Before" is the owner's build (`SPEED.md` 2), but the benchmark's: it
+did not exist then, so its "before" is that build plus part bench alone
+(a2vm f121 with the exact idle: 534 frames in 20,480 realtics; part bench read 0.900 with the old idle). Standing still now runs at real time (35 tics a
+second, 3.1 tics a frame); demo3 still runs 4 tics a frame, the same
+frames as before.
+
+**Before speed wave 1** (the rest of this section, kept as measured then;
+the still row's 5.3 FPS and 190 ms were a2vm's idle artifact, `SPEED.md`
+1: the exact figure is 5.53 FPS, 180.7 ms, with `K_TIC` 112.1 ms, the
+render 57.1 ms, loads and `s2_frame` 11.5 ms).
 
 Measured from runs with a snapshot of the step list at every kernel step
 dispatch (`dl_kern.s`'s `run`, by PC), the cycles between dispatches
@@ -219,10 +244,10 @@ placement that keeps the thinker loop's callees out of its slot (or
 `P_SetMobjState` in the core), then measuring again. Not done today: the
 owner asked for the rate measured, not optimised.
 
-To measure again: replay a script with snapshots at the `run` dispatch
-(`pc FF3B:main@*`: A = the step code times 2, `DLBUF` in the card's
-record) and at G_Ticker + `$109` and + `$10F`; a2vm's `--every-limit`
-must be raised for windows of more than a few seconds.
+To measure again: `python3 tools/native/playtime.py --scene
+still|walk|demo3 [--profile fastpath]` (part measure: every PC from the
+play link's labels; the walk is not like for like across builds, its
+input runs on model time).
 
 ## 9. The final assembly (2026-10-02)
 
@@ -262,9 +287,8 @@ What was done to the preparation's tree:
    can make a line or sector skipped for one walk, as on the IIgs); no
    `idrate`.
 
-Requests still open for their owners (`play-requests.md`): P2 (gplace's
-core budget should count `dl_hook.o`'s 207 B; the core is 13,020 of
-13,312 B), P5, P6, and the new P7 (milestone 10's profiling build's
+Requests still open for their owners (`play-requests.md`): P5, P6 (P2,
+gplace's core budget counting `dl_hook.o`, was done by speed wave 1), and the new P7 (milestone 10's profiling build's
 `PH_LOAD` phase breaks milestone 11's layout check, so a play build that
 must regenerate `s2.inc` fails until it is settled).
 
@@ -273,7 +297,8 @@ must regenerate `s2.inc` fails until it is settled).
     python3 tools/native/playdisk.py                 # make -f play.mk, then DOOM.hdv
     python3 tools/native/playdisk.py --no-build --run SCRIPT --seconds S \
         [--keep build/tmp-play-x]                    # a2vm, bounded
-    python3 -m unittest test_play_glue test_play_runs   # from tests/
+    python3 -m unittest test_play_glue test_play_runs test_play_bench   # from tests/
+    python3 tools/native/playtime.py --scene still|walk|demo3 [--profile fastpath]
 
 A run's script is a2vm's input events (`tools/a2vm/README.md`) with
 `@label` for the play link's labels (`pc @dl_halt shot halt`). A
@@ -287,6 +312,9 @@ TAB, `0x08` left arrow, `0x0B` up arrow, `0x0A` down arrow.
 | `test_play_glue.StaticTables` | DLINIT's copies hold every main and aux 0 table milestone 8's runs load below the card (the `xtoviewangle` bug) |
 | `test_play_glue.SprBound` | `SPRBOUND` by upstream's rule equals the reference's for the sprites its level sets hold |
 | `test_play_runs.Boot` | the boot to the title page with its song; the title loop's demo3 on E1M7, played (tics, views, the player moving); ESC opens and closes the menu; QUIT GAME, Y ends at the halt on the text screen |
+| `test_play_bench` | OPTIONS, BENCHMARK on a disk whose demo3 is cut after 120 tics: demo3 starts on E1M7 with timingdemo set, the result page shows FPS = 35000 × frames / realtics as the host computes it, a key closes it and the title loop goes on; ESC while it runs stops it with no result |
+| `test_playtime` | `playtime.py`'s reading of the PC log (synthetic logs); the exact idle against no idle on the title loop (the same frames) |
+| `test_a2vm_pclog` | a2vm's idle conditions `byte=` and `eq=lc.`, `--pclog`, `--stop-word` |
 | `test_play_runs.Level` | a new game: E1M1 at skill 2, the first frame's view equal to ref816's `calls-newgame/still-00s.png`; the up arrow, the left arrow and A give forwardmove 25, angleturn 640, sidemove -24 and move, turn and strafe the player; the health bonus picked up (health 101) with its HUD message on, then off after 140 tics; TAB opens the automap, TAB again the overlay |
 
 The 14 tests take about 90 s of host time; each a2vm run is bounded
@@ -294,7 +322,10 @@ The 14 tests take about 90 s of host time; each a2vm run is bounded
 
 The whole suite after the assembly (`python3 tools/testpar.py --jobs 4`,
 2026-10-02): 122 modules, 2,052 tests, 0 failures, 0 errors, 26 skipped
-(milestone 10's parts' own skips).
+(milestone 10's parts' own skips). After speed wave 1's integration (`python3
+tools/testpar.py`, 9 jobs, 48 minutes): 127 modules, 2,088 tests, 3
+failures, each a check that assumed the old speed or layout (`SPEED.md`
+5, "Integration"); after the fixes those three modules pass alone.
 
 ## 11. Differences from upstream (named)
 
@@ -315,7 +346,7 @@ The whole suite after the assembly (`python3 tools/testpar.py --jobs 4`,
 
 1. Build it (or take the one built on 2026-10-02):
    `python3 tools/native/playdisk.py` writes `build/native/DOOM.hdv`,
-   4,027,392 bytes, a ProDOS volume `DOOM` whose first file is
+   4,027,904 bytes (speed wave 1), a ProDOS volume `DOOM` whose first file is
    `DOOM.SYSTEM`.
 2. Copy `DOOM.hdv` to the Appletini's SD volume, as for `MUSIC.hdv` and
    the replay disks (the card in a computer, or the menu's USB or FTP SD
@@ -350,6 +381,10 @@ The whole suite after the assembly (`python3 tools/testpar.py --jobs 4`,
 - **Cheats** are upstream's IIgs set: `iddqd`, `idkfa`, `idfa`,
   `idspispopd`, `idchoppers`, `idbehold` + v, s, i, r, a, l, `idrocket`;
   `idclev` ends the level; `idend` goes to the episode's end.
+- **Benchmark**: OPTIONS, BENCHMARK plays demo3 at the normal tic rate and
+  shows FPS = 35000 × frames drawn / realtics; ESC stops it with no
+  result. The whole demo takes about 3 minutes after wave 1 (on a2vm
+  f121: 534 frames in 5,632 tics, FPS 3.318).
 
 | Key | Does |
 | --- | --- |
@@ -375,13 +410,13 @@ The whole suite after the assembly (`python3 tools/testpar.py --jobs 4`,
 
 ### 12.4 Known problems
 
-1. **It is slow.** 5.3 frames a second standing at E1M1's start, 2.7 in
-   E1M1's first fight, 1-2 in E1M2's fights and E1M7's demo (section 8).
-   Because a frame runs at most 4 tics (upstream's rule), the game itself
-   slows down when a frame takes longer than 114 ms: 21 tics a second
-   standing, 10-13 walking E1M1, 5-9 in E1M2's fights (35 is real time).
-   The cause is measured: the tic's code paging (`P_Ticker` 20-53 ms a
-   tic, 39-79 group loads a tic), section 8. Not optimised yet.
+1. **It is slow, less so since speed wave 1.** 11.4 frames a second
+   standing at E1M1's start (was 5.5) and 3.7 in E1M7's demo (was 1.15),
+   on a2vm f121 (sections 8 and 14). Because a frame runs at most 4 tics
+   (upstream's rule), the game itself slows down when a frame takes
+   longer than 114 ms: standing still now runs at real time (35 tics a
+   second), the fights still below it (about 15 tics a second in demo3).
+   Waves 2 and 3 of `docs/SPEED.md` come next.
 2. **Never run on the card.** Everything here is from a2vm under the
    `f121` profile with scripted input. The card's first run may show
    timing or hardware differences a2vm does not model.
@@ -423,3 +458,62 @@ in the session's scratch space; the runs' build directories were deleted.
 | Quit | 7-12 s | QUIT GAME, Y: "DOOM HAS ENDED. TURN THE COMPUTER OFF." on the text screen, the run ends at the kernel's halt |
 | Long run 1 | 0-650 s | E1M1's route, then 460 s of scripted play on E1M2 (walking, turning, firing, using, strafing, weapon keys, the automap's three states, the menu): two deaths and reborns, the green armor picked up, the fist, no stop (`GS_STATUS` 0 throughout, the run ending on its cycle bound); 6,545 tics (3 min 7 s of game time) |
 | **Long run 2** | 0-2,760 s | E1M1's route, then 2,560 s of scripted play on E1M2 as in run 1: **24,435 tics, 11 min 38 s of game time**, 46 minutes of machine time, at least 6 deaths and reborns, armor and ammo picked up, kills; no stop (`GS_STATUS` 0 at all 46 snapshots, the run ending on its cycle bound); 1.0-3.5 frames a second and 4-14 tics a second by minute on E1M2 |
+
+## 14. What changed in speed wave 1 (2026-10-02)
+
+For the owner, after "the benchmark … is indeed too slow and needs a
+speed optimization". Nothing the game shows or does changed: the frames
+and the demo's sync stay bit-exact against ref816 (checked below). Only
+the time changed. `docs/SPEED.md` has the plan and the measurements;
+`docs/speed-parts/*.md` each part's details.
+
+**What you will notice**
+
+- **BENCHMARK works.** OPTIONS, BENCHMARK closes the menu, plays demo3
+  at the normal tic rate and, at the demo's end (about 3 minutes now),
+  shows the BENCHMARK page with the view size and FPS = 35000 × frames /
+  realtics, as upstream's does. ESC while it runs stops it with no
+  result. Read this figure on the card after each wave.
+- **About twice as fast standing still and three times as fast in
+  fights** (a2vm f121, card-equivalent):
+
+  | | Before | After |
+  | --- | ---: | ---: |
+  | E1M1's start, standing still | 5.53 FPS (180.7 ms) | **11.37 FPS** (87.9 ms), real-time tics |
+  | demo3 on E1M7, gametics 1052-1796 | 1.15 FPS (873 ms) | **3.68 FPS** (272 ms) |
+  | The menu's BENCHMARK (all of demo3) | 0.912 | **3.318** |
+  | (fastpath, for reference: still / demo3 / BENCHMARK) | 6.48 / 1.46 / 1.177 | 11.86 / 4.10 / 3.842 |
+
+**What was changed**
+
+1. **The tic code is placed by the machine's real cost** (part place).
+   `gplace.py` now charges what a group load costs (its pages × 63.8 µs,
+   plus 5 µs a cross-group call), trained on recorded calls of still,
+   walk and demo3. Group loads a tic: 38.8 → 11.5 standing still, 241 →
+   63.5 in demo3.
+2. **A group loads in one window** (part paging): `gr_load` copies a
+   whole group through the kernel's new `far_gcopy` (card `$FFD5`) in one
+   `RAMRD` window, 64 µs a page instead of 100. And the **lazy restore**:
+   on return a group is reloaded only when an active caller needs it.
+3. **The bucket pass and the record flush are faster** (part bucket):
+   each column's byte count comes from the record producers (walk 1
+   gone), the chunk copy is a patched zero-page loop, walk 2 and the
+   flush are tighter loops. Render −4.8 ms standing still, −13 ms in the
+   heaviest frame.
+4. **Exact timing on a2vm** (part measure): the emulator now skips the
+   two tic waits only when the card would really wait there (the old
+   skip made still read 190.6 ms instead of 180.7), and
+   `tools/native/playtime.py` measures any build.
+5. **The benchmark** (part bench): `REQ_BENCH`, the timed demo and its
+   result page.
+
+**How it was checked** (the owner's rule: only what changed): lockstep
+demo3 against ref816 (2,134 tics, 0 failures; the game code, its
+placement and the paging), `frame8.py` on 23 frames from one fill (the
+ten heaviest, every 50th of demo3, still and the median: all equal; the
+renderer), the benchmark's scripted runs (`test_play_bench`, and the
+whole benchmark from the menu above), then the fast full suite once
+(`python3 tools/testpar.py`: 127 modules, 2,088 tests, 3 failures on the first run (each a check that assumed the old speed or layout; fixed, and the three modules then passed alone: `SPEED.md` 5, "Integration")).
+
+**The disk**: `build/native/DOOM.hdv`, 4,027,904 bytes, SHA-1 `5fa5a03f80a15c98214129a46f19e4ea3f867632`.
+

@@ -39,6 +39,9 @@
 ;   W_StartFinale, F_Ticker
 ;                  stops (GS_FINALE): the finale is milestone 11's
 ;   I_Error        a stop (GS_ERROR)
+;   G_TimeDemoEnd  a timed demo's end (G_CheckDemoStatus's timingdemo
+;                  branch, A = GS_DEMOEND): the stop (the play build's
+;                  dl_hook.s shows the menu benchmark's result)
 ;   Z_MallocLevel, Z_CallocLevel, Z_CallocLevSpec, Z_Free
 ;                  stops (GS_ZONE): the native pools are gthink.s's
 
@@ -56,7 +59,7 @@
         .export F_LoadScreen, Z_CheckHeap, D_PageTicker, D_AdvanceDemo
         .export W_StartInter, W_StartFinale, F_Ticker, I_Error
         .export Z_MallocLevel, Z_CallocLevel, Z_CallocLevSpec, Z_Free
-        .export ST_TickerHook, HU_TickerHook
+        .export ST_TickerHook, HU_TickerHook, G_TimeDemoEnd
         .import g_stop, far_get, far_put, fc_call, fc_unbuilt
 .ifdef TESTBUILD
         .import dg_tcount
@@ -260,6 +263,7 @@ F_Ticker:
 
 I_Error:
         lda #GS_ERROR
+G_TimeDemoEnd:                  ; (A = GS_DEMOEND)
         jmp g_stop
 
 Z_MallocLevel:

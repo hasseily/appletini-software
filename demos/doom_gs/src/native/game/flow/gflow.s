@@ -38,7 +38,8 @@
 ; screens, automap: none is canonical state); P_SetSecnodeFirstpoolToNull
 ; is the load's (lsetup.s gt_init frees the node pools); bmLoad is the
 ; driver's load; W_GetNumForName is the demo bank's directory (DEMOB,
-; below); the timed demo's report (bmDone) and I_Quit are stops.
+; below); the timed demo's report (bmDone) is the hook G_TimeDemoEnd (the
+; play build's menu benchmark, ghook.s's stop) and I_Quit a stop.
 ;
 ; The demo bank (GAME.md 1.10: DEMOB holds the demo lump that plays). Its
 ; layout is glayout.py's (DEMOB_LAYOUT): a directory at DM_DIR, the count
@@ -68,7 +69,8 @@
         .import far_get, far_put, g_stop, fc_call, fc_unbuilt
         .import ST_Start, HU_Start, Z_CheckHeap, F_LoadScreen, I_GetTime
         .import D_AdvanceDemo, W_StartInter, W_StartFinale, I_Error
-        .import WI_Start, g_mclearrandom
+        .import WI_Start, g_mclearrandom, G_TimeDemoEnd
+        .export fl_realtics := FL_U     ; (the realtics, for G_TimeDemoEnd)
 
 PLR     = G_PLAYER
 
@@ -547,8 +549,8 @@ pd_none:
 
 ; ===========================================================================
 ; G_CheckDemoStatus: at a demo's end, the next demo of the title loop
-; (D_AdvanceDemo), or a timed demo's report, or the quit of a single
-; demo (both milestone 11's: stops)
+; (D_AdvanceDemo), or a timed demo's report (the hook G_TimeDemoEnd, the
+; realtics at fl_realtics), or the quit of a single demo (a stop)
 ; ===========================================================================
         ROUTINE G_CheckDemoStatus
         lda G_TIMINGDEMO
@@ -590,8 +592,8 @@ pd_none:
         dex
         bpl :-
         FCALL div1000           ; resultfps % 1000 and / 1000: bmDone's
-        lda #GS_DEMOEND         ;   (milestone 11: the report)
-        jmp g_stop
+        lda #GS_DEMOEND         ;   (the hook: the play build's menu
+        jmp G_TimeDemoEnd       ;   benchmark, the test builds' stop)
 @play:  lda G_DEMOPLAY
         ora G_DEMOPLAY+1
         beq @rts

@@ -199,6 +199,11 @@ SHARED: Tuple[Shared, ...] = (
     # build/ref816/ref816 on them
     Shared('build/ref816 image', ('test_coverage', 'test_ref816_machine'),
            REF816_USERS + ('test_bridge_dumps', 'test_interpreter')),
+    # playdisk.make() rebuilds build/native/play (play.mk) in its
+    # setUpClass; test_playtime.ExactIdle copies that directory and runs
+    # its disk, so it must not see a rebuild half done (speed wave 1)
+    Shared('build/native/play', ('test_play_runs', 'test_play_bench'),
+           ('test_playtime',)),
 )
 
 
@@ -220,6 +225,7 @@ WRITER_CALLS: Dict[Tuple[str, str], str] = {
     ('render_check', 'make'): 'render.mk',
     ('lrun', 'make'): 'level.mk',
     ('grun', 'make'): 'game.mk',
+    ('playdisk', 'make'): 'build/native/play',
 }
 # A `make` builds into the directory given as its first argument (or obj=,
 # out=): one that names a computed directory (tmp / 'obj') builds a private

@@ -550,7 +550,7 @@ vwkeys:
         beq :+
         clc
         rts
-:       jsr m_startcp           ; (bmStop: no benchmark runs natively)
+:       jsr m_startcp           ; (bmStop: the brain's ev_route, first)
         lda #SFX_SWTCHN
         jmp sound
 

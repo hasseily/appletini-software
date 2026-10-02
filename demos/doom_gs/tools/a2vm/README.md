@@ -260,6 +260,27 @@ declares an idle loop: when the CPU reaches PC and the conditions hold,
 the clock moves to the next VBL (`vbl`) or the next line 0 (`line0`)
 instead of the loop running, and the skipped cycles are counted.
 
+The conditions, each after a colon: `main` (ALTZP off), `invbl` (in
+vertical blanking), `eq=A,B` (the 16-bit words at A and B equal; an
+address is main memory, or the main language card's `$C000-$FFFE` written
+`lc.ADDR`) and `byte=A,V` (the main byte at A holds V; at most four a
+loop). A skip is exact only while the loop would spin until the next
+interrupt: the conditions must say so. The play build's two tic waits are
+the example (`tools/native/playdisk.py` run, docs/SPEED.md 1): the
+kernel's `dl_mwait` and the brain's `dl_bwait` spin while I_GetTime's low
+word (`CLK_TICS`, in the main card) equals `DL_LASTM`, and `dl_bwait`
+lives in a paged slot, so it is skipped only while that slot's
+`SLOT_GRP` byte names the brain's group:
+
+    --idle BD0:vbl:main:eq=lc.E407,1F01
+    --idle A66C:vbl:main:byte=19EE,1D:eq=lc.E407,1F01
+
+(addresses of the build of 2026-10-02; `playdisk.run` reads them from
+the link's labels and symbols). Without the two conditions the skip of
+`dl_bwait` jumped to the next VBL when a tic was already due, and
+whenever another group's instruction sat at that address: 9.9 ms a frame
+standing still, up to 49.5 ms a frame after a re-placement.
+
 ### The two cores
 
 `--core py65` (the default) is the compatibility core, `py65core.h`: it
@@ -342,6 +363,8 @@ rendered.
 | `--idle PC:vbl` or `PC:line0`, with `:main`, `:invbl`, `:eq=A,B` | An idle loop to skip, and when (ALTZP off; in vertical blanking; the main words at A and B equal) |
 | `--boundary ADDR`, `--boundaries N` | A frame boundary (the CPU at ADDR after a step, ALTZP off), and how many to run |
 | `--cycles N`, `--stop-pc ADDR[:main]` | Other ends of the run. Without `--cycles` a run stops at 20,000,000,000 cycles (about two minutes on the host) with end `cycle-cap` and exit status 3, so that a run whose boundary never comes (a bug) ends; `--cycles none` runs with no limit |
+| `--stop-word ADDR:N` | Another end: the 32-bit little-endian main word at ADDR (hex), once it has been below N after a step, is at least N (end `stop-word`). A game's tic counter: the run ends once a measured stretch is over, whatever the memory held before the game set the counter |
+| `--pclog FILE`, `--pclog-pcs`, `--pclog-bytes`, `--pclog-from`, `--pclog-limit` | The PC log (below) |
 | `--every-limit N` | At most N snapshots or shots of each `pc ADDR@*` event (default 100, 840 MB of whole-RAM snapshots); the visit after them ends the run with an error (status 2) |
 | `--input FILE` | Input events, below |
 | `--snapshot-dir DIR`, `--snapshot-boundaries`, `--final-snapshot` | Snapshots: `NAME.json` (the state) and `NAME.ram` (main 64 KB, main LC 16 KB, main LC bank 1 4 KB, then the 128 aux banks) |
@@ -412,6 +435,32 @@ clock in fabric clocks (133.333 MHz) when `--cost` is on, else `-`. With
 `--cost-timed` the machine runs on that clock, so it is the time on the
 card. The writes of an interrupt are the `w` lines between its `irq` and
 the next `rti`; `tools/sound/run65.py` groups them so.
+
+### The PC log
+
+`--pclog FILE` (the speed plan, 2026-10-02: `tools/native/playtime.py`)
+writes a line before each instruction run at one of the PCs of
+`--pclog-pcs LIST` (hex, commas, at most 64), after the idle skip; not
+for an interrupt's entry, nor while the CPU waits (WAI) or is stopped.
+It only observes: a run with it is the same run.
+
+    # a2vm pclog 1 (tools/a2vm/README.md, "The PC log")
+    # pcs FF52,FF7F,823A
+    # bytes lc.FF9B,1DC0
+    # clock fabric clocks (--cost-timed)
+    # CLOCK PC A X Y S ALTZP BYTE...
+    2004417163 FF52 00 01 05 FB 0 93 BC
+
+`CLOCK` is the machine's clock in decimal (fabric clocks with
+`--cost-timed`, else the core's cycles); `PC` to `S` are hex, the
+registers before the instruction; `ALTZP` 0 or 1; then one hex byte for
+each address of `--pclog-bytes LIST` (at most 16), read without side
+effects from main memory, or from the main language card for `lc.ADDR`
+(`$C000-$FFFF`). `--pclog-from N` starts the log at clock N.
+`--pclog-limit N` (default 1,000,000 lines, about 50 MB) bounds it: the
+visit that would be line N + 1 halts the run (`pclog: past --pclog-limit
+N lines`, end `halt`, exit status 1), so a log is complete or the run
+fails.
 
 ### Interrupt bounds
 

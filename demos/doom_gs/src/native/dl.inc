@@ -53,6 +53,11 @@ DLG_SND   = GROUPS + DLG_S
   .endif
 .endmacro
 
+; The menu benchmark's bytes in DLM (DL_BENCH, DL_BVIEW, DL_BRT) are
+; playlayout.py's DLM_FIELDS, in play.inc (docs/speed-parts/bench.md)
+MSG_BENCH  = 16                 ; MENUW's messageKind of the result page
+                                ;   (s2_menu.s MSG_BENCH)
+
 ; the upstream event types (keys.inc, g_game65.s)
 EV_KEYDOWN = 0
 EV_KEYUP   = 1

@@ -51,6 +51,19 @@
 ;               for it. Keeps X. Out: Y = the batch's free byte.
 ;   rec_flush   the batch into the staging (the count 0 after). Keeps X.
 ;
+; Speed wave 1, part bucket (RENDER-MASKED.md 6.2 optimisation 10): REC_ROOM
+; also adds each record's bytes in W (its native size less the column
+; byte) to its column's 16-bit count, FCNTLO/FCNTHI (W, the front end's,
+; zeroed by rec_start) or MCNTLO/MCNTHI (W, the masked phase's: mmain.s
+; nm_masked copies FCNT there first), so the bucket pass makes its
+; batches without a first walk of the staging. A count that would pass
+; $FFFF stays at $FFxx (a column of 64 KB stays past every batch). The
+; counts hold every record allocated: a batch the game build drops (6.1,
+; RECDROP) and a column cut at a batch's limit are counted again from the
+; staging by the bucket pass, which makes them exact again. REC_FLUSH copies
+; a batch with one indexed loop (lda BATCH,y / sta (FA_DST),y), a batch
+; crossing an area's end ($C000) in two runs.
+;
 ; A GPL-2 derivative of Webifi's IIgs DOOM (build/upstream/src/iigs/
 ; lists.inc, r_list65.s recAlloc and newPage, r_seg65.s texRec and
 ; PLANEFILL): the same records and the same allocation.
@@ -65,14 +78,20 @@ LAST_AREA = RECSP_LAST          ; the staging's last area (RELEASE: 6.1)
         .define REC_ROOM mrec_room
         .define REC_FLUSH mrec_flush
         .define RBV MRB
+        .define CNTLO MCNTLO
+        .define CNTHI MCNTHI
         .export mrec_room, mrec_flush
         .segment "MASKW"
 .else
         .define REC_ROOM rec_room
         .define REC_FLUSH rec_flush
         .define RBV RB
+        .define CNTLO FCNTLO
+        .define CNTHI FCNTHI
         .export rec_start, rec_room, rec_flush
+        .import __RENDERW_RUN__, __RENDERW_SIZE__
         .segment "RENDERW"
+.assert __RENDERW_RUN__ + __RENDERW_SIZE__ <= FCNTLO, lderror, "the front end's code passes FCNTLO"
 
 ; ---------------------------------------------------------------------------
 ; rec_start: no record yet: STG_BANK 0 (aux 0), STG_PTR = STAGE, RB = 0;
@@ -90,8 +109,10 @@ rec_start:
         stz XPUSED
         stz UPFLUSH
         stz RECDROP             ; (6.1: nothing dropped yet)
-        ldx #VIEWWIDTH
+        ldx #VIEWWIDTH          ; (and no column's count yet)
 :       stz UPOFS-1,x
+        stz FCNTLO-1,x
+        stz FCNTHI-1,x
         dex
         bne :-
         rts
@@ -99,9 +120,9 @@ rec_start:
 
 ; ---------------------------------------------------------------------------
 ; REC_ROOM: the page model for a record of A bytes (native) in column X,
-; RECSEQ + 1 (the masked copy: the record's number in RSEQ); Y = the
-; batch's free byte, after a flush when the batch has no room for A bytes.
-; Changes A, Y (a model's flush: every UPOFS). Keeps X.
+; RECSEQ + 1 (the masked copy: the record's number in RSEQ), the column's
+; count + A - 1; Y = the batch's free byte, after a flush when the batch has
+; no room for A bytes. Changes A, Y (a model's flush: every UPOFS). Keeps X.
 ; ---------------------------------------------------------------------------
 REC_ROOM:
         pha
@@ -117,6 +138,15 @@ REC_ROOM:
 :       pla
         pha
         dec a                   ; s, upstream's size
+        tay                     ;   (the record's bytes in W)
+        clc                     ; the column's count + s
+        adc CNTLO,x
+        sta CNTLO,x
+        bcc :+
+        inc CNTHI,x
+        bne :+
+        dec CNTHI,x             ; (past $FFFF: it stays at $FFxx)
+:       tya
         clc
         adc UPOFS,x             ; UPOFS + s <= PAGE_ROOM: it fits
         bcs @page
@@ -150,7 +180,7 @@ rec_flush_y:
         rts
 
 ; ---------------------------------------------------------------------------
-; REC_FLUSH: BATCH[0 .. RBV) to the staging. Changes A, Y, FA_DST.
+; REC_FLUSH: BATCH[0 .. RBV) to the staging. Changes A, Y, FA_DST. Keeps X.
 ; ---------------------------------------------------------------------------
 REC_FLUSH:
         ldy RBV
@@ -178,36 +208,52 @@ REC_FLUSH:
         rts
 @go:
 .endif
-        lda STG_PTR
+        lda STG_PTR             ; one window an area
         sta FA_DST
         lda STG_PTR+1
         sta FA_DST+1
         ldy #0
-@window:
-        lda STG_BANK            ; one window an area
-        sta RWBANK
-        sta RAMWRTON
-@byte:  lda BATCH,y
-        sta (FA_DST)
-        iny
-        inc FA_DST
-        bne @more
-        inc FA_DST+1
+        clc                     ; the batch's end: before the area's end
+        lda FA_DST              ;   ($C000 for all of them), one run
+        adc RBV
+        pha
         lda FA_DST+1
-        cmp #>STAGE_END         ; the area's end ($C000 for all of them)
-        beq @full
-@more:  cpy RBV
-        bne @byte
-        sta RAMWRTOFF
-        stz RWBANK
-        lda FA_DST
-        sta STG_PTR
-        lda FA_DST+1
+        adc #0
+        cmp #>STAGE_END
+        beq @split
         sta STG_PTR+1
+        pla
+        sta STG_PTR
+        jsr @window
+@done:  sta RAMWRTOFF
+        stz RWBANK
         stz RBV
 @none:  rts
 
-@full:  sta RAMWRTOFF           ; the next area: aux 0, then the spill banks
+; the bytes from Y to RBV, in a window on STG_BANK
+@window:
+        lda STG_BANK
+        sta RWBANK
+        sta RAMWRTON
+@copy:  lda BATCH,y
+        sta (FA_DST),y
+        iny
+        cpy RBV
+        bne @copy
+        rts
+
+; at the area's end or past it (FA_DST in $BF01-$BFFF): its bytes before
+; $C000, then the next area: aux 0, then the spill banks; the rest from its
+; $0200
+@split: pla
+        lda RBV                 ; (the batch's size)
+        pha
+        sec                     ; RBV = $C000 - FA_DST, the bytes before the
+        lda #0                  ;   area's end
+        sbc FA_DST
+        sta RBV
+        jsr @window
+        sta RAMWRTOFF
         stz RWBANK
         lda STG_BANK
         bne @spill
@@ -216,16 +262,25 @@ REC_FLUSH:
         bcs @over
         inc a
         sta STG_BANK
-        stz FA_DST
-        lda #>$0200
+        sec                     ; FA_DST = $0200 - those bytes: byte Y of the
+        lda #0                  ;   batch goes to $0200 + Y - RBV
+        sbc RBV
+        sta FA_DST
+        lda #>$0100
         sta FA_DST+1
-        cpy RBV
-        bne @window
-        lda FA_DST
+        pla                     ; STG_PTR = FA_DST + the batch's size
+        sta RBV
+        clc
+        adc FA_DST
         sta STG_PTR
         lda FA_DST+1
+        adc #0
         sta STG_PTR+1
-        stz RBV
+        cpy RBV                 ; the rest, if any (Y: the bytes copied)
+        beq @last
+        jsr @window
+        bra @done
+@last:  stz RBV
         rts
 @over:  lda #ST_RECORDS         ; the staging and the spill are full: a
         sta STATUS              ;   batch reached the last area's end

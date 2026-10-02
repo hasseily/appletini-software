@@ -29,6 +29,10 @@
 ;                    until the menu closes or makes a request
 ;   K_HALT           interrupts off, the end (the quit)
 ;
+;   far_gcopy        gr_load's copy of a group (gcall.s): one RAMRD
+;                    window, in the card at KERN_GCOPY (game.cfg's weak
+;                    symbol: the tic image is linked before this card)
+;
 ; k_sdfail (main KMAIN, its fixed place) is m_savedone with C set (a save
 ; failed: none in this version), for a K_CALL. The kernel keeps nothing in zero page between steps (every
 ; image uses it): its bytes are KV_* in the card and DL_* in main's DLM.
@@ -60,6 +64,8 @@ k_tic:  sta DL_CODE
         sta SLOT_GRP
         sta SLOT_GRP+1
         sta SLOT_GRP+2
+        sta SLOT_NEED           ; (and no active frame needs one: gcall.s's
+        sta SLOT_NEED+1         ;   lazy restore)
         lda #<k_core
         ldx #>k_core
         ldy #GCODE0
@@ -143,6 +149,42 @@ dl_halt:
 ; planes (MOBJP): far_pload's lists, near in its RAMRD window
 k_core:   .byte $60, XS_CORE_PAGES, 0
 k_planes: .byte >PL_TNL, (PL_TICS + PLANE_SLOTS - PL_TNL) >> 8, 0
+
+; ---------------------------------------------------------------------------
+; far_gcopy: FA_N pages (1-255) of RamWorks bank FA_BANK from FA_SRC to
+; main FA_DST, both page aligned, in one RAMRD window (gcall.s's gr_load,
+; a group into its slot; docs/SPEED.md 4, item 2). In the card: with RAMRD
+; on, the fetches of $0200-$BFFF come from the bank. Its window, as
+; far_pload's, writes $C073 at its start and 0 at its end. Changes A, Y,
+; FA_SRC, FA_DST, FA_N.
+; ---------------------------------------------------------------------------
+GC_RAMRDOFF = $C002
+GC_RAMRDON  = $C003
+GC_RWBANK   = $C073
+        .res KERN_GCOPY - KERNEL - (* - dl_kernel)  ; (its fixed place,
+                                ;   the tic image's jsr: DLKERN from
+                                ;   KERNEL, playlink.py's check)
+far_gcopy:
+        lda FA_BANK
+        sta GC_RWBANK
+        sta GC_RAMRDON
+        ldy #0
+@page:  lda (FA_SRC),y          ; read from the bank (RAMRD), written to
+        sta (FA_DST),y          ;   main
+        iny
+        lda (FA_SRC),y
+        sta (FA_DST),y
+        iny
+        bne @page
+        inc FA_SRC+1
+        inc FA_DST+1
+        dec FA_N
+        bne @page
+        sta GC_RAMRDOFF
+        stz GC_RWBANK
+        rts
+        .assert far_gcopy = KERN_GCOPY, lderror, "far_gcopy is not at KERN_GCOPY"
+        .assert * <= KERNEL + $FA, lderror, "far_gcopy passes the vectors"
 
 ; ---------------------------------------------------------------------------
 ; K_MENU: the paused frames (d_main65.s's tryRunTics with a menu up: only

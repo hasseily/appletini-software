@@ -177,7 +177,8 @@ TIC_OBJS := $(addprefix $(TIC)/,gobj.o gcall.o gthink.o gpos.o gspawn.o \
             $(GLUE:%=%.o) $(M11T:%=%.o) $(PART_SRC:%.s=%.o))
 TIC_INCS := $(TIC)/gen/ggame.inc $(TIC)/gen/gplace.inc $(TIC)/gen/gdisp.inc
 
-$(TIC)/gen/stamp: $(LAYOUTS) $(TOOLS)/gcallgraph.py $(HERE)game/integrated.txt
+$(TIC)/gen/stamp: $(LAYOUTS) $(TOOLS)/gcallgraph.py $(HERE)game/integrated.txt \
+        $(wildcard $(ROOT)/build/native/game/shared/placement.json)
 	@mkdir -p $(TIC)/gen
 	$(PYTHON) $(TOOLS)/glayout.py --out $(TIC) --no-manifests > /dev/null
 	@touch $@

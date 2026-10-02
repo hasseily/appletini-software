@@ -265,7 +265,22 @@ FRORD = 0x1720                  # the sort's order: vissprite indexes
 SPRSEC, SPRSEC_END = 0x1600, 0x1700     # aux 0: the listed sectors
 
 # W, the render window (RENDER.md 3.4)
-WCODE, WCODE_END = 0x6000, 0xAFC0
+WCODE = 0x6000
+# Speed wave 1, part bucket (RENDER-MASKED.md 6.2 optimisation 10): each
+# column's count of the bytes its kept records take in W (the staged size
+# less the column byte), 16 bits as two page-aligned planes, kept by
+# rec_room for every record the front end makes, from rec_start (FCNT,
+# after the front end's code: WCODE_END is its room's end now); the
+# masked phase takes them over at nm_masked's start (MCNT: the front end's
+# dead first code bytes after the shared MATHW and AUXW, below MCODE, so
+# OVLW's load leaves them too), mrec_room adds its records, and the bucket
+# pass makes the batches from them without a first walk of the staging.
+# FCNT survives the masked image's load (it loads its code pages, which end
+# below DSW, and TXMP's) and is dead after nm_masked's copy (DSW, the
+# vissprites)
+FCNTLO, FCNTHI = 0xAD00, 0xAE00
+MCNTLO, MCNTHI = 0x6600, 0x6700
+WCODE_END = FCNTLO
 FLATCM, FLATCM_END = 0xAFC0, 0xB400     # 34 x 32
 TXBANK, TXLO, TXHI, TXWM, TXHT = 0xB400, 0xB500, 0xB600, 0xB700, 0xB800
 TXTAB_END = 0xB900
@@ -387,6 +402,13 @@ BK_SZHI = BK_SZLO + MAXB
 BK_LIST_END = BK_SZHI + MAXB
 assert MAXB == 45
 assert BK_FIRST + MAXB + 1 <= 0xB0      # (the bucket pass's $70-$AF)
+# Speed wave 1: the chunk's copy loop (bucket.s ZLOOP, 10 bytes of
+# self-modified code that nb_bucket writes) in the bucket pass's zero page
+# after the batch list: zero page reads main inside the chunk's RAMRD window
+BK_ZLOOP, BK_ZLOOP_SIZE = 0xA0, 10
+assert BK_FIRST + MAXB + 1 <= BK_ZLOOP and BK_ZLOOP + BK_ZLOOP_SIZE <= 0xB0
+assert FCNTHI == FCNTLO + 0x100 and MCNTHI == MCNTLO + 0x100
+assert FCNTHI + 160 <= WTABLES_PAGE << 8 and MCNTHI + 160 <= MCODE
 assert BKFAR2_RUN == SEGBUF and BKFAR2_END == SPILL_END
 assert BK_LIST_END <= DSX2 + 0x80
 assert CVDONE == DSX1
@@ -808,6 +830,8 @@ def regions() -> List[Region]:
         Region('main', UPOFS, UPOFS + VIEWWIDTH, 'UPOFS'),
         Region('main', FRORD, FRORD + MAXVIS, 'FRORD'),
         Region('w', WCODE, WCODE_END, 'render code'),
+        Region('w', FCNTLO, FCNTLO + VIEWWIDTH, 'FCNTLO'),
+        Region('w', FCNTHI, FCNTHI + VIEWWIDTH, 'FCNTHI'),
         Region('w', FLATCM, FLATCM_END, 'FLATCM'),
         Region('w', TXBANK, TXTAB_END, 'TX tables'),
         Region('w', BATCH, BATCH + 256, 'record batch'),
@@ -822,6 +846,8 @@ def regions() -> List[Region]:
         # milestone 8: the masked phase's W (an overlay of the front end's
         # W: the phases never overlap), in its own space
         Region('wm', MCODE, MCODE_END, 'masked code'),
+        Region('wm', MCNTLO, MCNTLO + VIEWWIDTH, 'MCNTLO'),
+        Region('wm', MCNTHI, MCNTHI + VIEWWIDTH, 'MCNTHI'),
         Region('wm', DSW, DSW + DSW_MAX * DS_SIZE, 'DSW'),
         Region('wm', VIS, VIS + MAXVIS * VISREC_SIZE, 'vissprites'),
         Region('wm', SPRB, SPRB + 4 * NUMSPRITES, 'SPRBOUND'),
@@ -1036,6 +1062,10 @@ def constants() -> List[Tuple[str, int]]:
         ('BK_NB_ZP', BK_NB_ZP),
         ('CVDONE', CVDONE), ('COLLO', L5.COLLO), ('COLHI', L5.COLHI),
         ('RECBUF', L5.RECBUF),
+        # speed wave 1, part bucket
+        ('FCNTLO', FCNTLO), ('FCNTHI', FCNTHI), ('MCNTLO', MCNTLO),
+        ('MCNTHI', MCNTHI), ('BK_ZLOOP', BK_ZLOOP),
+        ('BK_ZLOOP_SIZE', BK_ZLOOP_SIZE),
     ]
     out += [('DS_' + k, v) for k, v in DS.items()]
     out += [('SEG_' + k, v) for k, v in SEG.items()]
@@ -1167,6 +1197,9 @@ def allowed_writes_masked(cliplog: bool = False
         ('main', 0, PHASE, PHASE + 1, 'cost phase'),
         ('main', 0, FB, FB_END, 'frame block'),
         ('main', 0, FRORD, FRORD + MAXVIS, 'FRORD'),
+        # speed wave 1: the column counts (nm_masked's copy, mrec_room)
+        ('main', 0, MCNTLO, MCNTLO + VIEWWIDTH, 'MCNTLO'),
+        ('main', 0, MCNTHI, MCNTHI + VIEWWIDTH, 'MCNTHI'),
         ('main', 0, DSW, DSW + DSW_MAX * DS_SIZE, 'DSW'),
         ('main', 0, VIS, VIS + MAXVIS * VISREC_SIZE, 'vissprites'),
         ('main', 0, SPRB, SPRB + 4 * NUMSPRITES, 'SPRBOUND'),
@@ -1190,7 +1223,8 @@ def allowed_writes_bucket() -> List[Tuple[str, int, int, int, str]]:
         ('main', 0, L5.COLLO, L5.COLHI + 161, 'COLLO, COLHI'),
         ('main', 0, CVFIRST, CV_END, 'covered ranges'),
         ('main', 0, CVDONE, CVDONE + VIEWWIDTH, 'CVDONE'),
-        ('main', 0, WCODE, 0xC000, 'the batches (W)'),
+        ('main', 0, WCODE, 0xC000, 'the batches (W), the column counts '
+         '(MCNT: the game build\'s count again)'),
         ('aux', RECW, 0x8000, 0xC000, 'the parked batches'),
         ('main', 0, FB + FBO['STATUS'], FB + FBO['STATUS'] + 1, 'STATUS'),
         ('main', 0, PHASE, PHASE + 1, 'cost phase'),
@@ -1216,6 +1250,9 @@ def allowed_writes_b(nsectors: int, nvertices: int
         ('main', 0, SWVAR, SWVAR_END, 'wall setup variables'),
         ('main', 0, SPANS, SPANS_END, 'fill spans'),
         ('main', 0, UPOFS, UPOFS + VIEWWIDTH, 'UPOFS (milestone 8)'),
+        # speed wave 1: the column counts (rec_start, rec_room)
+        ('main', 0, FCNTLO, FCNTLO + VIEWWIDTH, 'FCNTLO'),
+        ('main', 0, FCNTHI, FCNTHI + VIEWWIDTH, 'FCNTHI'),
         ('main', 0, DSX1, DSX2 + 0x80, 'DSX1, DSX2'),
         ('main', 0, LNMAP, LNMAP + LNMAP_LINES // 8, 'LNMAP'),
         ('main', 0, BATCH, BATCH + 256, 'record batch'),

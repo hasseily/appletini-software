@@ -1,39 +1,59 @@
 #!/usr/bin/env python3
-"""The placement of the tic phase's code (milestone 10, docs/GAME.md 4.3):
-each routine of the part table in the core or in a group of a slot, from
-the heat, the call graph with its call counts and the sizes.
+"""The placement of the tic phase's code (milestone 10, docs/GAME.md 4.3;
+wave 1 of the speed plan, docs/SPEED.md 4 #1, docs/speed-parts/place.md):
+each routine of the part table in the core or in a group of a slot.
 
-Usage:  python3 tools/native/gplace.py [--write] [--sizes FILE]
-                                       [--runs demo3,demo1,demo2]
+Usage:  python3 tools/native/gplace.py [--write] [--placement FILE]
+            [--no-search] [--page-us 63.8] [--call-us 5]
+            [--restore auto|lazy|eager] [--train S,...] [--hold S,...]
+            [--sweeps N] [--anneal N] [--seed N] [--core-reserve B]
+            [--traces DIR] [--json FILE]
+        python3 tools/native/gplace.py --heuristic [--write] [--sizes FILE]
+            [--runs demo3,demo1,demo2] [--measure DIR/NAME]
 
-Inputs:
-  heat      the instructions each routine runs: ref816's trace of demo3
-            (build/a2vm/interp/demo.trace, PROFILE.md's: 40 frames), each
-            executed address given to the head that holds it
-            (gamecap.CallerMap); after wave 1 the gprof build's counts
-            (--heat FILE: {"file:label": instructions})
-  calls     the survey (gamecap.py, build/native/game/shared/survey/):
-            each routine's calls a tic and its callers; the call graph's
-            edges (gcallgraph.py) where the survey saw no call
-  sizes     native bytes: --sizes FILE ({"file:label": bytes}, the parts'
-            measured sizes, make -f game.mk sizes), else the estimate
-            upstream's bytes x 1.3 (2.4's budgets)
+The trained placement (the default when the scenes are recorded:
+gplacerec.py): the machine's cost on recorded call traffic. Each scene
+of TRAIN (the play build standing still, walking, demo3 in the title
+loop; the lockstep build's demo3) is replayed by gsim, a model of gcall.s
+that reproduces the loads the runs recorded exactly (gplacesim.py
+--check), under a candidate placement; its cost is the pages copied at
+--page-us (gr_load copies whole pages: 100.3 us a page before wave 1,
+63.8 with part paging's far_gcopy, the default) plus --call-us a call
+through fc_call (5 us), in ms a tic summed over the scenes, with gcall.s's
+restore at a return (--restore lazy, part paging's SLOT_NEED of wave 1;
+eager, the rule before it; auto, the default: the builds' own). The
+search starts from
+--placement FILE or the current placement.json and moves units (an
+AFFINITY unit per source file: its calls across files are FCALLs; every
+other routine alone) between the core, the groups and new groups, and
+groups between the slots, while the cost falls and every rule holds:
 
-The rules (4.3): the core takes the routines A_Chase, P_NewChaseDir, pMove
-and P_TryWalk first, then the others by heat a byte until its room (the
-core image's 13,312 B less the runtime and milestone 9's core as the
-skeleton's image measures them) is full; the rest form groups (routines
-connected by calls outside the core, cut in call order at slot 2's
-2,048 B less GROUP_MARGIN so that either slot holds each (the core's room
-less CORE_MARGIN: the planted bugs' copies link in the same placement); then merged by their calls and
-packed, fewer than gcall.s's 64), each with a home slot; the homes are chosen to make the
-counted cost of same-slot calls least (a load is the group's bytes at
-0.246 us a byte plus 4 us a window; a call between two groups of one
-slot costs both loads), and the groups of A_Chase's callees never share
-A_Chase's slot (when A_Chase is not in the core), nor the groups of an
-APART pair (path's traverseTo and the TRVTAB traversers) one slot. The report lists every
-pair of groups of one slot with more than one call between them a tic at
-the median.
+  - sizes: each routine's measured bytes in the builds (the play link's
+    tic image, the lockstep builds game and gprof), plus 3 B for each of
+    its FCALL sites that the placement turns into fc_call (6 B instead of
+    a jsr's 3) and less 3 B for each it turns back; a group at most its
+    slot's 2,048 B less GROUP_MARGIN; the core's table routines and every
+    build's fixed core code (the runtime, milestone 9's core, the play
+    link's dl_hook.o: docs/play-requests.md P2; the test builds' ghook
+    and grec), with their own FCALL sites, at most the core's 13,312 B
+    less CORE_MARGIN (and --core-reserve); at most 43 groups (the play
+    disk's CODE.2: a bank file of 49 segments holds W and the core, the
+    glue's 5 groups and the game's), their pages packed in GCODE0 and
+    GCODE1;
+  - A_Chase's callees' groups never share A_Chase's slot, nor the groups
+    of an APART pair one slot; a routine that reaches another without
+    FCALL (a jsr, jmp or branch to its code, its address taken:
+    hard_refs) has it in its group or in the core; the sources' own
+    .assert on a placement (placement_asserts: sight.s keeps P_CheckSight
+    in the core for its test entries) holds. PINNED and CORE_FIRST
+    are the heuristic's: the trained search weighs the core by the
+    traffic instead.
+
+The scenes of HOLD are only evaluated (held-out checks). The report gives
+each scene's loads and ms a tic before and after.
+
+--heuristic: the placement of waves 1 to 6 (the heat, the survey's call
+counts, the size estimates; see place()), its cost now in pages too.
 
 --write puts the placement in build/native/game/shared/placement.json,
 which glayout.py's gplace.inc and game.cfg follow (the integrator's step:
@@ -57,8 +77,19 @@ BUILD = ROOT / 'build'
 TRACE = BUILD / 'a2vm' / 'interp' / 'demo.trace'
 PLACEMENT = GL.SHARED / 'placement.json'
 GROWTH = 1.3                    # native bytes a byte of upstream (2.4)
-BYTE_US = 0.246                 # a byte loaded (NATIVE.md 4.3)
-WINDOW_US = 4.0                 # a window (NATIVE.md 1.2: 3-5 us)
+# the machine's cost (docs/SPEED.md 2, measured on a2vm f121: gr_load copies
+# whole pages, one far_get and one RAMRD window a page, 100.3 us; with part
+# paging's far_gcopy, one window a group, 63.8 us a page; a call through
+# fc_call, fc_go and fc_ret about 5 us)
+PAGE_US_NOW = 100.3
+PAGE_US = 63.8                  # the default: wave 1 has far_gcopy
+CALL_US = 5.0
+# gcall.s's restore at a return: 'eager' (the slot's group at the call, as
+# before wave 1) or 'lazy' (the group the slot's innermost active call
+# needs, SLOT_NEED: part paging's, wave 1); 'auto', the default: the
+# builds' own (lazy when their ggame.inc has SLOT_NEED)
+RESTORE = 'auto'
+PAGE = 256
 CHASE = 'p_enemy65.s:A_Chase'
 EXHAUSTIVE = 22                 # at most this many moves: try every slot
 # (wave 6 as integrated) room left in every group and in the core for the
@@ -564,7 +595,9 @@ def place(graph, heat: Dict[str, int], size: Dict[str, int],
                     for p, v in pair_calls.items()}
 
     def load_us(g: int) -> float:
-        return gbytes[g] * BYTE_US + WINDOW_US
+        # (gr_load copies the group's whole pages; the call's own cost
+        # too, the fc_call path, CALL_US)
+        return (gbytes[g] + PAGE - 1) // PAGE * PAGE_US + CALL_US
 
     # A_Chase's slot and its callees' groups
     forbid: Set[Tuple[int, int]] = set()
@@ -696,7 +729,7 @@ def place(graph, heat: Dict[str, int], size: Dict[str, int],
             'a_chase_rule': chase_ok, 'apart_rule': apart_ok}
 
 
-def run(write: bool = False, sizes: Optional[Path] = None,
+def run_heuristic(write: bool = False, sizes: Optional[Path] = None,
         heat_file: Optional[Path] = None,
         runs: Sequence[str] = ('demo3', 'demo1', 'demo2'),
         measure: Optional[Tuple[Path, str]] = None) -> Dict[str, Any]:
@@ -725,24 +758,1124 @@ def run(write: bool = False, sizes: Optional[Path] = None,
     return res
 
 
+
+# ---------------------------------------------------------------------------
+# The trained placement (docs/speed-parts/place.md)
+# ---------------------------------------------------------------------------
+TRAIN = ('still', 'walk', 'demo3', 'lock3a')
+HOLD = ('fight', 'demo3b', 'lock3b')
+FCALL_BYTES = 3                 # fc_call's 6 B against a jsr's 3
+# the groups at most: the play disk's CODE.2 holds the tic image in one
+# bank file of at most LL.BANKFILE_MAX_SEGS (49) segments, W and the core,
+# the glue's 5 groups and the game's (playdisk.tic_segments: 43 game
+# groups); gcall.s's MAXGRP 64 (GROUPS < 64 with the glue's after them)
+MAX_GROUPS = 43
+GROUP_ROOM = GL.SLOTS[1][1] - GL.SLOTS[1][0]
+SWEEPS = 4
+ANNEAL = 40000
+SEED = 1
+GLUE_BASE = 100                 # (the model's numbers of the glue groups)
+CORE_RESERVE = 0                # bytes of the core kept free besides
+#                                 CORE_MARGIN: growth the builds do not
+#                                 have yet (--core-reserve)
+BUILDS = (('play', None), ('game', 'game'), ('gprof', 'gprof'))
+SRC = ROOT / 'src' / 'native'
+
+
+class PlaceError(Exception):
+    pass
+
+
+def fcall_sites(src: Path = SRC) -> Dict[str, Dict[str, int]]:
+    """caller -> {callee: FCALL sites}, from the sources: every FCALL of a
+    ROUTINE's code (a macro's FCALLs counted at each use), keyed file:label
+    (GL.native_names); code before a file's first ROUTINE is '@file:STEM'.
+    (A placement changes an FCALL site's size: 6 B through fc_call, 3 B as
+    a jsr.)"""
+    import re
+    inv = {v: k for k, v in GL.native_names().items()}
+    files = sorted(src.glob('*.s')) + sorted(src.glob('game/*/*.s'))
+    incs = sorted(src.glob('*.inc')) + sorted(src.glob('game/*/*.inc'))
+    rx_r = re.compile(r'^\s*(?:[@\w]+:)?\s*ROUTINE\s+(\w+)', re.I)
+    rx_f = re.compile(r'^\s*(?:[@\w]*:)?\s*FCALL\s+(\w+)', re.I)
+    rx_m0 = re.compile(r'^\s*\.macro\s+(\w+)', re.I)
+    rx_m1 = re.compile(r'^\s*\.endmacro', re.I)
+    rx_w = re.compile(r'^\s*(?:[@\w]*:)?\s*(\w+)\b')
+    rx_seg = re.compile(r'^\s*\.segment\s+"(\w+)"', re.I)
+    builtin = ('FCALL', 'ROUTINE', 'DCALL')
+    body: Dict[str, List[Tuple[str, str]]] = {}
+    for f in files + incs:
+        cur = None
+        for line in f.read_text(errors='replace').splitlines():
+            line = line.split(';', 1)[0]
+            m = rx_m0.match(line)
+            if m:
+                cur = m.group(1)
+                body.setdefault(cur, [])
+                continue
+            if rx_m1.match(line):
+                cur = None
+                continue
+            if cur is None or cur in builtin:
+                continue
+            m = rx_f.match(line)
+            if m:
+                body[cur].append(('F', m.group(1)))
+                continue
+            m = rx_w.match(line)
+            if m and m.group(1) in body:
+                body[cur].append(('M', m.group(1)))
+
+    def expand(name: str, depth: int = 0) -> Dict[str, int]:
+        out: Dict[str, int] = {}
+        if depth > 8:
+            return out
+        for kind, v in body.get(name, ()):
+            if kind == 'F':
+                out[v] = out.get(v, 0) + 1
+            elif v not in builtin:
+                for t, n in expand(v, depth + 1).items():
+                    out[t] = out.get(t, 0) + n
+        return out
+    mac = {m: expand(m) for m in body if m not in builtin}
+    mac = {m: c for m, c in mac.items() if c}
+    out: Dict[str, Dict[str, int]] = {}
+    for f in files:
+        cur = '@file:' + f.stem
+        inmac = False
+        for line in f.read_text(errors='replace').splitlines():
+            line = line.split(';', 1)[0]
+            if rx_m0.match(line):
+                inmac = True
+                continue
+            if rx_m1.match(line):
+                inmac = False
+                continue
+            if inmac:
+                continue
+            m = rx_r.match(line)
+            if m:
+                cur = inv.get(m.group(1), '@file:' + f.stem)
+                continue
+            m = rx_seg.match(line)
+            if m:
+                # (code after a segment directive is no routine's: the
+                # core's fixed code, or another image's: the driver's)
+                cur = '@file:' + f.stem if m.group(1) in ('GCORE',
+                                                         'LOADW') \
+                    else '@seg:' + f.stem
+                continue
+            m = rx_f.match(line)
+            calls: Dict[str, int] = {}
+            if m:
+                calls = {m.group(1): 1}
+            else:
+                m = rx_w.match(line)
+                if m and m.group(1) in mac:
+                    calls = mac[m.group(1)]
+            for t, n in calls.items():
+                key = inv.get(t)
+                if key is None or cur.startswith('@seg:'):
+                    continue
+                d = out.setdefault(cur, {})
+                d[key] = d.get(key, 0) + n
+    return out
+
+
+def hard_refs(src: Path = SRC) -> Set[Tuple[str, str]]:
+    """(routine, routine) pairs of the sources that reference each other
+    without FCALL or DCALL: a jsr, jmp or branch to a label of another
+    ROUTINE's code in the same file (or to its global name), an address
+    taken (#<, #>, .addr, .word). Such a pair needs the target in the
+    core or in the referrer's group (a rule of the search; none crosses
+    an AFFINITY unit on 2026-10-02)."""
+    import re
+    inv = {v: k for k, v in GL.native_names().items()}
+    rx_r = re.compile(r'^\s*(?:[@\w]+:)?\s*ROUTINE\s+(\w+)', re.I)
+    rx_lab = re.compile(r'^([A-Za-z_]\w*):')
+    rx_ins = re.compile(r'^\s*(?:[@\w]*:)?\s*(?:jsr|jmp|bra|beq|bne|bcc|'
+                        r'bcs|bmi|bpl|bvc|bvs|j[a-z]{2})\s+\(?([A-Za-z_]\w*)',
+                        re.I)
+    rx_ref = re.compile(r'(?:#<|#>|\.addr\s+|\.word\s+)\s*([A-Za-z_]\w*)')
+    rx_m0 = re.compile(r'^\s*\.macro\b', re.I)
+    rx_m1 = re.compile(r'^\s*\.endmacro\b', re.I)
+    rx_seg = re.compile(r'^\s*\.segment\b', re.I)
+    out: Set[Tuple[str, str]] = set()
+    for f in sorted(src.glob('game/*/*.s')):
+        lines = [x.split(';', 1)[0] for x in
+                 f.read_text(errors='replace').splitlines()]
+        owner: Dict[str, str] = {}
+        cur = None
+        inmac = False
+        for line in lines:
+            if rx_m0.match(line):
+                inmac = True
+            elif rx_m1.match(line):
+                inmac = False
+            elif not inmac:
+                m = rx_r.match(line)
+                if m:
+                    cur = inv.get(m.group(1))
+                    continue
+                if rx_seg.match(line):
+                    cur = None
+                    continue
+                m = rx_lab.match(line)
+                if m and cur:
+                    owner.setdefault(m.group(1), cur)
+        cur = None
+        inmac = False
+        for line in lines:
+            if rx_m0.match(line):
+                inmac = True
+                continue
+            if rx_m1.match(line):
+                inmac = False
+                continue
+            m = rx_r.match(line)
+            if inmac or m:
+                if m:
+                    cur = inv.get(m.group(1))
+                continue
+            if rx_seg.match(line):
+                cur = None
+                continue
+            if cur is None or re.search(r'\b(FCALL|DCALL)\b', line):
+                continue
+            m = rx_ins.match(line)
+            toks = [m.group(1)] if m else rx_ref.findall(line)
+            for t in toks:
+                c = owner.get(t) or inv.get(t)
+                if c and c != cur:
+                    out.add((cur, c))
+    return out
+
+
+def placement_asserts(src: Path = SRC) -> List[Tuple[str, ...]]:
+    """The sources' own rules on the placement (ca65 .assert on
+    GP_name_G): ('core', key) for GP_x_G = 0 (sight.s: P_CheckSight in
+    the core, for its test entries), ('one', a, b) for GP_a_G = GP_b_G."""
+    import re
+    inv = {v: k for k, v in GL.native_names().items()}
+    rx = re.compile(r'^\s*\.assert\s+GP_(\w+)_G\s*=\s*(?:(0)\b|GP_(\w+)_G)')
+    out: List[Tuple[str, ...]] = []
+    for f in sorted(src.glob('*.s')) + sorted(src.glob('game/*/*.s')):
+        for line in f.read_text(errors='replace').splitlines():
+            m = rx.match(line.split(';', 1)[0])
+            if not m or m.group(1) not in inv:
+                continue
+            if m.group(2) is not None:
+                out.append(('core', inv[m.group(1)]))
+            elif m.group(3) in inv:
+                out.append(('one', inv[m.group(1)], inv[m.group(3)]))
+    return sorted(set(out))
+
+
+class Build(object):
+    """A linked tic build's measures: each table routine's bytes and
+    group, the core's other code (fixed: its modules' bytes), the FCALL
+    sites the link made fc_call (exact: the bytes jsr fc_call, group,
+    target)."""
+
+    def __init__(self, label: str, b, glue: Optional[Dict[str, int]] = None):
+        from native import grun as G, gplacerec as REC
+        self.label = label
+        self.b = b
+        inc = b.obj / 'gen' / 'gplace.inc'
+        if inc.stat().st_mtime > (b.obj / ('%s.map' % b.name)).stat(
+                ).st_mtime:
+            # (a link that failed after glayout.py wrote a new placement:
+            # the map is the old one's)
+            raise PlaceError('the %s build\'s gplace.inc is newer than its '
+                             'map: link it again' % label)
+        self.ranges = REC.unit_ranges(b, glue)
+        # (grun.routine_sizes's sizes, but a routine's range ends at a
+        # fixed label: the core's code after it is the core's)
+        self.sizes: Dict[str, int] = {}
+        for u, g, lo, hi in self.ranges:
+            if not u.startswith('@'):
+                self.sizes[u] = self.sizes.get(u, 0) + hi - lo
+        core = sum(hi - lo for m, seg, lo, hi in G.contributions(b)
+                   if seg in G.CODE_SEGMENTS)
+        self.fixed = core - sum(hi - lo for u, g, lo, hi in self.ranges
+                                if g == 0 and not u.startswith('@'))
+        self.core_modules = {m for m, seg, lo, hi in G.contributions(b)
+                             if seg in G.CODE_SEGMENTS}
+        self.place = {u: g for u, g, *_ in self.ranges
+                      if not u.startswith('@')}
+        self.module_of = {}
+        contrib = G.contributions(b)
+        for u, g, lo, hi in self.ranges:
+            if u.startswith('@'):
+                continue
+            for m, seg, clo, chi in contrib:
+                sg = 0 if seg in G.CODE_SEGMENTS else (
+                    int(seg[4:]) if seg.startswith('GGRP') else -1)
+                if sg == g and clo <= lo < chi:
+                    self.module_of[u] = m
+                    break
+        self.fc_sites = self._fc_sites()
+
+    def _bytes(self, g: int, lo: int, hi: int) -> bytes:
+        b = self.b
+        if g == 0:
+            core = (b.obj / ('%s.core' % b.name)).read_bytes()
+            return core[lo - GL.WR['CORE'][0]:hi - GL.WR['CORE'][0]]
+        data = (b.obj / ('%s.g%d' % (b.name, g))).read_bytes()
+        base = b.segments['GGRP%d' % g][0]
+        return data[lo - base:hi - base]
+
+    def _fc_sites(self) -> Dict[Tuple[str, str], int]:
+        fc = self.b.labels['fc_call']
+        at: Dict[Tuple[int, int], str] = {}
+        for u, g, lo, hi in self.ranges:
+            for a in range(lo, hi):
+                at[(g, a)] = u
+        out: Dict[Tuple[str, str], int] = {}
+        for u, g, lo, hi in self.ranges:
+            if u.startswith('@'):
+                continue
+            data = self._bytes(g, lo, hi)
+            for i in range(len(data) - 5):
+                if data[i] == 0x20 and data[i + 1] == fc & 0xFF and \
+                        data[i + 2] == fc >> 8:
+                    t = data[i + 4] | data[i + 5] << 8
+                    callee = at.get((data[i + 3], t))
+                    if callee and not callee.startswith('@'):
+                        out[(u, callee)] = out.get((u, callee), 0) + 1
+        return out
+
+
+def load_builds(play: Optional[Path] = None) -> List[Build]:
+    """The builds that exist: the play link's tic image (with dl_hook.o in
+    its core: docs/play-requests.md P2) and the lockstep builds."""
+    from native import grun as G, gplacerec as REC
+    out = []
+    for label, name in BUILDS:
+        try:
+            if name is None:
+                from native import playlink as PK
+                pdir = play or (BUILD / 'native' / 'play')
+                if not (pdir / 'tic' / 'tic.map').exists():
+                    continue
+                b = PK.tic_build(pdir)
+                n = PK.gplace_groups(b.obj / 'gen' / 'gplace.inc')
+                out.append(Build(label, b, REC.glue_groups(b, n)))
+            else:
+                if not (G.GAME / name / ('%s.map' % name)).exists():
+                    continue
+                out.append(Build(label, G.load_build(G.GAME / name, name)))
+        except (OSError, KeyError, ValueError) as e:
+            raise PlaceError('the %s build: %s' % (label, e))
+    if not out:
+        raise PlaceError('no tic build to measure (make -f game.mk game, '
+                         'python3 tools/native/playdisk.py)')
+    return out
+
+
+def restore_of(builds: Sequence[Build]) -> str:
+    """gcall.s's restore in the builds: 'lazy' when their layouts have
+    SLOT_NEED (part paging's lazy restore), else 'eager'."""
+    from native import gplacerec as REC
+    kinds = set()
+    for b in builds:
+        sym = REC.inc_symbols([b.b.obj / 'gen'])
+        kinds.add('lazy' if 'SLOT_NEED' in sym else 'eager')
+    if len(kinds) != 1:
+        raise PlaceError('the builds disagree on gcall.s\'s restore: '
+                         'rebuild them')
+    return kinds.pop()
+
+
+class Sizer(object):
+    """The bytes of a placement: each routine's measured size (the largest
+    over the builds) with its FCALL sites' change, the groups', the core's
+    in every build."""
+
+    def __init__(self, builds: Sequence[Build],
+                 sites: Dict[str, Dict[str, int]]):
+        self.builds = list(builds)
+        self.cur = dict(self.builds[0].place)
+        keys = set()
+        for b in self.builds:
+            keys |= set(b.sizes)
+        self.size = {k: max(b.sizes.get(k, 0) for b in self.builds)
+                     for k in keys}
+        # the sites a routine has: the sources' count, the links' where
+        # they made fc_call (exact)
+        self.sites: Dict[str, List[Tuple[str, int]]] = {}
+        for caller, d in sites.items():
+            if caller.startswith('@'):
+                continue
+            self.sites[caller] = [(c, n) for c, n in d.items()
+                                  if c in self.size]
+        for b in self.builds:
+            for (u, c), n in b.fc_sites.items():
+                lst = dict(self.sites.get(u, []))
+                lst[c] = n
+                self.sites[u] = sorted(lst.items())
+        # the fixed core code's sites, by build: the files whose modules
+        # are in that build's core
+        self.fixed_sites: List[List[Tuple[str, int]]] = []
+        for b in self.builds:
+            d: Dict[str, int] = {}
+            for caller, cs in sites.items():
+                if caller.startswith('@file:') and \
+                        caller[6:] in b.core_modules:
+                    for c, n in cs.items():
+                        if c in self.size:
+                            d[c] = d.get(c, 0) + n
+            self.fixed_sites.append(sorted(d.items()))
+        # each routine's bytes with no site as fc_call: the largest over
+        # the builds, each under its own link's placement (the builds may
+        # follow different placements: one relinked, the others not yet)
+        self.base = {}
+        for k in self.size:
+            self.base[k] = max(
+                b.sizes[k] - FCALL_BYTES * sum(
+                    n for c, n in self.sites.get(k, ())
+                    if self._cross(b.place, b.place.get(k, 0), c))
+                for b in self.builds if k in b.sizes)
+        self.fixed_base = []
+        for b, fs in zip(self.builds, self.fixed_sites):
+            self.fixed_base.append(b.fixed - FCALL_BYTES * sum(
+                n for c, n in fs if self._cross(b.place, 0, c)))
+
+    @staticmethod
+    def _cross(place: Dict[str, int], g: int, callee: str) -> bool:
+        h = place.get(callee, 0)
+        return h != 0 and h != g
+
+    def routine(self, k: str, place: Dict[str, int]) -> int:
+        g = place.get(k, 0)
+        return self.base[k] + FCALL_BYTES * sum(
+            n for c, n in self.sites.get(k, ()) if self._cross(place, g, c))
+
+    def groups(self, place: Dict[str, int]) -> Dict[int, int]:
+        out: Dict[int, int] = {}
+        for k in self.size:
+            g = place.get(k, 0)
+            if g:
+                out[g] = out.get(g, 0) + self.routine(k, place)
+        return out
+
+    def core(self, place: Dict[str, int]) -> Tuple[int, List[int]]:
+        """(the table routines' bytes in the core, each build's fixed core
+        bytes)."""
+        table = sum(self.routine(k, place) for k in self.size
+                    if place.get(k, 0) == 0)
+        fixed = [fb + FCALL_BYTES * sum(n for c, n in fs
+                                        if self._cross(place, 0, c))
+                 for fb, fs in zip(self.fixed_base, self.fixed_sites)]
+        return table, fixed
+
+    def core_room(self, place: Dict[str, int]) -> int:
+        """The core's room for the table routines under this placement."""
+        _, fixed = self.core(place)
+        return GL.WR['CORE'][1] - GL.WR['CORE'][0] - CORE_MARGIN - max(fixed)
+
+
+def pack_ok(pages: Sequence[int]) -> bool:
+    """The groups' pages packed in GCODE0 (GROUP_FIRST to W's $6000) then
+    GCODE1 (to LL.ROOM's end), in their order (playdisk.tic_segments,
+    grun.py's images)."""
+    from native import llayout as LL
+    at = {0: 0x0200, 1: 0x0200}
+    end = {0: 0x6000, 1: LL.ROOM[1]}
+    for n in pages:
+        bank = 0 if at[0] + (n << 8) <= end[0] else 1
+        if at[bank] + (n << 8) > end[bank]:
+            return False
+        at[bank] += n << 8
+    return True
+
+
+def callees_of(key: str, graph, sites: Dict[str, Dict[str, int]]
+               ) -> Set[str]:
+    h = graph.heads.get(graph.head_of(key) or key) if graph else None
+    out = set(h.calls if h else ())
+    out |= set(sites.get(key, {}))
+    return out
+
+
+class Problem(object):
+    """The search's state: units (tuples of keys) in groups (0 the core),
+    the groups' slots, the rules and the sizes."""
+
+    def __init__(self, sizer: Sizer, graph, sites, start: Dict[str, int],
+                 start_slots: Dict[int, int], module_of: Dict[str, str],
+                 refs: Optional[Set[Tuple[str, str]]] = None,
+                 reserve: int = CORE_RESERVE,
+                 asserts: Sequence[Tuple[str, ...]] = ()):
+        self.sizer = sizer
+        self.reserve = reserve
+        keys = sorted(sizer.size)
+        self.keys = keys
+        unit_of: Dict[str, Tuple[str, ...]] = {}
+        units: List[Tuple[str, ...]] = []
+        for aff in AFFINITY:
+            mem = [k for k in aff if k in sizer.size and k not in unit_of]
+            by_mod: Dict[str, List[str]] = {}
+            for k in mem:
+                by_mod.setdefault(module_of.get(k, '?'), []).append(k)
+            for sub in by_mod.values():
+                u = tuple(sub)
+                units.append(u)
+                for k in u:
+                    unit_of[k] = u
+        for k in keys:
+            if k not in unit_of:
+                unit_of[k] = (k,)
+                units.append((k,))
+        self.units = units
+        self.uidx = {u: i for i, u in enumerate(units)}
+        self.unit_of = unit_of
+        # a unit starts where its first routine is (a unit split across
+        # groups in the start joins its first's)
+        self.ug = [start.get(u[0], 0) for u in units]
+        self.gslot = dict(start_slots)
+        self.chase_callees = callees_of(CHASE, graph, sites) & set(keys)
+        self.apart = [(a, b) for a, b in APART if a in sizer.size and
+                      b in sizer.size]
+        self.bound = sorted((a, b) for a, b in (refs or ())
+                            if a in sizer.size and b in sizer.size and
+                            unit_of[a] != unit_of[b])
+        self.asserts = [r for r in (asserts or ())
+                        if all(k in sizer.size for k in r[1:])]
+
+    def place(self) -> Dict[str, int]:
+        return {k: self.ug[self.uidx[self.unit_of[k]]] for k in self.keys}
+
+    def problems(self, place: Optional[Dict[str, int]] = None) -> List[str]:
+        place = place or self.place()
+        out = []
+        gb = self.sizer.groups(place)
+        for g, n in sorted(gb.items()):
+            if n > GROUP_ROOM - GROUP_MARGIN:
+                out.append('group %d: %d B' % (g, n))
+            if g not in self.gslot:
+                out.append('group %d: no slot' % g)
+        if len(gb) > MAX_GROUPS:
+            out.append('%d groups' % len(gb))
+        table, fixed = self.sizer.core(place)
+        room = GL.WR['CORE'][1] - GL.WR['CORE'][0] - CORE_MARGIN - \
+            self.reserve
+        if table + max(fixed) > room:
+            out.append('the core: %d + %d B' % (table, max(fixed)))
+        if not pack_ok([(gb[g] + PAGE - 1) // PAGE for g in sorted(gb)]):
+            out.append('the groups pass GCODE1')
+        out += self.rule_problems(place)
+        return out
+
+    def rule_problems(self, place: Dict[str, int]) -> List[str]:
+        out = []
+        gc = place.get(CHASE, 0)
+        if gc:
+            for c in sorted(self.chase_callees):
+                g = place.get(c, 0)
+                if g and g != gc and self.gslot.get(g) == \
+                        self.gslot.get(gc):
+                    out.append('A_Chase\'s callee %s in its slot' % c)
+        for a, b in self.apart:
+            ga, gb_ = place.get(a, 0), place.get(b, 0)
+            if ga and gb_ and ga != gb_ and self.gslot.get(ga) == \
+                    self.gslot.get(gb_):
+                out.append('APART %s, %s in one slot' % (a, b))
+        for a, b in self.bound:
+            if place.get(b, 0) not in (0, place.get(a, 0)):
+                out.append('%s reaches %s without FCALL' % (a, b))
+        for rule in self.asserts:
+            if rule[0] == 'core' and place.get(rule[1], 0):
+                out.append('%s not in the core (its source asserts it)' %
+                           rule[1])
+            if rule[0] == 'one' and place.get(rule[1], 0) != \
+                    place.get(rule[2], 0):
+                out.append('%s and %s apart (their source asserts one '
+                           'group)' % rule[1:])
+        return out
+
+
+class Evaluator(object):
+    """The cost of a placement on the model's scenes (gplacesim.Model)."""
+
+    def __init__(self, model, policy: int, page_us: float, call_us: float,
+                 weights: Optional[Sequence[float]] = None):
+        self.model = model
+        self.policy = policy
+        self.page_us = page_us
+        self.call_us = call_us
+        self.weights = list(weights or [1.0] * len(model.scenes))
+
+    def vectors(self, place: Dict[str, int], gslot: Dict[int, int],
+                gbytes: Dict[int, int]):
+        from native import gplacesim as S
+        slot = [0] * S.NG
+        pages = [0] * S.NG
+        for g, s in gslot.items():
+            if g in gbytes:
+                slot[g] = s
+                pages[g] = (gbytes[g] + PAGE - 1) // PAGE
+        groups = [{'slot': slot[g] or 1} for g in range(1, GLUE_BASE)]
+        return self.model.vectors(place, groups, pages[1:GLUE_BASE],
+                                  glue_base=GLUE_BASE)
+
+    def scenes(self, place, gslot, gbytes) -> List[Dict[str, float]]:
+        from native import gplacesim as S
+        rs = self.model.run(self.vectors(place, gslot, gbytes), self.policy)
+        for r in rs:
+            t = max(r['tics'], 1)
+            r['loads_a_tic'] = r['loads'] / t
+            r['pages_a_tic'] = r['pages'] / t
+            r['cross_a_tic'] = r['cross'] / t
+            r['ms_a_tic'] = S.cost_of(r, self.page_us, self.call_us) / 1000
+        return rs
+
+    def cost(self, place, gslot, gbytes) -> float:
+        return sum(w * r['ms_a_tic'] for w, r in zip(
+            self.weights, self.scenes(place, gslot, gbytes)))
+
+
+def evaluate(model, placement: Dict[str, Any], policy: int, page_us: float,
+             call_us: float) -> List[Dict[str, float]]:
+    """A placement.json's figures on the model's scenes (its groups'
+    bytes from the measured sizes when the builds are there, else its own
+    'bytes')."""
+    place = dict(placement['routines'])
+    gslot = {i: int(g['slot']) for i, g in
+             enumerate(placement['groups'], 1)}
+    try:
+        sizer = Sizer(load_builds(), fcall_sites())
+        gbytes = sizer.groups(place)
+    except PlaceError:
+        gbytes = {i: int(g.get('bytes', GROUP_ROOM)) for i, g in
+                  enumerate(placement['groups'], 1)}
+    return Evaluator(model, policy, page_us, call_us).scenes(
+        place, gslot, gbytes)
+
+
+def unit_calls(model, prob: Problem) -> Dict[int, int]:
+    """Each unit's recorded calls in the model's scenes (the hot units:
+    the search moves those)."""
+    import array
+    out: Dict[int, int] = {}
+    for scene, m in zip(model.scenes, model.meta):
+        names = m['units']
+        a = array.array('H')
+        a.frombytes((model.out / ('%s.ev' % scene)).read_bytes())
+        if sys.byteorder != 'little':
+            a.byteswap()
+        counts: Dict[int, int] = {}
+        for i in range(0, len(a), 3):
+            if a[i] == 0:
+                counts[a[i + 2]] = counts.get(a[i + 2], 0) + 1
+        for local, n in counts.items():
+            k = names[local]
+            if k in prob.unit_of:
+                u = prob.uidx[prob.unit_of[k]]
+                out[u] = out.get(u, 0) + n
+    return out
+
+
+def search(prob: Problem, ev: Evaluator, hot: Sequence[int],
+           sweeps: int = SWEEPS, anneal: int = ANNEAL, seed: int = SEED,
+           say=print, t0: float = None) -> float:
+    """The search (deterministic: the units in order of their calls, the
+    candidates in order, a seeded annealing): a repair of the start while
+    it breaks a rule; sweeps of single moves (each hot unit to the core,
+    another group or a new one in either slot; each group to the other
+    slot; two hot units exchanged) while the cost falls; an annealing
+    (random moves of every unit, the hot ones three times as often,
+    exchanges, slot flips, accepted by Metropolis' rule at a temperature
+    falling from t0 ms a tic to 0) that keeps its best; the sweeps
+    again."""
+    import math
+    import random
+    sizer = prob.sizer
+    room_total = GL.WR['CORE'][1] - GL.WR['CORE'][0] - CORE_MARGIN - \
+        prob.reserve
+    every = list(range(len(prob.units)))
+
+    def state():
+        place = prob.place()
+        return place, sizer.groups(place)
+
+    def violation(place, gb) -> int:
+        """0 when every rule holds; else the bytes over and a weight a
+        broken rule."""
+        v = 0
+        if len(gb) > MAX_GROUPS:
+            v += 10000 * (len(gb) - MAX_GROUPS)
+        v += sum(max(0, n - (GROUP_ROOM - GROUP_MARGIN))
+                 for n in gb.values())
+        table, fixed = sizer.core(place)
+        v += max(0, table + max(fixed) - room_total)
+        if not pack_ok([(gb[g] + PAGE - 1) // PAGE for g in sorted(gb)]):
+            v += 5000
+        return v + 10000 * len(prob.rule_problems(place))
+
+    def cost_now() -> Tuple[float, bool]:
+        place, gb = state()
+        if violation(place, gb):
+            return float('inf'), False
+        return ev.cost(place, prob.gslot, gb), True
+
+    def free_id() -> Optional[int]:
+        used = set(prob.ug)
+        for g in range(1, MAX_GROUPS + 1):
+            if g not in used:
+                return g
+        return None
+
+    def tidy() -> None:
+        for g in list(prob.gslot):
+            if g not in prob.ug:
+                del prob.gslot[g]
+
+    def repair() -> None:
+        """Units moved out of what breaks a rule (an overfull group or
+        core, a rule of the slots) while the breach shrinks, the cheapest
+        move first (the start: an earlier wave's placement, its sizes
+        grown since, or another tool's)."""
+        rank = {u: i for i, u in enumerate(hot)}
+        while True:
+            place, gb = state()
+            v = violation(place, gb)
+            if v == 0:
+                return
+            table, fixed = sizer.core(place)
+            bad = {g for g, n in gb.items()
+                   if n > GROUP_ROOM - GROUP_MARGIN}
+            if table + max(fixed) > room_total:
+                bad.add(0)
+            named = set()
+            for p in prob.rule_problems(place):
+                named |= {k for k in prob.keys if k in p}
+            movers = sorted((u for u in every if prob.ug[u] in bad),
+                            key=lambda u: (u in rank, -rank.get(u, 0),
+                                           prob.units[u]))[:24]
+            movers += sorted({prob.uidx[prob.unit_of[k]] for k in named})
+            trial = None
+            if len(gb) > MAX_GROUPS:
+                # (too many groups: a group's units all into another)
+                for a_ in sorted(gb, key=lambda g: (gb[g], g)):
+                    mem = [u for u in every if prob.ug[u] == a_]
+                    for h in sorted(set(prob.ug) | {0}):
+                        if h == a_:
+                            continue
+                        for u in mem:
+                            prob.ug[u] = h
+                        pl, g2 = state()
+                        v2 = violation(pl, g2)
+                        if v2 < v:
+                            c = ev.cost(pl, prob.gslot, g2)
+                            if trial is None or (v2, c) < trial[:2]:
+                                trial = (v2, c, tuple(mem), h, None)
+                        for u in mem:
+                            prob.ug[u] = a_
+            for u in (movers if trial is None else ()):
+                g0 = prob.ug[u]
+                nid = free_id()
+                cands = [(h, None) for h in sorted(set(prob.ug) | {0})
+                         if h != g0]
+                if nid is not None:
+                    cands += [(nid, 1), (nid, 2)]
+                for h, sl in cands:
+                    prob.ug[u] = h
+                    if sl:
+                        prob.gslot[h] = sl
+                    pl, g2 = state()
+                    v2 = violation(pl, g2)
+                    if v2 < v:
+                        c = ev.cost(pl, prob.gslot, g2)
+                        if trial is None or (v2, c) < trial[:2]:
+                            trial = (v2, c, (u,), h, sl)
+                    if sl:
+                        prob.gslot.pop(h, None)
+                    prob.ug[u] = g0
+            if trial is None:
+                raise PlaceError('the start placement cannot be repaired: '
+                                 '%s' % prob.problems()[:4])
+            _, _, us, h, sl = trial
+            for u in us:
+                prob.ug[u] = h
+            if sl:
+                prob.gslot[h] = sl
+            tidy()
+            say('repair: %s to %s (%d left over)' % (
+                ', '.join(prob.units[u][0] for u in us),
+                'the core' if h == 0 else 'group %d' % h, trial[0]))
+
+    def sweep(best: float) -> Tuple[float, bool]:
+        improved = False
+        for u in hot:
+            g0 = prob.ug[u]
+            trial = None
+            for h in sorted(set(prob.ug) | {0}):
+                if h == g0:
+                    continue
+                prob.ug[u] = h
+                c, ok = cost_now()
+                if ok and c + 1e-6 < best and (trial is None or
+                                                c < trial[0]):
+                    trial = (c, h, None)
+            prob.ug[u] = g0
+            nid = free_id()
+            if nid is not None:
+                for sl in (1, 2):
+                    prob.ug[u] = nid
+                    prob.gslot[nid] = sl
+                    c, ok = cost_now()
+                    if ok and c + 1e-6 < best and (trial is None or
+                                                    c < trial[0]):
+                        trial = (c, nid, sl)
+                prob.gslot.pop(nid, None)
+                prob.ug[u] = g0
+            if trial is not None:
+                best, h, sl = trial
+                prob.ug[u] = h
+                if sl is not None:
+                    prob.gslot[h] = sl
+                tidy()
+                improved = True
+        for g in sorted(set(prob.ug) - {0}):
+            s0 = prob.gslot[g]
+            prob.gslot[g] = 3 - s0
+            c, ok = cost_now()
+            if ok and c + 1e-6 < best:
+                best = c
+                improved = True
+            else:
+                prob.gslot[g] = s0
+        top = list(hot[:40])
+        for i, u in enumerate(top):
+            for v in top[i + 1:]:
+                gu, gv = prob.ug[u], prob.ug[v]
+                if gu == gv:
+                    continue
+                prob.ug[u], prob.ug[v] = gv, gu
+                c, ok = cost_now()
+                if ok and c + 1e-6 < best:
+                    best = c
+                    improved = True
+                else:
+                    prob.ug[u], prob.ug[v] = gu, gv
+        tidy()
+        return best, improved
+
+    def sweeps_to(best: float, label: str) -> float:
+        for n in range(sweeps):
+            best, improved = sweep(best)
+            say('%s sweep %d: %.3f ms a tic' % (label, n + 1, best))
+            if not improved:
+                break
+        return best
+
+    def annealing(best: float) -> float:
+        rng = random.Random(seed)
+        pool = list(hot) * 3 + every
+        cur = best
+        snap = (list(prob.ug), dict(prob.gslot), best)
+        temp0 = t0 if t0 is not None else 0.02 * best
+        for it in range(anneal):
+            temp = temp0 * (1 - it / anneal) + 1e-9
+            r = rng.random()
+            undo = None
+            if r < 0.7:
+                u = pool[rng.randrange(len(pool))]
+                g0 = prob.ug[u]
+                cands = sorted(set(prob.ug) | {0})
+                k = rng.randrange(len(cands) + 1)
+                if k == len(cands):
+                    h = free_id()
+                    if h is None:
+                        continue
+                    prob.gslot[h] = rng.choice((1, 2))
+                else:
+                    h = cands[k]
+                if h == g0:
+                    continue
+                prob.ug[u] = h
+                undo = ('m', u, g0, h)
+            elif r < 0.9:
+                u = pool[rng.randrange(len(pool))]
+                v = pool[rng.randrange(len(pool))]
+                if prob.ug[u] == prob.ug[v]:
+                    continue
+                prob.ug[u], prob.ug[v] = prob.ug[v], prob.ug[u]
+                undo = ('s', u, v)
+            else:
+                gs = sorted(set(prob.ug) - {0})
+                if not gs:
+                    continue
+                g = gs[rng.randrange(len(gs))]
+                prob.gslot[g] = 3 - prob.gslot[g]
+                undo = ('f', g)
+            c, ok = cost_now()
+            if ok and (c <= cur or rng.random() < math.exp(
+                    -(c - cur) / temp)):
+                cur = c
+                tidy()
+                if c + 1e-9 < snap[2]:
+                    snap = (list(prob.ug), dict(prob.gslot), c)
+            else:
+                if undo[0] == 'm':
+                    prob.ug[undo[1]] = undo[2]
+                    if undo[3] not in prob.ug:
+                        prob.gslot.pop(undo[3], None)
+                elif undo[0] == 's':
+                    u, v = undo[1], undo[2]
+                    prob.ug[u], prob.ug[v] = prob.ug[v], prob.ug[u]
+                else:
+                    prob.gslot[undo[1]] = 3 - prob.gslot[undo[1]]
+            if (it + 1) % 10000 == 0:
+                say('annealing %d: %.3f ms a tic (best %.3f)' % (
+                    it + 1, cur, snap[2]))
+        prob.ug[:] = snap[0]
+        prob.gslot.clear()
+        prob.gslot.update(snap[1])
+        return snap[2]
+
+    say('%d units, %d of them called in the scenes' % (len(prob.units),
+                                                       len(hot)))
+    repair()
+    best, ok = cost_now()
+    if not ok:
+        raise PlaceError('the start placement breaks a rule: %s' %
+                         prob.problems()[:4])
+    say('start: %.3f ms a tic (the training scenes summed)' % best)
+    best = sweeps_to(best, 'first')
+    if anneal and hot:
+        best = annealing(best)
+        say('annealing (%d steps, seed %d): %.3f ms a tic' % (anneal, seed,
+                                                              best))
+        best = sweeps_to(best, 'last')
+    return best
+
+
+def renumbered(prob: Problem) -> Tuple[Dict[str, int], List[int]]:
+    """The groups numbered 1..n in their first routine's order (the keys'
+    order): (each key's group, each group's slot)."""
+    place = prob.place()
+    order: List[int] = []
+    for k in prob.keys:
+        g = place[k]
+        if g and g not in order:
+            order.append(g)
+    new = {g: i for i, g in enumerate(order, 1)}
+    return ({k: new.get(g, 0) for k, g in place.items()},
+            [prob.gslot[g] for g in order])
+
+
+def start_placement(placement: Optional[Dict[str, Any]], sizer: Sizer
+                    ) -> Tuple[Dict[str, int], Dict[int, int]]:
+    if placement is None:
+        placement = GL.placement_of()
+    place = {k: int(g) for k, g in placement.get('routines', {}).items()}
+    slots = {i: int(g['slot']) for i, g in
+             enumerate(placement.get('groups', []), 1)}
+    if not placement.get('groups'):
+        place = dict(sizer.cur)
+    return place, slots
+
+
+def train(placement: Optional[Dict[str, Any]] = None,
+          page_us: float = PAGE_US, call_us: float = CALL_US,
+          restore: str = RESTORE, train_scenes: Sequence[str] = TRAIN,
+          hold_scenes: Sequence[str] = HOLD, sweeps: int = SWEEPS,
+          anneal: int = ANNEAL, seed: int = SEED, do_search: bool = True,
+          out: Optional[Path] = None, say=print,
+          core_reserve: int = CORE_RESERVE) -> Dict[str, Any]:
+    """The trained placement (the module's header)."""
+    from native import gcallgraph as CG, gplacesim as S, gplacerec as REC
+    out = out or REC.OUT
+    builds = load_builds()
+    if restore == 'auto':
+        restore = restore_of(builds)
+    policy = S.POLICIES[restore]
+    sites = fcall_sites()
+    sizer = Sizer(builds, sites)
+    graph = CG.load(write=False)
+    place0, slots0 = start_placement(placement, sizer)
+    module_of: Dict[str, str] = {}
+    for b in builds:
+        for k, m in b.module_of.items():
+            module_of.setdefault(k, m)
+    prob = Problem(sizer, graph, sites, place0, slots0, module_of,
+                   hard_refs(), core_reserve, placement_asserts())
+    have = [s for s in list(train_scenes) + list(hold_scenes)
+            if (out / ('%s.ev' % s)).exists()]
+    tr = [s for s in train_scenes if s in have]
+    ho = [s for s in hold_scenes if s in have]
+    if not tr:
+        raise PlaceError('no training scene recorded (python3 tools/native/'
+                         'gplacerec.py %s)' % ' '.join(train_scenes))
+    with S.Model(tr + ho, out) as every:
+        evall = Evaluator(every, policy, page_us, call_us)
+        place = prob.place()
+        before = evall.scenes(place, prob.gslot, sizer.groups(place))
+        if do_search:
+            with S.Model(tr, out) as model:
+                ev = Evaluator(model, policy, page_us, call_us)
+                calls = unit_calls(model, prob)
+                hot = sorted((u for u in calls if calls[u] > 0),
+                             key=lambda u: (-calls[u], prob.units[u]))
+                search(prob, ev, hot, sweeps, anneal, seed, say)
+        problems = prob.problems()
+        if problems:
+            raise PlaceError('the placement breaks: %s' % problems[:6])
+        place = prob.place()
+        gb = sizer.groups(place)
+        after = evall.scenes(place, prob.gslot, gb)
+        causes = every.causes(evall.vectors(place, prob.gslot, gb), policy)
+    rules = prob.rule_problems(prob.place())
+    final, slots = renumbered(prob)
+    table, fixed = sizer.core(final)
+    gbytes = sizer.groups(final)
+    groups = []
+    for i, sl in enumerate(slots, 1):
+        groups.append({'slot': sl, 'bytes': gbytes.get(i, 0),
+                       'routines': [k for k in prob.keys if final[k] == i]})
+    core = [k for k in prob.keys if final[k] == 0]
+    gc = final.get(CHASE, 0)
+    res = {'format': 'game-placement 1', 'groups': groups,
+           'routines': {k: g for k, g in final.items() if g},
+           'core': core, 'core_bytes': table,
+           'core_room': GL.WR['CORE'][1] - GL.WR['CORE'][0] - CORE_MARGIN -
+           max(fixed),
+           'core_reserve': core_reserve,
+           'core_fixed': {b.label: f for b, f in zip(builds, fixed)},
+           'a_chase_rule': not any('A_Chase' in p for p in rules),
+           'apart_rule': not any('APART' in p for p in rules),
+           'a_chase_in_core': gc == 0,
+           'model': {'page_us': page_us, 'call_us': call_us,
+                     'restore': restore, 'train': tr, 'hold': ho,
+                     'sweeps': sweeps, 'anneal': anneal, 'seed': seed,
+                     'search': do_search,
+                     'scenes': {s: {'before': _fig(b), 'after': _fig(a)}
+                                for s, b, a in zip(tr + ho, before, after)},
+                     'top_loads': _top_causes(causes, after, tr + ho)},
+           'size_source': 'measured: %s' % ', '.join(b.label for b in
+                                                      builds),
+           'margins': {'group': GROUP_MARGIN, 'core': CORE_MARGIN}}
+    return res
+
+
+def _fig(r: Dict[str, float]) -> Dict[str, float]:
+    return {'loads_a_tic': round(r['loads_a_tic'], 2),
+            'pages_a_tic': round(r['pages_a_tic'], 2),
+            'cross_a_tic': round(r['cross_a_tic'], 2),
+            'ms_a_tic': round(r['ms_a_tic'], 3)}
+
+
+def _top_causes(causes, after, scenes) -> Dict[str, List]:
+    tics = {s: max(r['tics'], 1) for s, r in zip(scenes, after)}
+    out: Dict[str, List] = {}
+    for scene, kind, a, b, loads, pages in causes:
+        out.setdefault(scene, []).append(
+            [kind, a, b, round(loads / tics[scene], 2),
+             round(pages / tics[scene], 2)])
+    return {s: sorted(v, key=lambda x: -x[4])[:12] for s, v in out.items()}
+
+
+def report(res: Dict[str, Any]) -> List[str]:
+    lines = ['core: %d routines, %d of %d B%s (fixed core code: %s)' % (
+        len(res['core']), res['core_bytes'], res['core_room'],
+        ', %d B of them kept free' % res['core_reserve']
+        if res.get('core_reserve') else '',
+        ', '.join('%s %d B' % kv for kv in res.get('core_fixed', {})
+                  .items()))]
+    for i, g in enumerate(res['groups'], 1):
+        lines.append('group %d: slot %d, %d routines, %d B' % (
+            i, g['slot'], len(g['routines']), g['bytes']))
+    m = res.get('model')
+    if m:
+        lines.append('cost: %.1f us a page, %.1f us a call through fc_call, '
+                     'the %s restore' % (m['page_us'], m['call_us'],
+                                        m['restore']))
+        for s, v in m['scenes'].items():
+            b, a = v['before'], v['after']
+            lines.append('  %-7s %-5s loads a tic %7.2f -> %7.2f   pages a '
+                         'tic %8.2f -> %8.2f   ms a tic %8.3f -> %8.3f' % (
+                             s, 'train' if s in m['train'] else 'hold',
+                             b['loads_a_tic'], a['loads_a_tic'],
+                             b['pages_a_tic'], a['pages_a_tic'],
+                             b['ms_a_tic'], a['ms_a_tic']))
+    lines.append('A_Chase\'s rule %s; the APART pairs %s' % (
+        'kept' if res['a_chase_rule'] else 'BROKEN',
+        'apart' if res['apart_rule'] else 'BROKEN'))
+    return lines
+
+
+def run(write: bool = False, placement: Optional[Path] = None,
+        **kw) -> Dict[str, Any]:
+    start = json.loads(placement.read_text()) if placement else None
+    res = train(start, **kw)
+    if write:
+        PLACEMENT.parent.mkdir(parents=True, exist_ok=True)
+        PLACEMENT.write_text(json.dumps(res, indent=1) + '\n')
+    return res
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--write', action='store_true')
+    parser.add_argument('--placement', type=Path,
+                        help='the start (a placement.json); with '
+                             '--no-search the placement itself')
+    parser.add_argument('--no-search', action='store_true')
+    parser.add_argument('--page-us', type=float, default=PAGE_US)
+    parser.add_argument('--call-us', type=float, default=CALL_US)
+    parser.add_argument('--restore', choices=('auto', 'eager', 'lazy'),
+                        default=RESTORE)
+    parser.add_argument('--train', default=','.join(TRAIN))
+    parser.add_argument('--hold', default=','.join(HOLD))
+    parser.add_argument('--sweeps', type=int, default=SWEEPS)
+    parser.add_argument('--anneal', type=int, default=ANNEAL)
+    parser.add_argument('--seed', type=int, default=SEED)
+    parser.add_argument('--core-reserve', type=int, default=CORE_RESERVE,
+                        help='core bytes kept free for growth the builds '
+                             'do not have yet')
+    parser.add_argument('--json', type=Path,
+                        help='also write the result here')
+    parser.add_argument('--traces', type=Path,
+                        help='the recorded scenes\' directory (default '
+                             'build/native/game/gplace)')
+    parser.add_argument('--heuristic', action='store_true',
+                        help='waves 1-6\'s placement (heat and survey)')
     parser.add_argument('--sizes', type=Path)
     parser.add_argument('--heat', type=Path)
     parser.add_argument('--runs', default='demo3,demo1,demo2')
     parser.add_argument('--measure', default=None,
-                        help='DIR/NAME of a test build: the built parts\' '
-                             'routines and the core\'s fixed bytes measured '
-                             'there (grun.routine_sizes), e.g. '
-                             'build/native/game/wave1/wtest')
+                        help='(--heuristic) DIR/NAME of a test build: the '
+                             'built parts\' routines and the core\'s fixed '
+                             'bytes measured there (grun.routine_sizes)')
     args = parser.parse_args(argv)
+    if args.heuristic:
+        return main_heuristic(args)
+    try:
+        res = run(args.write, args.placement, page_us=args.page_us,
+                  call_us=args.call_us, restore=args.restore,
+                  train_scenes=[s for s in args.train.split(',') if s],
+                  hold_scenes=[s for s in args.hold.split(',') if s],
+                  sweeps=args.sweeps, anneal=args.anneal, seed=args.seed,
+                  do_search=not args.no_search,
+                  core_reserve=args.core_reserve, out=args.traces)
+    except PlaceError as e:
+        print('gplace: %s' % e, file=sys.stderr)
+        return 1
+    if args.json:
+        args.json.write_text(json.dumps(res, indent=1) + '\n')
+    print('\n'.join(report(res)))
+    return 0 if res['a_chase_rule'] and res['apart_rule'] else 1
+
+
+def main_heuristic(args) -> int:
     measure = None
     if args.measure:
         mp = Path(args.measure)
         measure = (mp.parent, mp.name)
-    res = run(args.write, args.sizes, args.heat, args.runs.split(','),
-              measure)
+    res = run_heuristic(args.write, args.sizes, args.heat,
+                        args.runs.split(','), measure)
     print('core: %d routines, %d of %d B (the skeleton\'s own %d B)' % (
         len(res['core']), res['core_bytes'], res['core_room'],
         res['skeleton_core_bytes']))

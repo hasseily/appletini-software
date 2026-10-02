@@ -16,6 +16,10 @@
 ;               yet, the last drawseg first (mwall.s nm_mwall), and the
 ;               last batch of records into the staging; stage C: the weapon
 ;               and its flash between them (mpsp.s nm_psp: playerSkip).
+;               Speed wave 1, part bucket: first the front end's column
+;               counts (FCNT, which the masked image's load leaves and
+;               the drawseg copy and the vissprites then take) into
+;               MCNT, where mrec_room goes on adding (rrec.s).
 ;               Changes everything of the masked phase.
 
         .setcpu "65C02"
@@ -29,6 +33,8 @@
         .import m_hook
 .endif
         .export nm_masked, nm_rsetup, nm_visx
+        .import __AUXW_RUN__, __AUXW_SIZE__
+.assert __AUXW_RUN__ + __AUXW_SIZE__ <= MCNTLO, lderror, "the shared W part passes MCNTLO"
 
 .macro MARK n
 .ifdef RPROF
@@ -43,6 +49,13 @@
 
 nm_masked:
         MARK 14                 ; the drawseg copy (RENDER-MASKED.md 4.4)
+        ldx #VIEWWIDTH          ; (the front end's column counts first)
+:       lda FCNTLO-1,x
+        sta MCNTLO-1,x
+        lda FCNTHI-1,x
+        sta MCNTHI-1,x
+        dex
+        bne :-
         ldx #0                  ; the drawsegs to copy, in index order
         ldy #0
 @ds:    cpx DSCOUNT

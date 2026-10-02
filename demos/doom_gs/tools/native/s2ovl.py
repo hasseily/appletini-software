@@ -701,6 +701,8 @@ def ovlw_allowed(b) -> Dict[str, List[Tuple[str, int, int, int]]]:
         'rrec': [zfar, ('main', 0, R.ZP_OV1[0], R.ZP_OV1[1]),
                  ('main', 0, R.FB, R.FB_END),
                  ('main', 0, R.UPOFS, R.UPOFS + R.VIEWWIDTH),
+                 ('main', 0, R.MCNTLO, R.MCNTLO + R.VIEWWIDTH),
+                 ('main', 0, R.MCNTHI, R.MCNTHI + R.VIEWWIDTH),
                  ('aux', 0, R.STAGE, R.STAGE_END)] +
         [('aux', k, 0x0200, R.STAGE_END) for k in R.RECSP],
         'bkload': [(s, k, a, e) for s, k, a, e, _ in
@@ -775,11 +777,24 @@ def stray_poison(writes, b) -> List[str]:
 
 def w_untouched(pre, post) -> List[str]:
     """Milestone 8's W outside OVLW's room ($6000-$67FF, $9C00-$BFFF) as
-    the masked phase left it, but the records' batch BATCH."""
+    the masked phase left it, but the records' batch BATCH and, since
+    speed wave 1, the masked phase's column counts MCNTLO/MCNTHI, to which
+    OVLW's mrec_room adds its K_OVL records (docs/speed-parts/bucket.md)."""
     out = []
-    for lo, hi in ((0x6000, S.IMAGE['OVLW'].stored[0]),
-                   (S.IMAGE['OVLW'].stored[1], R.BATCH),
-                   (R.BATCH + 256, 0xC000)):
+    lo_room, hi_room = S.IMAGE['OVLW'].stored
+    skip = sorted([(R.BATCH, R.BATCH + 256),
+                   (R.MCNTLO, R.MCNTLO + R.VIEWWIDTH),
+                   (R.MCNTHI, R.MCNTHI + R.VIEWWIDTH)])
+    ranges = []
+    for lo, hi in ((0x6000, lo_room), (hi_room, 0xC000)):
+        for a, e in skip:
+            if lo < e and a < hi:
+                if lo < a:
+                    ranges.append((lo, a))
+                lo = max(lo, e)
+        if lo < hi:
+            ranges.append((lo, hi))
+    for lo, hi in ranges:
         a, b = pre.main(lo, hi - lo), post.main(lo, hi - lo)
         if a != b:
             i = next(k for k in range(hi - lo) if a[k] != b[k])

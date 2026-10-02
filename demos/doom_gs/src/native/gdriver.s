@@ -68,6 +68,7 @@
         .export dg_ra, dg_rx, dg_ry, dg_rp, dg_ticker, dg_resume
         .export dg_nlsetup, dg_frame, dg_stop, dg_rekey, dg_sched
         .export dg_core, dg_planes, dg_lcode, dg_tcount, dg_loads
+        .export far_gcopy
 .ifdef TICLEVEL
         .export dg_fwl, dg_fml, dg_fmm, dg_fbl, dg_fnb, dg_fkind, dg_strm
         .export dg_scnt, dg_nosnap, dg_wipe
@@ -106,6 +107,8 @@ drv_game:
         sta SLOT_GRP
         sta SLOT_GRP+1
         sta SLOT_GRP+2
+        sta SLOT_NEED           ; (no active frame needs a slot)
+        sta SLOT_NEED+1
         ldx #0
         stx GO_HITS             ; the API's and the paging's counters
         stx GO_HITS+1
@@ -962,12 +965,16 @@ st_skip:
 ; image's, the renderer's), which wrote the slots: they hold no group, as
 ; milestone 11's kernel says at its tic (dl_kern.s); found at wave 6's
 ; integration: after a load G_Ticker's action loop (g_tresume, fc_call)
-; ran the load image's bytes in slot 2 when SLOT_GRP still named its group
+; ran the load image's bytes in slot 2 when SLOT_GRP still named its group.
+; SLOT_NEED too (gcall.s's lazy restore): no FCALL frame is active here, and
+; the renderer's scratch overlays the runtime's state
 core_in:
         lda #$FF
         sta SLOT_GRP
         sta SLOT_GRP+1
         sta SLOT_GRP+2
+        sta SLOT_NEED
+        sta SLOT_NEED+1
         lda #<dg_core
         ldx #>dg_core
         ldy #GCODE0
@@ -977,6 +984,23 @@ planes_in:
         ldx #>dg_planes
         ldy #MOBJP
         jmp far_pload
+; far_gcopy: gr_load's copy of a group (gcall.s) in the test builds: FA_N
+; pages (1-255) of bank FA_BANK from FA_SRC to main FA_DST, both page
+; aligned, through far_get a page at a time, the pages counted in FC_PS (as
+; gr_load's own loop was: the parts' write checks allow far_get's stores
+; into the slots). It overrides game.cfg's weak far_gcopy, the play
+; kernel's one read window (dl_kern.s), which a test image does not link.
+; Changes A, Y, FA_SRC, FA_DST, FA_N, FC_PS.
+far_gcopy:
+        lda FA_N
+        sta FC_PS
+        stz FA_N                ; (256)
+:       jsr far_get
+        inc FA_SRC+1
+        inc FA_DST+1
+        dec FC_PS
+        bne :-
+        rts
 ; planes_out: W's planes back to MOBJP (a page at a time, far_put)
 planes_out:
         lda #MOBJP

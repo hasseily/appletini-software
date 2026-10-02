@@ -749,6 +749,9 @@ per-column arrays in main arrays the masked phase leaves dead (1.10):
    C, 2026-10-01: that bound is wrong, since whole columns only promise
    that two adjacent batches together pass 8,192 bytes; `rlayout.py`
    now proves MAXB = 45, "Verification of stage C".)
+   *Speed wave 1 (2026-10-02):* the producers keep the counts (rrec.s
+   rec_room, MCNT); walk 1 runs only in the game build's recount (a
+   dropped batch, a column past a batch).
 3. **Walk 2, scatter** (`RAMRD` off, over the chunks again), for batches
    1-3 at once: batch b's region is W `$6000` + `$2000` × (b - 1), all
    free now (the masked image is dead and no gather has run). `CUR[c]`
@@ -1427,7 +1430,7 @@ optimisations.
 | 7 | Masked phase | Keep each drawseg's seg vertices in the drawseg copy (its spare byte is not enough: a 40-byte copy) | side tests' windows |
 | 8 | Weapon | The profile's records made once per lump and position, reused while `FRVIS` is unchanged (the weapon skip frames already skip most rows) | 0.5-1 ms |
 | 9 | Seg loops | `RENDER.md` risk 2's fallbacks: `FSTEP` gathered by bank | 0.5-1 ms |
-| 10 | Bucket pass | The producers keep each column's byte count (`rec_room` knows both), so walk 1 goes; it needs 320 B of main during the render, which the map has not found | about a third of the pass: 1-2 ms median, 3-5 ms heavy |
+| 10 | Bucket pass | The producers keep each column's byte count (`rec_room` knows both), so walk 1 goes; it needs 320 B of main during the render, which the map has not found. Built in speed wave 1 (docs/speed-parts/bucket.md): the 320 B are W, FCNT after the front end's code and MCNT below MCODE | about a third of the pass: 1-2 ms median, 3-5 ms heavy |
 
 Faster, inexact arithmetic stays out (`NATIVE.md` 15.1 row 3).
 

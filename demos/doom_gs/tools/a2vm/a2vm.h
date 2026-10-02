@@ -117,13 +117,21 @@ typedef struct {
    instead of the loop running. */
 typedef enum { A2VM_IDLE_VBL, A2VM_IDLE_LINE0 } a2vm_idle_kind;
 
+enum { A2VM_IDLE_BYTES = 4 };
+
 typedef struct {
     uint16_t pc;
     uint8_t kind;                   /* a2vm_idle_kind */
     uint8_t need_main_zp;           /* ALTZP must be off */
     uint8_t need_vbl;               /* in vertical blanking */
-    uint8_t compare;                /* the two main words below are equal */
+    uint8_t compare;                /* the two words below are equal */
     uint16_t word_a, word_b;
+    uint8_t store_a, store_b;       /* their storage: 0 main, 2 main LC
+                                       (a2vm_storage's kinds) */
+    uint8_t byte_count;             /* the main bytes below hold these
+                                       values */
+    uint16_t byte_addr[A2VM_IDLE_BYTES];
+    uint8_t byte_value[A2VM_IDLE_BYTES];
 } a2vm_idle;
 
 /* A range of storage, for the write log and range snapshots: the
@@ -223,6 +231,14 @@ typedef struct a2vm {
 
     /* the cost model (cost.h), or NULL */
     a2vm_cost *cost;
+
+    /* An observer of the instructions at chosen PCs (--pclog, README.md
+       "The PC log"; NULL in every other run): called before an
+       instruction whose PC has its bit in pc_hook_map runs, after the
+       idle skip; never for an interrupt's entry, nor while the CPU waits
+       or is stopped. It changes nothing. */
+    void (*pc_hook)(struct a2vm *m, uint16_t pc);
+    const uint8_t *pc_hook_map;     /* 8,192 bytes, a bit a PC */
 
     /* An observer of every CPU write, for test harnesses (NULL in a
        normal run): the address, the storage byte the write reaches (NULL

@@ -59,8 +59,8 @@ frame passes when, in both runs:
 
 A frame whose RULES is not 0 (a column seen from behind: NATIVE.md 15.1
 row 13) is not compared: it is listed as a known divergence, never as
-equal. A run that stops (BRK) after the masked phase still gets the
-bucket check, on the native staging at its end against the batches
+equal. A run that stops (BRK) or ends anywhere but the driver's halt
+after the masked phase still gets the bucket check, on the native staging at its end against the batches
 handed to the replay before the stop, so a bucket pass that broke them
 is named beside the stop. Every run prints RENDER-MASKED.md 6.1 item 1's
 margin: the staging's capacity against the largest staging of the
@@ -353,8 +353,18 @@ def check8(case: F8Case, b: RC.Build, fill: int, base: Sequence,
             return out
         if state.get('end') != 'stop-pc' or state.get('pc') != \
                 lab['drv_halt']:
-            out['problems'].append('the run ended with %s at $%04X' % (
-                state.get('end'), state.get('pc', -1)))
+            where = ''
+            if (work / 'mend.img').exists() and \
+                    not list(work.glob('batch-*.img')):
+                # past the masked phase's end, no batch handed to the
+                # replay yet (speed wave 1: a record lost from a column
+                # the producers counted leaves a gap of stale bytes that
+                # the fuzz marks' walk can loop on, to the write log's
+                # bound)
+                where = ' in the bucket pass (no batch reached the replay)'
+            out['problems'].append('the run ended with %s at $%04X%s' % (
+                state.get('end'), state.get('pc', -1), where))
+            out['problems'] += crash_bucket(work)
             return out
         snaps = {n: RC.snapshot(work, n) for n in
                  ('clip', 'bsp', 'walk', 'psp', 'mend', 'end')}
@@ -421,7 +431,8 @@ BK_B = 0x33                     # bucket.s: the batch being replayed
 
 
 def crash_bucket(work: Path) -> List[str]:
-    """After a stop (BRK) past the masked phase's end: the bucket check
+    """After a stop (BRK) or a run gone astray past the masked phase's
+    end: the bucket check
     on the native staging (the snapshot mend) against the batches the
     pass handed the replay before the stop, so a bucket pass that broke
     the batches is named, not only the replay's stop it caused."""

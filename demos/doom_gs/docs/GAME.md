@@ -762,10 +762,25 @@ slot can return into a paged caller of that slot further up, as
 `A_TroopAttack` (slot 1) → `P_SpawnMissile`/`checkMissile` (slot 1) →
 `P_TryMove`, `checkPos`, `PIT_CheckThing` (core) → `P_DamageMobj`
 (slot 1) shows, and so can A (slot 1) → C (slot 2) → D (slot 1). The
-restore may load a group no active frame needs; a lazy restore (only
-when a frame of the evicted group is active, from a count a slot) is an
-integrator lever, measured by phase 28 (5.4). The dispatch tables call
-through `fc_call` too.
+dispatch tables call through `fc_call` too.
+
+*Speed wave 1 (2026-10-02, `docs/speed-parts/paging.md`): the lazy
+restore.* `SLOT_NEED` (2 B after `SLOT_GRP` in the runtime's state) holds,
+for each slot, the group its innermost active `fc_call` frame needs, or
+`$FF` for none. `fc_go` pushes that need (or `$80` + the slot when there
+is none), makes the target's group the slot's need, and loads it only
+when the slot holds another group. `fc_ret` pops the saved value: `$80` +
+the slot sets the need back to `$FF` and loads nothing; a group becomes
+the slot's need again and is reloaded only when the slot now holds
+another. Every frame that returns into a slot still finds its group
+there; a group no active frame needs is no longer reloaded. The stack
+cost is unchanged (1 B a call). `SLOT_NEED` is reset with `SLOT_GRP` at
+the kernel's `K_TIC` and in `gdriver.s`'s `drv_game` and `core_in`.
+`gr_load` copies a whole group with one `jsr far_gcopy`: in the play
+build the kernel's one-RAMRD-window copy at card `$FFD5` (`KERN_GCOPY`,
+a weak symbol of `game.cfg`), in the `game.mk` images `gdriver.s`'s own
+`far_gcopy`, the old `far_get` loop a page at a time (the parts' write
+checks and `gselftest.py`'s plants see what they saw).
 
 **The driver** (`gdriver.s`, card `$E000-$EDFF` in test builds, where
 `ldriver.s` and `lboot.s` run [R `MEMORY_MAP.md` 15-16]):
@@ -1075,6 +1090,25 @@ before a part is built, `make sizes` after). The rules:
 4. The cost model: a load is its bytes at 0.246 µs [M: `NATIVE.md` 4.3]
    and a window's 3-5 µs [M: `NATIVE.md` 1.2].
 
+*Speed wave 1 (2026-10-02, `docs/speed-parts/place.md`): the placement
+by the machine's cost.* Rule 4's cost is now the pages loaded × the
+measured cost of a page (63.8 µs with `far_gcopy`, `--page-us`) plus 5 µs
+a call through `fc_call`, under `gcall.s`'s restore (`--restore auto`
+reads it from the builds: lazy since wave 1), on recorded call traffic
+(`gplacerec.py`: still, walk, demo3 and lockstep demo3 trained; fight,
+the second half of demo3 and a later lockstep stretch held out;
+`gplacesim.py` is the paging's model, exact against every recording).
+The rules every candidate keeps: `A_Chase`'s callees never in its slot,
+the `APART` pairs, `AFFINITY` units split only by source file, plain
+references between routines, the sources' placement `.assert`s, at most
+43 groups (the play disk's `CODE.2` bank file), every group within 2,048
+− `GROUP_MARGIN` B, and the core counting every build's fixed code (the
+play link's `dl_hook.o` and the lockstep's `ghook.o`/`grec.o`: request
+P2). Rules 1-3 and "`A_Chase` … go to the core first" below are now the
+search's choice (repair, sweeps, annealing). The integrated placement is
+`tools/native/gplace-wave1-lazy.json` (43 groups; `A_Chase` and
+`P_CheckSight` in the core); `--heuristic` keeps waves 1-6's placement.
+
 The output is `gen/gplace.inc` and `game.cfg`; parts only write `FCALL`,
 so a placement change rebuilds every image and edits no source. The
 initial placement, by part (the tool refines it by routine):
@@ -1320,7 +1354,7 @@ test images 9 MB).
 | `tools/native/gplace.py` | The placement of 4.3 from the trace's heat, the survey's calls and the sizes; `--write` (the integrator's: `make -f game.mk place`) |
 | `src/native/game.mk`, `src/native/game/README.md` | The targets `part P=`, `wave W=`, `game`, `gprof`, `release`, `skel`, `place`, `shared`, `sizes`; the fragments; the conventions (`FCALL`, `DCALL`, the object API, `GA_*`/`GT_*`, the scratch blocks, the load protocol, the stops), `args.json`'s schema, the stream's format |
 | `src/native/gobj.s` | The object API: the mobj, sector, line and special caches with write-back and LRU, the fetches, the planes, the flush |
-| `src/native/gcall.s` | `fc_call` (5 B of stack, the target slot's group saved and restored whoever the caller is), `fc_unbuilt`, `dc_call`, `act_num`, the group loads, the stops |
+| `src/native/gcall.s` | `fc_call` (5 B of stack; since speed wave 1 the lazy restore of 3.4: the slot's need `SLOT_NEED` saved, the group reloaded on return only when an active frame needs it and the slot holds another), `fc_unbuilt`, `dc_call`, `act_num`, the group loads (one `far_gcopy` a group), the stops |
 | `src/native/ghook.s` | The hooks: the sound events and the same-pair hits logged in test builds, `I_GetTime` from the stream, the screens' stubs, the stops |
 | `src/native/gdriver.s` | The test driver in the card's `$E000` part: routine, routine-with-load, lockstep and load-test modes, the load protocol, the schedule's frames, the re-key records |
 | milestone 9's core | `gthink.s`, `gpos.s`, `gspawn.s`, `gspec.s`, `gvalid.s`, `gweap.s` on the object API; the planes, the zone's and the specials' free lists, `G_MOHWM`; `P_SpawnMobj`'s three z modes; `addIfFunc`; `gp_secnodes` with the `LR_USE` path and `MP_MODE`; `setPsprite` through `ACTTAB`; `gvalid.s` linked into the render images (`rframe.s`: `jsr gv_inc`); the setup's clear of `LR_OK`; the load's `GTABS` step (`lgeom.s`, `lstore.py`); the load image links `gobj.s` and ends with `go_flush`; the play entries `P_SpawnMobj`, `P_SetThingPosition`, `P_CreateSecNodeList` (new: `gp_secnodesmo`) |

@@ -4,13 +4,20 @@
 ; p_pspr65.s), which are GPL-2 upstream.
 ;
 ;   fc_call     FCALL's stub for a target in another image (gplace.inc):
-;               jsr fc_call / .byte group / .word target. The group the
-;               target's slot holds is saved (a byte on the stack); the
-;               target's group is loaded into the slot when another is
-;               there; the target runs; on its return the saved group is
-;               loaded again when the slot now holds another, whoever the
-;               caller is (review 1). A, X, Y go to the target and back,
-;               and P comes back (a carry result). 5 bytes of stack.
+;               jsr fc_call / .byte group / .word target. The lazy
+;               restore (docs/SPEED.md 4, item 14): SLOT_NEED (the slot's
+;               entry) is the group the slot's innermost active FCALL
+;               frame needs, $FF none. The call saves it (a byte on the
+;               stack: $80 | the slot for none) and makes the target's
+;               group the need; the target's group is loaded into the
+;               slot when another is there; the target runs; on its
+;               return the saved need is the slot's again and is loaded
+;               when the slot now holds another, whoever the caller is
+;               (review 1). A slot no active frame needs is left as it
+;               is: only a frame entered through fc_go runs in a slot, so
+;               every frame that returns into a slot finds its group. A,
+;               X, Y go to the target and back, and P comes back (a
+;               carry result). 5 bytes of stack.
 ;   fc_unbuilt  an FCALL of a routine whose part is not built: GS_ARG = its
 ;               number, GS_UNBUILT
 ;   dc_call     DCALL table (number in A, the table in Y:X; 0 none): the
@@ -18,8 +25,10 @@
 ;               unbuilt entry: GS_ARG = its number and table, GS_UNBUILTD
 ;   act_num     A = the ACTTAB number of the action of the state LW_STATE
 ;               (0 none; a stop GS_ACTION for an action not in ACT_ADDR)
-;   gr_load     group A into its slot (its image's pages from its bank,
-;               far_get a page at a time); SLOT_GRP updated
+;   gr_load     group A into its slot (its image's pages from its bank:
+;               far_gcopy, one read window in the play build's kernel,
+;               dl_kern.s; far_get a page at a time in the test builds'
+;               driver, gdriver.s); SLOT_GRP updated
 ;   g_stop      A = a stop code: GS_STATUS = A, then BRK
 ;   ld_stop     the game core's stops in the tic image (LV_STATUS, BRK),
 ;               as lload.s's in the load image
@@ -41,7 +50,8 @@
         .export fc_call, fc_unbuilt, dc_call, act_num, gr_load, g_stop
         .export ld_stop, fc_go, grp_bank, grp_src, grp_pages, grp_slot
         .export ACTTAB, THTAB, ITTAB, TRVTAB, LSTAB
-        .import far_get
+        .import far_gcopy       ; (game.cfg: the kernel's, KERN_GCOPY,
+                                ;   unless the test driver links its own)
 
 MAXGRP  = 64
         .assert GROUPS < MAXGRP, error, "too many groups"
@@ -86,11 +96,15 @@ fc_go:
         lda grp_slot,x
         sta FC_SLOT
         tax
-        lda SLOT_GRP,x          ; the slot's group, saved
-        pha
-        cmp FC_GRP
+        lda SLOT_NEED-1,x       ; the slot's need, saved ($FF, none:
+        bpl :+                  ;   $80 | the slot; a group is below 64)
+        txa
+        ora #$80
+:       pha
+        lda FC_GRP              ; the target's group: the slot's need
+        sta SLOT_NEED-1,x
+        cmp SLOT_GRP,x
         beq :+
-        lda FC_GRP
         jsr gr_load
 :       lda #>(fc_ret - 1)
         pha
@@ -107,11 +121,11 @@ fc_ret: php
         sty FC_Y
         pla
         sta FC_PS
-        pla                     ; the group the slot held at the call
-        cmp #$FF
-        beq @back
+        pla                     ; the slot's need at the call
+        bmi @none
         tax
         ldy grp_slot,x
+        sta SLOT_NEED-1,y       ; (the slot's need again)
         cmp SLOT_GRP,y
         beq @back
         ldy FC_PS               ; (gr_load counts its pages in FC_PS: the
@@ -126,6 +140,11 @@ fc_ret: php
         ldy FC_Y
         plp
         rts
+@none:  and #$7F                ; no active frame needs the slot: none,
+        tay                     ;   and no load
+        lda #$FF
+        sta SLOT_NEED-1,y
+        bra @back
 
 ; ---------------------------------------------------------------------------
 ; fc_unbuilt: jsr fc_unbuilt / .word the routine's number
@@ -217,7 +236,14 @@ act_num:
         jmp g_stop
 
 ; ---------------------------------------------------------------------------
-; gr_load: group A into its slot
+; gr_load: group A into its slot: its FA_N pages through far_gcopy, from
+; page FA_SRC of bank FA_BANK to the slot's page FA_DST (both page aligned).
+; far_gcopy is the card's: with RAMRD on, the fetches of $0200-$BFFF come
+; from the bank, so the core cannot hold the copy. The play build's is the
+; kernel's one read window (dl_kern.s); the test builds' is the driver's,
+; far_get a page at a time with the pages counted in FC_PS, as gr_load's
+; own loop was (gdriver.s: the parts' write checks allow far_get's stores
+; into the slots; fc_ret keeps the callee's P across a load).
 ; ---------------------------------------------------------------------------
 gr_load:
 .ifdef TESTBUILD                ; (a test build's harness: the timing)
@@ -231,7 +257,7 @@ gr_load:
         bne :+
         lda #GS_GROUP           ; (a group the image does not hold)
         jmp g_stop
-:       sta FC_PS               ; (the pages left)
+:       sta FA_N                ; (the pages)
         lda grp_bank,x
         sta FA_BANK
         lda grp_src,x
@@ -243,12 +269,7 @@ gr_load:
         lda slot_page-1,y
         sta FA_DST+1
         stz FA_DST
-        stz FA_N                ; (256)
-:       jsr far_get
-        inc FA_SRC+1
-        inc FA_DST+1
-        dec FC_PS
-        bne :-
+        jsr far_gcopy
         inc FC_LOADS
         bne :+
         inc FC_LOADS+1

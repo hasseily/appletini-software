@@ -462,7 +462,10 @@ BUGS = (
         ('bucket.s', 'walk2:  ldx P1+1,y\n',
          'walk2:  ldx P1+1,y\n        cpx #80\n        bne :+\n'
          '        lda P1,y\n        cmp #K_FILL\n        beq @seq\n:\n'),),
-     ('still-1', 'demo3-053'), ('batch ',)),
+     # (speed wave 1: the batches come from the producers' counts, so the
+     # lost record leaves a gap; in demo3-053 the fuzz marks' walk loops on
+     # it before batch 0 reaches the replay)
+     ('still-1', 'demo3-053'), ('batch ', 'in the bucket pass')),
     ('the record cut by a chunk\'s end dropped', (
         ('bucket.s', '@mv:    cpy BK_LEN\n        beq @mvd\n',
          '@mv:    bra @mvd\n        beq @mvd\n'),),

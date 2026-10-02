@@ -29,6 +29,14 @@ pass (cost phase 18: everything but the replay) a frame, and a staged
 byte. tools/native/frame8.py runs the same comparison
 (compare_batches) on every whole frame.
 
+Speed wave 1 (docs/SPEED.md, part bucket; RENDER-MASKED.md 6.2
+optimisation 10): the pass takes each column's count of W bytes from the
+producers (rlayout MCNTLO/MCNTHI, kept by rrec.s's rec_room and
+mrec_room), so the image holds them as the producers leave them
+(counts(): every staged record's bytes less its column byte, 16 bits, the
+high byte held at $FF past $FFFF) and RECDROP 0 (no batch dropped).
+--obj runs another build directory (its btest and rwall).
+
 check(..., release=True) runs a game build (-D RELEASE) against the
 same loader with RENDER-MASKED.md 6.1's column cut (expected(release)):
 tests/test_native_frame8.py's synthetic stagings use it, and the most
@@ -253,9 +261,23 @@ def segments(obj: Path = OBJ) -> Dict[str, Tuple[int, int]]:
     return out
 
 
+def counts(stream: Stream) -> Tuple[bytes, bytes]:
+    """Each column's count of W bytes as rec_room and mrec_room leave it
+    (rrec.s): the low bytes, the high bytes (160 each). A count past $FFFF
+    keeps its high byte at $FF."""
+    lo, hi = [0] * 160, [0] * 160
+    for c, data in stream.records:
+        s = lo[c] + len(data)
+        lo[c] = s & 0xFF
+        if s > 0xFF:
+            hi[c] = min(hi[c] + 1, 0xFF)
+    return bytes(lo), bytes(hi)
+
+
 def image(stream: Stream, fill: int, obj: Path = OBJ) -> bytes:
     """The a2vm image: the fill, the prototype, the staging, the frame
-    block's staging pointer and status, the covered ranges."""
+    block's staging pointer, status and RECDROP, the covered ranges, the
+    column counts (MCNTLO/MCNTHI)."""
     recs: List[Tuple[int, int, int, bytes]] = []
     pattern = bytes([fill]) * 0x10000
     recs.append((0, 0, 0x0000, pattern[:0xC000]))
@@ -295,7 +317,11 @@ def image(stream: Stream, fill: int, obj: Path = OBJ) -> bytes:
     recs.append((0, 0, F['STG_BANK'], bytes([bank or 0])))
     recs.append((0, 0, F['STG_PTR'], ptr.to_bytes(2, 'little')))
     recs.append((0, 0, F['STATUS'], b'\0'))
+    recs.append((0, 0, F['RECDROP'], b'\0'))
     recs.append((0, 0, L5.CVFIRST, stream.covered))
+    lo, hi = counts(stream)
+    recs.append((0, 0, R.MCNTLO, lo))
+    recs.append((0, 0, R.MCNTHI, hi))
     return RCK.image_bytes(recs)
 
 
@@ -487,11 +513,12 @@ def timing(stream: Stream, obj: Path = OBJ) -> Dict[str, Any]:
     return out
 
 
-def front_staging(directory: Path, sym, fill: int = 0xA5) -> bytes:
+def front_staging(directory: Path, sym, fill: int = 0xA5,
+                  obj: Path = OBJ) -> bytes:
     """The native front end's staging of the frame (frame mode on the
     build rwall), with its check: the frame must equal the reference."""
     fc = RCK.prepare_full(directory, sym)
-    b = RCK.load_build(OBJ, 'rwall')
+    b = RCK.load_build(obj, 'rwall')
     collect: Dict[str, Any] = {}
     res = RCK.check_full(fc, b, fill, RCK.base_records(b, fill, window=True),
                          collect=collect)
@@ -512,9 +539,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument('--timing', action='store_true')
     parser.add_argument('--no-build', action='store_true')
     parser.add_argument('--json', type=Path)
+    parser.add_argument('--obj', type=Path, default=OBJ)
     args = parser.parse_args(argv)
     if not args.no_build:
-        RCK.make()
+        RCK.make(args.obj)
     if not A2VM.exists():
         print('%s is missing: make -C tools/a2vm' % A2VM, file=sys.stderr)
         return 1
@@ -528,14 +556,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if frame.meta.get('flushes') or frame.meta.get('mflushes'):
             return {'frame': d.name, 'skipped': 'early flushes'}
         try:
-            stream = stream_of(frame, front_staging(d, sym), sym)
+            stream = stream_of(frame, front_staging(d, sym, obj=args.obj),
+                               sym)
             out = {'frame': d.name, 'runs': []}
             for f in fills:
-                r = check(stream, f)
+                r = check(stream, f, obj=args.obj)
                 r['fill'] = f
                 out['runs'].append(r)
             if args.timing:
-                out['timing'] = timing(stream)
+                out['timing'] = timing(stream, obj=args.obj)
             return out
         except (BucketError, rcanon.CanonError, RCK.CheckError) as e:
             return {'frame': d.name, 'runs': [{'problems': [str(e)]}]}

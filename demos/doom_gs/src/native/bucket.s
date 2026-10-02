@@ -25,16 +25,21 @@
 ;               the staged records, from 0). Card bank 1 selected, RAMRD,
 ;               RAMWRT off, $C073 0. Out: the 3D view drawn; the covered
 ;               ranges zeroed (by the replay, after each strip).
-;   nb_bucket   walk 1: each column's count of bytes; the batches (runs of
+;   nb_bucket   each column's count of bytes (the producers': MCNTLO/HI,
+;               rrec.s; speed wave 1, RENDER-MASKED.md 6.2 optimisation 10:
+;               no walk of the staging); the batches (runs of
 ;               whole columns of at most 8,192 bytes: the batch list,
 ;               BK_FIRST, BK_SZLO/HI, BK_NB of them, at most MAXB: rlayout.py
 ;               proves the bound); each column's cursor, its start in its
 ;               batch's region (W $6000 + $2000 (b mod 3)). A column of more
 ;               than 8,192 bytes, a broken staging: STATUS ST_BUCKET, BRK; in
 ;               the game build (-D RELEASE, RENDER-MASKED.md 6.1) such a
-;               column is cut instead: it keeps its records up to the first
-;               that would take it past 8,192 bytes (CVDONE bit 7, its batch
-;               ends with it), STATUS ST_RECORDS, and the frame goes on.
+;               column is cut instead: the counts are made again by walk 1
+;               (walk1: a column keeps its records up to the first
+;               that would take it past 8,192 bytes, CVDONE bit 7, its batch
+;               ends with it), STATUS ST_RECORDS, and the frame goes on; a
+;               frame whose batches were dropped (RECDROP) has its counts
+;               made again the same way (the producers counted them).
 ;   nb_scatter  walk 2 for the group's batches BK_G .. BK_GE - 1: each of
 ;               their records copied to its column's cursor, which steps
 ;               past it (a cut column's past its kept bytes left out); a
@@ -59,16 +64,27 @@
 ; stack page and the card are near, and the per-column arrays the walks
 ; need are in main memory, so the staging is read in chunks of up to 180
 ; bytes into page 1 (chunk: one RAMRD window a chunk, the card's code),
-; and walked there with RAMRD off. A record cut by a chunk's end is moved
-; to page 1's start before the next chunk. The staging's bytes left
+; and walked there with RAMRD off (scan). A record cut by a chunk's end is
+; moved to page 1's start before the next chunk. The staging's bytes left
 ; (BK_REM) are 24 bits: aux 0's 8 KB and four spill banks.
 ;
+; Speed wave 1 (docs/SPEED.md, part bucket): the counts come from the
+; producers (no walk 1, but in the game build's recount); a chunk's runs
+; are copied by ZLOOP, ten bytes of code in zero page (BK_ZLOOP, after the
+; batch list; nb_bucket writes them) whose absolute,y operands each run
+; patches, Y counting up to 0; walk 2 is one loop with the walk (scan),
+; each record copied by two zero-page pointers (page 1 and its column's
+; cursor) counting Y down; a covered column whose record is not found yet
+; is CVDONE 0 from nb_bucket on (1: no range), so the other columns' records
+; take no range test.
+;
 ; Where (RENDER-MASKED.md 3.7, risk 2): the code that runs inside a window
-; (chunk, the batches' parking and bring-back: BKNEAR) in the card's $F900
-; part after milestone 5's replay; the rest in main memory the masked phase
-; leaves dead, copied there by nm_bkload: BKFAR at $0C00-$0EFF, BKFAR2 at
-; $0200-$02FF. Its zero page: overlay 1 and BK_NB ($70); the replay keeps
-; to $48-$6F.
+; (cwin, the chunk's window; the batches' parking and bring-back: BKNEAR)
+; in the card's $F900 part after milestone 5's replay, with the game
+; build's walk 1; the rest in main memory the masked phase leaves dead,
+; copied there by nm_bkload: BKFAR at $0C00-$0EFF, BKFAR2 at $0200-$02FF.
+; Its zero page: overlay 1, BK_NB ($70) and the batch list, ZLOOP; the
+; replay keeps to $48-$6F.
 
         .setcpu "65C02"
         .include "rlayout.inc"
@@ -102,17 +118,25 @@ BK_SEQ   = $22                  ; the record's sequence number (2)
 BK_P     = $24                  ; a W pointer (2)
 BK_Q     = $26                  ; another (2)
 BK_T     = $28                  ; temporaries (2)
-BK_WALK  = $2A                  ; the walk's handler (2)
-BK_E     = $2C                  ; a record's rows (2), its size less 1
-BK_COL   = $2E                  ; the record's column
+BK_E     = $2C                  ; a record's rows (2); scan: its last byte
+                                ;   in W (its size less 2)
 BK_G     = $2F                  ; the group's first batch, the batch after
 BK_GE    = $30                  ;   its last
 BK_LO    = $31                  ; the group's first column, the column
 BK_HI    = $32                  ;   after its last
 BK_B     = $33                  ; the batch being replayed
+BK_MODE  = $34                  ; (the game build) scan: bit 7, walk 1
+BK_V     = $35                  ; scan: a record's column byte in page 1
+                                ;   (2; the high byte P1's, set by zl_put)
 BK_NB    = $70                  ; the batches (BK_FIRST follows)
         .assert BK_NB = BK_NB_ZP && BK_FIRST = BK_NB + 1, error, "BK_NB"
         .assert RECBUF_SPAN <= REGION, error, "RECBUF_SPAN"
+; ZLOOP (zero page, after the batch list): lda ZL_SRC,y / sta ZL_DST,y /
+; iny / bne ZLOOP / rts
+ZLOOP    = BK_ZLOOP
+ZL_SRC   = ZLOOP + 1
+ZL_DST   = ZLOOP + 4
+        .assert BK_FIRST + MAXB + 1 <= ZLOOP, error, "ZLOOP"
 
 .macro MARK n                   ; (A is free at each mark)
 .ifdef RPROF
@@ -178,7 +202,7 @@ bk_cut: lda #ST_RECORDS
 ; bk_kept: C set when the record at page 1's BK_SIZE bytes, column X (cut:
 ; the last column of its batch, the group's), fits before the column's end,
 ; its batch's end in its region: BK_P + BK_SIZE - 1 <= RECBUF + $2000 (b -
-; BK_G) + its bytes. Keeps Y; changes X, BK_T, BK_E.
+; BK_G) + its bytes. Keeps X, Y; changes BK_T, BK_E.
 bk_kept:
         phy
         ldy BK_G                ; its batch: the first whose end column is
@@ -216,34 +240,41 @@ bk_kept:
         rts
 .endif
 
+.ifdef RELEASE
+; walk 1 (6.1, the counts again; in the card, RAMRD off): the column's count + the size less the
+; column byte, up to RECBUF_SPAN: the record that would pass it cuts the
+; column (CVDONE bit 7), and none of its later records counts
+walk1:  ldx P1+1,y
+        bit CVDONE,x
+        bmi @w9
+        lda BK_SIZE
+        dec a                   ; (size - 1)
+        clc
+        adc MCNTLO,x
+        sta BK_T
+        lda MCNTHI,x
+        adc #0
+        cmp #>RECBUF_SPAN
+        bcc @w1
+        bne @cut
+        ldy BK_T
+        bne @cut
+@w1:    sta MCNTHI,x
+        lda BK_T
+        sta MCNTLO,x
+@w9:    rts
+@cut:   lda CVDONE,x
+        ora #$80
+        sta CVDONE,x
+        jmp bk_cut
+.endif
+
 ; ---------------------------------------------------------------------------
-; chunk (one RAMRD window): the record cut at page 1's end (from BK_AT) to
-; page 1's start, then up to CHUNK - that many bytes of the staging after
-; it (BK_REM left), across the areas' ends.
+; cwin (one RAMRD window), chunk's part in the card: BK_C bytes of the
+; staging from BK_BANK:BK_PTR into page 1 from X, across the areas' ends,
+; each run by ZLOOP. Out: BK_LEN the bytes in page 1.
 ; ---------------------------------------------------------------------------
-chunk:  ldx #0
-        ldy BK_AT
-@mv:    cpy BK_LEN
-        beq @mvd
-        lda P1,y
-        sta P1,x
-        inx
-        iny
-        bra @mv
-@mvd:   stz BK_AT
-        lda #CHUNK              ; BK_C = min(CHUNK - X, BK_REM)
-        stx BK_T
-        sec
-        sbc BK_T
-        sta BK_C
-        lda BK_REM+2
-        ora BK_REM+1
-        bne :+
-        lda BK_REM
-        cmp BK_C
-        bcs :+
-        sta BK_C
-:       lda BK_BANK
+cwin:   lda BK_BANK
         sta RWBANK
         sta RAMRDON
 @run:   lda BK_C
@@ -262,34 +293,33 @@ chunk:  ldx #0
         bra @part
 :       lda BK_C
         sta BK_T+1
-@part:  ldy #0
-:       lda (BK_PTR),y
-        sta P1,x
-        inx
-        iny
-        cpy BK_T+1
-        bne :-
-        sec                     ; BK_C, BK_REM less the run
+@part:  sec                     ; ZLOOP: Y from -n to 0, the operands
+        lda #0                  ;   n before the run's end
+        sbc BK_T+1
+        tay
+        clc
+        lda BK_PTR
+        adc BK_T+1
+        sta ZL_SRC
+        lda BK_PTR+1
+        adc #$FF
+        sta ZL_SRC+1
+        txa
+        clc
+        adc BK_T+1
+        sta ZL_DST
+        tax                     ; (X past the run)
+        jsr ZLOOP
+        sec                     ; BK_C less the run
         lda BK_C
         sbc BK_T+1
         sta BK_C
-        sec
-        lda BK_REM
-        sbc BK_T+1
-        sta BK_REM
-        bcs :+
-        lda BK_REM+1
-        bne @d1
-        dec BK_REM+2
-@d1:    dec BK_REM+1
-:       clc                     ; BK_PTR past it; at the area's end, the
-        lda BK_PTR              ;   next area
-        adc BK_T+1
-        sta BK_PTR
-        bcc @run
-        inc BK_PTR+1
-        lda BK_PTR+1
-        cmp #>STAGE_END
+        lda ZL_SRC              ; BK_PTR past it (ZL_SRC + $100); at the
+        sta BK_PTR              ;   area's end, the next area
+        ldy ZL_SRC+1
+        iny
+        sty BK_PTR+1
+        cpy #>STAGE_END
         bne @run
         lda BK_BANK
         bne :+
@@ -374,73 +404,25 @@ region: stz BK_P
 wsize:  .byte TEXREC_SIZE - 1, 0, FILLREC_SIZE - 1, 0, 4, 0, 7, 0, 4, 0, 4
 ssize:  .byte TEXREC_SIZE, 0, FILLREC_SIZE, 0, 0, 0, 8, 0, 5, 0, 5
 
-; walk 2: a record of the group's columns without its column byte to the
-; column's cursor, which steps past it; a covered column's record: the
-; range's W address (CVDONE). Every record counts in the sequence.
-walk2:  ldx P1+1,y
-        cpx BK_LO               ; the group's columns only
-        bcc @seq
-        cpx BK_HI
-        bcs @seq
-        stx BK_COL
-        lda COLLO,x
-        sta BK_P
-        lda COLHI,x
-        sta BK_P+1
-.ifdef RELEASE
-        bit CVDONE,x            ; (6.1) a cut column: its records past its
-        bpl @whole              ;   kept bytes are left out
-        jsr bk_kept
-        bcc @seq
-        ldx BK_COL
-@whole:
-.endif
-        lda CVDONE,x            ; the column's covering record?
-.ifdef RELEASE
-        asl a                   ; (bit 7: the cut)
-.endif
-        bne @copy
-        jsr covered
-        bcc @copy
-        lda BK_SEQ
-        cmp CVRECLO,x
-        bne @copy
-        lda BK_SEQ+1
-        cmp CVRECHI,x
-        bne @copy
-        inc CVDONE,x            ; its address where the batch is replayed
-        lda BK_P
-        sta CVRECLO,x
-        lda BK_P+1
-        and #>(REGION - 1)
-        ora #>RECBUF
-        sta CVRECHI,x
-@copy:  ldx BK_SIZE             ; the record less its column byte
+; the chunk's copy loop, written into zero page (ZLOOP) by nb_bucket: lda
+; abs,y / sta abs,y (page 1: the high byte 0, the low byte with Y from -n
+; reaches $0100 + it) / iny / bne / rts
+zl_code:
+        .byte $B9, 0, 0, $99, 0, 0, $C8, $D0, <(-9), $60
+        .assert * - zl_code = BK_ZLOOP_SIZE, error, "zl_code"
+zl_put: ldx #BK_ZLOOP_SIZE
+:       lda zl_code-1,x
+        sta ZLOOP-1,x
         dex
-        stx BK_E
-        tya
-        tax                     ; X = its offset in page 1
-        lda P1,x                ; the kind
-        sta (BK_P)
-        inx                     ; (the column byte)
-        ldy #1
-@f:     inx
-        lda P1,x
-        sta (BK_P),y
-        iny
-        cpy BK_E
-        bne @f
-        ldx BK_COL              ; the cursor past it
-        clc
-        lda COLLO,x
-        adc BK_E
-        sta COLLO,x
-        bcc @seq
-        inc COLHI,x
-@seq:   inc BK_SEQ              ; the next record's sequence number
-        bne :+
-        inc BK_SEQ+1
-:       rts
+        bne :-
+        lda #>P1                ; (and scan's pointer into page 1)
+        sta BK_V+1
+        rts
+
+; ===========================================================================
+; BKFAR (main $0C00): the rest (RAMRD and RAMWRT off)
+; ===========================================================================
+        .segment "BKFAR"
 
 ; ===========================================================================
 ; nb_batch: X = the batch
@@ -483,10 +465,6 @@ nb_batch:
         bra @mc
 @done:  rts
 
-; ===========================================================================
-; BKFAR (main $0C00): the rest (RAMRD and RAMWRT off)
-; ===========================================================================
-        .segment "BKFAR"
 
 ; ---------------------------------------------------------------------------
 ; nb_frame
@@ -525,20 +503,29 @@ nb_frame:                       ; (the caller marks phase 18)
 ; nb_bucket
 ; ---------------------------------------------------------------------------
 nb_bucket:
-        ldx #VIEWWIDTH + 1      ; no count, no covering record found
-:       stz COLLO-1,x           ;   (CVDONE's entry 160 is BK_SZLO's
-        stz COLHI-1,x           ;   first, set below)
-        stz CVDONE-1,x
+        jsr zl_put              ; the chunk's copy loop into zero page
+        ldx #VIEWWIDTH          ; CVDONE 0: a covered column (CVEND not 0,
+@cv:    lda CVEND-1,x           ;   CVFIRST below it) whose record is not
+        beq @nc                 ;   found yet; 1: no covered range; (the
+        lda CVFIRST-1,x         ;   game build) bit 7: the column is cut
+        cmp CVEND-1,x
+        lda #0
+        bcc :+
+@nc:    lda #1
+:       sta CVDONE-1,x
         dex
-        bne :-
-        lda #<walk1
-        ldx #>walk1
-        jsr walk
+        bne @cv
+.ifdef RELEASE
+        stz BK_MODE             ; (scan: walk 2)
+        lda RECDROP             ; (6.1) a batch dropped: the counts again
+        bne @recount
+.endif
         ; the batches: runs of whole columns of at most RECBUF_SPAN bytes
+@batches:
         ldx #0                  ; X = the column, Y = the batch
         ldy #0
 @batch: cpy #MAXB
-        bcs @stop
+        bcs @maxb
         stx BK_FIRST,y
         lda #0
         sta BK_SZLO,y
@@ -547,10 +534,10 @@ nb_bucket:
         beq @last
         clc                     ; + the column's bytes
         lda BK_SZLO,y
-        adc COLLO,x
+        adc MCNTLO,x
         sta BK_T
         lda BK_SZHI,y
-        adc COLHI,x
+        adc MCNTHI,x
         cmp #>RECBUF_SPAN
         bcc @fits
         bne @full
@@ -572,11 +559,28 @@ nb_bucket:
         bra @col
 .endif
 @full:  txa                     ; a batch of no column: one column passes
-        cmp BK_FIRST,y          ;   RECBUF_SPAN (the game build cut it in
+        cmp BK_FIRST,y          ;   RECBUF_SPAN (the game build counts again:
         beq @stop               ;   walk 1)
         iny
         bra @batch
-@stop:  jmp bstop               ; (more than MAXB: none, rlayout.py)
+@maxb:
+.ifndef RELEASE
+@stop:
+.endif
+        jmp bstop               ; (more than MAXB: none, rlayout.py)
+.ifdef RELEASE
+@stop:
+@recount:                       ; (6.1) each column's count from the
+        ldx #VIEWWIDTH          ;   staging, walk 1: a column past a batch
+:       stz MCNTLO-1,x          ;   cut (after a recount none is past one)
+        stz MCNTHI-1,x
+        dex
+        bne :-
+        dec BK_MODE
+        jsr scan
+        stz BK_MODE
+        bra @batches
+.endif
 @last:  iny
         sty BK_NB
         lda #VIEWWIDTH
@@ -600,19 +604,15 @@ nb_bucket:
 @cs:    txa
         cmp BK_FIRST+1,y
         beq @nexb
-        clc                     ; cursor = start; start += count
-        lda BK_P
-        pha
-        adc COLLO,x
+        lda BK_P                ; cursor = start; start += count
+        sta COLLO,x
+        clc
+        adc MCNTLO,x
         sta BK_P
         lda BK_P+1
-        pha
-        adc COLHI,x
-        sta BK_P+1
-        pla
         sta COLHI,x
-        pla
-        sta COLLO,x
+        adc MCNTHI,x
+        sta BK_P+1
         inx
         bra @cs
 @nexb:  plx
@@ -623,7 +623,6 @@ nb_bucket:
 :       iny
         cpy BK_NB
         bne @cursor
-        stz BK_SEQ              ; (the sequence of every walk 2 from 0)
         rts
 
 ; ---------------------------------------------------------------------------
@@ -641,9 +640,7 @@ nb_scatter:
         stx BK_HI
         stz BK_SEQ
         stz BK_SEQ+1
-        lda #<walk2
-        ldx #>walk2
-        jsr walk
+        jsr scan
         ; each cursor holds the next column's start: one entry up, less its
         ; batch's region offset ($2000 (b - BK_G)), the last batch first (a
         ; batch reads its first column's cursor before the batch before
@@ -689,13 +686,11 @@ nb_scatter:
         ldx BK_LO
 @cv:    cpx BK_HI
         beq @park
-        lda CVDONE,x
+        lda CVDONE,x            ; (0: covered, its record not found)
 .ifdef RELEASE
         asl a                   ; (bit 7: the cut; a record cut is not
 .endif                          ;   staged)
         bne @cvn
-        jsr covered
-        bcc @cvn
         stz CVFIRST,x
         stz CVEND,x
 @cvn:   inx
@@ -711,101 +706,220 @@ nb_scatter:
         bra @pk
 @done:  rts
 
-; covered: C set when column X's range covers rows (CVEND not 0 and
-; CVFIRST below it). Keeps X, Y.
-covered:
-        lda CVEND,x
-        beq :+
-        lda CVFIRST,x
-        cmp CVEND,x
-        bcs :+
-        sec
-        rts
-:       clc
-        rts
 
 ; ---------------------------------------------------------------------------
-; walk: each staged record, in production order, to the handler A:X (A
-; low) with Y = its offset in page 1, BK_SIZE its size.
+; scan: each staged record, in production order, through page 1 (chunk):
+; walk 2 (the game build: walk 1 when BK_MODE bit 7 is set). Walk 2: a
+; record of the group's columns (BK_LO .. BK_HI - 1) without its column
+; byte to the column's cursor, which steps past it (the game build: a cut
+; column's records past its kept bytes left out); a covered column's record
+; (its sequence number CVRECLO/HI, BK_SEQ counting every record): the
+; range's W address where its batch is replayed, CVDONE.
 ; ---------------------------------------------------------------------------
-walk:   sta BK_WALK
-        stx BK_WALK+1
-        stz BK_BANK             ; the staging from its start
+scan:   stz BK_BANK             ; the staging from its start
         lda #<STAGE
         sta BK_PTR
         lda #>STAGE
         sta BK_PTR+1
-        stz BK_REM+2
-        lda STG_BANK            ; its bytes: STG_PTR - STAGE, or the full
-        bne @spill              ;   aux 0 area and the spill banks'
-        sec
-        lda STG_PTR
-        sbc #<STAGE
+        stz BK_REM+2            ; its bytes (STAGE and $0200 are page
+        lda STG_PTR             ;   aligned: the low byte is STG_PTR's)
         sta BK_REM
         lda STG_PTR+1
-        sbc #>STAGE
-        sta BK_REM+1
-        bra @go
-@spill: sec                     ; (STG_BANK - RECSP_FIRST) * $BE00 +
-        sbc #RECSP_FIRST        ;   STG_PTR - $0200 + $2000
-        tax
-        sec
-        lda STG_PTR
-        sbc #<$0200
-        sta BK_REM
-        lda STG_PTR+1
-        sbc #>$0200
+        ldx STG_BANK
+        beq @aux
+        clc                     ; a spill bank: STG_PTR - $0200 + the aux 0
+        adc #>(STAGE_END - STAGE - $0200)   ; area's $2000, + $BE00 for
+@k:     cpx #RECSP_FIRST        ;   each spill bank before it
+        beq @hi
+        dex
         clc
-        adc #>(STAGE_END - STAGE)
-        sta BK_REM+1
-        bcc :+
-        inc BK_REM+2
-:       dex
-        bmi @go
-        clc
-        lda BK_REM+1
         adc #>(STAGE_END - $0200)
-        sta BK_REM+1
-        bcc :-
+        bcc @k
         inc BK_REM+2
-        bra :-
+        bra @k
+@aux:   sec                     ; aux 0: STG_PTR - STAGE
+        sbc #>STAGE
+@hi:    sta BK_REM+1
 @go:    stz BK_LEN
         stz BK_AT
-@next:  ldy BK_AT
-        cpy BK_LEN
-        beq @refill
-        lda P1,y                ; the kind's size
-        cmp #K_OVL + 1
-        bcs @bad
-        tax
-        lda ssize,x
-        beq @bad
-        sta BK_SIZE
-        clc
-        adc BK_AT
-        bcs @refill
-        cmp BK_LEN
-        beq :+
-        bcs @refill
-:       jsr @call
-        clc
-        lda BK_AT
-        adc BK_SIZE
-        sta BK_AT
-        bra @next
-@refill:
-        lda BK_REM              ; nothing left to read: the walk's end (a
+        bra scan_nx
+scan_rf:
+        lda BK_REM              ; nothing left to read: the scan's end (a
         ora BK_REM+1            ;   record cut there: the staging is
         ora BK_REM+2            ;   broken)
         bne :+
         ldy BK_AT
         cpy BK_LEN
-        bne @bad
+        bne scan_bad
         rts
 :       jsr chunk
-        bra @next
-@call:  jmp (BK_WALK)
-@bad:   jmp bstop
+scan_nx:
+        ldy BK_AT               ; Y: the record in page 1
+        cpy BK_LEN
+        beq scan_rf
+        lda P1,y                ; the kind's size
+        cmp #K_OVL + 1
+        bcs scan_bad
+        tax
+        lda ssize,x
+        bne :+
+scan_bad:
+        jmp bstop
+:       sta BK_SIZE
+        clc
+        adc BK_AT
+        bcs scan_rf
+        cmp BK_LEN
+        beq :+
+        bcs scan_rf
+:       sta BK_AT               ; (the next record)
+.ifdef RELEASE
+        bit BK_MODE
+        bpl walk2
+        jsr walk1
+        bra scan_nx
+.endif
+; walk 2 (Y: the record in page 1): its column, the group's?
+walk2:  ldx P1+1,y
+        cpx BK_LO
+        bcc @seq
+        cpx BK_HI
+        bcs @seq
+        lda COLLO,x             ; its place
+        sta BK_P
+        lda COLHI,x
+        sta BK_P+1
+.ifdef RELEASE
+        bit CVDONE,x            ; (6.1) a cut column: its records past its
+        bpl @whole              ;   kept bytes are left out
+        jsr bk_kept
+        bcc @seq
+@whole:
+.endif
+        lda CVDONE,x            ; the column's covering record? (0: a
+.ifdef RELEASE                  ;   covered range, its record not found)
+        asl a                   ; (bit 7: the cut)
+.endif
+        bne @copy
+        lda BK_SEQ
+        cmp CVRECLO,x
+        bne @copy
+        lda BK_SEQ+1
+        cmp CVRECHI,x
+        bne @copy
+        inc CVDONE,x            ; its address where the batch is replayed
+        lda BK_P
+        sta CVRECLO,x
+        lda BK_P+1
+        and #>(REGION - 1)
+        ora #>RECBUF
+        sta CVRECHI,x
+@copy:  lda P1,y                ; the kind
+        sta (BK_P)
+        iny                     ; BK_V + j: byte j in W (the column byte
+        sty BK_V                ;   at BK_V)
+        ldy BK_SIZE
+        dey
+        dey                     ; Y: the record's last byte in W
+        sty BK_E
+@f:     lda (BK_V),y
+        sta (BK_P),y
+        dey
+        bne @f
+        sec                     ; the cursor past it (BK_E + 1)
+        lda COLLO,x
+        adc BK_E
+        sta COLLO,x
+        bcc @seq
+        inc COLHI,x
+@seq:   inc BK_SEQ              ; the next record's sequence number
+        bne :+
+        inc BK_SEQ+1
+:       jmp scan_nx
+
+; ---------------------------------------------------------------------------
+; chunk: the record cut at page 1's end (from BK_AT) to page 1's start, then
+; up to CHUNK - that many bytes of the staging after it (BK_C; BK_REM less
+; them), read in the card's window (cwin)
+; ---------------------------------------------------------------------------
+chunk:  ldx #0
+        ldy BK_AT
+@mv:    cpy BK_LEN
+        beq @mvd
+        lda P1,y
+        sta P1,x
+        inx
+        iny
+        bra @mv
+@mvd:   stz BK_AT
+        txa                     ; BK_C = min(CHUNK - X, BK_REM)
+        eor #$FF
+        sec
+        adc #CHUNK
+        sta BK_C
+        lda BK_REM+2
+        ora BK_REM+1
+        bne :+
+        lda BK_REM
+        cmp BK_C
+        bcs :+
+        sta BK_C
+:       sec                     ; BK_REM less them
+        lda BK_REM
+        sbc BK_C
+        sta BK_REM
+        bcs :+
+        lda BK_REM+1
+        bne @d1
+        dec BK_REM+2
+@d1:    dec BK_REM+1
+:       jmp cwin
+
+
+; ===========================================================================
+; BKFAR2 again: the batch's fuzz marks
+; ===========================================================================
+        .segment "BKFAR2"
+
+; marks: the column X's K_FUZZ records in W that a later record of the
+; column paints next to or over: K_FUZZNOW. Keeps X.
+marks:  lda COLLO,x             ; BK_P: the record, from the column's start
+        sta BK_P
+        lda COLHI,x
+        sta BK_P+1
+        lda COLLO+1,x           ; BK_T: the column's end
+        sta BK_T
+        lda COLHI+1,x
+        sta BK_T+1
+@rec:   lda BK_P                ; the column's end
+        cmp BK_T
+        lda BK_P+1
+        sbc BK_T+1
+        bcs @done
+        lda (BK_P)
+        cmp #K_FUZZ
+        bne @skip
+        ldy #1                  ; its rows: a = R_ROW and a + R_COUNT
+        lda (BK_P),y
+        sta BK_E
+        iny
+        clc
+        adc (BK_P),y
+        sta BK_E+1
+        jsr later               ; a later record over R_ROW - 1 .. a +
+        bcc @skip               ;   R_COUNT?
+        lda #K_FUZZNOW
+        sta (BK_P)
+@skip:  lda (BK_P)              ; the next record
+        tay
+        clc
+        lda BK_P
+        adc wsize,y
+        sta BK_P
+        bcc @rec
+        inc BK_P+1
+        bra @rec
+@done:  rts
 
 ; later: C set when a record after BK_P (to BK_T) paints a row r with
 ; BK_E - 1 <= r <= BK_E+1: its first row <= BK_E+1 and its row after the
@@ -857,75 +971,3 @@ later:  lda BK_P
         sec
         rts
 
-; walk 1: the column's count + the size less the column byte
-walk1:  ldx P1+1,y
-.ifdef RELEASE
-        bit CVDONE,x            ; (6.1) a column cut: none of its later
-        bmi @w9                 ;   records
-.endif
-        lda BK_SIZE
-        dec a                   ; (size - 1)
-        clc
-        adc COLLO,x
-.ifdef RELEASE
-        sta BK_T                ; past RECBUF_SPAN: the column is cut at
-        lda COLHI,x             ;   this record
-        adc #0
-        cmp #>RECBUF_SPAN
-        bcc @w1
-        bne @cut
-        ldy BK_T
-        bne @cut
-@w1:    sta COLHI,x
-        lda BK_T
-        sta COLLO,x
-@w9:    rts
-@cut:   lda #$80
-        sta CVDONE,x
-        jmp bk_cut
-.else
-        sta COLLO,x
-        bcc :+
-        inc COLHI,x
-:       rts
-.endif
-
-; marks: the column X's K_FUZZ records in W that a later record of the
-; column paints next to or over: K_FUZZNOW. Keeps X.
-marks:  lda COLLO,x             ; BK_P: the record, from the column's start
-        sta BK_P
-        lda COLHI,x
-        sta BK_P+1
-        lda COLLO+1,x           ; BK_T: the column's end
-        sta BK_T
-        lda COLHI+1,x
-        sta BK_T+1
-@rec:   lda BK_P                ; the column's end
-        cmp BK_T
-        lda BK_P+1
-        sbc BK_T+1
-        bcs @done
-        lda (BK_P)
-        cmp #K_FUZZ
-        bne @skip
-        ldy #1                  ; its rows: a = R_ROW and a + R_COUNT
-        lda (BK_P),y
-        sta BK_E
-        iny
-        clc
-        adc (BK_P),y
-        sta BK_E+1
-        jsr later               ; a later record over R_ROW - 1 .. a +
-        bcc @skip               ;   R_COUNT?
-        lda #K_FUZZNOW
-        sta (BK_P)
-@skip:  lda (BK_P)              ; the next record
-        tay
-        clc
-        lda BK_P
-        adc wsize,y
-        sta BK_P
-        bcc @rec
-        inc BK_P+1
-        bra @rec
-@done:  rts
