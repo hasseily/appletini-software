@@ -29,6 +29,13 @@ The full checkpoint (every case) is `python3 tools/native/gparts/
 damage.py --check --random --plants` (report.json); this module runs every
 SAMPLE-th captured case and every synthetic group.
 
+By default (tests/README.md) it runs every SAMPLE_DEF-th captured case
+instead (every entry still reached, both fills under both profiles),
+every synthetic group from $A5 under f121 or $5A under fastpath in turn
+(both fills and both profiles still among the groups), and the
+thrust's random check on 20,000 inputs; DOOM_GS_FULL=1 runs all of what
+it ran before (every SAMPLE-th case, 100,000 inputs).
+
 Each class skips, naming the command that makes what it needs, when
 build/ lacks it: the shared outputs (`make -s -C src/native -f game.mk
 shared skel ROOT=$PWD`, the parallel runner's prebuild; never made here),
@@ -39,6 +46,7 @@ tools/native`), the part's captures (`python3 tools/native/gparts/
 damage.py --capture`).
 """
 
+import os
 import shutil
 import struct
 import sys
@@ -56,8 +64,10 @@ sys.path.insert(0, str(ROOT / 'tools' / 'native' / 'gparts'))
 HAVE_CC65 = bool(shutil.which('ca65') and shutil.which('ld65'))
 PREBUILD = ('make -s -C src/native -f game.mk shared skel ROOT=$PWD (the '
             'parallel runner\'s prebuild)')
+FULL = os.environ.get('DOOM_GS_FULL') == '1'
 SAMPLE = 8
-RANDOM_N = 100_000
+SAMPLE_DEF = 80                 # by default
+RANDOM_N = 100_000 if FULL else 20_000
 
 
 def shared_ok() -> bool:
@@ -176,7 +186,23 @@ class Checkpoint(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import damage as D
-        cls.rep = D.check(jobs=2, sample=SAMPLE, say=lambda *a: None)
+        if FULL:
+            cls.rep = cls.captured = D.check(jobs=2, sample=SAMPLE,
+                                             say=lambda *a: None)
+            return
+        # damage.check() on the default sample: the captured cases from
+        # both fills under both profiles, each synthetic group on one of
+        # the two diagonal combinations
+        D.build()
+        js, _ = D.plan(D.OUT, D.FILLS, D.PROFILES, SAMPLE_DEF)
+        diag = (((0xA5,), ('f121',)), ((0x5A,), ('fastpath',)))
+        synth = [j[:4] + diag[i % 2] for i, j in
+                 enumerate(j for j in js if j[0] == 'synthetic')]
+        res_c = D.run_jobs([j for j in js if j[0] != 'synthetic'], 2)
+        res = res_c + D.run_jobs(synth, 2)
+        cls.rep = {'entries': D.summarize(res),
+                   'strays': sum(r.get('strays') or 0 for r in res)}
+        cls.captured = {'entries': D.summarize(res_c)}
 
     def test_no_failure_and_no_stray_write(self):
         bad = {k: e['first_failures'] for k, e in self.rep['entries'].items()
@@ -193,11 +219,14 @@ class Checkpoint(unittest.TestCase):
                 self.assertGreater(e['runs'], 0)
 
     def test_both_fills_and_profiles(self):
+        """Every case from both fills under both profiles (by default the
+        captured ones: the synthetic groups run one combination each)."""
         import damage as D
         e = self.rep['entries'][D.DAMAGE]
         for prof in ('f121', 'fastpath'):
             self.assertIsNotNone(e['cpu_cycles'][prof]['median'])
-        self.assertEqual(e['runs'] % 4, 0)
+        self.assertEqual(self.captured['entries'][D.DAMAGE]['runs'] % 4, 0)
+        self.assertGreater(self.captured['entries'][D.DAMAGE]['runs'], 0)
 
     def test_a_lower_runs_whole(self):
         """The player's deaths and lowerWeapon reach A_Lower (part pspr):

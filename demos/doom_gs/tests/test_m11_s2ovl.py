@@ -25,6 +25,12 @@ also writes build/native/m11/s2ovl/report.json):
   - the five planted bugs, each in a scratch copy, caught;
   - the timing runs (f121, fastpath).
 
+By default (tests/README.md) the frames run are an even sample: every
+STEP-th captured frame (and both titleBand frames) with its variants,
+both fills; the capture's counts are still checked whole; the planted
+bugs on every second of their frames. DOOM_GS_FULL=1 runs every frame
+and variant as before.
+
 Needs cc65, build/a2vm/a2vm, ref816's machine and the release image, the
 link map, milestone 8's tables (python3 tools/native/rtables.py) and part
 s2cap's capture of automap.script (python3 tools/native/s2cap.py
@@ -38,6 +44,7 @@ Run by name: python3 tools/testpar.py tests/test_m11_s2ovl.py
 import re
 import shutil
 import unittest
+from unittest import mock
 
 import support
 
@@ -186,6 +193,19 @@ class HandMade(unittest.TestCase):
             rcanon.native_records_all(rec + ovl[:4], {}, [])
 
 
+FULL = support.FULL
+STEP = 4            # by default: every STEP-th captured frame
+
+
+def sample_names():
+    """The frames the checkpoint runs (None: all of them)."""
+    from native import s2ovl as O
+    if FULL:
+        return None
+    return [d.name for d in support.every(
+        O.frame_dirs(), STEP, keep=lambda d: d.name in O.BAND0_FRAMES)]
+
+
 @needs_build
 class Checkpoint(unittest.TestCase):
     result = None
@@ -196,7 +216,8 @@ class Checkpoint(unittest.TestCase):
         O.make()
         if not (O.OUT / 'capture.json').exists():
             O.capture()
-        cls.result = O.run_checks(None, O.FILLS, 2, verbose=False)
+        cls.names = sample_names()
+        cls.result = O.run_checks(cls.names, O.FILLS, 2, verbose=False)
 
     def test_the_capture(self):
         from native import s2ovl as O
@@ -218,7 +239,13 @@ class Checkpoint(unittest.TestCase):
         problems = ['%s %s: %s' % (r['frame'], r.get('fill'), q)
                     for r in res for q in r['problems']]
         self.assertEqual(problems, [])
-        self.assertEqual(len(res), 2 * (29 + 2 + 20))
+        from native import s2ovl as O
+        names = self.names or [d.name for d in O.frame_dirs()]
+        tics = sum(1 for n in names if n.startswith('ovl-')) - \
+            ('ovl-01' in names)
+        self.assertEqual(len(res), 2 * (len(names) + 2 + tics))
+        if FULL:
+            self.assertEqual(len(res), 2 * (29 + 2 + 20))
         self.assertFalse([r for r in res if r.get('known')])
         ovl = [r for r in res if r.get('overlay')]
         self.assertTrue(all(r['k_ovl'] > 1000 for r in ovl))
@@ -226,7 +253,10 @@ class Checkpoint(unittest.TestCase):
         self.assertEqual(len(band), 4)
         self.assertTrue(all(r['titleband'] for r in band))
         tics = [r for r in res if r['frame'].endswith('+tics')]
-        self.assertEqual(len(tics), 40)
+        self.assertEqual(len(tics), 2 * (sum(
+            1 for n in names if n.startswith('ovl-')) - ('ovl-01' in names)))
+        if FULL:
+            self.assertEqual(len(tics), 40)
         self.assertTrue(any(r['tics'] > 0 for r in tics))
         self.assertTrue(all(r['stack_bytes'] <= 112 for r in res))
 
@@ -238,7 +268,12 @@ class Planted(unittest.TestCase):
         O.make()
         if not (O.OUT / 'capture.json').exists():
             O.capture()
-        for r in O.planted(2):
+        # on PLANT_FRAMES (by default every second of them, ovl-10 and
+        # plain-01: tests/README.md; DOOM_GS_FULL=1 all four)
+        frames = O.PLANT_FRAMES if FULL else O.PLANT_FRAMES[1::2]
+        with mock.patch.object(O, 'PLANT_FRAMES', frames):
+            res = O.planted(2)
+        for r in res:
             self.assertTrue(r['caught'], r)
 
 

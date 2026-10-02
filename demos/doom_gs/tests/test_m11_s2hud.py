@@ -198,10 +198,14 @@ class Checkpoint(unittest.TestCase):
 @needs_build
 class Planted(unittest.TestCase):
     def test_each_planted_bug_is_caught(self):
+        """Each bug on the checks of every run (by default every second
+        run from the second, newgame and automap, the synthetic cases
+        still all: tests/README.md; DOOM_GS_FULL=1 every run)."""
         from native import s2hud as H
         H.make()
+        runs = H.RUNS if support.FULL else H.RUNS[1::2]
         for k in range(len(H.PLANTED)):
-            name, problems = H.plant(k, H.RUNS)
+            name, problems = H.plant(k, runs)
             self.assertTrue(problems, name)
 
 

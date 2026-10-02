@@ -26,6 +26,15 @@ What it checks (tools/native/gparts/lines.py does the work):
   * the planted bugs of GAME.md 2.4, each built from a scratch copy of the
     part's sources in a temporary directory, each failing its named check.
 
+By default (tests/README.md) the module runs fewer of those cases, every
+routine, path kind and planted bug still reached: of the chosen captured
+calls the first of each path the paths.json decoding gives and an even
+spread up to CAPTURED_N an entry; the switch lines' first line and line 0
+once and again on each map, the button cases on E1M1 and E1M2; E1M1's
+use, exit and cross cases and every FIND_SAMPLE-th findSpecial case on
+each map; the monster plant on every 50th captured use. DOOM_GS_FULL=1
+runs all of what it ran before (the counts above).
+
 It skips with the reason when build/ lacks upstream's sources, ref816,
 a2vm, the shared outputs (`make -s -C src/native -f game.mk shared
 ROOT=$PWD`; the survey: `python3 tools/native/gamecap.py --survey`), the
@@ -35,7 +44,10 @@ own captures (`python3 tools/native/gparts/lines.py --capture`, then
 """
 
 import json
+import os
 import re
+import shutil
+import tempfile
 import sys
 import unittest
 from pathlib import Path
@@ -54,8 +66,11 @@ def setUpModule():
     L.GC.CASES = L.CASES
 
 
+FULL = os.environ.get('DOOM_GS_FULL') == '1'
 SAMPLE = 10         # P_UseSpecialLine's and findSpecial's choice
 SYN_SAMPLE = 4      # P_ChangeSwitchTexture's synthetic lines
+CAPTURED_N = 4      # by default: the captured calls an entry (and a path)
+FIND_SAMPLE = 8     # by default: findSpecial's synthetic calls on a map
 
 
 def why_skip():
@@ -205,6 +220,48 @@ class Build(unittest.TestCase):
             nat.group(e['native'])
 
 
+def even(items, n):
+    items = list(items)
+    if len(items) <= n:
+        return items
+    return [items[i * len(items) // n] for i in range(n)]
+
+
+def captured_sample(key, n=CAPTURED_N):
+    """The first chosen call of each path (paths.json), then an even
+    spread of the others up to n."""
+    paths = L.all_paths([key])
+    kinds = paths.get(key, {})
+    chosen = L.selection(key, paths)
+    out, seen = [], set()
+    for p in chosen:
+        k = kinds.get(L.rel(p))
+        if k not in seen:
+            seen.add(k)
+            out.append(p)
+    for p in even(chosen, n):
+        if len(out) >= max(n, len(seen)):
+            break
+        if p not in out:
+            out.append(p)
+    return out
+
+
+def case_jobs(key, paths, obj=None, fills=None, profiles=None):
+    """check_jobs' captured jobs on the given calls."""
+    return [('case', [(key, str(p)) for p in paths[i:i + 12]],
+             str(obj or L.OUT), tuple(fills or L.FILLS),
+             tuple(profiles or L.PROFILES))
+            for i in range(0, len(paths), 12)]
+
+
+def notes_of(name, key, pick):
+    """The notes of the synthetic records of key on map `name` that
+    pick(records) chooses."""
+    recs = [r for r in L.load_synthetic(name) if r['key'] == key]
+    return {r['note'] for r in pick(recs)}
+
+
 @unittest.skipIf(SKIP, SKIP or '')
 class Checkpoint(unittest.TestCase):
 
@@ -220,9 +277,14 @@ class Checkpoint(unittest.TestCase):
         """Every chosen call of P_CrossSpecialLine and P_ChangeSwitchTexture,
         every SAMPLE-th of the others, both fills, both profiles."""
         built()
-        jobs = L.check_jobs(keys=(L.CROSS, L.CHANGE), synthetic=False)
-        jobs += L.check_jobs(keys=(L.USE, L.FIND), synthetic=False,
-                             sample=SAMPLE)
+        if FULL:
+            jobs = L.check_jobs(keys=(L.CROSS, L.CHANGE), synthetic=False)
+            jobs += L.check_jobs(keys=(L.USE, L.FIND), synthetic=False,
+                                 sample=SAMPLE)
+        else:
+            jobs = []
+            for key in L.ENTRIES:
+                jobs += case_jobs(key, captured_sample(key))
         res = self.run_jobs(jobs)
         self.assertEqual({r['entry'] for r in res}, set(L.ENTRIES))
         per: dict = {}
@@ -239,10 +301,28 @@ class Checkpoint(unittest.TestCase):
         """P_ChangeSwitchTexture on every SYN_SAMPLE-th switch line of the
         nine maps, once and again, and the button list's cases."""
         built()
-        jobs = L.check_jobs(keys=(L.CHANGE,), captured_=False,
-                            sample=SYN_SAMPLE)
-        jobs += L.check_jobs(keys=(L.CHANGE,), captured_=False,
-                             select=lambda r: 'buttons' in r['note'])
+        if FULL:
+            jobs = L.check_jobs(keys=(L.CHANGE,), captured_=False,
+                                sample=SYN_SAMPLE)
+            jobs += L.check_jobs(keys=(L.CHANGE,), captured_=False,
+                                 select=lambda r: 'buttons' in r['note'])
+        else:
+            # each map's first switch line once and again; line 0 (no
+            # switch texture) on E1M1; the button cases on E1M1 and E1M2
+            jobs = []
+            for name in L.synthetic_names():
+                first = notes_of(name, L.CHANGE, lambda rs: [
+                    r for r in rs if 'buttons' not in r['note']][:2])
+                if name == 'e1m1':
+                    first |= notes_of(name, L.CHANGE, lambda rs: [
+                        r for r in rs if r['note'].startswith('line 0,')])
+                jobs += L.check_jobs(keys=(L.CHANGE,), captured_=False,
+                                     names=(name,),
+                                     select=lambda r, f=first:
+                                     r['note'] in f)
+            jobs += L.check_jobs(keys=(L.CHANGE,), captured_=False,
+                                 names=('e1m1', 'e1m2'),
+                                 select=lambda r: 'buttons' in r['note'])
         res = self.run_jobs(jobs)
         self.assertEqual(len({r['case'].split(':')[0] for r in res}), 9)
         paths = {r['path'] for r in res}
@@ -256,8 +336,14 @@ class Checkpoint(unittest.TestCase):
         dead and by a monster, the other use and cross cases, findSpecial
         on each map."""
         built()
-        jobs = L.check_jobs(keys=(L.USE, L.EXIT, L.CROSS, L.FIND),
-                            captured_=False)
+        if FULL:
+            jobs = L.check_jobs(keys=(L.USE, L.EXIT, L.CROSS, L.FIND),
+                                captured_=False)
+        else:
+            jobs = L.check_jobs(keys=(L.USE, L.EXIT, L.CROSS),
+                                captured_=False, names=('e1m1',))
+            jobs += L.check_jobs(keys=(L.FIND,), captured_=False,
+                                 sample=FIND_SAMPLE)
         res = self.run_jobs(jobs)
         paths = {r['path'] for r in res}
         for want in ('player-lnExit-mode0', 'player-lnExit-dead-mode0',
@@ -281,7 +367,28 @@ class Planted(unittest.TestCase):
         self.plant('walk-once-not-cleared')
 
     def test_monster_allowed(self):
-        self.plant('monster-allowed')
+        """By default on every 50th captured use (lines.plant_check's
+        every 10th with DOOM_GS_FULL=1) and E1M1's monster uses."""
+        if FULL:
+            return self.plant('monster-allowed')
+        built()
+        one = dict(fills=(L.FILLS[0],), profiles=(L.PROFILES[0],))
+        tmp = Path(tempfile.mkdtemp(prefix='tmp-m10-lines-plant-',
+                                    dir=str(L.BUILD)))
+        try:
+            obj = L.plant_build('monster-allowed', tmp)
+            jobs = L.check_jobs(keys=(L.USE,), synthetic=False, obj=obj,
+                                sample=50, **one)
+            jobs += L.check_jobs(keys=(L.USE,), captured_=False, obj=obj,
+                                 names=('e1m1',),
+                                 select=lambda r: 'monster' in r['note'],
+                                 **one)
+            res = L.run_jobs(jobs, workers=2, progress=False)
+        finally:
+            shutil.rmtree(str(tmp), ignore_errors=True)
+        self.assertGreater(len(res), 0)
+        self.assertTrue([r for r in res if not r.get('ok')],
+                        'monster-allowed was not caught')
 
     def test_button_timer_short(self):
         self.plant('button-timer-short')

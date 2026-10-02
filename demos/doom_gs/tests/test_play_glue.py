@@ -1,12 +1,19 @@
 """The playable game's glue without a machine run (docs/PLAY.md 10): the
 layout, the hooks' parity with ghook.s, the boot's copies of the render
-tables, SPRBOUND by upstream's rule.
+tables, SPRBOUND by upstream's rule, and play.mk's rebuild of milestone
+9's load image (LCODE).
 """
 
+import os
 import re
+import shutil
 import struct
+import subprocess
 import sys
+import tempfile
 import unittest
+
+from pathlib import Path
 
 from support import BUILD, ROOT  # noqa: F401
 
@@ -142,6 +149,90 @@ class SprBound(unittest.TestCase):
                                  pair, '%s sprite %d' % (path.name, s))
                 checked += 1
         self.assertGreater(checked, 100)
+
+
+HAVE_CC65 = bool(shutil.which('make') and shutil.which('ca65') and
+                 shutil.which('ld65'))
+
+
+@unittest.skipUnless(HAVE_CC65, 'needs make and cc65 (ca65, ld65)')
+class LoadImage(unittest.TestCase):
+    """play.mk rebuilds milestone 9's load image (lcard, LCODE on the
+    disk) when it is out of date: LCODE links the runtime's state, and
+    speed wave 1's first disk held a stale one (docs/SPEED.md 6)."""
+
+    def play_mk(self, *args, timeout=300):
+        from ref816 import bounded
+        return bounded.run(['make', '-s', '-C', str(SRC), '-f', 'play.mk',
+                            'ROOT=%s' % ROOT] + list(args), timeout=timeout,
+                           max_bytes=64 << 20, stdin=subprocess.DEVNULL,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           universal_newlines=True)
+
+    def test_the_links_follow_the_load_image(self):
+        """In play.mk's rules (make -p, nothing run): the load image is
+        lrun.OBJ's, which playlink.py and playdisk.py read, it is remade
+        by level.mk on every run, and the play link's symbols follow it."""
+        from native import lrun, playlink as PK, pldisk
+        self.assertEqual(PK.LCARD, lrun.OBJ)
+        self.assertEqual(pldisk.LCARD, lrun.OBJ)
+        play = '/nonexistent-play'
+        r = self.play_mk('-p', '-q', 'PLAY=%s' % play, 'no-such-target',
+                         timeout=60)
+        rules = {}
+        lines = r.stdout.splitlines()
+        for i, line in enumerate(lines):
+            target, colon, rest = line.partition(': ')
+            if colon and not line.startswith(('#', '\t')):
+                recipe = []
+                for x in lines[i + 1:]:
+                    if x.startswith('#'):
+                        continue        # (make's notes on the rule)
+                    if not x.startswith('\t'):
+                        break
+                    recipe.append(x)
+                rules[target] = (rest.split(), recipe)
+        lcode = str(lrun.OBJ / 'lcard.lw')
+        self.assertIn(lcode, rules[play + '/gen/playsym.inc'][0])
+        deps, recipe = rules[lcode]
+        self.assertEqual(deps, ['FORCE'])
+        self.assertTrue(any('-f level.mk' in x and 'OUT=$(LEVELS)' in x
+                            for x in recipe), recipe)
+
+    def test_a_stale_load_image_is_rebuilt(self):
+        """A copy of build/native/levels/obj made stale as a layout change
+        leaves it (an older ggame.inc, an lcard.lw from before it): play.mk
+        remakes it (its target lcode, LEVELS the copy), and level.mk then
+        finds it up to date."""
+        from native import glayout as GL, lrun
+        from ref816 import bounded
+        if not (lrun.OBJ / 'lcard.lw').exists():
+            self.skipTest('needs milestone 9\'s build: make -s -C src/native '
+                          '-f level.mk ROOT=$PWD')
+        tmp = Path(tempfile.mkdtemp(prefix='tmp-lcode-', dir=str(BUILD)))
+        self.addCleanup(shutil.rmtree, str(tmp), True)
+        obj = tmp / 'obj'
+        shutil.copytree(str(lrun.OBJ), str(obj))
+        old = (ROOT / 'tools' / 'native' / 'glayout.py').stat().st_mtime \
+            - 3600
+        for name, data in (('gen/ggame.inc', b'; a stale layout\n'),
+                           ('lcard.lw', b'stale')):
+            (obj / name).write_bytes(data)
+            os.utime(str(obj / name), (old, old))
+        r = self.play_mk('lcode', 'LEVELS=%s' % obj)
+        self.assertEqual(r.returncode, 0, r.stdout[-3000:])
+        self.assertNotIn('arning', r.stdout)
+        self.assertEqual((obj / 'gen' / 'ggame.inc').read_text(),
+                         GL.ggame_text())
+        self.assertGreater(len((obj / 'lcard.lw').read_bytes()), 1000)
+        self.assertGreater((obj / 'lcard.lw').stat().st_mtime, old)
+        self.assertIn('nl_setup', (obj / 'lcard.lbl').read_text())
+        q = bounded.run(['make', '-q', '-s', '-C', str(SRC), '-f',
+                         'level.mk', 'ROOT=%s' % ROOT, 'OUT=%s' % obj],
+                        timeout=60, stdin=subprocess.DEVNULL,
+                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.assertEqual(q.returncode, 0, 'level.mk still finds it out of '
+                         'date')
 
 
 if __name__ == '__main__':

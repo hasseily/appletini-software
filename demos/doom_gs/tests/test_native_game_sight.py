@@ -7,7 +7,14 @@ the side test's log fast path), and the planted bugs.
 The checkpoint here runs a sample of the captured cases (every
 SAMPLE_SIGHT-th call of P_CheckSight, every SAMPLE_OTHER-th of the other
 entries) and every synthetic case; `python3 tools/native/gparts/sight.py
---check` runs them all (build/native/game/sight/report.json). Each test
+--check` runs them all (build/native/game/sight/report.json). By default
+(tests/README.md) the sample is smaller: PER_CLASS calls of each path
+class of P_CheckSight and of each other entry (the selection's classes),
+spread evenly, up to PER_ENTRY an entry, every synthetic case, and the
+random checks on RANDOM_N inputs, each planted bug on PLANT_CASES cases;
+DOOM_GS_FULL=1 runs all of what it ran before (every SAMPLE_SIGHT-th and
+SAMPLE_OTHER-th call, 100,000 inputs, 10 cases a plant).
+Each test
 skips, naming the command, when build/ lacks what it needs: a2vm, ref816,
 the shared outputs, the level bases, the part's path logs and cases. It
 writes only under build/native/game/sight/ and in temporary directories
@@ -15,15 +22,19 @@ it deletes.
 """
 
 import importlib
+import os
 import sys
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TOOL = ROOT / 'tools' / 'native' / 'gparts' / 'sight.py'
+FULL = os.environ.get('DOOM_GS_FULL') == '1'
 SAMPLE_SIGHT = 20
 SAMPLE_OTHER = 15
-RANDOM_N = 100_000
+PER_CLASS = 2       # by default: the calls of each path class
+PER_ENTRY = 5       # by default: at least this many calls an entry
+RANDOM_N = 100_000 if FULL else 20_000
 
 
 def tool():
@@ -87,6 +98,30 @@ class Selection(unittest.TestCase):
             self.assertEqual(len(T.case_files(key)), len(sel), key)
 
 
+def sample_files(key):
+    """The default sample of key's captured cases: PER_CLASS of each
+    class of the selection, evenly, then an even spread up to
+    PER_ENTRY."""
+    sel = T.selection(key)
+    by = {}
+    for c in sel:
+        by.setdefault(c[3], []).append(c)
+    pick = []
+    for cls in sorted(by):
+        pick += T.spread(by[cls], PER_CLASS)
+    for c in T.spread(sel, PER_ENTRY):
+        if len(pick) >= PER_ENTRY:
+            break
+        if c not in pick:
+            pick.append(c)
+    out = []
+    for run, hit, _, _ in sorted(pick):
+        p = T.GC.case_dir(run, key) / ('h%08d.case.z' % hit)
+        if p.exists():
+            out.append(p)
+    return out
+
+
 class Checkpoint(unittest.TestCase):
     """The sample from both fills ($A5 under f121, $5A under fastpath):
     canonical state, declared outputs, the hit log, GT_HINT, no stray
@@ -97,8 +132,8 @@ class Checkpoint(unittest.TestCase):
         work = []
         for key in T.ENTRIES:
             n = SAMPLE_SIGHT if key == T.CHECKSIGHT else SAMPLE_OTHER
-            work += [(str(p), key, str(T.OUT), False)
-                     for p in T.case_files(key, n)]
+            files = T.case_files(key, n) if FULL else sample_files(key)
+            work += [(str(p), key, str(T.OUT), False) for p in files]
         work += [(str(p), T.synthetic_key(p), str(T.OUT), True)
                  for p in T.synthetic_files()]
         cls.results = T.run_cases(work, T.JOBS)
@@ -315,7 +350,8 @@ PLANTS = {
                                      'bitTab: .byte 128, 64, 32, 16, 8, 4, '
                                      '2, 1')]),
 }
-PLANT_CASES = 10
+PLANT_CASES = 10 if FULL else 2     # (by default 2)
+SLOPE_STEP = 30 if FULL else 75
 
 
 def plant_cases(kind: str):
@@ -323,7 +359,7 @@ def plant_cases(kind: str):
     each one the tree's image passes (the checkpoint's sample)."""
     if kind == 'slope':
         return [(str(p), 'p_sight65.s:sightSlope', False)
-                for p in T.case_files('p_sight65.s:sightSlope', 30)]
+                for p in T.case_files('p_sight65.s:sightSlope', SLOPE_STEP)]
     if kind in ('stale', 'wrap'):
         names = {'stale': 'stale', 'wrap': 'wrap'}[kind]
         return [(str(p), T.CHECKSIGHT, True) for p in T.synthetic_files()

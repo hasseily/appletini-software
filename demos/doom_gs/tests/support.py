@@ -7,6 +7,7 @@ skip when tools/fetch_upstream.py has not filled build/.
 
 import atexit
 import importlib.util
+import os
 import shutil
 import struct
 import subprocess
@@ -40,6 +41,22 @@ def run(command, timeout=TEST_TIMEOUT, max_bytes=TEST_MAX_BYTES, **kwargs):
     process is killed (tools/ref816/bounded.py)."""
     return bounded.run(command, timeout=timeout, max_bytes=max_bytes,
                        **kwargs)
+
+# A unit test that reruns a whole checkpoint or acceptance runs an even
+# sample of its cases by default and all of them with DOOM_GS_FULL=1 in
+# the environment (tests/README.md).
+FULL = os.environ.get('DOOM_GS_FULL') == '1'
+
+
+def every(items, step, keep=lambda item: False):
+    """Every step-th of items (all of them with DOOM_GS_FULL=1), in their
+    order, and every item keep(item) chooses."""
+    items = list(items)
+    if FULL or step <= 1:
+        return items
+    return [x for i, x in enumerate(items) if i % step == 0 or keep(x)]
+
+
 NEED_FETCH = '%s is missing: run python3 tools/fetch_upstream.py first'
 
 needs_release = unittest.skipUnless(

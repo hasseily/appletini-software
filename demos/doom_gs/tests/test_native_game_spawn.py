@@ -33,6 +33,13 @@ The full checkpoint (every case) is `python3 tools/native/gparts/spawn.py
 SAMPLE-th captured case, every synthetic case, the random check and the
 plants.
 
+By default (tests/README.md) it runs fewer captured cases: the first of
+each path an entry's captured calls take (the path logs) and an even
+spread up to PER_ENTRY an entry, both fills under both profiles, every
+synthetic case; each plant on PLANT_DEF of its check's captured cases
+(and its synthetic ones). DOOM_GS_FULL=1 runs all of what it ran before:
+every SAMPLE-th captured case, each plant on its check's 40.
+
 Each class skips, naming the command that makes what it needs, when
 build/ lacks it: the shared outputs (`make -s -C src/native -f game.mk
 shared skel ROOT=$PWD`, the parallel runner's prebuild; never made here),
@@ -42,8 +49,10 @@ a2vm (`make -C tools/ref816`, `make -C tools/a2vm`), the part's path logs
 and captures (`python3 tools/native/gparts/spawn.py --paths --capture`).
 """
 
+import os
 import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -58,7 +67,10 @@ sys.path.insert(0, str(ROOT / 'tools' / 'native' / 'gparts'))
 HAVE_CC65 = bool(shutil.which('ca65') and shutil.which('ld65'))
 PREBUILD = ('make -s -C src/native -f game.mk shared skel ROOT=$PWD (the '
             'parallel runner\'s prebuild)')
+FULL = os.environ.get('DOOM_GS_FULL') == '1'
 SAMPLE = 8
+PER_ENTRY = 4       # by default: the captured cases an entry (or a path)
+PLANT_DEF = 4       # by default: a plant's captured cases
 
 
 def shared_ok() -> bool:
@@ -168,7 +180,31 @@ class Checkpoint(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import spawn as S
-        cls.rep = S.check(jobs=2, sample=SAMPLE, quiet=True)
+        if FULL:
+            cls.rep = S.check(jobs=2, sample=SAMPLE, quiet=True)
+            return
+        # spawn.check() on the default sample: the first captured case of
+        # each (entry, path), an even spread up to PER_ENTRY an entry
+        S.build()
+        js, _ = S.plan(S.OUT, S.FILLS, S.PROFILES, 1, None, S.SYNTHETIC)
+        out = [j for j in js if j[0] != 'case']
+        for key in S.ENTRIES:
+            cases = [j for j in js if j[0] == 'case' and j[2] == key]
+            pick, seen = [], set()
+            for j in cases:
+                if j[3] not in seen:
+                    seen.add(j[3])
+                    pick.append(j)
+            for j in S.spread(cases, PER_ENTRY):
+                if len(pick) >= max(PER_ENTRY, len(seen)):
+                    break
+                if j not in pick:
+                    pick.append(j)
+            out += pick
+        res = S.run_jobs(out, 2, None, True)
+        cls.rep = {'entries': S.MS.summarize(res),
+                   'failures': sum(1 for r in res if not r.get('ok')),
+                   'strays': sum(r.get('strays') or 0 for r in res)}
 
     def test_no_failure_and_no_stray_write(self):
         bad = {k: e['first_failures'] for k, e in self.rep['entries'].items()
@@ -219,13 +255,32 @@ class Random(unittest.TestCase):
         self.assertEqual(r['upstream_is_the_arithmetic_shift'], 100_000)
 
 
+def run_plant(name):
+    """spawn.run_plant on PLANT_DEF of its check's captured cases (40 with
+    DOOM_GS_FULL=1)."""
+    import spawn as S
+    if FULL:
+        return S.run_plant(name)
+    p = S.PLANTS[name]
+    tmp = Path(tempfile.mkdtemp(prefix='tmp-spawn-plant-', dir=str(BUILD)))
+    try:
+        obj = S.build(tmp / 'game', p['bugs'])
+        res = S.run_jobs(S.plant_jobs(p, obj, limit=PLANT_DEF), S.JOBS,
+                         quiet=True)
+    finally:
+        shutil.rmtree(str(tmp), ignore_errors=True)
+        S._BUILDS.clear()
+    return {'check': p['check'], 'runs': len(res),
+            'caught': any(not r.get('ok') for r in res)}
+
+
 @needs_all
 class Plants(unittest.TestCase):
     def test_each_plant_is_caught(self):
         import spawn as S
         for name in S.PLANTS:
             with self.subTest(name):
-                r = S.run_plant(name)
+                r = run_plant(name)
                 self.assertGreater(r['runs'], 0)
                 self.assertTrue(r['caught'], '%s was not caught by %s' % (
                     name, r['check']))

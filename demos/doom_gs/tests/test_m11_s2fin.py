@@ -33,6 +33,7 @@ Run by name: python3 tools/testpar.py tests/test_m11_s2fin.py
 import re
 import shutil
 import unittest
+from unittest import mock
 
 import support
 
@@ -305,12 +306,16 @@ class Checkpoint(unittest.TestCase):
 @needs_build
 class Planted(unittest.TestCase):
     def test_each_planted_bug_is_caught(self):
+        """Each bug on the injected checks, from both fills (by default
+        from $A5 alone: tests/README.md; DOOM_GS_FULL=1 both)."""
         from native import s2fin as F
         if not all((F.CAP / (r + '.z')).exists() for r in F.RUNS):
             F.capture_all(2)
         F.make()
+        fills = F.FILLS if support.FULL else F.FILLS[:1]
         for k in range(len(F.PLANTED)):
-            name, problems = F.plant(k, 2)
+            with mock.patch.object(F, 'FILLS', fills):
+                name, problems = F.plant(k, 2)
             self.assertTrue(problems, name)
 
 

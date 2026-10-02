@@ -23,6 +23,11 @@ also runs the timing on f121 and fastpath and writes report.json):
     t_num the release's, request S2MENU2-2);
   - the sizes; the four planted bugs, each in a scratch copy.
 
+By default (tests/README.md) the frames run are an even sample (every
+STEP-th of each run and the first of each page and kind), and part
+s2menu1's calls the same sample as its module's; the capture's counts are
+still checked whole. DOOM_GS_FULL=1 runs every one as before.
+
 Needs cc65, build/a2vm/a2vm, the math tables, ref816 with the release,
 the link map, S2's objects (make -C src/sound), part s2data's store,
 and part s2cap's menus cases; skips naming what is missing.
@@ -73,6 +78,27 @@ def missing() -> str:
 
 MISSING = missing()
 needs_build = unittest.skipIf(MISSING, 'needs ' + MISSING)
+FULL = support.FULL
+STEP = 6            # by default: every STEP-th frame of a run
+# check_frames' runs: s2cap's menus cases (A) and this part's K1, K2, B
+FRAME_RUNS = ('a', 'k1', 'k2', 'bench')
+
+
+def frame_pick(M, setchg):
+    """check_frames' pick by default (None: every job) and the jobs it
+    picks: every STEP-th job of each run and the first of each (run,
+    page, kind)."""
+    if FULL:
+        return None, None
+    chosen, seen = set(), set()
+    for run in FRAME_RUNS:
+        js = [mj for mj in M.jobs_of(run, setchg) if not mj.job.excluded]
+        for i, mj in enumerate(js):
+            key = (run, mj.page, mj.job.kind)
+            if i % STEP == 0 or key not in seen:
+                seen.add(key)
+                chosen.add((run, mj.job.name))
+    return (lambda mj: (mj.run, mj.job.name) in chosen), chosen
 
 
 class HandMade(unittest.TestCase):
@@ -85,16 +111,20 @@ class HandMade(unittest.TestCase):
         self.assertEqual(M.title_x(125), 98)     # 160 - 62
 
     def test_the_applied_places(self):
-        """S2MENU2-1 and -2 as applied (wave 6): M_BFPS, 8 bytes, the last
-        of s2layout's MENUW fields inside the state block; the music's
-        volume the field map's SS_SETTINGS+5, s2_menu.s's SET_MUSVOL."""
+        """S2MENU2-1 and -2 as applied (wave 6): M_BFPS, 8 bytes, then
+        (the play build's phase rows, docs/PLAY.md 15) M_BROWS, 96 bytes,
+        the last of s2layout's MENUW fields, inside the state block; the
+        music's volume the field map's SS_SETTINGS+5, s2_menu.s's
+        SET_MUSVOL."""
         import re
         from native import s2layout as S, s2menu2 as M
         used = S.state_places('MENUW')
         at = M.native_places()['M_BFPS']
-        self.assertEqual(S.MENUW_NATIVE[-1], ('M_BFPS', 8))
+        self.assertEqual(S.MENUW_NATIVE[-2:], [('M_BFPS', 8),
+                                               ('M_BROWS', 96)])
         self.assertEqual(at, used['M_BFPS'])
-        self.assertLessEqual(at + 8, S.OWN_STATE['MENUW'][1] +
+        self.assertEqual(M.native_places()['M_BROWS'], at + 8)
+        self.assertLessEqual(at + 8 + 96, S.OWN_STATE['MENUW'][1] +
                              S.SS_SIZE['SS_MENUW'])
         self.assertEqual(M.settings_places()[M.MUSIC_FIELD], M.SET_MUSVOL)
         self.assertLess(M.SET_MUSVOL, S.SS_SIZE['SS_SETTINGS'])
@@ -170,10 +200,17 @@ class Checkpoint(unittest.TestCase):
 
     def test_every_frame_and_close(self):
         from native import s2menu2 as M
-        r = M.check_frames(self.b, self.setchg)
+        from collections import Counter
+        pick, chosen = frame_pick(M, self.setchg)
+        r = M.check_frames(self.b, self.setchg, pick=pick)
         self.assertEqual(r['problems'], [])
-        self.assertEqual(r['by_run'], {'a': 162, 'k1': 9, 'k2': 24,
+        every = Counter(run for run in FRAME_RUNS
+                        for mj in M.jobs_of(run, self.setchg)
+                        if not mj.job.excluded)
+        self.assertEqual(dict(every), {'a': 162, 'k1': 9, 'k2': 24,
                                        'bench': 9})
+        self.assertEqual(r['by_run'], dict(every) if FULL else
+                         dict(Counter(run for run, _ in chosen)))
         for page in ('load full', 'save full', 'display & sound full',
                      'controls full', 'key setup full', 'benchmark open'):
             self.assertIn(page, r['pages'])
@@ -191,13 +228,18 @@ class Checkpoint(unittest.TestCase):
         self.assertEqual(r['steps']['excluded'], 24)    # the key setup's
 
     def test_s2menu1s_calls_on_this_image(self):
+        """Part s2menu1's calls (by default its module's sample)."""
         from native import s2menu1 as M1, s2menu2 as M
-        r = M1.check_responders(self.b, self.data, 0xA5, 2, M.OUT)
+        from test_m11_s2menu1 import responder_calls, ticker_chains
+        only, n, _ = responder_calls(M1, self.data)
+        r = M1.check_responders(self.b, self.data, 0xA5, 2, M.OUT, only)
         self.assertEqual(r['problems'], [])
-        self.assertEqual(r['calls'], 283)
-        r = M1.check_tickers(self.b, self.data, 0xA5, 2, M.OUT)
+        self.assertEqual(r['calls'], 283 if FULL else n)
+        patch, n = ticker_chains(M1, self.data)
+        with patch:
+            r = M1.check_tickers(self.b, self.data, 0xA5, 2, M.OUT)
         self.assertEqual(r['problems'], [])
-        self.assertEqual(r['calls'], 863)
+        self.assertEqual(r['calls'], 863 if FULL else n)
 
     def test_sizes(self):
         """MENUW with both menu parts within its room; this part's code

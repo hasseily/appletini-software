@@ -22,6 +22,16 @@ What it checks (tools/native/gparts/secfind.py does the work):
   * the planted bugs of GAME.md 2.4, each built from a scratch copy of the
     part's sources in a temporary directory, each failing its named check.
 
+By default (tests/README.md) the module runs fewer of those cases, every
+entry and planted bug still reached: every captured call of the entries
+with at most SMALL_DEF, every SAMPLE_DEF-th of the others; every
+SYN_DEF-th synthetic call a map (the first of each entry on each of the
+nine maps); E1M1's leveltime cases (32,768 among them) and its four
+button endings; the planted bugs on fewer cases of their checks (the
+finders' every 10th, T_Glow's every 30th captured call with the two
+thinkers, a sample of the leveltimes). DOOM_GS_FULL=1 runs all of what
+it ran before (the counts above).
+
 It skips with the reason when build/ lacks upstream's sources, ref816,
 a2vm, the shared outputs (`make -s -C src/native -f game.mk shared
 ROOT=$PWD`; the survey: `python3 tools/native/gamecap.py --survey`), the
@@ -31,7 +41,10 @@ own captures (`python3 tools/native/gparts/secfind.py --log`, then
 """
 
 import json
+import os
+import shutil
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -49,9 +62,15 @@ def setUpModule():
     S.GC.CASES = S.CASES
 
 
+FULL = os.environ.get('DOOM_GS_FULL') == '1'
 SMALL = 40          # an entry with at most this many cases runs them all
 SAMPLE = 10         # else every SAMPLE-th
 SYN_SAMPLE = 20     # the synthetic finders', tags' and lights' calls
+SMALL_DEF = 10      # the same by default
+SAMPLE_DEF = 100
+SYN_DEF = 200
+if not FULL:
+    SMALL, SAMPLE, SYN_SAMPLE = SMALL_DEF, SAMPLE_DEF, SYN_DEF
 
 
 def why_skip():
@@ -180,8 +199,15 @@ class Checkpoint(unittest.TestCase):
         shift, the slime's arithmetic one) and the switch timers ending on
         each place of a texture, on E1M1 and E1M3."""
         built()
-        jobs = S.check_jobs(keys=('p_spec65.s:P_UpdateSpecials',),
-                            captured=False, names=('e1m1', 'e1m3'))
+        if FULL:
+            jobs = S.check_jobs(keys=('p_spec65.s:P_UpdateSpecials',),
+                                captured=False, names=('e1m1', 'e1m3'))
+        else:
+            notes = leveltimes(6) | {r['note'] for r in update_specials()
+                                     if r['note'].startswith('buttons')}
+            jobs = S.check_jobs(keys=('p_spec65.s:P_UpdateSpecials',),
+                                captured=False, names=('e1m1',),
+                                select=lambda r: r['note'] in notes)
         res = self.run_jobs(jobs)
         notes = {r['case'].split(': ')[1] for r in res}
         self.assertIn('leveltime 32768', notes)
@@ -214,6 +240,18 @@ class Checkpoint(unittest.TestCase):
         self.assertEqual({r['entry'] for r in res}, set(keys))
 
 
+def update_specials():
+    return [r for r in S.load_synthetic('e1m1')
+            if r['key'] == 'p_spec65.s:P_UpdateSpecials']
+
+
+def leveltimes(n):
+    """n of E1M1's leveltime cases, evenly, and 32,768 (bit 15)."""
+    lt = [r['note'] for r in update_specials()
+          if r['note'].startswith('leveltime')]
+    return {lt[i * len(lt) // n] for i in range(n)} | {'leveltime 32768'}
+
+
 @unittest.skipIf(SKIP, SKIP or '')
 class Mod3(unittest.TestCase):
 
@@ -232,9 +270,44 @@ class Planted(unittest.TestCase):
 
     def plant(self, name):
         built()
-        r = S.plants([name])[name]
-        self.assertTrue(r['caught'], r)
-        self.assertGreater(r['runs'], 0)
+        check = S.PLANTS[name][0]
+        if FULL or check not in ('finders', 'thinkers', 'leveltime'):
+            r = S.plants([name])[name]
+            self.assertTrue(r['caught'], r)
+            self.assertGreater(r['runs'], 0)
+            return
+        # secfind.plant_check's check on fewer cases
+        one = dict(fills=(S.FILLS[0],), profiles=(S.PROFILES[0],))
+        tmp = Path(tempfile.mkdtemp(prefix='tmp-m10-secfind-plant-',
+                                    dir=str(S.BUILD)))
+        try:
+            obj = S.plant_build(name, tmp)
+            if check == 'finders':
+                jobs = S.check_jobs(
+                    keys=('p_spec65.s:P_FindSectorFromLineTag',),
+                    captured=False, obj=obj, names=('e1m1', 'e1m3'),
+                    sample=10,
+                    select=lambda r: r['regs'].get('a', 0) != 0xFFFF, **one)
+            elif check == 'thinkers':
+                jobs = S.check_jobs(keys=('p_lights65.s:T_Glow',),
+                                    captured=False, obj=obj,
+                                    names=('thinkers',), **one)
+                jobs += S.check_jobs(keys=('p_lights65.s:T_Glow',),
+                                     synthetic=False, obj=obj, sample=30,
+                                     **one)
+            else:
+                notes = leveltimes(4)
+                jobs = S.check_jobs(keys=('p_spec65.s:P_UpdateSpecials',),
+                                    captured=False, obj=obj,
+                                    names=('e1m1',),
+                                    select=lambda r: r['note'] in notes,
+                                    **one)
+            res = S.run_jobs(jobs, workers=2, progress=False)
+        finally:
+            shutil.rmtree(str(tmp), ignore_errors=True)
+        self.assertGreater(len(res), 0)
+        self.assertTrue([r for r in res if not r.get('ok')],
+                        '%s was not caught (%d runs)' % (name, len(res)))
 
     def test_tag_search_from_0(self):
         self.plant('tag-search-from-0')

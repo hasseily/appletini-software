@@ -33,11 +33,16 @@ first run captures the nibble dumps (about 10 s) and the --call truth
 (about 5 s) into build/native/m11/s2pal/.
 
 Run by name: python3 tools/testpar.py tests/test_m11_s2pal.py
+
+By default (tests/README.md) the native frames run every second batch of
+16 (each image still), the planted bugs the same; DOOM_GS_FULL=1 runs
+every batch as before.
 """
 
 import re
 import shutil
 import unittest
+from unittest import mock
 
 import support
 
@@ -77,6 +82,9 @@ MISSING = missing()
 needs_build = unittest.skipIf(MISSING, 'needs ' + MISSING)
 
 RUNS = ('palette', 'newgame')
+# by default every EVERY-th batch of 16 frames (tests/README.md); all of
+# them with DOOM_GS_FULL=1
+EVERY = 1 if support.FULL else 2
 
 
 class Built:
@@ -231,15 +239,20 @@ class TestNative(unittest.TestCase):
         self.assertEqual(seen[('PALW', 's2_nib')][1], 400)
 
     def test_frames(self):
+        """Every batch of the runs' frames from both fills, plain and
+        poisoned (by default every EVERY-th batch: tests/README.md)."""
         ensure_built()
         from native import s2pal as P
-        o = P.native_all(RUNS, jobs=2)
+        o = P.native_all(RUNS, jobs=2, every=EVERY)
         self.assertEqual(o['problems'], [])
         self.assertEqual(o['stray'], 0)
         self.assertGreater(o['writes'], 0)
         self.assertGreater(o['by_image'].get('s2pf', 0), 0)  # a picture
         n = sum(c['finishes'] for c in o['counts'].values())
-        self.assertEqual(o['cases'], 4 * n)
+        batches, _ = P.native_cases(RUNS)
+        self.assertEqual(sum(len(b) for _, b in batches), n)
+        self.assertEqual(o['cases'], 4 * sum(
+            len(b) for k, (_, b) in enumerate(batches) if k % EVERY == 0))
         self.assertLessEqual(o['stack'], 64)
 
     def test_palw(self):
@@ -267,8 +280,11 @@ class TestPlanted(unittest.TestCase):
     def test_planted(self):
         ensure_built()
         from native import s2pal as P
+        native_all = P.native_all
         for pl in P.PLANTS:
-            with self.subTest(pl.name):
+            with self.subTest(pl.name), mock.patch.object(
+                    P, 'native_all', lambda *a, **k: native_all(
+                        *a, every=EVERY, **k)):
                 o = P.plant_run(pl, jobs=2)
                 self.assertTrue(o['caught'], pl.name)
                 if pl.name == 'the black palettes after the first band':

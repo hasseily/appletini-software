@@ -116,16 +116,31 @@ Not worth doing now:
 | | fastpath | 154.3 ms, 6.48 FPS | **84.3 ms, 11.86 FPS**; K_TIC 20.0; s2_frame 8.9 | −70.0 ms |
 | demo3, gametics 1052-1796, 186 frames | f121 | 873.3 ms mean, 877.2 median, 1,656 max, 1.15 FPS; 240.9 loads a tic | **271.6 ms mean, 271.5 median, 635 max, 3.68 FPS**; K_TIC 188.4; 63.5 loads a tic | −601.7 ms |
 | | fastpath | 687.1 ms, 1.46 FPS (*) | **243.8 ms, 4.10 FPS** | −443.3 ms |
-| The menu's BENCHMARK, all of demo3 (534 frames) | f121 | FPS 0.912 (*) | **FPS 3.318** (5,632 realtics, 301 ms a frame) | |
-| | fastpath | FPS 1.177 (*) | **FPS 3.842** (4,864 realtics) | |
+| The menu's BENCHMARK, all of demo3 (534 frames) | f121 | FPS 0.912 (*) (**) | **FPS 3.302** (5,659 realtics, 303 ms a frame; first read 3.318, (**)) | |
+| | fastpath | FPS 1.177 (*) (**) | **FPS 3.732** (5,008 realtics; first read 3.842, (**)) | |
 
 (*) Measured on the owner's build plus part bench alone (the benchmark did not exist before; part bench's +4 B of core and larger brain group make still 182.5 ms there against 180.7).
+
+(**) The integration first read the benchmark with a2vm stopped as soon as `G_TimeDemoEnd` began writing `DL_BRT` (`--stop-word`). It writes the high bytes first, so the low byte was still 0: 20,480 = `$5000`, 5,632 = `$1600`, 4,864 = `$1300` realtics, and each FPS too high. Read again on 2026-10-02 with the page up (`playtime.py --scene bench`, below): 3.302 (f121) and 3.732 (fastpath) for this build. The "before" figures were not measured again (20,480 to 20,735 realtics: FPS 0.901 to 0.912).
 
 - **Still, f121, by step (ms a frame):** K_TIC 24.36, K_WLOAD 4.95, nr_frame 25.94, K_MLOAD 2.62, nm_masked 3.89, nm_bkload 0.21, nb_frame 22.19, P2DW 1.97, s2_frame 1.82. The render and the image loads are now 72% of the frame.
 - **demo3, f121, by step:** K_TIC 188.37, K_WLOAD 4.96, nr_frame 21.92, K_MLOAD 2.62, nm_masked 7.70, nm_bkload 0.21, nb_frame 40.25, P2DW 1.98, s2_frame 3.54. The tic phase is still 69% of the frame: the object API's far traffic and the remaining group copy (63.5 loads a tic) are wave 2's.
 - **Render alone** (`frame8.py --timing`, f121, the integrated renderer): still-1 59.36 ms, demo3-325 (median) 67.87, demo3-036 (heaviest) 151.14: part bucket's figures exactly.
 - **Better than expected:** still 87.9 against about 96 ms, demo3 272 against 290-300 ms. The retrained placement (part place's model, trained for the lazy restore) gave more than the 0 to −30 ms estimated.
-- **Commands:** `python3 tools/native/playtime.py --scene still|demo3 --profile f121|fastpath`; the benchmark: OPTIONS, BENCHMARK from the title page (`test_play_bench.to_benchmark(7)`) on the whole demo, a2vm stopped when `DL_BRT` is written (`--stop-word`), FPS by bmDone's formula from `DL_BVIEW` and `DL_BRT` (the page's text, as `test_play_bench` checks).
+- **Commands:** `python3 tools/native/playtime.py --scene still|demo3 --profile f121|fastpath`; the benchmark: `python3 tools/native/playtime.py --scene bench [--profile fastpath]` (OPTIONS, BENCHMARK from the title page, `test_play_bench.to_benchmark(7)`'s keys, on the whole demo; the run goes on with the page up and its FPS, realtics and rows are read from the last snapshot; not with a `--stop-word` on `DL_BRT`, (**)).
+
+**The benchmark's rows** (2026-10-02, `PLAY.md` 15): the result page now also shows each phase's mean a frame, timed on the machine by the Phasor's VIA-A timer 1. The owner's card shows 2.897 FPS (PAL //e, 50 Hz); its rows against these show which phase a2vm models as too fast. a2vm, `build/native/DOOM.hdv` of 2026-10-02 (SHA-1 `90635ac1…`), the whole benchmark (534 frames), ms a frame:
+
+| Row of the page | What it times | f121, the page | f121, `playtime.py`'s kernel steps (same run) | fastpath, `playtime.py` (the build without the timing) |
+| --- | --- | ---: | ---: | ---: |
+| TIC | `K_TIC`: the tic image back, the brain, the 4 tics (paging, far windows), the list | **225.2** | 225.5 | 186.9 |
+| 3D | `K_WLOAD`, `nr_frame` | **23.2** | 23.1 | 19.8 |
+| MASK | `K_MLOAD`, `nm_masked`, `nm_bkload`, `nb_frame`'s bucket pass | **14.2** | 14.2 | 12.5 |
+| DRAW | `nb_frame`'s replays (`nat_replay`, the SHR drain included) | **35.7** | 35.8 | 29.7 |
+| REST | `PALW`, `P2DW`'s load, `s2_frame` | **5.6** | 5.4 (+ 0.12 of the list's reads) | 23.2 (fastpath moves the SHR flush into `s2_frame`) |
+| N, FPS | frames, the page's FPS | **534, 3.294** | | 534, 3.732 (5,008 realtics) |
+
+The timing itself costs 0.8 ms a frame on f121 (0.26%: FPS 3.302 without it, 3.294 with it; about 40 µs a boundary, 6 to 8 boundaries a frame, and two glue groups a few pages longer), and its rows agree with the kernel steps within 0.3 ms a frame (`PLAY.md` 15). On the card, 345 ms a frame (2.897 FPS) against a2vm's 304: the rows will show where the 41 ms are.
 
 **Integration** (2026-10-02). What the integrator changed beyond the parts' own files, and why:
 
@@ -155,7 +170,7 @@ After wave 3, demo3's frame is still about 4 tics × about 25 ms plus a render o
 The owner's rule (2026-10-02, `MILESTONES.md` ground rules): test only what changed, with the one check that covers it, then the fast full suite once.
 
 1. **The placement.** `python3 tools/native/gplace.py --write` starts from the current `placement.json` (code sizes change with every wave); give `--placement FILE` to start from a part's file, `--no-search` to take it as it is (wave 1: `--placement tools/native/gplace-wave1-lazy.json --no-search --write`). A part that changes which routines call which needs `python3 tools/native/gplacerec.py still walk fight demo3 demo3b lock3a lock3b --jobs 2` first (about 8 minutes).
-2. **Build**, with no warnings: `make -s -C src/native -f game.mk shared game gprof release skel ROOT=$PWD`; the load image `make -s -C src/native -f level.mk ROOT=$PWD` (LCODE links the runtime's state: `playdisk.py` reads it and does not rebuild it); the renderer `make -s -C src/native -f render.mk ROOT=$PWD` and milestone 11's images `make -s -C src/native -f m11.mk images ROOT=$PWD` (OVLW carries its own copy of the bucket pass and `mrec_room`: rebuild it with the renderer; `s2ovl.image_problems()` must be `[]`); then `python3 tools/native/playdisk.py` (`play.mk`'s tic stamp now follows `placement.json`).
+2. **Build**, with no warnings: `make -s -C src/native -f game.mk shared game gprof release skel ROOT=$PWD`; the load image `make -s -C src/native -f level.mk ROOT=$PWD` (LCODE links the runtime's state; since 2026-10-02 `play.mk`, and so `playdisk.py`, runs this make first, so the disk can no longer take a stale one; `playdisk.py --no-build` still skips it); the renderer `make -s -C src/native -f render.mk ROOT=$PWD` and milestone 11's images `make -s -C src/native -f m11.mk images ROOT=$PWD` (OVLW carries its own copy of the bucket pass and `mrec_room`: rebuild it with the renderer; `s2ovl.image_problems()` must be `[]`); then `python3 tools/native/playdisk.py` (`play.mk`'s tic stamp now follows `placement.json`).
 3. **The checks of what changed, once each:**
    - game code, its placement or the paging: `python3 tools/native/ticrun.py --run demo3 --frames front --fills a5 --jobs 2`;
    - the renderer: `python3 tools/native/frame8.py --no-build --fills a5 --frames ...` on about 20 frames (demo3-036, the ten heaviest by `build/native/render/report8.md`, every 50th demo3 frame);

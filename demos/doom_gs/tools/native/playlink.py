@@ -55,7 +55,8 @@ OVLW_BUILD = ('s2ovl', 'ovlw')
 
 # the symbols each image gives the others (playsym.inc)
 RCARD_SYMS = ('far_get', 'far_put', 'far_pload', 'far_wload', 'far_mload',
-              'nr_frame', 'nm_masked', 'nm_bkload', 'nb_frame')
+              'nr_frame', 'nm_masked', 'nm_bkload', 'nb_frame',
+              'nat_replay')    # (the benchmark's timing patches its entry)
 LCARD_SYMS = ('nl_setup',)
 IMAGE_SYMS = {'MENUW': ('m_load', 'm_save', 'm_init', 'm_startcp',
                         'm_responder', 'm_ticker', 'm_frame',

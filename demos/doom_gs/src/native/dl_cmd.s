@@ -28,7 +28,8 @@
         .include "play.inc"
         .include "dl.inc"
 
-        .import fc_call, fc_unbuilt, pl_time
+        .import fc_call, fc_unbuilt, pl_time, far_put, udiv32
+        .export bt_rows
         .export c_build, g_buildcmd, p_switchweapon, p_cycleup, p_cycledown
 
 PLR      = G_PLAYER
@@ -632,3 +633,237 @@ down_from:      .byte UC_WP_SHOTGUN, UC_WP_CHAINSAW, UC_WP_FIST
                 .byte UC_WP_BFG, UC_WP_SUPERSHOTGUN
 down_to:        .byte UC_WP_SUPERSHOTGUN, UC_WP_SHOTGUN, UC_WP_CHAINSAW
                 .byte UC_WP_FIST, UC_WP_BFG
+
+; ---------------------------------------------------------------------------
+; The benchmark's phase rows (docs/PLAY.md 15; the timing is dl_disp.s's)
+; ---------------------------------------------------------------------------
+BT_TPAL  = 6500                 ; 64 x the bus cycles of 0.1 ms: 1,015,625
+BT_TNTSC = 6531                 ;   Hz (PAL), 1,020,484 Hz (NTSC)
+BT_ROW   = 32                   ; M_BROWS: three rows of 32 bytes
+BT_MAXT  = 99999                ; a mean shown at most 9999.9 ms
+; zero page: the math's temporaries (udiv32 changes MT+0 - MT+5)
+BZ_P     = MT + 6               ; a string (2)
+BZ_C     = MT + 8               ; a number's digits
+BZ_F     = MT + 9               ; bit 7: a point before the last digit
+BZ_I     = MT + 10              ; the next byte of bt_txt
+        .assert M_BROWS + 3 * BT_ROW <= MENUW_STATE_END, error, "M_BROWS"
+
+; bt_rows: the result page's three rows into MENUW's M_BROWS in S2STATE
+; (s2_menu2.s m2_bench draws them): "TIC t  3D t", "MASK t  DRAW t",
+; "REST t  N n", and "  OVF n" when the timing lost turns it could not
+; place (BT_OVF); t each phase's mean a frame (BT_S / DL_BVIEW, the
+; frames), ms with one decimal, rounded
+bt_rows:
+        stz BZ_I
+        lda #<bs_tic
+        ldy #>bs_tic
+        ldx #PH_TIC
+        jsr bt_item
+        lda #<bs_3d
+        ldy #>bs_3d
+        ldx #PH_3D
+        jsr bt_item
+        lda #BT_ROW
+        jsr bt_eol
+        lda #<bs_mask
+        ldy #>bs_mask
+        ldx #PH_MASK
+        jsr bt_item
+        lda #<bs_draw
+        ldy #>bs_draw
+        ldx #PH_DRAW
+        jsr bt_item
+        lda #2 * BT_ROW
+        jsr bt_eol
+        lda #<bs_rest
+        ldy #>bs_rest
+        ldx #PH_REST
+        jsr bt_item
+        lda #<bs_n
+        ldy #>bs_n
+        jsr bt_str
+        lda DL_BVIEW
+        ldx DL_BVIEW+1
+        jsr bt_int
+        lda BT_OVF
+        beq :+
+        lda #<bs_ovf
+        ldy #>bs_ovf
+        jsr bt_str
+        lda BT_OVF
+        ldx #0
+        jsr bt_int
+:       lda #3 * BT_ROW
+        jsr bt_eol
+        lda #<bt_txt
+        sta FA_SRC
+        lda #>bt_txt
+        sta FA_SRC+1
+        lda #S2STATE
+        sta FA_BANK
+        lda #<(SS_MENUW + M_BROWS - MENUW_STATE)
+        sta FA_DST
+        lda #>(SS_MENUW + M_BROWS - MENUW_STATE)
+        sta FA_DST+1
+        lda #3 * BT_ROW
+        sta FA_N
+        jmp far_put
+
+; bt_eol: the row's 0, then the rows' writer at A
+bt_eol:
+        ldx BZ_I
+        stz bt_txt,x
+        sta BZ_I
+        rts
+
+; bt_item: the label Y:A, then phase X's mean a frame
+bt_item:
+        phx
+        jsr bt_str
+        plx
+        ldy #0
+:       lda BT_S-4,x            ; the cycles / the frames
+        sta M_A,y
+        inx
+        iny
+        cpy #4
+        bne :-
+        lda DL_BVIEW
+        sta M_B
+        lda DL_BVIEW+1
+        sta M_B+1
+        stz M_B+2
+        stz M_B+3
+        jsr udiv32
+        ldy #6                  ; x 64 (a frame's phase under 66 s)
+:       asl M_R
+        rol M_R+1
+        rol M_R+2
+        rol M_R+3
+        dey
+        bne :-
+        ldx #<BT_TPAL
+        ldy #>BT_TPAL
+        bit CLK_STD
+        bpl :+
+        ldx #<BT_TNTSC
+        ldy #>BT_TNTSC
+:       stx M_B
+        sty M_B+1
+        stz M_B+2
+        stz M_B+3
+        tya                     ; + half the divisor: rounded
+        lsr a
+        tay
+        txa
+        ror a
+        clc
+        adc M_R
+        sta M_A
+        tya
+        adc M_R+1
+        sta M_A+1
+        lda M_R+2
+        adc #0
+        sta M_A+2
+        lda M_R+3
+        adc #0
+        sta M_A+3
+        jsr udiv32              ; M_R = the tenths of ms
+        sec                     ; at most BT_MAXT
+        lda M_R
+        sbc #<BT_MAXT
+        lda M_R+1
+        sbc #>BT_MAXT
+        lda M_R+2
+        sbc #^BT_MAXT
+        lda M_R+3
+        sbc #0
+        bcc :+
+        lda #<BT_MAXT
+        sta M_R
+        lda #>BT_MAXT
+        sta M_R+1
+        lda #^BT_MAXT
+        sta M_R+2
+        stz M_R+3
+:       sec
+        bra bt_num
+
+; bt_int: A:X (low, high) in decimal
+bt_int:
+        sta M_R
+        stx M_R+1
+        stz M_R+2
+        stz M_R+3
+        clc
+; bt_num: M_R in decimal into bt_txt at BZ_I; C set: a point before its
+; last digit (at least 0.d)
+bt_num:
+        ror BZ_F
+        lda #0                  ; (the digits' end on the stack)
+        pha
+        stz BZ_C
+@div:   ldx #3
+:       lda M_R,x
+        sta M_A,x
+        stz M_B,x
+        dex
+        bpl :-
+        lda #10
+        sta M_B
+        jsr udiv32              ; M_R / 10, M_T its digit
+        lda M_T
+        ora #'0'
+        pha
+        inc BZ_C
+        lda M_R
+        ora M_R+1
+        ora M_R+2
+        ora M_R+3
+        bne @div
+        bit BZ_F
+        bpl @put
+        lda BZ_C
+        cmp #2
+        bcc @div
+@put:   pla
+        beq @done
+        ldx BZ_I
+        sta bt_txt,x
+        inx
+        dec BZ_C
+        lda BZ_C
+        cmp #1
+        bne :+
+        bit BZ_F
+        bpl :+
+        lda #'.'
+        sta bt_txt,x
+        inx
+:       stx BZ_I
+        bra @put
+@done:  rts
+
+; bt_str: the string Y:A (0-terminated) into bt_txt at BZ_I
+bt_str:
+        sta BZ_P
+        sty BZ_P+1
+        ldy #0
+@ch:    lda (BZ_P),y
+        beq @done
+        ldx BZ_I
+        sta bt_txt,x
+        inc BZ_I
+        iny
+        bra @ch
+@done:  rts
+
+bs_tic:  .byte "TIC ", 0
+bs_3d:   .byte "  3D ", 0
+bs_mask: .byte "MASK ", 0
+bs_draw: .byte "  DRAW ", 0
+bs_rest: .byte "REST ", 0
+bs_n:    .byte "  N ", 0
+bs_ovf:  .byte "  OVF ", 0
+bt_txt:  .res 3 * BT_ROW

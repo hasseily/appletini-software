@@ -3,7 +3,9 @@
 7): DOOM.SYSTEM (milestone 11's boot, src/native/pl_boot.s) with the
 kernel in pl_ready's place, and every image and table of the game in
 RamWorks, from play.mk's links and the other milestones' builds (read
-only).
+only, but milestone 9's load image: play.mk runs level.mk first, which
+rebuilds it when a layout change left it out of date; --no-build skips
+that too).
 
 Usage:  python3 tools/native/playdisk.py [--play DIR] [--out FILE]
                 [--no-build]
@@ -93,7 +95,10 @@ class PlayError(Exception):
 # ---------------------------------------------------------------------------
 
 def make(play: Optional[Path] = None) -> Path:
-    """make -f play.mk (the links), with no warning."""
+    """make -f play.mk (the links), with no warning. play.mk first runs
+    level.mk on build/native/levels/obj, so milestone 9's load image
+    (LCODE, which links the runtime's state) is never stale on the
+    disk."""
     play = play or PLAY
     result = bounded.run(['make', '-s', '-C', str(SOURCE), '-f', 'play.mk',
                           'all', 'ROOT=%s' % ROOT, 'PLAY=%s' % play],

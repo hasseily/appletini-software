@@ -24,6 +24,16 @@ tools/native/gparts/pickup.py).
 The full checkpoint (every case) is `python3 tools/native/gparts/
 pickup.py --check --plants` (report.json).
 
+By default (tests/README.md) the module runs fewer cases, every group,
+entry and planted bug still reached: every SAMPLE_DEF-th case of the
+captured touches, the synthetic touches and the random states; every
+CHEAT_DEF-th captured C_Responder call (every one that completes a cheat);
+each cheat once on a captured state (the states and bases in turn);
+P_GivePower of each power once (the player states in turn); each plant on
+every PLANT_DEF-th touch of its check. DOOM_GS_FULL=1 runs all of what it
+ran before: every SAMPLE-th case of each group (every captured C_Responder
+call and P_GivePower case), each plant on every touch of its check.
+
 Each class skips, naming the command that makes what it needs, when
 build/ lacks it: the shared outputs (`make -s -C src/native -f game.mk
 shared skel ROOT=$PWD`, the parallel runner's prebuild; never made here),
@@ -34,6 +44,7 @@ tools/ref816`, `make -C tools/a2vm`), the part's captures (`python3
 tools/native/gparts/pickup.py --capture`).
 """
 
+import os
 import shutil
 import sys
 import tempfile
@@ -51,7 +62,11 @@ sys.path.insert(0, str(ROOT / 'tools' / 'native' / 'gparts'))
 HAVE_CC65 = bool(shutil.which('ca65') and shutil.which('ld65'))
 PREBUILD = ('make -s -C src/native -f game.mk shared skel ROOT=$PWD (the '
             'parallel runner\'s prebuild)')
+FULL = os.environ.get('DOOM_GS_FULL') == '1'
 SAMPLE = 6
+SAMPLE_DEF = 60     # by default: the captured and synthetic touches, random
+CHEAT_DEF = 6       # by default: the captured C_Responder calls
+PLANT_DEF = 10      # by default: a plant's touches
 
 
 def shared_ok() -> bool:
@@ -180,8 +195,35 @@ class Checkpoint(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import pickup as P
-        cls.rep = P.check(jobs=2, sample=SAMPLE, rebuild=True,
-                          say=lambda *a: None)
+        if FULL:
+            cls.rep = P.check(jobs=2, sample=SAMPLE, rebuild=True,
+                              say=lambda *a: None)
+            return
+        # pickup.check() on the default sample
+        P.build()
+        js, _ = P.plan(P.OUT, P.FILLS, P.PROFILES, SAMPLE_DEF)
+        js = [j for j in js if j[0] not in ('cheats', 'synth-cheats',
+                                            'givepower')]
+        # every captured call that completes a cheat (pickup.cheat_of),
+        # every CHEAT_DEF-th of the others
+        cheats = P.plan(P.OUT, P.FILLS, P.PROFILES, 1, ('cheats',))[0]
+        js += support.every(cheats, CHEAT_DEF, keep=lambda j: P.cheat_of(
+            P.GC.load_case(Path(j[1]))) is not None)
+        o, rb = str(P.OUT), P.responder_bases()
+        states = [state for state, _ in P.SYNTH_CHEAT_STATES]
+        for number in range(len(P.CHEATS)):
+            js.append(('synth-cheats', (str(rb[number % len(rb)]), number,
+                                        states[number % len(states)]), o,
+                       P.FILLS, P.PROFILES))
+        bases = P.touch_bases()
+        variants = ('captured', 'needy', 'stocked')
+        for power in range(6):
+            js.append(('givepower', (str(bases[power % len(bases)]), power,
+                                     variants[power % 3]), o, P.FILLS,
+                       P.PROFILES))
+        res = P.run_jobs(js, 2)
+        cls.rep = {'entries': P.summarize(res),
+                   'strays': sum(r.get('strays') or 0 for r in res)}
 
     def test_no_failure_and_no_stray_write(self):
         bad = {k: e['first_failures'] for k, e in self.rep['entries'].items()
@@ -218,13 +260,31 @@ class Checkpoint(unittest.TestCase):
             self.assertIn(c, cheats)
 
 
+def run_plant(name):
+    """pickup.run_plant on every PLANT_DEF-th touch of its check (all of
+    them with DOOM_GS_FULL=1)."""
+    import pickup as P
+    if FULL:
+        return P.run_plant(name)
+    p = P.PLANTS[name]
+    tmp = Path(tempfile.mkdtemp(prefix='tmp-pickup-plant-', dir=str(BUILD)))
+    try:
+        obj = P.build(tmp / 'game', p['bugs'])
+        res = P.run_jobs(P.plant_jobs(p['check'], obj)[::PLANT_DEF], 2)
+    finally:
+        shutil.rmtree(str(tmp), ignore_errors=True)
+        P._BUILDS.clear()
+    return {'check': p['check'], 'runs': len(res),
+            'caught': any(not r.get('ok') for r in res)}
+
+
 @needs_all
 class Plants(unittest.TestCase):
     def test_each_plant_is_caught(self):
         import pickup as P
         for name in P.PLANTS:
             with self.subTest(name):
-                r = P.run_plant(name)
+                r = run_plant(name)
                 self.assertGreater(r['runs'], 0)
                 self.assertTrue(r['caught'], '%s was not caught by %s' % (
                     name, r['check']))

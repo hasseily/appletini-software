@@ -23,6 +23,15 @@
       past the cache, GA_PLAYDEMO without demoplayback (S5); RJROW of the
       wrong sector (S4)
 
+By default (tests/README.md) the module runs even samples of its case
+sets: S1's setups of every SETUP_RUNS-th capture run and every
+FRAME_STEP-th frame on the loaded levels after checkpoint B's loads of the
+nine maps in a row and E1M5 twice (LOADS), S2's every S2_SAMPLE-th case,
+the first NOFUNC in-play drops, and S7's routine plants on PLANT_N cases
+each. DOOM_GS_FULL=1 runs them all: every setup, checkpoint B's whole
+sequence (the nine maps in a row, in reverse, E1M5 twice), all 729 frames
+(1,458 runs), every 10th S2 case, every drop, 8 cases a plant.
+
 Each class skips, naming the command that makes what it needs, when
 build/ lacks it: the shared outputs and the skeleton's image come from
 `make -s -C src/native -f game.mk shared skel ROOT=$PWD` (the runner's
@@ -80,8 +89,17 @@ def have_cases() -> bool:
 
 # The frame check on loaded levels runs an even sample by default;
 # DOOM_GS_FULL=1 runs all 729 frames (about 18 minutes alone), as the
-# acceptance runs of milestones 9 and 10 do (tests/README.md).
+# acceptance runs of milestones 9 and 10 do (tests/README.md), and the
+# other sampled sets whole.
 FULL = os.environ.get('DOOM_GS_FULL') == '1'
+FRAME_STEP = 60     # every FRAME_STEP-th frame of the 734 by default
+SETUP_RUNS = 5      # the setups of every SETUP_RUNS-th capture run
+S2_SAMPLE = 10 if FULL else 50
+NOFUNC = None if FULL else 2
+PLANT_N = 8 if FULL else 2
+# checkpoint B's loads by default: the nine maps in a row and E1M5 twice
+# (level_check.SEQUENCE with DOOM_GS_FULL=1: in reverse too)
+LOADS = None if FULL else tuple(range(1, 10)) + (5, 5)
 
 needs_skeleton = unittest.skipUnless(
     have_skeleton(), 'needs the skeleton\'s image and the shared outputs: ' +
@@ -180,8 +198,9 @@ class S4Tables(unittest.TestCase):
 
 @needs_cases
 class S2Routines(unittest.TestCase):
-    SAMPLE = 10         # every 10th case of each routine, both fills
-                        # (gameroutine.py --s2 runs them all)
+    SAMPLE = S2_SAMPLE  # every 10th case of each routine (every 50th by
+                        # default), both fills (gameroutine.py --s2 runs
+                        # them all)
 
     @classmethod
     def setUpClass(cls):
@@ -229,6 +248,8 @@ class S2NoFunction(unittest.TestCase):
         cm = GC.CallerMap()
         ran = 0
         for p in GR.case_paths('demo3', 'p_spawn65.s:P_SpawnMobj'):
+            if NOFUNC is not None and ran >= 2 * NOFUNC:
+                break
             c = GC.load_case(p)
             if GR.caller_of(c, cm) != 'p_inter65.s:playerDamage':
                 continue
@@ -245,7 +266,7 @@ class S7RoutinePlants(unittest.TestCase):
         from native import gameroutine as GR
         for name in GR.S2_PLANTS:
             with self.subTest(name):
-                r = GR.run_s2_plant(name, n=8)
+                r = GR.run_s2_plant(name, n=PLANT_N)
                 self.assertGreater(r['cases'], 0)
                 self.assertGreater(r['failed'], 0, '%s was not caught' %
                                    name)
@@ -369,6 +390,8 @@ class S1Milestone9(unittest.TestCase):
         from native import setupcheck as SC
         runs = sorted({json.loads((g[0] / 'setup.json').read_text())['run']
                        for g in SC.groups()})
+        if not FULL:
+            runs = runs[::SETUP_RUNS]
         setups, failures = 0, []
         with ProcessPoolExecutor(max_workers=4) as pool:
             for rep in pool.map(_setups_of_run, runs):
@@ -377,7 +400,7 @@ class S1Milestone9(unittest.TestCase):
                 self.assertTrue(all(all(f['ok'] for f in s['fills'].values())
                                     for s in rep['setups'].values()))
         self.assertEqual(failures, [])
-        self.assertGreaterEqual(setups, 57)
+        self.assertGreaterEqual(setups, 57 if FULL else len(runs))
 
     def test_checkpoint_b_and_frame8_on_loaded_levels(self):
         from native import frame8 as F8, level_check as K, lrun
@@ -390,16 +413,19 @@ class S1Milestone9(unittest.TestCase):
         try:
             lrun.LOADED = tmp / 'loaded'
             K.LOADED = lrun.LOADED
-            rep = K.check_load()
+            rep = K.check_load() if LOADS is None else \
+                K.check_load(sequence=LOADS)
             self.assertEqual(rep['failures'], [])
             out = tmp / 'frames.json'
             if FULL:
                 pick = ['--sets', 'm7,demo3']
             else:
-                # An even sample: every 20th frame of the 734 in order,
-                # every set represented (DOOM_GS_FULL=1 runs all of them).
+                # An even sample: every FRAME_STEP-th frame of the 734 in
+                # order, every set represented (DOOM_GS_FULL=1 runs all of
+                # them).
                 dirs = RC.frame_dirs(None, 'm7,demo3')
-                names = [d.name for i, d in enumerate(dirs) if i % 20 == 0]
+                names = [d.name for i, d in enumerate(dirs)
+                         if i % FRAME_STEP == 0]
                 pick = ['--frames', ','.join(names)]
             code = F8.main(['--levels', 'loaded'] + pick +
                            ['--jobs', '6', '--json', str(out), '--no-build'])
@@ -409,7 +435,9 @@ class S1Milestone9(unittest.TestCase):
                 # 729 frames from both fills (milestone 9: 1,458 runs)
                 self.assertEqual(len(res), 1458)
             else:
-                self.assertGreaterEqual(len(res), 60)
+                # every sampled frame from both fills (but those of the
+                # five synthetic frames frame8.py excludes by name)
+                self.assertGreaterEqual(len(res), 2 * (len(names) - 5))
                 self.assertGreater(len({r['frame'].rsplit('-', 1)[0]
                                         for r in res}), 4)
             self.assertEqual([r['frame'] for r in res if r['problems']], [])

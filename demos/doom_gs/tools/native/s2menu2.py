@@ -71,8 +71,10 @@ class Menu2Error(Exception):
 
 # MENUW's native state field this part asked for (request S2MENU2-1,
 # applied in wave 6: s2layout's MENUW_NATIVE): the benchmark's FPS text,
-# 0-terminated ("x.xxx" [R m_menu65.s:2467-2482]: at most 7 characters)
-MENU2_NATIVE = [('M_BFPS', 8)]
+# 0-terminated ("x.xxx" [R m_menu65.s:2467-2482]: at most 7 characters);
+# and the play build's phase rows over X2 (docs/PLAY.md 15: 3 x 32 B,
+# drawn when not empty), which these cases leave empty: the rows black
+MENU2_NATIVE = [('M_BFPS', 8), ('M_BROWS', 96)]
 FONT_H = 7
 
 
@@ -300,12 +302,17 @@ def jobs_of(run: str, setchg: Dict[str, int]) -> List[MJob]:
 
 
 def bench_record() -> Tuple:
-    """M_BFPS (s2layout's, S2MENU2-1) holding the poked FPS text."""
+    """M_BFPS (s2layout's, S2MENU2-1) holding the poked FPS text, and
+    M_BROWS after it empty (the play build's phase rows: X2 stays
+    black)."""
     at = native_places()['M_BFPS']
+    if native_places()['M_BROWS'] != at + dict(MENU2_NATIVE)['M_BFPS']:
+        raise Menu2Error('M_BROWS does not follow M_BFPS')
     base = S.SS['SS_MENUW'] - S.OWN_STATE['MENUW'][1]
     return (1, S.S2STATE, base + at,
             BENCH_FPS + bytes(dict(MENU2_NATIVE)['M_BFPS'] -
-                              len(BENCH_FPS)))
+                              len(BENCH_FPS) +
+                              dict(MENU2_NATIVE)['M_BROWS']))
 
 
 def extra_records(case) -> List[Tuple]:

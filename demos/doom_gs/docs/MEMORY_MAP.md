@@ -127,7 +127,7 @@ page and aux stack; pair stores go through the trampoline [R `NATIVE.md`
 | `$0700-$07FF` | 256 | Colormap B, level 33 | same | same |
 | `$0800-$0821` | 34 | `CMPA`: page of colormap A by light level | boot, PRIVATE | A |
 | `$0822-$0843` | 34 | `CMPB`: page of colormap B by light level | boot, PRIVATE | A |
-| `$0844-$0877` | 52 | free (read-only data only) | | |
+| `$0844-$0877` | 52 | free (read-only data only); since 2026-10-02 the play build's benchmark timing puts `bt_ext` (36 B, `$0844-$0867`: part of the kernel's `bt_mark`) there with CPU stores at each benchmark's start, its only writes (`PLAY.md` 15) | the brain's `bt_start` | |
 | `$0878-$087F` | 8 | **forbidden** (rule 8) | never | R `vtw_video_policy.sv:36` |
 | `$0880-$08FF` | 128 | free (read-only data only) | | |
 | `$0900-$09A8` | 169 | `TEXLO`: low byte of the texture row block of row 0-168 | boot, PRIVATE | A |

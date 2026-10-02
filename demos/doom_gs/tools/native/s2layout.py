@@ -1000,7 +1000,12 @@ MENUW_NATIVE = [('M_PALON', 1), ('M_PICTURE', 2), ('M_VIEWPAL', 1),
                 # the benchmark's FPS text, 0-terminated, at most 7
                 # characters (bmDone's second line of VW_BTXT, x.xxx; the
                 # second half writes it; part s2menu2, request S2MENU2-1)
-                ('M_BFPS', 8)]
+                ('M_BFPS', 8),
+                # the play build's phase timing (docs/PLAY.md 15): the three
+                # rows X2 left black (y 92, 108, 124), 32 B each, 0-
+                # terminated; a row whose first byte is 0 stays black (the
+                # second half's bt_rows writes them; m2_bench draws them)
+                ('M_BROWS', 96)]
 # AMAPW's own fields with no upstream counterpart (part s2amap, request
 # S2AMAP-1): AM_MODE, AM_OLDTOP (bytes), the old byte list's entries
 # (AM_ON as entries) and its four bands' first entries

@@ -220,7 +220,9 @@ class Native(unittest.TestCase):
 class Planted(unittest.TestCase):
 
     def test_each_caught(self):
-        res = P.planted(jobs=2)
+        """Each bug on every sequence at the rates 10 and 35 (by default at
+        35 alone: tests/README.md; both with DOOM_GS_FULL=1)."""
+        res = P.planted(jobs=2, rates=(10, 35) if support.FULL else (35,))
         self.assertEqual(len(res), len(P.PLANTED))
         for r in res:
             self.assertGreater(r['problems'], 0, r['bug'])

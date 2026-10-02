@@ -22,6 +22,16 @@ The full checkpoint (every case, both fills, both profiles), the random
 checks on 100,000 inputs and report.json are the tool's (--checkpoint,
 --random, --report); this module runs the same checks on fewer cases.
 
+By default it runs an even sample of those (tests/README.md): SAMPLE_DEF
+captured cases an entry (every synthetic one), the first and the fourth
+world-done load (the load-containing actions each case from $A5 under f121
+or $5A under fastpath in turn), the random helpers on HELPER_N inputs
+(signLong on every 8th 16-bit input and the edges), and each planted bug
+on an even sample of its check's captured cases (PLANT_N) and its
+synthetic ones. DOOM_GS_FULL=1 runs all of what it ran before: SAMPLE
+captured cases an entry, eight world-done loads, 3,000 inputs, every case
+of each plant's check.
+
 Each class skips, naming the command that makes what it needs, when
 build/ lacks it: the shared outputs (make -s -C src/native -f game.mk
 shared skel ROOT=$PWD), milestone 9's load image and level bases
@@ -32,6 +42,7 @@ shared skel ROOT=$PWD), milestone 9's load image and level bases
 """
 
 import json
+import os
 import shutil
 import sys
 import unittest
@@ -112,25 +123,53 @@ class Build(unittest.TestCase):
             self.assertIn(spec['native'], b.labels, key)
 
 
+FULL = os.environ.get('DOOM_GS_FULL') == '1'
 SAMPLE = 6                      # cases an entry (all synthetic ones too)
+SAMPLE_DEF = 2                  # the same by default
+HELPER_N = 3000 if FULL else 1000
+PLANT_N = 2                     # each plant's cases by default (or all)
 COMBOS = ((0xA5, 'f121'), (0x5A, 'fastpath'))
 
 
 def sample(paths, k=SAMPLE):
+    """k of the captured cases, evenly (SAMPLE_DEF of SAMPLE's by
+    default: k * SAMPLE_DEF // SAMPLE, at least one), and every synthetic
+    one."""
     synth = [p for p in paths if p.name.startswith('s-')]
     real = [p for p in paths if not p.name.startswith('s-')]
+    if not FULL:
+        k = max(1, k * SAMPLE_DEF // SAMPLE)
     step = max(1, len(real) // k)
     return real[::step][:k] + synth
 
 
+def even(items, n):
+    """n of items, evenly spread (all of them with DOOM_GS_FULL=1)."""
+    items = list(items)
+    if FULL or len(items) <= n:
+        return items
+    return [items[i * len(items) // n] for i in range(n)]
+
+
 @unittest.skipIf(missing(), missing())
 class Checkpoint(unittest.TestCase):
-    def check(self, key, k=SAMPLE):
+    def check(self, key, k=SAMPLE, pick=None, turn=None):
+        """key's cases from both COMBOS; by default, with `turn`, each
+        case from one of them in turn (the loads: both fills and both
+        profiles still among the cases), starting at COMBOS[turn]."""
         F = _tool()
         build()
-        paths = sample([p for _, p in F.all_cases(key)], k)
+        paths = [p for _, p in F.all_cases(key)]
+        paths = [paths[i] for i in pick] if pick and not FULL else \
+            sample(paths, k)
         self.assertTrue(paths, 'no case of %s: %s --capture' % (key, TOOL))
-        res = F.run_entry(key, paths=paths, combos=COMBOS, jobs=2)
+        if turn is None or FULL:
+            res = F.run_entry(key, paths=paths, combos=COMBOS, jobs=2)
+        else:
+            res = []
+            for i, p in enumerate(paths):
+                res += F.run_entry(key, paths=[p], jobs=1, combos=[
+                    COMBOS[(turn + i) % 2]])
         bad = [r for r in res if not r.get('ok')]
         self.assertEqual(bad, [], '%s: %s' % (key, json.dumps(bad[:2])[
             :1500]))
@@ -171,17 +210,19 @@ class Checkpoint(unittest.TestCase):
                 self.check(key, 3)
 
     def test_load_actions(self):
-        for key in ('g_game65.s:doNewGame', 'g_game65.s:doPlayDemo',
-                    'g_game65.s:loadLevel'):
+        for i, key in enumerate(('g_game65.s:doNewGame',
+                                 'g_game65.s:doPlayDemo',
+                                 'g_game65.s:loadLevel')):
             with self.subTest(key=key):
-                self.check(key, 1)
+                self.check(key, 1, turn=i)
 
     def test_world_done_loads(self):
         # every world-done load of the tour; the first (E1M1 to E1M2) and
         # the fourth (E1M9 to E1M4) differ in texturetranslation after the
         # load until the load resets it as upstream's does
-        # (docs/game-parts/flow.md, request 6: r_data65.s:458)
-        self.check('g_game65.s:doWorldDone', 8)
+        # (docs/game-parts/flow.md, request 6: r_data65.s:458): those two
+        # by default
+        self.check('g_game65.s:doWorldDone', 8, pick=(0, 3), turn=0)
 
 
 @unittest.skipIf(missing(), missing())
@@ -221,9 +262,20 @@ class Random(unittest.TestCase):
         b = build()
         for name in F.HELPERS:
             with self.subTest(helper=name):
-                r = F.compare_helper(name, 3000, b)
+                if F.HELPERS[name][5] == 16 and not FULL:
+                    # every 16-bit input (by default every 8th of them
+                    # and the edges 1, $7FFF, $FFFF: compare_helper's
+                    # comparison on those)
+                    values = F.helper_inputs(name, HELPER_N)[::8] + [
+                        1, 0x7FFF, 0xFFFF]
+                    up = F.upstream_batch(name, values)
+                    nat = F.native_batch(name, values, b)
+                    r = {'inputs': len(values), 'first': None,
+                         'failed': sum(1 for u, n in zip(up, nat) if u != n)}
+                else:
+                    r = F.compare_helper(name, HELPER_N, b)
                 self.assertEqual(r['failed'], 0, r['first'])
-                self.assertGreaterEqual(r['inputs'], 3000)
+                self.assertGreaterEqual(r['inputs'], HELPER_N)
 
     def test_planted_helper_caught(self):
         F = _tool()
@@ -233,13 +285,35 @@ class Random(unittest.TestCase):
 
 
 @unittest.skipIf(missing(), missing())
+def run_plant(name):
+    """flowcheck.run_plant on an even sample of its check's cases
+    (PLANT_N; all of them with DOOM_GS_FULL=1)."""
+    F = _tool()
+    if FULL:
+        return F.run_plant(name)
+    check, bugs = F.PLANTS[name]
+    key = F.PLANT_CHECK[check][0]
+    paths = F.plant_cases(check)
+    paths = [p for p in paths if p.name.startswith('s-')] + even(
+        [p for p in paths if not p.name.startswith('s-')], PLANT_N)
+    tmp = F.tmpdir('plant')
+    try:
+        obj = F.planted(tmp, bugs)
+        res = F.run_entry(key, obj=obj, jobs=2, paths=paths,
+                          combos=[(0xA5, 'f121')])
+    finally:
+        shutil.rmtree(str(tmp), ignore_errors=True)
+    failed = [r for r in res if not r.get('ok')]
+    return {'cases': len(paths), 'caught': bool(failed)}
+
+
 class Plants(unittest.TestCase):
     def test_each_caught(self):
         F = _tool()
         build()
         for name in F.PLANTS:
             with self.subTest(plant=name):
-                r = F.run_plant(name)
+                r = run_plant(name)
                 self.assertTrue(r['cases'] > 0, name)
                 self.assertTrue(r['caught'], '%s not caught (%d cases)' % (
                     name, r['cases']))

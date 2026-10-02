@@ -17,6 +17,13 @@ also runs the timing on f121 and fastpath and writes report.json):
   - WIW's sizes against its room and the part's budget;
   - the four planted bugs, each in a scratch copy.
 
+By default (tests/README.md) the frames run are an even sample: every
+STEP-th intermission frame and each new picture's injected from both
+fills, every CHAIN_STEP-th intermission chained whole, the planted bugs
+on every STEP-th frame from the $A5 machine; the capture's counts (214
+frames, eight intermissions, eight new pictures) are still checked
+whole. DOOM_GS_FULL=1 runs every frame as before.
+
 Needs cc65, build/a2vm/a2vm, the math tables, the release image and the
 link map, part s2cap's capture of the tour (python3 tools/native/s2cap.py
 --capture), part s2data's store (make -C src/native -f m11.mk part
@@ -29,6 +36,7 @@ Run by name: python3 tools/testpar.py tests/test_m11_s2wi.py
 import re
 import shutil
 import unittest
+from unittest import mock
 
 import support
 
@@ -68,6 +76,15 @@ def missing() -> str:
 
 MISSING = missing()
 needs_build = unittest.skipIf(MISSING, 'needs ' + MISSING)
+FULL = support.FULL
+STEP = 4            # by default: every STEP-th frame (and each new picture)
+CHAIN_STEP = 4      # by default: every CHAIN_STEP-th intermission chained
+
+
+def sampled(W, cs, excluded):
+    """W.cases on the default sample of the frames."""
+    pick = support.every(cs, STEP, keep=lambda c: c.black)
+    return mock.patch.object(W, 'cases', lambda run=W.RUN: (pick, excluded))
 
 
 class HandMade(unittest.TestCase):
@@ -170,14 +187,35 @@ class Checkpoint(unittest.TestCase):
     def setUpClass(cls):
         from native import s2wi as W
         W.make()
-        cls.result = W.check(None, W.OUT, 2, ('injected', 'chained'))
+        cs, excluded = W.cases()
+        cls.capture = (len(cs), len({c.inter for c in cs}),
+                       sum(1 for c in cs if c.black))
+        if FULL:
+            cls.result = W.check(None, W.OUT, 2, ('injected', 'chained'))
+            cls.injected = cls.chained = len(cs)
+            return
+        # the injected frames' sample, then the chained intermissions
+        with sampled(W, cs, excluded):
+            r = W.check(None, W.OUT, 2, ('injected',))
+        cls.injected = r['cases']
+        inters = sorted({c.inter for c in cs})[::CHAIN_STEP]
+        chain = [c for c in cs if c.inter in inters]
+        cls.chained = len(chain)
+        with mock.patch.object(W, 'cases',
+                               lambda run=W.RUN: (chain, excluded)):
+            c = W.check(None, W.OUT, 2, ('chained',))
+        for k in ('problems', 'runs'):
+            r[k] += c[k]
+        r['stray'] += c['stray']
+        r['stack'] = max(r['stack'], c['stack'])
+        cls.result = r
 
     def test_every_intermission_frame(self):
         r = self.result
+        self.assertEqual(self.capture, (214, 8, 8))
         self.assertEqual(r['problems'], [])
         self.assertEqual(r['excluded'], [])
         self.assertEqual(r['intermissions'], 8)
-        self.assertEqual(r['cases'], 214)
         self.assertEqual(r['kinds']['new picture'], 8)
         self.assertGreater(r['kinds']['stats'], 0)
         self.assertGreater(r['kinds']['next location'], 0)
@@ -186,8 +224,9 @@ class Checkpoint(unittest.TestCase):
         self.assertLessEqual(r['stack'], 64 + 24)
         injected = [x for x in r['runs'] if x['tag'].startswith('injected')]
         chained = [x for x in r['runs'] if x['tag'].startswith('chained')]
-        self.assertEqual(sum(x['cases'] for x in injected), 2 * 214)
-        self.assertEqual(sum(x['cases'] for x in chained), 214)
+        self.assertEqual(sum(x['cases'] for x in injected),
+                         2 * self.injected)
+        self.assertEqual(sum(x['cases'] for x in chained), self.chained)
 
     def test_the_include(self):
         from native import s2wi as W
@@ -219,10 +258,18 @@ class Checkpoint(unittest.TestCase):
 @needs_build
 class Planted(unittest.TestCase):
     def test_each_planted_bug_is_caught(self):
+        """Each bug from both fills on every frame (by default from $A5
+        on the sample)."""
         from native import s2wi as W
         W.make()
+        cs, excluded = W.cases()
         for k in range(len(W.PLANTED)):
-            name, problems = W.plant(k, 2)
+            if FULL:
+                name, problems = W.plant(k, 2)
+            else:
+                with sampled(W, cs, excluded), \
+                        mock.patch.object(W, 'FILLS', W.FILLS[:1]):
+                    name, problems = W.plant(k, 2)
             self.assertTrue(problems, name)
 
 

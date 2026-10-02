@@ -21,6 +21,11 @@ also runs the timing on f121 and fastpath and writes report.json):
   - each menu session chained from its open's state alone to its close;
   - the sizes; the five planted bugs, each in a scratch copy.
 
+By default (tests/README.md) the frames, the M_Responder calls and the
+M_Ticker chains run are even samples (every STEP-th; every open and
+close), the capture's counts still checked whole; DOOM_GS_FULL=1 runs
+every one as before.
+
 Needs cc65, build/a2vm/a2vm, the math tables, ref816 with the release,
 the link map, S2's objects (make -C src/sound), part s2data's store and
 part s2cap's menus cases; skips naming what is missing.
@@ -30,6 +35,7 @@ Run by name: python3 tools/testpar.py tests/test_m11_s2menu1.py
 
 import shutil
 import unittest
+from unittest import mock
 
 import support
 
@@ -71,6 +77,35 @@ def missing() -> str:
 
 MISSING = missing()
 needs_build = unittest.skipIf(MISSING, 'needs ' + MISSING)
+FULL = support.FULL
+STEP = 4            # by default: every STEP-th frame, call and chain
+
+
+def frame_names(M, setchg):
+    """check_frames' names by default: every STEP-th job, every open and
+    close (None: all of them)."""
+    js = [j for j in M.menu_jobs(setchg) if not j.excluded]
+    return None if FULL else [j.name for j in support.every(
+        js, STEP, keep=lambda j: j.kind in ('open', 'close'))]
+
+
+def responder_calls(M, data):
+    """check_responders' calls by default (None: every one) and the sounds
+    under them."""
+    calls = [c for c in data['calls'] if c['name'] == M.RESPONDER]
+    pick = support.every(calls, STEP)
+    kids = M.children(data)
+    sounds = sum(1 for c in pick for k in kids.get(c['call'], [])
+                 if k['name'] == 'S_StartSound')
+    return (None if FULL else [c['call'] for c in pick]), len(pick), sounds
+
+
+def ticker_chains(M, data):
+    """M.tick_chains on the default sample (every STEP-th chain), and the
+    calls in it."""
+    chains = support.every(M.tick_chains(data), STEP)
+    return (mock.patch.object(M, 'tick_chains', lambda d: chains),
+            sum(len(c) for c in chains))
 
 
 class HandMade(unittest.TestCase):
@@ -171,28 +206,36 @@ class Checkpoint(unittest.TestCase):
         self.assertIn(0, self.setchg.values())
 
     def test_every_frame_and_close(self):
+        from collections import Counter
         from native import s2menu1 as M
-        r = M.check_frames(self.b, self.setchg)
+        names = frame_names(M, self.setchg)
+        r = M.check_frames(self.b, self.setchg, names=names)
         self.assertEqual(r['problems'], [])
-        self.assertEqual(r['kinds'], {'open': 7, 'skull': 125, 'full': 18,
-                                      'close': 7})
+        js = [j for j in M.menu_jobs(self.setchg) if not j.excluded]
+        self.assertEqual(dict(Counter(j.kind for j in js)),
+                         {'open': 7, 'skull': 125, 'full': 18, 'close': 7})
+        self.assertEqual(r['kinds'], dict(Counter(
+            j.kind for j in js if names is None or j.name in names)))
         self.assertEqual(sum(r['excluded'].values()), 9)
         self.assertTrue(all(k.startswith('X-M2') for k in r['excluded']))
         self.assertLessEqual(r['stack'], 64)
 
     def test_every_responder_call(self):
         from native import s2menu1 as M
-        r = M.check_responders(self.b, self.data)
+        only, n, sounds = responder_calls(M, self.data)
+        r = M.check_responders(self.b, self.data, only=only)
         self.assertEqual(r['problems'], [])
-        self.assertEqual(r['calls'], 283)
-        self.assertEqual(r['sounds'], 102)
+        self.assertEqual(r['calls'], 283 if FULL else n)
+        self.assertEqual(r['sounds'], 102 if FULL else sounds)
 
     def test_every_ticker_call(self):
         from native import s2menu1 as M
-        r = M.check_tickers(self.b, self.data)
+        patch, n = ticker_chains(M, self.data)
+        with patch:
+            r = M.check_tickers(self.b, self.data)
         self.assertEqual(r['problems'], [])
-        self.assertEqual(r['calls'], 863)
-        self.assertGreater(r['blinks'], 100)
+        self.assertEqual(r['calls'], 863 if FULL else n)
+        self.assertGreater(r['blinks'], 100 if FULL else 100 // STEP)
 
     def test_each_session_chained(self):
         from native import s2menu1 as M

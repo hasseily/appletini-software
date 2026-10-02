@@ -35,6 +35,7 @@ import re
 import shutil
 import struct
 import unittest
+from unittest import mock
 
 import support
 
@@ -214,15 +215,26 @@ class Checkpoint(unittest.TestCase):
             self.assertNotIn('OVER', line)
 
 
+STEP = 3            # by default: the plants' every STEP-th injected frame
+
+
 @needs_build
 class Planted(unittest.TestCase):
     def test_each_planted_bug_is_caught(self):
+        """Each bug on the checks (by default on every STEP-th injected
+        frame and every second stretch of full-map frames chained, the
+        calls whole: tests/README.md; DOOM_GS_FULL=1 every frame)."""
         from native import s2amap as A
         A.make()
         ensure_capture()
-        for k in range(len(A.PLANTED)):
-            name, problems, _ = A.plant(k, 2)
-            self.assertTrue(problems, name)
+        frame_jobs, chain_jobs = A.frame_jobs, A.chain_jobs
+        with mock.patch.object(A, 'frame_jobs', lambda fr: frame_jobs(
+                support.every(fr, STEP))), \
+                mock.patch.object(A, 'chain_jobs', lambda fr: support.every(
+                    chain_jobs(fr), 2)):
+            for k in range(len(A.PLANTED)):
+                name, problems, _ = A.plant(k, 2)
+                self.assertTrue(problems, name)
 
 
 if __name__ == '__main__':

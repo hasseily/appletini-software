@@ -31,10 +31,15 @@ the release image and DOOM1.WAD, part s2cap's cases, part s2data's store
 missing.
 
 Run by name: python3 tools/testpar.py tests/test_m11_s2stbar.py
+
+By default (tests/README.md) the native frames and tics of newgame run
+every STEP-th case (the run's counts still checked whole); DOOM_GS_FULL=1
+runs every one as before.
 """
 
 import shutil
 import unittest
+from unittest import mock
 
 import support
 
@@ -145,6 +150,17 @@ class ModelRules(unittest.TestCase):
         self.assertEqual(len(uni), 11 * 29 + 42 + 3 + 12 + 4)
 
 
+STEP = 4            # by default: every STEP-th of newgame's frames, tics
+
+
+def sampled(T, name):
+    """T.<name>(run) on every STEP-th case of the run (all of them with
+    DOOM_GS_FULL=1)."""
+    orig = getattr(T, name)
+    return mock.patch.object(T, name, lambda run: support.every(orig(run),
+                                                                STEP))
+
+
 @needs_build
 class Checkpoint(unittest.TestCase):
 
@@ -195,21 +211,29 @@ class Checkpoint(unittest.TestCase):
         self.assertEqual(res['missing'], [])
 
     def test_native_tics(self):
+        """newgame's tics (by default every STEP-th: tests/README.md) and
+        the synthetic ones, both fills."""
         from native import s2stbar as T
-        res = T.native_tics(('newgame', 'synth'), jobs=2)
+        self.assertEqual(len(T.tic_cases('newgame')), 513)
+        n = len(support.every(range(513), STEP))
+        with sampled(T, 'tic_cases'):
+            res = T.native_tics(('newgame', 'synth'), jobs=2)
         self.assertEqual(res['problems'], [])
         self.assertEqual(res['stray'], 0)
-        self.assertEqual(res['cases'], 2 * (513 + 96))
+        self.assertEqual(res['cases'], 2 * (n + 96))
 
     def test_native_frames(self):
         """newgame's frames from the $A5 machine plain and the $5A one
         poisoned; the synthetic frames of every 4th glyph frame, the
         edges, the refreshes and the menu's stHide, both fills."""
         from native import s2stbar as T
-        res = T.native_frames(('newgame',), jobs=2, fills=(0xA5,),
-                              poisons=(False,))
-        res2 = T.native_frames(('newgame',), jobs=2, fills=(0x5A,),
-                               poisons=(True,))
+        self.assertEqual(len(T.frame_cases('newgame')), 128)
+        n = len(support.every(range(128), STEP))
+        with sampled(T, 'frame_cases'):     # (every STEP-th by default)
+            res = T.native_frames(('newgame',), jobs=2, fills=(0xA5,),
+                                  poisons=(False,))
+            res2 = T.native_frames(('newgame',), jobs=2, fills=(0x5A,),
+                                   poisons=(True,))
         names = [si.name for si in T.synth_inputs()
                  if not si.name.startswith(('glyphs', 'ready')) or
                  int(si.name[-2:]) % 4 == 0]
@@ -218,7 +242,7 @@ class Checkpoint(unittest.TestCase):
         for r in (res, res2, res3):
             self.assertEqual(r['problems'], [])
             self.assertEqual(r['stray'], 0)
-        self.assertEqual(res['cases'] + res2['cases'], 2 * 128)
+        self.assertEqual(res['cases'] + res2['cases'], 2 * n)
         self.assertEqual(res3['cases'], 2 * len(names))
 
     def test_native_chain(self):

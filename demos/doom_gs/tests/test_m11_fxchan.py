@@ -32,6 +32,11 @@ src/sound), the release on ref816 (build/ref816) and the part's build
 - the sizes within the budgets (since wave 4, FXCHAN-5) and MENUW's room;
 - the planted bugs (fxcap.PLANTED), each in a scratch copy built apart.
 
+By default (tests/README.md) comparisons 1 and 2 run every STEP-th
+captured call of each run (the captures' counts still checked whole) and
+the random check RANDOM_N sequences; DOOM_GS_FULL=1 runs every call and
+10,000 sequences as before.
+
 The captures (about 1 minute) are made when missing:
 python3 tools/native/fxcap.py --capture.
 
@@ -40,6 +45,7 @@ Run by name: python3 tools/testpar.py tests/test_m11_fxchan.py
 
 import shutil
 import unittest
+from unittest import mock
 
 import support
 
@@ -67,6 +73,11 @@ WHY = ('needs build/: cc65 on PATH, build/a2vm/a2vm (make -C tools/a2vm), '
 needs_build = unittest.skipUnless(READY, WHY)
 
 _BUILT = []
+
+
+FULL = support.FULL
+STEP = 5            # by default: every STEP-th captured call
+RANDOM_N = 10000 if FULL else 1000
 
 
 def built() -> None:
@@ -112,16 +123,26 @@ class CheckpointTest(unittest.TestCase):
         built()
 
     def test_captured_calls_equal_the_reference(self):
-        r = F.check_captured()
+        # the captures' calls (check_captured's), counted whole
+        def compared(refs):
+            return [x for x in refs
+                    if not (x.op == 'update' and x.world['menu'])]
+        every = {run: F.refs_of(F.load_capture(run)) for run in F.RUNS}
+        whole = {run: compared(v) for run, v in every.items()}
+        self.assertGreater(sum(len(v) for v in whole.values()), 5000)
+        game = [x for k, v in whole.items() if k != 'menu' for x in v]
+        # SCREENS.md 3: 1,304 starts, 751 stops
+        self.assertEqual(sum(1 for x in game if x.op in ('start',
+                                                         'start2')), 1304)
+        self.assertEqual(sum(1 for x in game if x.op == 'stop'), 751)
+        refs_of = F.refs_of
+        with mock.patch.object(F, 'refs_of', lambda cap: support.every(
+                refs_of(cap), STEP)):
+            r = F.check_captured()
         self.assertEqual(r['problems'], [])
         calls = sum(x['calls'] for x in r['runs'].values())
-        self.assertGreater(calls, 5000)
-        starts = sum(x['ops'].get('start', 0) + x['ops'].get('start2', 0)
-                     for k, x in r['runs'].items() if k != 'menu')
-        self.assertEqual(starts, 1304)      # SCREENS.md 3: 1,304 starts
-        stops = sum(x['ops'].get('stop', 0)
-                    for k, x in r['runs'].items() if k != 'menu')
-        self.assertEqual(stops, 751)
+        self.assertEqual(calls, sum(len(compared(support.every(v, STEP)))
+                                    for v in every.values()))
         type(self).paths = r['paths']
 
     def test_evictions_and_path_coverage(self):
@@ -151,9 +172,9 @@ class CheckpointTest(unittest.TestCase):
             self.assertGreater(r['calls'], 100)
 
     def test_three_channels_on_random_sequences(self):
-        r = F.check_random(10000)
+        r = F.check_random(RANDOM_N)
         self.assertEqual(r['failed'], 0, r['problems'][:3])
-        self.assertEqual(r['sequences'], 10000)
+        self.assertEqual(r['sequences'], RANDOM_N)
 
     def test_sizes(self):
         s = F.sizes()

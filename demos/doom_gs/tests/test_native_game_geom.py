@@ -16,6 +16,17 @@ Writes only under build/native/game/geom/ and temporary build/tmp-geom-*
 directories, deleted after each run.
 
 GEOM_JOBS (default 2) sets the processes the runs use.
+
+By default (tests/README.md) the module runs an even sample of those
+cases, every entry, declared path and planted bug still reached: of each
+entry's chosen captured calls every SAMPLE_DEF-th, then of those and the
+synthetic cases the first of each path (geom_check.paths_of, on the host)
+and an even spread up to PER_ENTRY, and a captured call for any declared
+path still missing; the iterators on every ITER_DEF-th call; RAND_DEF
+random pairs a map and posMul inputs; the random plants on PLANT_RAND
+pairs, the plants' iterator and P_LineOpening runs on every PLANT_ITER-th
+and PLANT_CASES-th call. DOOM_GS_FULL=1 runs all of it (every case, 434
+iterator calls, 100,000 pairs, 20,000 a plant, every 20th and 5th call).
 """
 
 import json
@@ -39,6 +50,14 @@ except Exception as error:          # (an import that needs build/)
     IMPORT_ERROR = error
 
 JOBS = int(os.environ.get('GEOM_JOBS', '2'))
+FULL = os.environ.get('DOOM_GS_FULL') == '1'
+SAMPLE_DEF = 30     # by default: every SAMPLE_DEF-th chosen captured call
+PER_ENTRY = 3       # then at most this many cases an entry (or a path)
+ITER_DEF = 40       # the iterators' every ITER_DEF-th call
+PLANT_ITER = 20 if FULL else 80     # the plants' iterator calls (every)
+PLANT_CASES = 5 if FULL else 20     # and P_LineOpening's cases (every)
+RAND_DEF = 10_000   # random pairs a map, posMul inputs
+PLANT_RAND = 20_000 if FULL else 5_000
 # every case from both poisoned machines, one under each cost profile (the
 # tool's --run makes the four runs a case for report.json)
 COMBOS = [(0xA5, 'f121'), (0x5A, 'fastpath')]
@@ -121,13 +140,86 @@ class TestBuild(Base):
             self.assertIn(key, M.PATHS, key)
 
 
+def chosen_paths(key, sel):
+    """check_cases' captured cases of key (the "check" role, in its
+    order)."""
+    out = []
+    for run, calls in sel['entries'].get(key, {'chosen': {}})['chosen'] \
+            .items():
+        for hit, _, role in calls:
+            p = M.CASES / run / M.GL.native_names()[key] / \
+                ('h%08d.case.z' % hit)
+            if role == 'check' and p.exists():
+                out.append(p)
+    return out
+
+
+def spread(items, n):
+    items = list(items)
+    if len(items) <= n:
+        return items
+    return [items[i * len(items) // n] for i in range(n)]
+
+
+def sample_cases(key, sel):
+    """The default sample of key's cases (see the module's text): the
+    paths to run, and how many of them are captured."""
+    captured = chosen_paths(key, sel)
+    cands = captured[::SAMPLE_DEF] + M.synth_paths(key)
+    paths_of = {p: M.paths_of(M.load_case(p)) for p in cands}
+    pick, seen = [], set()
+    for p in cands:
+        new = set(paths_of[p]) - seen
+        if new:
+            seen |= new
+            pick.append(p)
+    for p in spread(cands, PER_ENTRY):
+        if len(pick) >= PER_ENTRY:
+            break
+        if p not in pick:
+            pick.append(p)
+    want = set() if key in M.ITERATORS else set(M.PATHS[key]) - seen
+    for p in captured:              # a declared path only a call takes
+        if not want:
+            break
+        if p in paths_of:
+            continue
+        got = set(M.paths_of(M.load_case(p)))
+        if got & want:
+            want -= got
+            pick.append(p)
+    synth = set(M.synth_paths(key))
+    return pick, sum(1 for p in pick if p not in synth)
+
+
+def check_sample():
+    """geom_check.check_cases on the default sample: {key: results} and
+    {key: the captured cases run}."""
+    from concurrent.futures import ProcessPoolExecutor
+    sel = M.load_select()
+    work, captured = [], {}
+    for key in M.ENTRIES:
+        paths, captured[key] = sample_cases(key, sel)
+        work += [(str(p), key, str(M.OUT), COMBOS) for p in paths]
+    out = {}
+    with ProcessPoolExecutor(max_workers=JOBS) as pool:
+        for got in pool.map(M._run_job, work, chunksize=2):
+            for r in got:
+                out.setdefault(r['routine'], []).append(r)
+    return out, captured
+
+
 class TestCheckpoint(Base):
     def test_every_case(self):
-        """Every chosen case and every synthetic one, from both fills (one
-        under f121, one under fastpath): the canonical state, the outputs,
-        no stray write; every declared path taken."""
-        res = M.check_cases(jobs=JOBS, combos=COMBOS,
-                            say=lambda *a, **k: None)
+        """Every chosen case and every synthetic one (by default the
+        sample), from both fills (one under f121, one under fastpath): the
+        canonical state, the outputs, no stray write; every declared path
+        taken."""
+        if FULL:
+            res = M.check_cases(jobs=JOBS, combos=COMBOS,
+                                say=lambda *a, **k: None)
+        else:
+            res, sampled = check_sample()
         bad = [r for rs in res.values() for r in rs if M.failed(r)]
         self.assertEqual(bad, [], json.dumps(bad[:3])[:3000])
         sel = M.load_select()
@@ -136,6 +228,8 @@ class TestCheckpoint(Base):
             self.assertTrue(rs, '%s: no case ran' % key)
             chosen = sum(1 for calls in sel['entries'][key]['chosen']
                          .values() for _, _, role in calls if role == 'check')
+            if not FULL:
+                chosen = sampled[key]
             runs = {(r['run'], r['case']) for r in rs
                     if not r.get('synthetic')}
             self.assertEqual(len(runs), chosen, key)
@@ -151,23 +245,27 @@ class TestCheckpoint(Base):
     def test_iterators_recording(self):
         """The two iterators with the recording callback on every captured
         call's block (stopped at its first and second callback too)."""
-        res = M.iter_cases(jobs=JOBS, combos=COMBOS,
-                           say=lambda *a, **k: None)
+        res = M.iter_cases(jobs=JOBS, sample=1 if FULL else ITER_DEF,
+                           combos=COMBOS, say=lambda *a, **k: None)
         bad = [r for r in res if not r.get('ok')]
         self.assertEqual(bad, [], json.dumps(bad[:3])[:3000])
         # each combination records every callback of the 434 cases
-        # (375 lines and 32 mobjs on 2026-10-01's captures)
+        # (375 lines and 32 mobjs on 2026-10-01's captures: more than 300;
+        # by default some of the sample's)
         first = [r for r in res if (int(r['fill'], 16), r['profile']) ==
                  COMBOS[0]]
-        self.assertGreater(sum(r.get('recorded', 0) for r in first), 300)
+        self.assertGreater(sum(r.get('recorded', 0) for r in first),
+                           300 if FULL else 0)
         self.assertTrue(any(r.get('stop') for r in res))
         self.assertEqual({r['routine'] for r in res}, set(M.ITERATORS))
 
 
 class TestRandom(Base):
     def test_pairs_every_map(self):
-        """100,000 point-line and 100,000 box-line pairs on each map."""
-        res = M.rand_all(n=100_000, jobs=JOBS, say=lambda *a, **k: None)
+        """100,000 point-line and 100,000 box-line pairs on each map
+        (RAND_DEF by default)."""
+        res = M.rand_all(n=100_000 if FULL else RAND_DEF, jobs=JOBS,
+                         say=lambda *a, **k: None)
         for m, r in res['maps'].items():
             self.assertEqual(r['points']['failed'], 0, (m, r['points']))
             self.assertEqual(r['boxes']['failed'], 0, (m, r['boxes']))
@@ -189,20 +287,21 @@ class TestPlanted(Base):
     def test_on_line_side_1(self):
         obj = self.plant('on-line-side-1')
         b = M.load_build(obj)
-        r = M.rand_map(b, 1, 20_000, M.entry_cases(), 0xA5,
+        r = M.rand_map(b, 1, PLANT_RAND, M.entry_cases(), 0xA5,
                        say=lambda *a, **k: None)
         self.assertGreater(r['points']['failed'], 0)
 
     def test_horizontal_wrong_edge(self):
         obj = self.plant('horizontal-wrong-edge')
         b = M.load_build(obj)
-        r = M.rand_map(b, 1, 20_000, M.entry_cases(), 0xA5,
+        r = M.rand_map(b, 1, PLANT_RAND, M.entry_cases(), 0xA5,
                        say=lambda *a, **k: None)
         self.assertGreater(r['boxes']['failed'], 0)
 
     def test_list_first_entry(self):
         obj = self.plant('list-first-entry')
-        res = M.iter_cases(obj, JOBS, sample=20, combos=[(0xA5, 'f121')],
+        res = M.iter_cases(obj, JOBS, sample=PLANT_ITER,
+                           combos=[(0xA5, 'f121')],
                            say=lambda *a, **k: None)
         self.assertTrue(res)
         self.assertGreater(sum(1 for r in res if not r.get('ok')), 0)
@@ -210,7 +309,7 @@ class TestPlanted(Base):
     def test_lowfloor_higher(self):
         obj = self.plant('lowfloor-higher')
         res = M.check_cases(['p_map65.s:P_LineOpening'], obj, JOBS,
-                            sample=5, combos=[(0xA5, 'f121')],
+                            sample=PLANT_CASES, combos=[(0xA5, 'f121')],
                             say=lambda *a, **k: None)
         rs = res.get('p_map65.s:P_LineOpening', [])
         self.assertTrue(rs)

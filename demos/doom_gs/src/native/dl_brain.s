@@ -63,6 +63,7 @@
         .import gt_loop
 .endif
         .export dl_brain, b_starttitle, dl_bwait, b_tick
+        .import bt_rows, bt_start, bt_stop, bt_close
         .export DL_BENCH, DL_BVIEW, DL_BRT      ; (in the label file: the
                                                 ;   tests' benchmark bytes)
 
@@ -74,7 +75,13 @@ dl_brain:
         lda DL_CODE
         asl a
         tax
-        jmp (b_ent,x)
+        jsr b_go
+        lda BT_PH               ; the benchmark timed: the tic phase ends
+        beq :+                  ;   here (docs/PLAY.md 15)
+        lda BT_NX
+        DLCALL DLG_DISP, bt_close
+:       rts
+b_go:   jmp (b_ent,x)
 b_ent:  .addr b_boot, b_frame, b_resume, b_event, b_menu
 
 ; ---------------------------------------------------------------------------
@@ -142,6 +149,7 @@ b_disp: DLCALL DLG_HOOK, sc_update      ; S_UpdateSounds (musFrame)
         DLCALL DLG_DISP, c_display      ; the frame's list
 b_rts:  rts
 b_bres: stz DL_BENCH
+        DLCALL DLG_CMD, bt_rows         ; the phases' rows of the page
         DLCALL DLG_DISP, c_menulist
         rts
 
@@ -174,7 +182,13 @@ b_after:
 ; E_RESUME: the load's continuation
 ; ---------------------------------------------------------------------------
 b_resume:
-        jsr g_resume            ; (part flow: the action's tail)
+        lda DL_BENCH            ; the benchmark's load done: its timing
+        cmp #1                  ;   starts (docs/PLAY.md 15)
+        bne :+
+        lda BT_PH
+        bne :+
+        DLCALL DLG_DISP, bt_start
+:       jsr g_resume            ; (part flow: the action's tail)
         ldx #NUMKEYS - 1        ; doLoadLevel: every key up
 :       stz DL_KEYS,x
         dex
@@ -279,6 +293,7 @@ b_bench:
 ; b_bstop: bmStop: Escape while the benchmark runs: timingdemo 0, no
 ; result, G_CheckDemoStatus (the demo ends: the title loop's next step)
 b_bstop:
+        DLCALL DLG_DISP, bt_stop        ; (its timing too)
         stz DL_BENCH
         stz G_TIMINGDEMO
         stz G_TIMINGDEMO+1

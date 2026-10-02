@@ -71,12 +71,12 @@ WIP_PATTERN = 'wip_test_*.py'       # run only when named (discover)
 JOBS = 9
 TIMEOUT = 1200.0
 # Modules that need more than --timeout, each with its own limit (never
-# less than --timeout) and the reason: milestone 10's checkpoint S runs
-# milestone 9's whole acceptance again on the final layouts (57 setups
-# from two fills, checkpoint B, the disk, frame8.py's 1,458 runs) with
-# S2-S7: 295 s on a busy machine since its frame check samples (2026-10-01;
-# 1,301 s before, 1,085 of them frame8.py on all 729 loaded-level frames;
-# DOOM_GS_FULL=1 still runs them all)
+# less than --timeout) and the reason. Both run an even sample by default
+# (tests/README.md) and need the limit with DOOM_GS_FULL=1 only:
+# milestone 10's checkpoint S runs milestone 9's whole acceptance again on
+# the final layouts (57 setups from two fills, checkpoint B, the disk,
+# frame8.py's 1,458 runs) with S2-S7 (1,301 s on 2026-10-01, 1,085 of them
+# frame8.py on all 729 loaded-level frames)
 MODULE_TIMEOUTS: Dict[str, float] = {
     'test_native_game_skeleton': 3600.0,
     # part geom's checkpoint on every case from both fills, the iterators'
@@ -171,11 +171,14 @@ PREBUILD: Tuple[Step, ...] = (
           'test_native_masked_b', 'test_native_render',
           'test_native_render_frame', 'test_native_render_walls'),
          ('test_native_level_load', 'test_native_game_skeleton')),
-    # lrun.make(): level.mk into build/native/levels/obj
+    # lrun.make(): level.mk into build/native/levels/obj (play.mk runs the
+    # same make first, for the load image it links: playdisk.make() in
+    # test_play_runs and test_play_bench)
     Step('level.mk',
          _make('level.mk', BUILD / 'native' / 'levels' / 'obj'), CC65,
          ('test_native_level_load', 'test_native_level_setup',
-          'test_native_game_skeleton')),
+          'test_native_game_skeleton', 'test_play_runs',
+          'test_play_bench', 'test_play_cardprof')),
     # milestone 10: grun.make(): game.mk's shared outputs (build/native/
     # game/shared: the generated includes, game.cfg, the game manifests,
     # the call graph) and the skeleton's test image (build/native/game/
@@ -202,7 +205,8 @@ SHARED: Tuple[Shared, ...] = (
     # playdisk.make() rebuilds build/native/play (play.mk) in its
     # setUpClass; test_playtime.ExactIdle copies that directory and runs
     # its disk, so it must not see a rebuild half done (speed wave 1)
-    Shared('build/native/play', ('test_play_runs', 'test_play_bench'),
+    Shared('build/native/play', ('test_play_runs', 'test_play_bench',
+                                 'test_play_cardprof'),
            ('test_playtime',)),
 )
 

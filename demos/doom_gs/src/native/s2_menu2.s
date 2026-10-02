@@ -23,7 +23,9 @@
 ;   m2_bench    the benchmark's result (uiBenchmark): its title, the VIEW
 ;               and FPS rows; the CPU, CACHE and ROM rows (ZipGS and
 ;               TransWarp, dropped: SCREENS.md 1.5.3, exclusion X2) are
-;               black
+;               black, and on them, each when not empty, the play build's
+;               phase rows M_BROWS (docs/PLAY.md 15: "TIC t  3D t", ...),
+;               as labels at x 36
 ;
 ; The key setup reads the //e key names (part plinput's plk_names, 8
 ; bytes a name, 0-terminated) and the bindings through pl_action
@@ -84,6 +86,8 @@ VALUE_EDGE = 1                  ; m_align: the right edge 284
 X2_Y0   = BENCH_Y + 2 * BENCH_DY
 X2_ROWS = 8
 X2_Y1   = BENCH_Y + 4 * BENCH_DY + X2_ROWS
+M2_BROW = 32                    ; M_BROWS: a row's bytes (s2layout's)
+        .assert M2_BROW / 2 = BENCH_DY, error, "M_BROWS' rows"
 
         .segment "S2CODE"
 
@@ -364,7 +368,9 @@ x4:
 ; m2_bench: uiBenchmark [R :3012-3058]: the title centred at y 24; at y
 ; 60 + 16 i the label at x 36 (bmWrite) and the value at the right edge
 ; 284 (uiAlign): VIEW (uiViewIndex's label, the full view only) and FPS
-; (the benchmark's text M_BFPS); the CPU, CACHE and ROM rows black (X2)
+; (the benchmark's text M_BFPS); the CPU, CACHE and ROM rows black (X2),
+; then M_BROWS' three rows over them at x 36 (each when not empty: the
+; play build's phase timing, docs/PLAY.md 15)
 ; ---------------------------------------------------------------------------
 m2_bench:
         lda #24
@@ -428,6 +434,31 @@ m2_bench:
         lda M2_I
         cmp #X2_Y1
         bcc @row
+        ldx #0                  ; the play build's phase timing over the
+@text:  lda M_BROWS,x           ;   black rows: M_BROWS' rows, each when
+        beq @skip               ;   not empty, as the rows' labels
+        phx
+        txa
+        lsr a                   ; (32 B a row: y = 92 + 16 i)
+        clc
+        adc #X2_Y0
+        pha
+        txa
+        clc
+        adc #<M_BROWS
+        tax
+        lda #>M_BROWS
+        adc #0
+        tay
+        pla
+        jsr label
+        plx
+@skip:  txa
+        clc
+        adc #M2_BROW
+        tax
+        cpx #3 * M2_BROW
+        bcc @text
         rts
 
 ; label: bmWrite of the string X (low), Y (high) at (36, A); S2M_Y = A

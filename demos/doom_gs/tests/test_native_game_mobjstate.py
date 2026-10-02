@@ -27,6 +27,13 @@ The full checkpoint (every case) is `python3 tools/native/gparts/
 mobjstate.py --check --plants` (report.json); this module runs every
 SAMPLE-th captured case and every synthetic group.
 
+By default (tests/README.md) it runs every SAMPLE_DEF-th captured case
+(both fills, both profiles), and each synthetic group once, from $A5
+under f121 or $5A under fastpath in turn (both fills and both profiles
+still among the groups); the plants run two at a time. DOOM_GS_FULL=1
+runs all of what it ran before: every SAMPLE-th captured case, every
+group from both fills under both profiles.
+
 Each class skips, naming the command that makes what it needs, when
 build/ lacks it: the shared outputs (`make -s -C src/native -f game.mk
 shared skel ROOT=$PWD`, the parallel runner's prebuild; never made here),
@@ -36,6 +43,7 @@ a2vm (`make -C tools/ref816`, `make -C tools/a2vm`), the part's captures
 (`python3 tools/native/gparts/mobjstate.py --capture`).
 """
 
+import os
 import shutil
 import sys
 import unittest
@@ -52,7 +60,9 @@ sys.path.insert(0, str(ROOT / 'tools' / 'native' / 'gparts'))
 HAVE_CC65 = bool(shutil.which('ca65') and shutil.which('ld65'))
 PREBUILD = ('make -s -C src/native -f game.mk shared skel ROOT=$PWD (the '
             'parallel runner\'s prebuild)')
+FULL = os.environ.get('DOOM_GS_FULL') == '1'
 SAMPLE = 8
+SAMPLE_DEF = 240                # by default
 
 
 def shared_ok() -> bool:
@@ -134,7 +144,22 @@ class Checkpoint(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import mobjstate as M
-        cls.rep = M.check(jobs=2, sample=SAMPLE, say=lambda *a: None)
+        if FULL:
+            cls.rep = M.check(jobs=2, sample=SAMPLE, say=lambda *a: None)
+            return
+        # mobjstate.check() on the default sample: the synthetic groups
+        # each on one of the two diagonal combinations
+        M.build()
+        js, _ = M.plan(M.OUT, M.FILLS, M.PROFILES, SAMPLE_DEF)
+        diag = (((0xA5,), ('f121',)), ((0x5A,), ('fastpath',)))
+        n = 0
+        for i, j in enumerate(js):
+            if j[0] == 'synthetic':
+                js[i] = j[:5] + diag[n % 2]
+                n += 1
+        res = M.run_jobs(js, 2)
+        cls.rep = {'entries': M.summarize(res),
+                   'strays': sum(r.get('strays') or 0 for r in res)}
 
     def test_no_failure_and_no_stray_write(self):
         bad = {k: e['first_failures'] for k, e in self.rep['entries'].items()
@@ -192,13 +217,22 @@ class Checkpoint(unittest.TestCase):
                                 for p in e['paths']))
 
 
+def _plant(name):
+    import mobjstate as M
+    return M.run_plant(name)
+
+
 @needs_all
 class Plants(unittest.TestCase):
     def test_each_plant_is_caught(self):
         import mobjstate as M
-        for name in M.PLANTS:
+        from concurrent.futures import ProcessPoolExecutor
+        names = list(M.PLANTS)
+        with ProcessPoolExecutor(max_workers=1 if FULL else 2) as pool:
+            got = dict(zip(names, pool.map(_plant, names)))
+        for name in names:
             with self.subTest(name):
-                r = M.run_plant(name)
+                r = got[name]
                 self.assertGreater(r['runs'], 0)
                 self.assertTrue(r['caught'], '%s was not caught by %s' % (
                     name, r['check']))

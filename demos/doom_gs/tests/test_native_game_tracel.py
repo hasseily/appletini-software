@@ -19,12 +19,14 @@ part's own cases and logs (python3 tools/native/gparts/tracel.py --select
 --capture --synth --logs). Writes only under build/native/game/tracel/
 and temporary build/tmp-tracel-* directories, deleted after each run.
 
-TRACEL_JOBS (default 2) sets the processes; TRACEL_SAMPLE (default 5)
-takes every n-th captured case (and every synthetic one), so that the
-module stays within the runner's time limit: `tracel.py --run` runs every
-case from both fills under both profiles for report.json (11,300 runs,
-about 70 minutes at 2 processes; docs/game-parts/tracel.md section 3), and
-TRACEL_SAMPLE=1 runs them all here.
+TRACEL_JOBS (default 2) sets the processes; TRACEL_SAMPLE (default 100,
+5 with DOOM_GS_FULL=1) takes every n-th captured case (and every synthetic
+one), so that the module stays quick (tests/README.md): `tracel.py --run`
+runs every case from both fills under both profiles for report.json
+(11,300 runs, about 70 minutes at 2 processes; docs/game-parts/tracel.md
+section 3), and TRACEL_SAMPLE=1 runs them all here. By default the random
+checks take a tenth of their inputs (RAND_PART; gOf still all 65,536, the
+edges first in each), DOOM_GS_FULL=1 all of them.
 """
 
 import os
@@ -46,8 +48,17 @@ except Exception as error:          # (an import that needs build/)
     M = None
     IMPORT_ERROR = error
 
+FULL = os.environ.get('DOOM_GS_FULL') == '1'
 JOBS = int(os.environ.get('TRACEL_JOBS', '2'))
-SAMPLE = int(os.environ.get('TRACEL_SAMPLE', '5'))
+SAMPLE = int(os.environ.get('TRACEL_SAMPLE', '5' if FULL else '100'))
+RAND_PART = 1 if FULL else 10
+
+
+def rand_n(kind):
+    """The random check's inputs of kind: RAND_N's, a tenth by default
+    (gOf's 65,536 all)."""
+    n = M.RAND_N[kind]
+    return n if kind == 'gOf' else n // RAND_PART
 # every case from both poisoned machines, one under each cost profile (the
 # tool's --run makes the four runs a case for report.json)
 COMBOS = [(0xA5, 'f121'), (0x5A, 'fastpath')]
@@ -132,10 +143,21 @@ class TestCheckpoint(Base):
         self.assertGreater(r['kinds']['interceptVector3']['calls'], 10000)
 
     def test_random(self):
-        r = M.rand_all(M.OUT, None, JOBS, say=lambda *a, **k: None)
+        if FULL:
+            r = M.rand_all(M.OUT, None, JOBS, say=lambda *a, **k: None)
+        else:
+            # rand_all with rand_n(kind) inputs a kind
+            case = M.entry_case()
+            r = {'kinds': {}}
+            for i, kind in enumerate(M.RAND_N):
+                r['kinds'][kind] = M.rand_kind(
+                    kind, rand_n(kind), M.OUT, JOBS, M.FILLS[i % 2],
+                    case=case, say=lambda *a, **k: None)
+            r['failures'] = sum(M.rand_failures(k)
+                                for k in r['kinds'].values())
         self.assertEqual(r['failures'], 0, r)
         for kind, k in r['kinds'].items():
-            self.assertEqual(k['inputs'], M.RAND_N[kind], kind)
+            self.assertEqual(k['inputs'], rand_n(kind), kind)
         self.assertEqual(r['kinds']['ivTest']['no_return_confirmed'],
                          M.RAND_HANG)
 
@@ -151,7 +173,7 @@ class TestPlants(Base):
             obj = M.planted(tmp, bugs)
             kind, _, what = check.partition(':')
             if kind == 'rand':
-                r = M.rand_kind(what, M.RAND_N[what], obj, JOBS,
+                r = M.rand_kind(what, rand_n(what), obj, JOBS,
                                 hang_checks=0, say=lambda *a, **k: None)
                 return M.rand_failures(r)
             res = M.check_cases(['p_trace65.s:addIntercept',

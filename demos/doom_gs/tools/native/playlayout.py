@@ -24,8 +24,13 @@ from what MEMORY_MAP.md sections 3.3, 4.2, 17 and 18 leave free:
                      RAMRD window, so they must be in the card)
   card $FF00-$FFF9   the kernel (pl_ready's place: DOOM.SYSTEM's boot ends
                      with jmp pl_ready, $FF00, which the second half
-                     replaces with the title loop: SCREENS.md 2.5)
-  bank 1             DLBANK: the static tables' PRIVATE request and their
+                     replaces with the title loop: SCREENS.md 2.5), with
+                     the benchmark timing's bt_replay at BT_REPLAY
+  main $0844-$0877   the benchmark timing's bt_ext (BT_EXT: MEMORY_MAP.md
+                     3.2's free bytes; the brain writes it at each
+                     benchmark's start; docs/PLAY.md 15); its bt_mark in the
+                     menu loop's main bytes (BT_MARK, BT_MARK2)
+  bank 1            DLBANK: the static tables' PRIVATE request and their
                      sources, DLINIT's image (a spare bank: llayout.SPARE,
                      s2layout.SPARE_FREE)
 """
@@ -128,7 +133,34 @@ DLM_FIELDS = [
     ('DL_BENCH', 1),            # the menu benchmark: 0 none, 1 runs, $80 its result to show
     ('DL_BVIEW', 2),            #   DL_VIEWS at its start; at its end the frames
     ('DL_BRT', 4),              #   at its end the realtics
+    # the benchmark's phase timing (docs/PLAY.md 15): VIA-A's timer 1
+    # read at the frame's phase boundaries while the benchmark runs
+    ('BT_PH', 1),               # the phase being timed (PH_*), 0: off
+    ('BT_NX', 1),               #   the phase after the tic phase's close
+    ('BT_T', 2),                # the timer at the last boundary
+    ('BT_V', 1),                #   vbl_count's low byte there
+    ('BT_CT', 2),               # the timer at the last close (the tic
+    ('BT_CV', 1),               #   phase's end), vbl_count's low byte
+    ('BT_S', 20),               # the five phases' bus cycles (4 B each,
+                                #   PH_TIC .. PH_REST)
+    ('BT_SS', 4),               # the four short sums at the last close
+    ('BT_OVF', 1),              # turns lost no long interval explains,
+                                #   or two long intervals in one span
+    ('BT_J', 6),                # nat_replay's first instruction, jmp past it
+    ('BT_LP', 1),               # the phase of the span's interval of 3
+                                #   VBLs or more (bt_mark's), 0: none
 ]
+# the phases' offsets into BT_S + 4 (0: no timing)
+PHASES = [('PH_TIC', 4), ('PH_3D', 8), ('PH_MASK', 12), ('PH_DRAW', 16),
+          ('PH_REST', 20)]
+BT_MARK = 0x08CA                # the kernel's bt_mark (main KMAIN, after
+                                #   the menu loop's first part), its last
+BT_MARK2 = 0x0BE1               #   part (KMAIN2, after the loop's second)
+BT_EXT = (0x0844, 0x0878)       # its middle part: main's free $0844-$0877
+                                #   (MEMORY_MAP.md 3.2), which the brain's
+                                #   bt_start writes before the timing
+BT_REPLAY = 0xFFC4              # its bt_replay (the card, after the
+                                #   kernel's step code)
 FLAGS = [
     ('DF_PALLEVEL', 0x01),      # PALW palw_level before the next 2D
     ('DF_PALGAMMA', 0x02),      # PALW palw_gamma (the menu's M_RELOAD)
@@ -271,6 +303,18 @@ def check() -> List[str]:
         for klo, khi in (KMAIN, KMAIN2):
             if lo < khi and klo < hi:
                 out.append('the kernel\'s menu loop meets a static table')
+    if not (KMAIN[0] <= BT_MARK < KMAIN[1]):
+        out.append('bt_mark $%04X is not in the menu loop\'s $%04X-$%04X'
+                   % (BT_MARK, KMAIN[0], KMAIN[1] - 1))
+    if not (KMAIN2[0] <= BT_MARK2 < KMAIN2[1]):
+        out.append('bt_mark2 $%04X is not in $%04X-$%04X'
+                   % (BT_MARK2, KMAIN2[0], KMAIN2[1] - 1))
+    for lo, hi in STATIC_MAIN + (KMAIN, KMAIN2, (0x0878, 0x0880)):
+        if lo < BT_EXT[1] and BT_EXT[0] < hi:
+            out.append('BT_EXT $%04X-$%04X meets $%04X-$%04X'
+                       % (BT_EXT[0], BT_EXT[1] - 1, lo, hi - 1))
+    if not (KERNEL[0] <= BT_REPLAY < KERNEL[1]):
+        out.append('bt_replay $%04X is not in the kernel' % BT_REPLAY)
     size = sum(hi - lo for lo, hi in STATIC_MAIN + STATIC_AUX0 +
                (KMAIN, KMAIN2))
     if DLB_TABLES + size > DLB_TABLES_END:
@@ -295,7 +339,11 @@ def constants() -> List[Tuple[str, int]]:
            ('SONG_LOOP', SONG_LOOP),
            ('PL_LH_SKY', LL.LH_SKY), ('PL_DIR_ENTRY', LL.STORE_DIR_ENTRY),
            ('PL_FB_END', R.FB_END), ('PL_SPANS', R.SPANS),
-           ('PL_SPANS_END', R.SPANS_END)]
+           ('PL_SPANS_END', R.SPANS_END),
+           ('BT_MARK', BT_MARK), ('BT_MARK2', BT_MARK2),
+           ('BT_EXT', BT_EXT[0]), ('BT_EXT_END', BT_EXT[1]),
+           ('BT_REPLAY', BT_REPLAY)]
+    out += PHASES
     out += sorted(DLMA.items(), key=lambda kv: kv[1])
     out += sorted(KVA.items(), key=lambda kv: kv[1])
     out += STEPS + ENTRIES + FLAGS

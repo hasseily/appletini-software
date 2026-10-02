@@ -1,12 +1,17 @@
 # src/native/play.mk: the playable game's links (docs/PLAY.md 4), assembled
 # with ca65 and linked with ld65 (cc65 2.18): the glue's images and the
 # tic image with every built part, from the sources; the other images read
-# from their milestones' builds (milestone 8's rcard, milestone 9's lcard,
-# milestone 11's 2D images: read only).
+# from their milestones' builds (milestone 8's rcard, milestone 11's 2D
+# images: read only). Milestone 9's load image (lcard, LCODE on the disk)
+# links the runtime's state, so a layout change moves it: every run of
+# this makefile first runs level.mk on LEVELS (build/native/levels/obj,
+# where playlink.py and playdisk.py read it), which rebuilds it when it is
+# out of date and writes nothing when it is not.
 #
 #   make -f play.mk ROOT=$PWD             every link (all)
 #   make -f play.mk ROOT=$PWD PLAY=DIR    the same into another directory
 #   make -f play.mk sizes                 each link's segments against room
+#   make -f play.mk lcode                 the load image alone (level.mk)
 #   make -f play.mk clean                 PLAY's directory
 #
 # Into PLAY (build/native/play):
@@ -36,6 +41,9 @@ P2D := $(PLAY)/p2dw
 INIT := $(PLAY)/init
 CARD := $(PLAY)/card
 M11 ?= $(ROOT)/build/native/m11
+# milestone 9's build (playlink.py and playdisk.py read lrun.OBJ, this
+# directory; another LEVELS is for tests/test_play_glue.py's check only)
+LEVELS ?= $(ROOT)/build/native/levels/obj
 TABLES ?= $(ROOT)/build/native/render/tables
 SOUND65 ?= $(ROOT)/build/sound65
 TOOLS := $(ROOT)/tools/native
@@ -52,8 +60,18 @@ ASFLAGS = --cpu 65C02 -g -I $(GEN) -I $(HERE) -I $(ROOT)/src/native \
 TICFLAGS = $(ASFLAGS) -I $(TIC)/gen
 S2FLAGS = $(ASFLAGS) -I $(M11)/s2data -I $(SOUND65)
 
-.PHONY: all gen p2dw init tic card sizes clean
+.PHONY: all gen p2dw init tic card lcode sizes clean FORCE
 all: card
+
+# ---------------------------------------------------------------------------
+# The load image: level.mk's own rules decide whether it is out of date
+# (the parallel runner's prebuild runs the same make first), and the links
+# that read its symbols follow lcard.lw's time
+# ---------------------------------------------------------------------------
+$(LEVELS)/lcard.lw: FORCE
+	$(MAKE) -s -C $(HERE) -f level.mk ROOT=$(ROOT) OUT=$(LEVELS)
+lcode: $(LEVELS)/lcard.lw
+FORCE:
 
 # ---------------------------------------------------------------------------
 # The includes
@@ -100,7 +118,7 @@ $(GEN)/s2fin.inc: $(TOOLS)/s2fin.py $(M11)/s2data/s2data.json
 	$(PYTHON) $(TOOLS)/s2fin.py --inc $@
 # the other milestones' links' entries (rcard, lcard, the 2D images, the
 # card's player and platform): read only
-$(GEN)/playsym.inc: $(LINK) $(INCS)
+$(GEN)/playsym.inc: $(LINK) $(INCS) $(LEVELS)/lcard.lw
 	$(PYTHON) $(LINK) --symbols $@
 gen: $(INCS) $(S2INCS) $(GEN)/playsym.inc
 

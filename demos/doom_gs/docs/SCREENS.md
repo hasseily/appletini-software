@@ -1016,7 +1016,7 @@ named in the report:
 | # | Excluded | Why |
 | --: | --- | --- |
 | X1 | The view's rows in a level frame: rows 0-167 when the reference's `viewtop` (point `PV`) is `$FFFF`, rows 10-167 when it is 9 | The renderer's; compared by milestones 8 and 10's frame tests. Rows 0-9 are never excluded when the strip is on; when it is off, the HUD part checks that it wrote none of them, and every level frame's native `VIEWTOP` (from the tic-side `message_on`) must equal the reference's `viewtop` (1.5.2), so a late `message_on` fails |
-| X2 | The benchmark page's `CPU`, `CACHE`, `ROM` rows; the native rows there must be black | ZipGS and TransWarp dropped (1.5.3) |
+| X2 | The benchmark page's `CPU`, `CACHE`, `ROM` rows; the native rows there must be black | ZipGS and TransWarp dropped (1.5.3). Since 2026-10-02 the play build writes its phase timing there (`M_BROWS` after `M_BFPS`, 3 rows of 32 B, drawn by `m2_bench` when not empty: `PLAY.md` 15); this part's checks inject them empty, so the rows stay black |
 | X3 | The first title page's first frame's palette (`titleWipe`) | No gray boot title natively (1.5.8) |
 | X4 | Calls where upstream's `startSound` failed: the native decision is compared, the reference's stop of that channel is injected | F3 |
 

@@ -322,7 +322,10 @@ class Machine(unittest.TestCase):
 
     def test_checkpoint(self):
         lines = []
-        problems = R.checkpoint(jobs=2, out=lines.append)
+        # by default the tool's quick sample (three of the 18 alone
+        # combinations, three songs: tests/README.md); DOOM_GS_FULL=1 all
+        problems = R.checkpoint(jobs=2, quick=not support.FULL,
+                                out=lines.append)
         self.assertEqual(problems, [], '\n'.join(lines))
         self.assertTrue(any('FX_HOLD set (interrupts' in x for x in lines))
 

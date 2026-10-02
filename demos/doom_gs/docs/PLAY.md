@@ -100,16 +100,18 @@ and `S_Start`, then `G_Ticker` again at its action loop (part tic's
 
 The kernel keeps nothing in zero page between steps: its state is `KV_*`
 (card `$FE7B-$FE7F`) and the brain's `DL_*` (main `DLM`, `$1F00-$1F7F`,
-82 of 128 B with the benchmark's `DL_BENCH`, `DL_BVIEW`, `DL_BRT`:
+122 of 128 B with the benchmark's `DL_BENCH`, `DL_BVIEW`, `DL_BRT` and
+its phase timing's `BT_*` (section 15):
 `python3 tools/native/playlayout.py --report`).
 
 ## 4. Memory
 
 | Space | Range | Holds |
 | --- | --- | --- |
-| Main card | `$FF00-$FFBD`, `$FFD5-$FFF9` | the kernel (190 B; `$FFBE-$FFD4` free) and, since speed wave 1, `far_gcopy` at `KERN_GCOPY` (`glayout.py`): `gr_load`'s copy of a whole group in one `RAMRD` window (the 250 B before the vectors are all used: `dl_kern.s` pads to `KERN_GCOPY`) |
+| Main card | `$FF00-$FFC3`, `$FFC4-$FFD4`, `$FFD5-$FFF9` | the kernel (196 B), the benchmark timing's `bt_replay` at `BT_REPLAY` (17 B, section 15) and, since speed wave 1, `far_gcopy` at `KERN_GCOPY` (`glayout.py`): `gr_load`'s copy of a whole group in one `RAMRD` window (the 250 B before the vectors are all used: `dl_kern.s` pads to `KERN_GCOPY`) |
 | Main card | `$FE80-$FEFF`, `$FE7B-$FE7F` | `DLBUF` (the step list), `KV_*` |
-| Main | `$0880-$08FF`, `$0B94-$0BFF` | the kernel's menu loop (read-only code, copied by DLINIT's PRIVATE request with the static tables: MEMORY_MAP.md 3.2's free bytes, never `$0878-$087F`) |
+| Main | `$0880-$08FF`, `$0B94-$0BFF` | the kernel's menu loop and the benchmark timing's `bt_mark` at `BT_MARK` (`$08CA`) and `BT_MARK2` (`$0BE1`) (read-only code, copied by DLINIT's PRIVATE request with the static tables: MEMORY_MAP.md 3.2's free bytes, never `$0878-$087F`; `$08F3-$08FF` free) |
+| Main | `$0844-$0867` | `bt_mark`'s middle part `bt_ext`, which the brain's `bt_start` writes there at each benchmark's start (section 15) |
 | Main | `$1F00-$1F7F` | `DLM`: the brain's state (`DL_*`) |
 | Main | `$0310-$036F`, `$0F00-$13FF`, `$18A0-$18AB`, `$1A80-$1B7F` | the renderer's frame block, spans, `WPREV`, `TEXTRANS`: set at the boot by `s_rinit` (section 9 item 5) |
 | W | `$6000-$BFFF` | one image at a time (section 5) |
@@ -204,11 +206,19 @@ and the menu's BENCHMARK played whole from the menu:
 | --- | ---: | ---: | ---: | ---: | ---: |
 | E1M1's start, standing still (15-25 s) | 180.7 ms, **5.53 FPS**, 21.9 tics/s | 87.9 ms, **11.37 FPS**, 34.9 tics/s | 84.3 ms, 11.86 FPS | 24.4 ms (11.5 group loads a tic) | 52.2 ms |
 | demo3 on E1M7, gametics 1052-1796 (186 frames of 4 tics) | 873.3 ms mean, **1.15 FPS**, max 1,656 | 271.6 ms mean, **3.68 FPS**, max 635 | 243.8 ms, 4.10 FPS | 188.4 ms (63.5 loads a tic) | 70.1 ms |
-| OPTIONS, BENCHMARK: the whole of demo3, 534 frames | FPS **0.912** | FPS **3.318** (5,632 realtics) | FPS 3.842 | | |
+| OPTIONS, BENCHMARK: the whole of demo3, 534 frames | FPS **0.912** (*) | FPS **3.302** (5,659 realtics; 3.318 was read wrong, (*)) | FPS 3.732 (5,008 realtics) | | |
 
 "Before" is the owner's build (`SPEED.md` 2), but the benchmark's: it
 did not exist then, so its "before" is that build plus part bench alone
-(a2vm f121 with the exact idle: 534 frames in 20,480 realtics; part bench read 0.900 with the old idle). Standing still now runs at real time (35 tics a
+(a2vm f121 with the exact idle: 534 frames in 20,480 realtics; part bench read 0.900 with the old idle). (*) The benchmark's figures of the
+integration (0.912, 3.318, fastpath 1.177 and 3.842) were read with
+a2vm stopped as soon as `G_TimeDemoEnd` began writing `DL_BRT`; it writes
+the high bytes first, so the low byte was still 0 (20,480 = `$5000`,
+5,632 = `$1600`, 4,864 = `$1300`) and the FPS too high. The page's own
+figures, read with the page up (`playtime.py --scene bench`, section 15),
+are 3.302 on f121 and 3.732 on fastpath for that build; the "before"
+column was not measured again (its realtics are 20,480 to 20,735: FPS
+0.901 to 0.912). Standing still now runs at real time (35 tics a
 second, 3.1 tics a frame); demo3 still runs 4 tics a frame, the same
 frames as before.
 
@@ -297,8 +307,9 @@ must regenerate `s2.inc` fails until it is settled).
     python3 tools/native/playdisk.py                 # make -f play.mk, then DOOM.hdv
     python3 tools/native/playdisk.py --no-build --run SCRIPT --seconds S \
         [--keep build/tmp-play-x]                    # a2vm, bounded
-    python3 -m unittest test_play_glue test_play_runs test_play_bench   # from tests/
-    python3 tools/native/playtime.py --scene still|walk|demo3 [--profile fastpath]
+    python3 -m unittest test_play_glue test_play_runs test_play_bench test_play_cardprof
+                                                     # from tests/
+    python3 tools/native/playtime.py --scene still|walk|demo3|bench [--profile fastpath]
 
 A run's script is a2vm's input events (`tools/a2vm/README.md`) with
 `@label` for the play link's labels (`pc @dl_halt shot halt`). A
@@ -313,6 +324,7 @@ TAB, `0x08` left arrow, `0x0B` up arrow, `0x0A` down arrow.
 | `test_play_glue.SprBound` | `SPRBOUND` by upstream's rule equals the reference's for the sprites its level sets hold |
 | `test_play_runs.Boot` | the boot to the title page with its song; the title loop's demo3 on E1M7, played (tics, views, the player moving); ESC opens and closes the menu; QUIT GAME, Y ends at the halt on the text screen |
 | `test_play_bench` | OPTIONS, BENCHMARK on a disk whose demo3 is cut after 120 tics: demo3 starts on E1M7 with timingdemo set, the result page shows FPS = 35000 × frames / realtics as the host computes it, a key closes it and the title loop goes on; ESC while it runs stops it with no result |
+| `test_play_cardprof` | the benchmark's phase rows (section 15) on the same disk: the five sums against the same span's kernel steps in a2vm's PC log, each within the reads' cost; their total against the realtics; the rows' text as the host formats the sums, drawn on the page; ESC stops the timing and puts nat_replay's entry back |
 | `test_playtime` | `playtime.py`'s reading of the PC log (synthetic logs); the exact idle against no idle on the title loop (the same frames) |
 | `test_a2vm_pclog` | a2vm's idle conditions `byte=` and `eq=lc.`, `--pclog`, `--stop-word` |
 | `test_play_runs.Level` | a new game: E1M1 at skill 2, the first frame's view equal to ref816's `calls-newgame/still-00s.png`; the up arrow, the left arrow and A give forwardmove 25, angleturn 640, sidemove -24 and move, turn and strafe the player; the health bonus picked up (health 101) with its HUD message on, then off after 140 tics; TAB opens the automap, TAB again the overlay |
@@ -384,7 +396,9 @@ failures, each a check that assumed the old speed or layout (`SPEED.md`
 - **Benchmark**: OPTIONS, BENCHMARK plays demo3 at the normal tic rate and
   shows FPS = 35000 × frames drawn / realtics; ESC stops it with no
   result. The whole demo takes about 3 minutes after wave 1 (on a2vm
-  f121: 534 frames in 5,632 tics, FPS 3.318).
+  f121: 534 frames in 5,659 tics, FPS 3.302; 5,673 tics and 3.294 with
+  the phase timing of section 15). Under the FPS, three rows show where
+  each frame's time goes (section 15).
 
 | Key | Does |
 | --- | --- |
@@ -481,8 +495,10 @@ the time changed. `docs/SPEED.md` has the plan and the measurements;
   | --- | ---: | ---: |
   | E1M1's start, standing still | 5.53 FPS (180.7 ms) | **11.37 FPS** (87.9 ms), real-time tics |
   | demo3 on E1M7, gametics 1052-1796 | 1.15 FPS (873 ms) | **3.68 FPS** (272 ms) |
-  | The menu's BENCHMARK (all of demo3) | 0.912 | **3.318** |
-  | (fastpath, for reference: still / demo3 / BENCHMARK) | 6.48 / 1.46 / 1.177 | 11.86 / 4.10 / 3.842 |
+  | The menu's BENCHMARK (all of demo3) | 0.912 (*) | **3.302** (3.318 as first read, (*)) |
+  | (fastpath, for reference: still / demo3 / BENCHMARK) | 6.48 / 1.46 / 1.177 (*) | 11.86 / 4.10 / 3.732 (3.842 as first read) |
+
+  (*) Read with the realtics' low byte not yet written (section 8).
 
 **What was changed**
 
@@ -517,3 +533,136 @@ whole benchmark from the menu above), then the fast full suite once
 
 **The disk**: `build/native/DOOM.hdv`, 4,027,904 bytes, SHA-1 `5fa5a03f80a15c98214129a46f19e4ea3f867632`.
 
+## 15. The benchmark's phase rows (2026-10-02)
+
+For the owner, after "Benchmark is actually the exact same at 2.897.
+That's what it was before, not 2.93. And I'm on a PAL machine at 50Hz".
+The card shows 2.897; a2vm f121 shows 3.302 for the same build (section
+8: the 3.318 written before was misread), so a2vm runs this benchmark 14%
+faster than the card. To find in which part of the frame, the BENCHMARK
+page now times the frame's phases on the machine itself and shows them in
+the three rows under FPS, upstream's CPU, CACHE and ROM rows, which
+milestone 11 left black (SCREENS.md X2). On a2vm f121, this disk:
+
+    BENCHMARK: DEMO3
+    VIEW                     FULL
+    FPS:                    3.294
+    TIC 225.2  3D 23.2
+    MASK 14.2  DRAW 35.7
+    REST 5.6  N 534
+
+**How to read the rows.** Each figure is one phase's mean time a frame,
+in ms with one decimal, over the whole benchmark; N is the frames drawn
+(the FPS's frames). The five phases are the whole frame: their sum is
+about 1000 / FPS (on a2vm 304.0 ms against 1000 / 3.294 = 303.6: the rows
+start at the end of demo3's load, the realtics a few ms later).
+
+| Row | The phase | What runs in it (section 2's steps) | a2vm f121, ms |
+| --- | --- | --- | ---: |
+| TIC | the tic phase | `K_TIC`: the tic image and its planes back into W, the brain, the frame's 4 tics (the game code, its group loads, the object API's far windows), the next step list, the caches written back | 225.2 |
+| 3D | the front end | `K_WLOAD` (the front end's image and the level's W tables) and `nr_frame` (the BSP walk, walls, planes, the records) | 23.2 |
+| MASK | the masked phase and the bucket pass | `K_MLOAD`, `nm_masked` (sprites, masked walls, the weapon), `nm_bkload`, and `nb_frame` but its replays (the bucket pass: the batches, the scatter, the fuzz marks) | 14.2 |
+| DRAW | the replay | `nb_frame`'s calls of `nat_replay`: each batch drawn onto the screen, its SHR drain included | 35.7 |
+| REST | the rest | `PALW` at the level's first frame, the `P2DW` load, `s2_frame` (palettes, status bar, HUD, the input poll) | 5.6 |
+
+`OVF n` after N would mean the timing lost n turns of its timer that it
+could not place in a phase; the rows would then be wrong. a2vm never
+shows it.
+
+**Comparing with a2vm.** The card's frame is 1000 / 2.897 = 345 ms
+against a2vm's 303 to 304: about 41 ms more. Each row of the card's page
+against the same row on a2vm (above, and `docs/SPEED.md` 5, "The
+benchmark's rows") shows where those 41 ms are. TIC is mostly RamWorks
+copies (the group loads: 64 µs a page on a2vm), `RAMRD` windows and
+`$C073` writes; 3D and MASK mostly the CPU in W and the card; DRAW is
+held by the SHR drain (a byte an Apple cycle); REST is small.
+
+**How it is measured.** The timer is the Phasor's VIA-A timer 1: the
+boot's PAL or NTSC detection (`pl_detect`, `pl_irq.s`) loads it with
+`$FFFF`, and nothing uses it after (the music and the effects write only
+the VIAs' ports, their directions and the interrupt enables). It counts
+the Apple bus cycles down, free-running: 1,015,625 a second on PAL,
+1,020,484 on NTSC, and the rows are converted with the rate of the
+standard the boot detected. It is read low byte then high byte, both again
+when the low byte was within 8 of its borrow, at each boundary:
+
+- three steps the frame's list adds while the benchmark runs: `K_CALL`s
+  of the kernel's `bt_mark` before `K_MLOAD`, after `nb_frame` and before
+  `K_END`;
+- around each batch's replay: the brain's `bt_start` writes `jmp
+  bt_replay` over `nat_replay`'s first instruction (`sta gcol`, kept in
+  DLM with a `jmp` back), and `bt_stop` puts it back;
+- at the brain's end (`bt_close`, `dl_disp.s`): the end of the tic phase.
+
+A short phase's interval is the difference of two readings (mod 65,536).
+The timer turns every 65,536 cycles (64.5 ms) and the tic phase is
+longer, so `bt_close` counts its turns from the VBL count kept with each
+reading (20,280 cycles a VBL on PAL; exact while a phase lasts under 256
+VBLs, 5.1 s), and checks the short phases' sums over the same span: the
+turns an interval of 3 VBLs or more lost go back to its phase (the first
+frame's REST, 85 ms with `PALW`, is one). The sums are 32-bit counts of
+bus cycles in DLM (`BT_S`). The timing starts at the end of demo3's load
+(`E_RESUME`) and stops in `G_TimeDemoEnd` (or at Escape); `bt_rows`
+(`dl_cmd.s`) writes the rows into MENUW's state block (`M_BROWS`), and
+MENUW's `m2_bench` draws them over the black rows.
+
+**What it costs.** Each reading is 2 to 4 reads of slot 4, and each
+slot-4 access holds the card at 1 MHz for the Doom profile's window
+(`vtw.slowdown.cycles=32`): about 40 µs a boundary on a2vm f121, which
+models that window, and 6 to 8 boundaries a frame (3 in the list, 2 a
+replay batch, the brain's): about 0.25 ms a frame. The timing's code also
+makes two glue groups longer by 3 and 2 pages (`DLG_DISP`, `DLG_CMD`,
+each loaded about once a frame: about 0.3 ms). In all the frame is 0.8 ms
+longer on a2vm f121 (0.26%): FPS 3.302 without the timing, 3.294 with it
+(5,659 and 5,673 realtics). A reading's own time falls in the phases on
+either side of it; the rows agree with the kernel steps of the same run
+(`playtime.py --scene bench`) within 0.3 ms a frame:
+
+| a2vm f121, ms a frame | TIC | 3D | MASK | DRAW | REST |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| The page (the machine's timer, 534 frames) | 225.2 | 23.2 | 14.2 | 35.7 | 5.6 |
+| `playtime.py`'s kernel steps, same run (533 whole frames) | 225.5 | 23.1 | 14.2 | 35.8 | 5.4 (+ 0.12 of the list's reads) |
+| `playtime.py`, the build without the timing | 224.9 | 23.2 | 14.2 | 35.7 | 5.4 |
+
+(The page's TIC also counts the tic phase that follows the load and the
+last one, to `G_TimeDemoEnd`; `playtime.py` whole frames only.)
+
+**Where the code is.** `bt_mark` in the kernel's menu-loop bytes of main
+(`BT_MARK` `$08CA`, `BT_MARK2` `$0BE1`), its middle part `bt_ext` (36 B)
+at `$0844`, in MEMORY_MAP.md 3.2's free bytes, which `bt_start` writes at
+each benchmark's start; `bt_replay` in the kernel at `$FFC4` (its last
+17 free bytes); `bt_start`, `bt_stop`, `bt_close` in `DLG_DISP`,
+`bt_rows` in `DLG_CMD` (not the brain's group, which is loaded again
+after each tic); `BT_*` in DLM (40 B: DLM 122 of 128 B). It is the play
+build's only: the lockstep and test images of `game.mk` are byte for byte
+as before (293 files compared), and MENUW draws the rows only when
+`M_BROWS` is not empty (milestone 11's checks inject it empty: X2's rows
+stay black there).
+
+**Checked** (the owner's rule: the benchmark's scripted runs, then the
+modules the change touches): `tests/test_play_cardprof.py` (about 30 s):
+one run of the menu's benchmark on `test_play_bench`'s disk (demo3 cut
+after 120 tics, 30 frames) with a2vm's PC log; each of the five sums
+against the same span's kernel steps within the reads' cost (5.9 ms on
+that run: 90 list marks and 30 replays, 39 µs a mark): TIC 3,368.9 /
+3,369.3 ms, 3D 501.4 / 499.9, MASK 281.8 / 279.4, DRAW 899.0 / 900.2,
+REST 247.7 / 246.6; their total against the realtics (within two tics);
+the rows' text as the host formats the sums, the rows drawn on the page;
+the FPS row as `test_play_bench` computes it; no overflow; `nat_replay`'s
+entry back after the stop; Escape: the timing stopped, the entry back, no
+rows. A planted bug, the MASK boundary after `K_MLOAD` instead of before
+it, fails the test (3D 580.1 against 500.2 ms). `test_play_bench` passes
+as before; `test_m11_s2menu2`'s frames and sizes on the new MENUW (X2
+black with `M_BROWS` empty); `test_playtime` (playtime.py's replay split
+and bench scene).
+
+**Commands**: `python3 tools/native/playtime.py --scene bench [--profile
+fastpath]`: the whole benchmark on a2vm with the PC log (about 2 minutes
+of host time), with playtime's steps and phases, the page's FPS and rows
+and the machine's sums.
+
+**The disk**: `build/native/DOOM.hdv`, 4,029,440 bytes, SHA-1
+`90635ac146d2fa2432cf73eb665dab263517109d`.
+
+**Not done**: the card has not run it (the owner's test); NTSC is
+converted by its rate but was not run on a2vm (it runs PAL).

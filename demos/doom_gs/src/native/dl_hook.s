@@ -81,7 +81,7 @@
         .export s2t_pos, fxc_scr, h_sstart, G_TimeDemoEnd
         .import g_stop, fc_call, fc_unbuilt, pl_time, mo_get, sec_get
         .import far_get, far_put, mul32, udiv32, fl_realtics
-        .import fx_stopall
+        .import fx_stopall, bt_stop
         .import sc_start, sc_start2, sc_stop, st_start, st_ticker
         .import hu_start, hu_ticker, f_start, f_ticker, s_song, s_levelsong
 
@@ -287,7 +287,8 @@ hk_bench:
         beq :+
         lda #GS_DEMOEND
         jmp g_stop
-:       stz G_TIMINGDEMO
+:       DLCALL DLG_DISP, bt_stop        ; the phases' timing ends here
+        stz G_TIMINGDEMO                ;   (docs/PLAY.md 15)
         stz G_TIMINGDEMO+1
         lda #$80
         sta DL_BENCH

@@ -32,6 +32,12 @@
 ;   far_gcopy        gr_load's copy of a group (gcall.s): one RAMRD
 ;                    window, in the card at KERN_GCOPY (game.cfg's weak
 ;                    symbol: the tic image is linked before this card)
+;   bt_mark          the benchmark's phase timing (docs/PLAY.md 15): a
+;                    phase boundary (a K_CALL of the list, or bt_replay's),
+;                    at BT_MARK and BT_MARK2 in the menu loop's free main
+;                    bytes, its middle part the brain's at BT_EXT
+;   bt_replay        nat_replay's entry while the benchmark is timed (the
+;                    card, BT_REPLAY): the replay of a batch timed apart
 ;
 ; k_sdfail (main KMAIN, its fixed place) is m_savedone with C set (a save
 ; failed: none in this version), for a K_CALL. The kernel keeps nothing in zero page between steps (every
@@ -151,6 +157,26 @@ k_core:   .byte $60, XS_CORE_PAGES, 0
 k_planes: .byte >PL_TNL, (PL_TICS + PLANE_SLOTS - PL_TNL) >> 8, 0
 
 ; ---------------------------------------------------------------------------
+; bt_replay: nat_replay's entry while the benchmark is timed (docs/PLAY.md
+; 15): the brain's bt_start writes jmp bt_replay over nat_replay's first
+; instruction (sta gcol), which it keeps in BT_J with jmp nat_replay + 3
+; after it. A batch's replay is the phase PH_DRAW, then PH_MASK again (the
+; bucket pass's next batch). A, X: nat_replay's (Y it does not read).
+; ---------------------------------------------------------------------------
+        .assert * = BT_REPLAY, lderror, "bt_replay is not at BT_REPLAY"
+bt_replay:
+        pha
+        phx
+        lda #PH_DRAW
+        jsr bt_mark
+        plx
+        pla
+        jsr BT_J                ; (nat_replay)
+bt_rback:
+        lda #PH_MASK
+        jmp bt_mark
+
+; ---------------------------------------------------------------------------
 ; far_gcopy: FA_N pages (1-255) of RamWorks bank FA_BANK from FA_SRC to
 ; main FA_DST, both page aligned, in one RAMRD window (gcall.s's gr_load,
 ; a group into its slot; docs/SPEED.md 4, item 2). In the card: with RAMRD
@@ -231,6 +257,46 @@ km_pop: txa
 :       sta PL_QHEAD
         bra km_ev
 
+; ---------------------------------------------------------------------------
+; bt_mark: a phase boundary of the benchmark's timing (docs/PLAY.md 15), a
+; K_CALL of the frame's list or bt_replay's call. A = the phase that starts
+; (PH_*). VIA-A's timer 1 (the Phasor's, free-running, counting the Apple
+; bus cycles down: pl_detect's, which nothing else uses after the boot) is
+; read low then high, both again when the low byte was near its borrow
+; (the high byte is read 5 cycles after the low: 4, and the extra tick a
+; native-mode low read makes); the cycles since the last boundary (mod
+; 65,536) are added to the phase that ran (BT_PH, none when 0), then A is
+; the phase. Its middle part, at BT_EXT (main $0844-$0877, free), is the
+; brain's (dl_brain.s bt_ext, which bt_start copies there): vbl_count's low
+; byte kept with the reading (the brain's bt_close times the tic phase
+; from them, that phase being longer than the timer's turn), and the phase
+; of an interval of 3 VBLs or more (it may pass the turn) kept for
+; bt_close, which adds the turns the short phases lost to it. A, X, Y
+; changed. In main $08CA-$08F3 and $0BE1-$0BFF (the menu loop's free
+; bytes) and $0844-$0867.
+; ---------------------------------------------------------------------------
+VIA_T1CL = $C414                ; the Phasor's VIA-A, timer 1 (both modes:
+VIA_T1CH = $C415                ;   pl_irq.s's pl_detect)
+        .assert * = BT_MARK, lderror, "bt_mark is not at BT_MARK"
+bt_mark:
+        pha
+        ldx VIA_T1CL            ; the timer: low, then high
+        ldy VIA_T1CH
+        cpx #8                  ; (the high may have borrowed: read again,
+        bcs :+                  ;   past the borrow)
+        ldx VIA_T1CL
+        ldy VIA_T1CH
+:       sec                     ; the cycles since the last boundary: the
+        lda BT_T                ;   last reading - this one (a counter
+        stx BT_T                ;   down), into Y:X; this one kept
+        sbc BT_T
+        tax
+        lda BT_T+1
+        sty BT_T+1
+        sbc BT_T+1
+        tay
+        jmp BT_EXT              ; (then BT_MARK2, A = X, X = BT_PH)
+
         .segment "DLKMAIN2"     ; (main $0B94-$0BFF: read-only code)
 km_tic: jsr pl_time             ; the new tics: M_Ticker each, at most
         sta KV_T                ;   MAXTICS (lastmadetic takes them all)
@@ -262,3 +328,21 @@ dl_mwait:
         jmp km_ev
 km_out: ldy KV_PTR
         jmp run
+
+; bt_mark's last part: Y:X (A its low byte) into the phase X's 4 bytes
+        .assert * = BT_MARK2, lderror, "bt_mark2 is not at BT_MARK2"
+bt_mark2:
+        beq @out
+        clc
+        adc BT_S-4,x
+        sta BT_S-4,x
+        tya
+        adc BT_S-3,x
+        sta BT_S-3,x
+        bcc @out
+        inc BT_S-2,x
+        bne @out
+        inc BT_S-1,x
+@out:   pla
+        sta BT_PH
+        rts
