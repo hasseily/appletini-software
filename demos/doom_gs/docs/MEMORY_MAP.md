@@ -95,6 +95,8 @@ card had no room. The stack stays at or above `$01C0`: the replay itself
 takes 14 B below the caller's S [M], so with an IRQ on top (≤ 24 B) the
 caller's S must be at least `$01E6` [A]. The harness checks that nothing
 of page 1 changes but `$0100-$01B4` and `$01C0` up to the caller's S.
+2D phases (milestone 11, section 18): `$0100-$017F` is `newColors`' bounce
+(`s2_begin`), outside the replay; the stack stays at or above `$01C0`.
 
 **Pair build only.** During the replay `$0100-$017F` is the texel bounce
 buffer [R `NATIVE.md` §4.1], so S stays at or above `$0180` then (about 56
@@ -112,7 +114,7 @@ page and aux stack; pair stores go through the trampoline [R `NATIVE.md`
 | --- | ---: | --- | --- | --- | --- |
 | `$0200-$027F` | 128 | Far bounce buffer: `FAR_GET` destination for records larger than zero page (a node 28 B, a seg 18 B, a sector 58 B [R `verification` §2.1]) | tics, render | scratch | no |
 | `$0280-$02FF` | 128 | Zero-page spill of the running phase (the render loop page first) | per phase | scratch | no |
-| `$0300-$03EF` | 240 | Persistent globals: gametic, tic command slot, input state, effect request queue, fill-span frame stamps (`W_FSC`, `W_FSP`, `W_FSW` [R `r_list65.s:144-150`]), level number, frame parameters. Milestone 7 (section 12): the cost phase `$0300` (test builds), the render frame block `$0310-$036F`, the render inputs `$0370-$039F`, the level's counts `$03A0-$03A3` | platform, all | zeroed at start | no |
+| `$0300-$03EF` | 240 | Persistent globals: gametic, tic command slot, input state, effect request queue, fill-span frame stamps (`W_FSC`, `W_FSP`, `W_FSW` [R `r_list65.s:144-150`]), level number, frame parameters. Milestone 7 (section 12): the cost phase `$0300` (test builds), the render frame block `$0310-$036F`, the render inputs `$0370-$039F`, the level's counts `$03A0-$03A3`. Milestone 11 (section 18): `$03B3-$03ED` the input (event queue 15 × 3 B, its head and tail, held key, the Apple keys' and buttons' state, mouse motion, the mouse's last X, repeat, deferrals, the key setup's byte `PL_BIND`; 59 of 59 B); `$03AE` also the boot's status (`PL_STATUS`) | platform, all | zeroed at start (`DOOM.SYSTEM`, with `$0200-$02FF`, `$0C00-$1FFF` and `$BF00-$BFFF`) | no |
 | `$03F0-$03FF` | 16 | //e ROM soft vectors (BRK, reset, `&`, Ctrl-Y, NMI, `$03FE` IRQ). Set once at boot; the game's IRQ vector is `$FFFE` in the card | ROM | boot | yes |
 
 ### 3.2 `$0400-$0BFF`, write-expensive, read-only
@@ -172,9 +174,13 @@ the seg loops index at column rate start on a page boundary.
 | `$18E0-$197F` | 160 | `WTMP`: floor clip of a sprite in a frame that skips the weapon rows | render | no | R `lists.inc:127-128`, `:131` |
 | `$1980-$19FF` | 128 | `DSX1`: x1 of drawseg i | render | no | R `dscols.inc:3-11`; 416-624 reads a frame [M: §A.2] |
 | `$1A00-$1A7F` | 128 | `DSX2` | render | no | R `dscols.inc:12` |
-| `$1A80-$1FFF` | 1,408 | Persistent hot game globals (the rest of upstream's near game globals go to RamWorks). Milestone 7 (section 12): `TEXTRANS` `$1A80-$1B7F`, `LNMAP` `$1B80-$1C7F` (256 B: this line said `$1BFF` until milestone 9, but `rlayout.py` always gave 2,048 bits); milestone 9 (section 16): the game globals block `$1C80-$1E6E` | tics | yes | A |
+| `$1A80-$1FFF` | 1,408 | Persistent hot game globals (the rest of upstream's near game globals go to RamWorks). Milestone 7 (section 12): `TEXTRANS` `$1A80-$1B7F`, `LNMAP` `$1B80-$1C7F` (256 B: this line said `$1BFF` until milestone 9, but `rlayout.py` always gave 2,048 bits); milestone 9 (section 16): the game globals block `$1C80-$1E6E`; milestone 11 (section 18): `$1F80-$1FFF` the //e key table's Doom keys `PL_KEYTAB` (128 B, written by `pl_keys.s` only) | tics | yes | A |
 
-Tic phases never overlay `$0C00-$1A7F`.
+Tic phases overlay only the rows of `$0C00-$1A7F` that are not persistent
+across frames, as `glayout.py` checks (milestone 10, section 17: the mobj
+cache at `$0C00-$0EFF`, the sector cache at `$1680-$17FF`, the runtime's
+state at `$1980-$1A7F`; this line said "never overlay" until then,
+`docs/GAME.md` 4.1, review 11).
 
 ### 3.4 `$2000-$5FFF`, colormaps, write-expensive, read-only
 
@@ -200,12 +206,17 @@ saved back.
 
 | Phase | Range | Bytes | Content | Loaded |
 | --- | --- | ---: | --- | --- |
-| Tics | `$6000-$BFFF` | 24,576 | Tic code window (hot set 5.5 KB still, 24-27 KB in a fight [A: `NATIVE.md` §4.3]) plus tic scratch: `intercepts` 640 B [M: linkmap], the sound-flood work stack, 1,536 B (milestone 9, `LEVELS.md` 5.5: the bound of every E1 map; the first estimate was about 600 B) | per frame, CPU copy |
+| Tics | `$6000-$BFFF` | 24,576 | (Measured at milestone 10's final integration, section 17: `MATHW`/`AUXW` `$6000-$65FF`, the core 13,295 of 13,312 B, the scratch blocks 1,014 of 1,024, two slots of 2,048 B for 28 groups of 1,085-2,046 B, `GW` 1,368 of 1,536, the walk's planes 3,072; the paging measured 300 group loads a tic in demo3 on `f121`, 89% of the tic: `docs/GAME.md` "Acceptance".) Tic code window (hot set 5.5 KB still, 24-27 KB in a fight [A: `NATIVE.md` §4.3]) plus tic scratch: `intercepts` 640 B [M: linkmap], the sound-flood work stack, 1,024 B (512 entries of 2 bytes, in the flood's code group: milestone 10, `docs/game-parts/pspr.md` R7; milestone 9 sized 1,536 B of 3-byte entries, `LEVELS.md` 5.5: the bound of every E1 map; the first estimate was about 600 B) | per frame, CPU copy |
 | Render | `$6000-$B9FF` | 23,040 | Render code window (hot set 19-26 KB [A: `NATIVE.md` §4.3]; the masked-phase code loads over the BSP code) | per frame, CPU copy |
 | Render | `$BA00-$BFFF` | 1,536 | `YHTAB` 1,026 B, written in the masked phase [M: linkmap `YHTABM`; §A.2]; render scratch | scratch |
 | Replay | `$6000-$7FFF` | 8,192 | Record buffer, one batch (section 8) | bucket pass from aux 0 and the records bank |
 | Replay | `$8000-$BFFF` | 16,384 | Texel stage (section 8) | gather |
 | 2D, menus, automap, intermission, level load | `$6000-$BFFF` | 24,576 | Mode window | when the mode starts |
+| 2D (milestone 11) `P2DW` | `$6600-$82FF` stored; `$8300-$BFFF` its band, marks, nibble slots, fetch buffer, state block | 7,424 room | The status bar, the HUD, the palettes, the input poll, the effect service (section 18) | every level frame, after the replay or `AMAPW` |
+| 2D (milestone 11) `MENUW` | `$6600-$A4FF` stored; `$A500-$BFFF` `PALST`, band, `UI_GRAY`, marks, slot, fetch buffer, state | 16,128 room | The menus, the channel logic | when the menu opens, kept while it is up |
+| 2D (milestone 11) `AMAPW` | `$6600-$8DFF` stored; `$8E00-$BFFF` band, marks, state, the new byte list | 10,240 room | The full automap | each full-map frame, before `P2DW` |
+| 2D (milestone 11) `WIW`, `FINW`, `PALW` | `$6600-$7FFF` stored; `$8000-$BFFF` bands, nibble tables, fetch buffer, state (`PALW`: the build's buffers) | 6,656 room each | The intermission; the finale, pages, signs; the tints and nibble tables | when drawn; `PALW` at a level's first frame and a gamma change |
+| 2D (milestone 11) `OVLW` | `$6800-$9BFF` (`MASKW`'s code room; run time `$9400-$9BFF`) | 13,312 room | The automap overlay's `K_OVL` records | after the masked phase, before the bucket pass |
 
 **Pair:** the replay uses neither the record buffer nor the stage, and the
 tics run from the aux card, so the render window stays resident: code
@@ -302,18 +313,18 @@ runs):
 | --- | ---: | --- | --- |
 | `$E000-$E3FF` | 1,024 | Song ring, page aligned | M: S2 |
 | `$E400-$E402` | 3 | Ring mirror | M: S2 |
-| `$E403-$E412` | 16 | IRQ state: VBL count, tic accumulator, tic counter | A |
+| `$E403-$E412` | 16 | IRQ state (milestone 11, `pl_irq.s`): the fraction a VBL, the fraction, the tic counter, PAL or NTSC, `pl_time`'s fourth byte (10 of 16 B); the VBL count is `vbl_count` in the player's zero page | M: milestone 11 |
 | `$E413-$E442` | 48 | Effect voice state (3 voices) | A |
-| `$E443-$E47F` | 61 | spare | |
+| `$E443-$E47F` | 61 | Milestone 11: the tic-side 2D state (the status bar's 26 B with `ST_READY` and `ST_RUNNING`, the HUD's, the finale's, `S2_MAIL`), `FM`, the listener (61 of 61 B) | M: milestone 11 |
 | `$E480-$E4FF` | 128 | Player write lists (one page, as `player.s` checks) | M: S2 |
 | `$E500-$E736` | 567 | Player state: voices, shadows, song tables | M: S2 |
-| `$E737-$E73F` | 9 | spare | |
+| `$E737-$E73F` | 9 | Milestone 11: `FX_ON`, `FX_HOLD`, `FX_INVAL`, the effects' tempo fraction, `fx_service`'s 4 temporaries (9 B) | M: milestone 11 |
 | `$E740-$E8BF` | 384 | Effect rings, 3 × 128 | A |
-| `$E8C0-$E8FF` | 64 | spare | |
-| `$E900-$F8FF` | 4,096 | Sound code and tables: music, bursts, refill, the IRQ entry `snd_vbl` (2,104 B [M: S2]), periods, bend, levels (973 B [M: S2]), effects player (about 800 B [A]), platform IRQ additions (about 64 B [A]) | 3,941 used, 155 spare |
+| `$E8C0-$E8FF` | 64 | Milestone 11: the channel table (3 × 12 B), the channels' mailboxes (3 × 4 B), `LS_ON` and `SND_SFXVOL` (50 of 64 B) | M: milestone 11 |
+| `$E900-$F8FF` | 4,096 | Sound code and tables: music, bursts, refill, the IRQ entry `snd_vbl` (2,104 B [M: S2]), periods, bend, levels (973 B [M: S2]), effects player (about 800 B [A]), platform IRQ additions (about 64 B [A]). As built (milestone 11, section 18): S2's code and tables to `$F504`, then from `$F505` `fx.s`'s card part (`fx_step`, `fx_burst`, `fx_song`, `fx_init`, `fx_stopall`, `fx_isplaying`, `fx_copy`, `fx_volume`, chip 3's state: 739 B), `pl_vbl`, the clock and `pl_time` (116 B), `pl_clkset` and `pl_detect` (128 B, boot-time) | 4,060 used, 36 spare [M: milestone 11] |
 | `$F900-$FEFF` | 1,536 | Replay, `$E000` part: batches and strips, the F1.2.1 gather (walk, copies) or the pair bounce, the texture cut's `texStart`, the fill chains' set-up, calls to the aux-0 drawers, the covered-range clear | 1,079 B built [M: `make sizes`]; part A assumed about 1,390 B |
-| `$FF00-$FFF9` | 250 | Platform: phase switch (card bank, RAMWRT, `$C073` 0), BRK and crash stub, IRQ bridge landing (pair build) | A |
-| `$FFFA-$FFFF` | 6 | Vectors: NMI, reset (unused: reset selects the ROM), IRQ/BRK → `snd_vbl` | |
+| `$FF00-$FFF9` | 250 | Platform: phase switch (card bank, RAMWRT, `$C073` 0), BRK and crash stub, the aux card's IRQ bridge, the same 30 B in both cards (`pl_bridge.s`; pair build only); the ready loop `pl_ready` at `$FF00` (8 B, milestone 11 part `plboot`) | A |
+| `$FFFA-$FFFF` | 6 | Vectors: NMI, reset (unused: reset selects the ROM), IRQ/BRK → `pl_vbl` (milestone 11: acknowledge, clock, `fx_step`, `snd_tick`, `fx_burst`; `src/native/pl_irq.s`) | |
 
 The S2 player's test map puts its ring, lists and state in bank 2 at
 `$D000` [R `src/sound/sound.cfg`]; in the game they move to `$E000-$E736`
@@ -371,7 +382,7 @@ bank, read through `zp_rd`.
 | Range | Bytes | F1.2.1 | Pair | Loaded | Read-only in the frame |
 | --- | ---: | --- | --- | --- | --- |
 | `$0000-$01FF` | 512 | unused (rule 7) | Tic zero page and stack | | |
-| `$0200-$02BF` | 192 | Screen-reading drawers, as loops: fuzz, automap overlay (113 B built [M]), the status bar's read-mask-or. They run with RAMRD and RAMWRT on, so their code and tables are aux reads. Since the fuzz queue took `$02C0-$03FF`, the status bar's drawer, not yet written, has the 79 B left. If it needs more, the queue shrinks by 4 B a record (`FQMAX`; `layout.py` asserts that `FUZZQ` is `AUXCODE_END` and that the queue ends at `$0400`), or the drawer goes to `$0400-$07FF` once its slot holes are verified | same | boot, PRIVATE | yes |
+| `$0200-$02BF` | 192 | Screen-reading drawers, as loops: fuzz, automap overlay (113 B built [M]). They run with RAMRD and RAMWRT on, so their code and tables are aux reads. The status bar composes in W and never reads the screen (milestone 11, `docs/SCREENS.md` 1.2): the 79 B `$0271-$02BF` stay free | same | boot, PRIVATE | yes |
 | `$02C0-$03FF` | 320 | The replay's fuzz queue: 80 records as four arrays of 80 bytes (column, first row, count, position), written in the draw pass with RAMWRT on, read with RAMRD on (section 8) | same | scratch | no |
 | `$0400-$07FF` | 1,024 | free, write-expensive (read-only data only; aux slot holes unverified) | same | | |
 | `$0800-$08FF` | 256 | `FUZZDARK`: darker colour of each colour | same | per level, PRIVATE (it follows the level palette [R `i_viigs65.s:1014-1017`]) | yes |
@@ -595,7 +606,7 @@ and fails on any breach. Spaces: `main`, `aux0`, `auxN`, `mainlc1`,
 - [ ] Zero page `$D8-$FF`: only IRQ symbols; the IRQ uses nothing else in zero page.
 - [ ] Aux 0 `$9DC8-$9DFF`: always zero.
 - [ ] Aux bank 127 and banks above the machine's count: never named.
-- [ ] Memory API: endpoints in `$0200-$BFFF` only, never the card, zero page, stack or aux 0 `$2000-$9FFF`; PRIVATE on every main or aux-0 destination; at most about 45 KB a request (one VBL period).
+- [ ] Memory API: endpoints in `$0200-$BFFF` only, never the card, zero page or stack; never a **destination** in aux 0 `$2000-$9FFF` (a source there is allowed: the memory API copies the CPU's memory, `README_MEMORY_API.md` sections 3-4; milestone 11's menu saves the screen that way); PRIVATE on every main or aux-0 destination; at most about 45 KB a request (one VBL period).
 
 **Write-expensive pages**
 
@@ -811,6 +822,84 @@ is unchanged (the far layer ends at `$DE8E`).
 | RamWorks | 72, 73, 74 | Spare again (the design's `MOBJ3-5`: three groups of 24 B hold a mobj's game part) |
 | RamWorks | 4, 5 | Test data only (spare banks): `CRCLIST.1` (bank 4, the disk's CRC ranges and expected values), the pre-states (bank 5, 1,040 B each: the globals block and the two random indexes) |
 | card `$E000` part | `$E000-$EDFF` | Test builds: `ldriver.s` (`$E000-$E0E0`) gains each map's pre-state and `nl_setup`; `LEVELS.SYSTEM`'s runner (`lboot.s`, `$E000-$E6AF`, its variables page-aligned at `$E700-$EDFF`) gains the setups and their CRCs |
+
+## 17. Milestone 10: the tic phase (the skeleton, built on a2vm)
+
+`docs/GAME.md` 1.10 and 4.1 placed the game logic; the skeleton builds
+the places (`tools/native/glayout.py` holds every one and checks the
+overlaps, including that each tic-phase range of main memory is in a row
+of section 3 whose "persistent across frames" is "no"; `gen/ggame.inc`
+carries them; "Skeleton as built" in `docs/GAME.md`). The language cards
+are unchanged: no tic code goes into them (the test driver `gdriver.s`
+takes the card's `$E000` part in test builds, as `ldriver.s` does).
+
+| Space | Range | Content |
+| --- | --- | --- |
+| zero page | `$38-$3F` | `GC_MP`, `GC_SP`, `GC_LP`, `GC_XP`: the object API's line pointers (in the load image `LZP1`'s; saved on the stack around a game step) |
+| zero page | `$40-$41` | `FC_GRP`, `FC_SLOT`: `gcall.s`'s call |
+| zero page | `$48-$5B` | `GA_0`-`GA_19`: a call's arguments (`GA_X` +0, `GA_Y` +4, `GA_Z` +8, `GA_TYPE` +12) |
+| zero page | `$5C-$74` | `GT_0`-`GT_24`: temporaries; the API's own at `$63-$74` (`PL_N`, `PL_K`, `PL_T`, `FC_P`, `FC_A`, `FC_X`, `FC_Y`, `FC_T`, `FC_PS`, `GO_P`, `GO_I`, `GO_J`, `GO_T`) |
+| main | `$0200-$02FF` | `BL_BUF`: `bl_get`'s block list (the bounce buffer and `BKFAR2`, dead after the replay) |
+| main | `$0332-$0333` | `validcount` joined: the frame block's `VALIDCOUNT` is the game's `G_VALID` (`gvalid.s` linked into the render images; `rframe.s` raises it through `gv_inc`) |
+| main | `$03B0-$03B1` | `GS_STATUS`, `GS_ARG`: the tic phase's stop code and its argument |
+| main | `$0C00-$0EFF` | `MOC`: the mobj cache, 8 lines of 96 (the clip arrays' and the bucket pass's place, dead after the replay) |
+| main | `$1680-$17FF` | `SCC`: the sector cache, 8 lines of 48 (`COLLO`, `COLHI`, `UPOFS`, `FRORD`: dead after the replay) |
+| main | `$1980-$1A7F` | The runtime's state (128 of 256 B used): the caches' tags, dirty bits and recency orders, the slots' groups, the walk's thinker and its next, `MP_MODE`, the API's and the paging's counters (`DSX1`, `DSX2`: dead after the replay) |
+| main | `$1C80-$1EF8` | The game globals block grown by `GAME.md` 1.5 (633 B): the specials' and the zone's free lists, `G_MOHWM`, `CS_PREV1`, `CS_PREV2`, `CS_PREVR`, the line record (`G_LROK`, `G_LRUSE`, `G_LRN`, `G_LRLINES`), `G_LOADACT`, `G_SHOWMSG`, `G_MSGKEEP`, the level tables' places (`G_LTABAT` .. `G_REJECTAT`), the intermission's counters (`WI_*`), the test globals (`GT_*`); `validcount` left it for `$0332` |
+| main | `$1EF9` | `G_WSET` (wave 1 as integrated, `glayout.TIC_MAIN_FIELDS`): the map the level window holds (upstream's `W_SET`), which `g_resume` reads for the textures a load made; after the globals block, so milestone 9's pre-state records keep their size |
+| main | `$1EFA` | `G_FPSSHOW` (wave 2 as integrated): idrate's frame rate flag (upstream's `_g_fps_show`, no canonical state), persistent across tics and loads |
+| main | `$1EFB` | `G_ONGROUND` (wave 5 as integrated, `player.md` R1): the player's onground (upstream's `PU_ONGROUND`, no canonical state), persistent across tics: `calcHeight` reads the last tic's while the reaction time counts |
+| W | `$6000-$65FF` | `MATHW`, `AUXW`: the render images' bytes |
+| W | `$6600-$99FF` | The core image (13,312 B since wave 2's integration, 12,800 before): the runtime, milestone 9's game core in play, the game's math (`math-g.o`: `R_PointToAngle3`, the sines, 672 B), part `damage`'s `weaponinfo`, the routines the placement puts there (the skeleton's own: 8,311 B with no part) |
+| W | `$9A00-$9DFF` | The parts' scratch blocks (`SB_<PART>`, 32 B each by default, `sight` 106 since wave 1's integration, `path` 44 since wave 4's: 1,014 of 1,024 B, `$9A00-$9DF5`) |
+| W | `$9E00-$A5FF` | Slot 1: one paged group (2,048 B since wave 2's integration, which gave the core 512 B of it: the placement cuts every group at slot 2's 2,048 B) |
+| W | `$A600-$ADFF` | Slot 2: one paged group (2,048 B) |
+| W | `$AE00-$B3FF` | `GW`: the line cache (8 x 34), the special cache (5 x 32), the intercepts (64 x 6) and their chain (65), the core's buffers (`LW_MOB` 99, `LW_MINFO`, `LW_STATE`, `LW_NODEB`, `SG_BUF`, `SS_BUF`, `LW_MT`, `LW_SREC`, `LW_SPEC`, `LW_SN`, `LW_LINEB`): 1,222 of 1,536 B; then the tic phase's own (wave 1 as integrated, `glayout.TIC_GW_FIELDS`, `$B2C6-$B301`): `p_map65.s`'s shared near scratch `GM_*` (34 B), the object API's side buffer `SD_BUF`/`SD_AT` (10), sector node buffer `SN_BUF` (16) and word `API_W` (2): 1,282 of 1,536 B; since wave 2's integration the trace's state `GM_TRACE` .. `GM_INVB` (29 B, `$B302-$B31E`) and `GM_ATRANGE` (4, `$B31F`): 1,315 of 1,536 B; since wave 3's checkpos's and tracet's `GM_RR` .. `GM_MPTRY` (51 B, `$B323-$B355`) and since wave 5's `GM_LINETARGET` (2, `$B356`: `_g_linetarget`, part `attack`'s): 1,368 of 1,536 B |
+| W | `$B400-$BFFF` | The thinker walk's planes, 768 slots: `TNL`, `TNH` (the next thinker), `KIND` (the function, bit 7 the walk's clean flag), `TICS` |
+| RamWorks | 72, 73 | `GCODE0`, `GCODE1`: the tic images (W's `$6000-$99FF` image in `GCODE0` at its W address, the groups packed from `$0200`) |
+| RamWorks | 74 | `MOBJP`: the planes out of W (`TNL` `$B400`, `TNH` `$B700`, `KIND` `$BA00`, `TICS` `$BD00`: W's addresses) and the sight hint by pool slot (`HINTL` `$0200`, `HINTH` `$0A00`) |
+| RamWorks | 111 | `LVS`: `LNSECF` `$0200`, `LNSECB` `$0800` (a byte a line: its front and back sector, the front twice for a one-sided line), `RJROW` `$0E00` (sector x numsectors, 2 B a sector): the load's `GTABS` step |
+| RamWorks | 91 | `DEMOB`: the demo lump that plays (test builds: the harness's) |
+| RamWorks | 92 | `GTEST` (test builds only): `GT_ARGS` `$0200`, the schedule `$0300`, the stream `$1300`, the I_GetTime values `$6B00`, the re-key records `$7300` (10 setups), the sound event log `$9F00`, the same-pair hit log `$AB00`, the routine harness's record `$AF00`, each map's frame block level fields `GT_LEVELS` `$B700` (the final integration: the schedule `$2000` to `$1000` B, 1,365 frames, DEMO1's 1,257 the most; the re-key records `$1800` to `$2C00` B, which held 5 setups and the tour has 9; this row said the schedule `$0300` .. the record `$AB00` until then) |
+| card `$E000` part | `$E000-$EB72` (the lockstep build `game`) | Test builds: `gdriver.s`, the tic phase's driver (the modes, the load protocol, the frame schedule) and its descriptor; since wave 1's integration the parts' test-only code after it (segment `DRIVER`), so the core holds only game code. Measured at the final integration: 2,931 of 3,584 B in `game` (`gdriver.s` 1,710 B and its descriptor 100 B with its `TICLEVEL` part, the tic-level runs' stream, frames and display bookkeeping, which only the lockstep builds `game` and `gprof` assemble); a part's own image with its test code at most `$EC77` (`tracel`, whose `tracelt.s` is linked in its own image only since then) |
+
+RamWorks: 114 of 126 banks used in test builds (`llayout.bank_map`; spare
+1-5, 93-97, 125, 126, banks 4 and 5 holding milestone 9's test data
+only, as before).
+
+## 18. Milestone 11, first half: the 2D screens, the platform, the effects (built on a2vm)
+
+`docs/SCREENS.md` section 4 placed this half; `tools/native/s2layout.py`
+holds every place and checks it against `rlayout.py`, `llayout.py` and
+`glayout.py` (`python3 tools/native/s2layout.py --check`, `--report`; the
+generated `s2.inc`). The tables as built are SCREENS.md 4.1-4.5; in short:
+
+| Space | Range | Content |
+| --- | --- | --- |
+| zero page | `$48-$7F` | 2D images: the drawers' `S2_*` (`$48-$77`), `s2_pal`'s and `s2_nib`'s `S2P_*` (`$78-$7F`), `pl_poll`'s `PLZ` over `S2_W`..`S2_O` (`$5A-$69`) |
+| zero page | `$80-$AF` | 2D images: each mode image's own (menu, automap, intermission, finale; `OVLW`'s `s2_amline`) |
+| zero page | `$F7-$FC` | IRQ: the effect player (`FXZ_*`) |
+| main | page 1 `$0100-$017F` | 2D phases: `newColors`' bounce (section 2) |
+| main | `$03AE` | `PL_STATUS`, the boot's and the 2D stops' code (shared with `LV_STATUS`'s byte) |
+| main | `$03B3-$03ED` | The input block (section 3.1) |
+| main | `$1F80-$1FFF` | `PL_KEYTAB` (section 3.3) |
+| W | `$6600-$BFFF` | The 2D images `P2DW`, `MENUW`, `AMAPW`, `WIW`, `FINW`, `PALW` (section 3.5; one at a time, each with `MATHW` and `AUXW` at `$6000-$6592`) |
+| W | `$6800-$9BFF` | `OVLW`, the automap overlay's image, in `MASKW`'s code room between the masked phase and the bucket pass |
+| card | `$E403-$E412`, `$E443-$E47F`, `$E737-$E8FF`, `$F505-$F8FF`, `$FF00-$FF07`, `$FFFE` | The clock, the tic-side 2D state, the effects' state, rings, channel table and mailboxes, the IRQ and effect code, `pl_ready`, the IRQ vector (section 4.2) |
+| aux 0 | `$0271-$02BF` | stays free (section 5) |
+| RamWorks | 93 | `OVLW` |
+| RamWorks | 94-97, 107, 108 | `S2CODE2`-`S2CODE5`, `S2CODE0`, `S2CODE1`: the 2D images' page runs, one image a bank (107 `P2DW`, 108 `MENUW`, 94 `AMAPW`, 95 `WIW`, 96 `FINW`, 97 `PALW`); the 2D store at 107 and 108 `$0200-$5FFF` and 107 `$8300-$BFFF` |
+| RamWorks | 100-102 | `SONGS`: the songs' directory at 100 `$0200`, the 13 songs |
+| RamWorks | 103 | `SFX`: `SFX.1` (`$0200-$3FFF`), the 2D store `$4000-$BFFF` |
+| RamWorks | 104 | `S2STATE` `$0200-$B11F`: the 2D state blocks, `STCACHE`, the HUD's records and texts (`SS_HUDMSG`), the automap's old list and its lines (`SS_AMSEG`), the sign's rows, `STBUF`; `$B200-$BFFF` free |
+| RamWorks | 105 | `S2VIEW`: the menu's saved screen `$2000-$9FFF`; the 2D store `$0200-$1FFF`, `$A000-$BFFF` |
+| RamWorks | 106 | `S2PAL`: `TINTPAL` `$0200`, the 16 nibble tables `S2NIB` `$1800`, `GSSTAT` `$5800`, `GSOVL` `$6E20`, `GRAYMAP` `$7700` |
+| RamWorks | 109, 110, 114, 115 | `GFX0`-`GFX3`: the 2D store (`GFX.1`; the handles table at 109 `$0200`) |
+
+The 2D store is 296,665 B; the spare banks after milestones 9-11 are 1-3
+(4 and 5 hold milestone 9's test data), 125 and 126. Rule 2's IRQ
+contract is unchanged: `pl_vbl` touches only the card, zero page
+`$D8-$FF`, the stack and the mouse card's and the Phasor's I/O.
 
 ## Appendix: the measurements made for this map
 

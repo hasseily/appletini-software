@@ -8,6 +8,11 @@
 #   gen/lgame.inc                from tools/native/llayout.py --game
 #                                (stage C: the game state's layout and the
 #                                facts of upstream the game core takes)
+#   gen/ggame.inc                from tools/native/glayout.py --ggame
+#                                (milestone 10: the object API's places,
+#                                which the game core uses here as in the
+#                                tic images; the game core and gobj.s are
+#                                assembled with -D LOADIMG: the planes far)
 #   ltest.w, .lw, .lc1, .far, .lce
 #                                the test build: the load program's
 #                                runner and transport (lload.s), the
@@ -54,9 +59,14 @@ CA65 = ca65
 LD65 = ld65
 PYTHON = python3
 ASFLAGS = --cpu 65C02 -g -I $(HERE) -I $(GEN) --bin-include-dir $(TABLES) \
-          --bin-include-dir $(TABLES)/math
+          --bin-include-dir $(TABLES)/math -D LOADIMG
 
-LOAD := lload lgeom lsetup gthink gpos gspawn gweap gspec
+# a copy of some of these sources (the tests' planted bugs) takes the
+# others from the tree
+vpath %.s $(HERE) $(ROOT)/src/native
+vpath %.inc $(HERE) $(ROOT)/src/native
+
+LOAD := lload lgeom lsetup gthink gpos gspawn gweap gspec gobj
 COMMON := $(OUT)/far.o $(OUT)/math-r.o $(OUT)/auxlc.o
 TEST_OBJS := $(LOAD:%=$(OUT)/%.o) $(OUT)/gvalid-u.o $(COMMON) \
              $(OUT)/ldriver.o
@@ -65,7 +75,7 @@ PROF_OBJS := $(LOAD:%=$(OUT)/%-p.o) $(OUT)/gvalid-u.o $(COMMON) \
 FIX_OBJS := $(LOAD:%=$(OUT)/%.o) $(OUT)/gvalid.o $(COMMON) $(OUT)/ldriver.o
 CARD_OBJS := $(LOAD:%=$(OUT)/%.o) $(OUT)/gvalid.o $(COMMON) $(OUT)/lboot.o
 INCS := $(GEN)/rlayout.inc $(GEN)/llayout.inc $(GEN)/lgame.inc \
-        $(HERE)math.inc
+        $(GEN)/ggame.inc $(HERE)math.inc
 
 .PHONY: all sizes clean
 
@@ -87,16 +97,21 @@ $(GEN)/lgame.inc: $(ROOT)/tools/native/llayout.py $(ROOT)/tools/native/rlayout.p
 	@mkdir -p $(GEN)
 	$(PYTHON) $(ROOT)/tools/native/llayout.py --game $@
 
-$(OUT)/%.o: $(HERE)%.s $(INCS) $(TABLES)/math/squares.bin
+$(GEN)/ggame.inc: $(ROOT)/tools/native/glayout.py \
+                  $(ROOT)/tools/native/llayout.py $(ROOT)/tools/native/rlayout.py
+	@mkdir -p $(GEN)
+	$(PYTHON) $(ROOT)/tools/native/glayout.py --ggame $@
+
+$(OUT)/%.o: %.s $(INCS) $(TABLES)/math/squares.bin
 	$(CA65) $(ASFLAGS) -o $@ -l $(OUT)/$*.lst $<
 
-$(OUT)/%-p.o: $(HERE)%.s $(INCS)
+$(OUT)/%-p.o: %.s $(INCS)
 	$(CA65) $(ASFLAGS) -D LPROF -o $@ -l $(OUT)/$*-p.lst $<
 
-$(OUT)/gvalid-u.o: $(HERE)gvalid.s $(INCS)
+$(OUT)/gvalid-u.o: gvalid.s $(INCS)
 	$(CA65) $(ASFLAGS) -D VCWRAP_UPSTREAM -o $@ -l $(OUT)/gvalid-u.lst $<
 
-$(OUT)/math-r.o: $(HERE)math.s $(HERE)math.inc $(TABLES)/math/squares.bin
+$(OUT)/math-r.o: math.s $(HERE)math.inc $(TABLES)/math/squares.bin
 	@mkdir -p $(OUT)
 	$(CA65) $(ASFLAGS) -D RENDER -o $@ -l $(OUT)/math-r.lst $<
 

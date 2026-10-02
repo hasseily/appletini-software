@@ -445,6 +445,34 @@ EXTERNAL_GLOBALS = {
     'm_menu65.s': {'_g_menuactive': 'u16'},
 }
 
+# Milestone 10 (docs/GAME.md 1.11): the external globals of the tic
+# comparison, decoded only by a reader in tic mode (upstream.Reader(...,
+# tic=True)), so that every existing manifest and state stays as it was:
+# wi_stuff65.s's game-side counters (they decide the tic of the next
+# load, wi_stuff65.s:71-83), nukage (P_UpdateAnimatedFlat writes it,
+# r_data65.s:681-688; the renderer draws it), whether HU_Ticker clears
+# player.message (hu_stuff65.s:249-251: showMessages, the menu's, and
+# _g_message_dontfuckwithme). texturetranslation is TIC_TEXTURES: its
+# entries through the pointer, one a texture (P_UpdateSpecials writes
+# them, p_spec65.s:328-336).
+TIC_GLOBALS = {
+    'wi_stuff65.s': {'_g_acceleratestage': 'i16', 'state': 'i16',
+                     'cnt': 'i16', 'bcnt': 'i16', 'cnt_time': 'i32',
+                     'cnt_total_time': 'i32', 'cnt_par': 'i16',
+                     'cnt_pause': 'i16', 'sp_state': 'i16',
+                     'cnt_kills': 'i16', 'cnt_items': 'i16',
+                     'cnt_secret': 'i16', 'snl_pointeron': 'i16'},
+    'r_data65.s': {'nukage': 'u16'},
+    'hu_stuff65.s': {'_g_message_dontfuckwithme': 'u16'},
+    'm_menu65.s': {'showMessages': 'u16'},
+}
+TIC_TEXTURES = 'r_data65.s:texturetranslation'
+# P_CheckSight's last pair: a pointer that names no object (upstream's
+# pool moved at a load, or a zone mobj freed) is the canonical "stale"
+# (docs/GAME.md 1.8), never a raw pointer
+STALE_GLOBALS = ('p_sight65.s:CS_PREV1', 'p_sight65.s:CS_PREV2')
+STALE = 'stale'
+
 # The rest of each game unit's data: working variables. Each call of the
 # unit's routines writes them before it reads them, so no value lives
 # from one tic to the next; the bridge checks this on every dump with a
@@ -704,14 +732,33 @@ EXTRA_CACHES = ['line.gstamp']
 RENDER_FIELDS = ['line.r_validcount', 'line.r_flags']
 
 
+# Milestone 10 (docs/GAME.md 3.5, 3.6): what the routine and tic modes
+# leave out of the canonical state. P_CheckSight's pair (CS_PREV*),
+# mobj.sightline and the line record of lineBlocks (LR_*) are compared:
+# upstream's shortcuts make them state (GAME.md 0.3 facts 2-4). Out: the
+# dead guard's state (R4: line.gstamp, GW_TAG, G_ID: written only by the
+# guard, which the release never calls) and poolTake's scan start (R5:
+# TP_HW, a cache that changes no result); in tic mode also the renderer's
+# line.r_validcount (T1; and line.r_flags in a FRONT run, gcanon.py) and
+# the tic command ring (T4: the entry G_Ticker reads is compared as
+# player.cmd after the tic).
+ROUTINE_SKIPS = ['line.gstamp', 'p_path65.s:GW_TAG', 'p_path65.s:G_ID',
+                 'p_spawn65.s:TP_HW']
+TIC_SKIPS = ROUTINE_SKIPS + ['line.r_validcount', 'g_game65.s:cmds']
+
+
 def compare_skips(structs, mode: str) -> List[str]:
     """The fields a tic comparison skips: "exact" none, "lockstep" the
     caches, "free" (free-running mode) also the stamps and the render
-    fields."""
+    fields; milestone 10's "routine" and "tic" (above)."""
     if mode == 'exact':
         return []
     if mode == 'lockstep':
         return cache_fields(structs)
     if mode == 'free':
         return cache_fields(structs) + STAMPS + RENDER_FIELDS
+    if mode == 'routine':
+        return list(ROUTINE_SKIPS)
+    if mode == 'tic':
+        return list(TIC_SKIPS)
     raise ValueError(mode)

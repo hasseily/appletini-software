@@ -43,7 +43,8 @@ tables:
 	nice -n 10 $(PYTHON) $(ROOT)/tools/native/mathcap.py newgame
 	$(PYTHON) $(ROOT)/tools/native/mathtables.py
 
-$(OUT)/math.o: $(HERE)math.s $(HERE)math.inc $(TABLES)/rndtable.bin \
+$(OUT)/math.o: $(HERE)math.s $(HERE)mathgame.inc $(HERE)math.inc \
+               $(TABLES)/rndtable.bin \
                $(TABLES)/cosexc.bin
 	@mkdir -p $(OUT)
 	$(CA65) $(ASFLAGS) -o $@ -l $(OUT)/math.lst $<

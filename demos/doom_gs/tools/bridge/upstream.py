@@ -36,6 +36,9 @@ from bridge.fields import Array, Field, Fn, Int, R, Raw, Ref, Struct, Sub
 FORMAT = 'bridge-canonical 1'
 REMOVE_THING = 'p_think65.s:P_RemoveThingDelayed'
 POISON = 0xa5
+# "stale" written back: a pointer into the direct page's bank that names
+# no object (docs/GAME.md 1.8: upstream's own stale value is not kept)
+STALE_POINTER = 0x000001
 
 
 class Problem(Exception):
@@ -233,7 +236,12 @@ def mobj_like(kind: str) -> bool:
 
 
 class Reader:
-    def __init__(self, memory: Memory, sch: Optional[Schema] = None):
+    def __init__(self, memory: Memory, sch: Optional[Schema] = None,
+                 tic: bool = False):
+        """tic: also the globals of the tic comparison (schema.TIC_GLOBALS,
+        TIC_TEXTURES) and the derived kind "sighthint" (milestone 10,
+        docs/GAME.md 1.11)."""
+        self.tic = tic
         self.m = memory
         self.s = sch or Schema()
         self.sym = self.s.symbols
@@ -276,6 +284,8 @@ class Reader:
         self.derived_tables()
         self.region_exclusions()
         self.check_coverage()
+        if self.tic:
+            self.objects['sighthint'] = self.sighthints()
         return {'format': FORMAT, 'globals': self.globals,
                 'objects': self.objects}
 
@@ -986,6 +996,35 @@ class Reader:
             for name, text in labels.items():
                 self.decode_global(self.sym.label('%s:%s' % (unit, name)),
                                    text)
+        if not self.tic:
+            return
+        for unit, labels in schema.TIC_GLOBALS.items():
+            for name, text in labels.items():
+                label = self.sym.label('%s:%s' % (unit, name))
+                t = schema.field_type(text, self.structs)
+                self.check_size(label, t.length)
+                self.globals[label.ref] = self.decode_value(
+                    t, label.address, label.ref)
+        # texturetranslation: its numtextures + 1 entries, through the
+        # pointer (r_data65.s initTextures)
+        n = self.m.u16(self.g('r_data65.s:numtextures'))
+        at = self.ptr(self.g(schema.TIC_TEXTURES))
+        self.globals[schema.TIC_TEXTURES] = [self.m.u16(at + 2 * t)
+                                             for t in range(n + 1)]
+
+    def sighthints(self) -> Dict[int, Dict[str, int]]:
+        """The derived kind "sighthint" (tic mode): upstream's SIGHTHINT
+        entry of each pool slot, the word at (address >> 2) & $7FFE of the
+        slot's mobj (p_sight65.s:88-94): a line + 1, 0 none."""
+        p = self.placement
+        base = self.ptr(self.g('p_setup65.s:_g_thingPool'))
+        n = self.m.u16(self.g('p_setup65.s:_g_thingPoolSize'))
+        size = self.structs['MO'].size
+        table = self.c.memmap['MM_SIGHTHINT']
+        del p
+        return {i: {'line': self.m.u16(table + (((base + size * i) >> 2)
+                                                 & 0x7ffe))}
+                for i in range(n)}
 
     def decode_global(self, label, text: str) -> None:
         name = label.ref
@@ -1010,6 +1049,22 @@ class Reader:
         else:
             t = schema.field_type(text, self.structs)
         self.check_size(label, t.length)
+        if name in schema.STALE_GLOBALS and isinstance(t, Ref):
+            # a pointer that names no object is "stale" (docs/GAME.md 1.8)
+            self.coverage.claim(label.address, t.length, 'field:global',
+                                name)
+            value = self.m.u32(label.address)
+            if value >> 24:
+                self.problem('%s: pad byte $%02X' % (name, value >> 24))
+            ref, why = self.classify(value & 0xffffff, t.targets)
+            if why == 'names no object':
+                ref = schema.STALE
+            elif why:
+                self.raw_pointers.append('%s = $%06X: %s' % (
+                    name, value & 0xffffff, why))
+            self.globals[name] = ref
+            self.cache_globals.add(name)
+            return
         if isinstance(t, Sub):
             self.globals[name] = self.decode_struct(
                 t.struct, label.address, name, 'field:global')
@@ -1510,6 +1565,8 @@ class Writer:
                 bad.append('%s: %r is not an %s%d' % (
                     where, value, 'i' if t.signed else 'u', 8 * t.size))
         elif isinstance(t, Ref):
+            if value == schema.STALE and where in schema.STALE_GLOBALS:
+                return
             if value is not None:
                 if not isinstance(value, R):
                     bad.append('%s: %r is not a reference' % (where, value))
@@ -1561,7 +1618,8 @@ class Writer:
         if isinstance(t, Int):
             m.put(address, value, t.size)
         elif isinstance(t, Ref):
-            m.put(address, self.ref_value(value), 4)
+            m.put(address, STALE_POINTER if value == schema.STALE else
+                  self.ref_value(value), 4)
         elif isinstance(t, Fn):
             m.put(address, self.s.function_address[value] if value else 0, 3)
         elif isinstance(t, Raw):

@@ -70,9 +70,15 @@ def order(state: Dict[str, Any]) -> Dict[str, List[Any]]:
                 got.add(r.id)
                 reached.append(r.id)
 
-    for kind in ('mobj', 'zmobj'):
-        for i in sorted(objects.get(kind, {})):
-            walk(objects[kind][i].get('touching_sectorlist'))
+    # (the zone mobjs in their identity's order, out['zmobj'], not their
+    # present identities': the port reader's are its slots, whose order
+    # can differ from the thinker list's; upstream.Reader's are the ranks
+    # already, so its order is the same: the final integration of
+    # milestone 10, generated stream G1)
+    for i in sorted(objects.get('mobj', {})):
+        walk(objects['mobj'][i].get('touching_sectorlist'))
+    for i in out['zmobj']:
+        walk(zm[i].get('touching_sectorlist'))
     for s in sorted(objects.get('sector', {})):
         walk(objects['sector'][s].get('touching_thinglist'))
     walk(gl.get('p_map65.s:_s_sector_list'))

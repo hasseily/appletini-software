@@ -37,7 +37,8 @@
 ;               the player; LT_BASE = extralight + gamma + 16; LT_FIXED =
 ;               the fixed colormap's offset (n * 256) or $FFFF;
 ;               VIEWSIN, VIEWCOS = finesineapprox and finecosineapprox of
-;               viewangle >> 19; VALIDCOUNT + 1
+;               viewangle >> 19; VALIDCOUNT + 1 (gv_inc: gvalid.s, the
+;               game's one count, milestone 10)
 ;   nr_clear    SOLIDCOL all 0 (R_ClearClipSegs); CEILCLIP = viewtop + 1,
 ;               FLOORCLIP = viewbottom + 1 (the clip arrays hold the clips
 ;               + 1, as upstream's segvar.inc); no drawseg (R_ClearDrawSegs),
@@ -48,7 +49,7 @@
         .include "rlayout.inc"
         .include "math.inc"
 
-        .import nr_bsp, sineapprox, cosineapprox, nw_clip
+        .import nr_bsp, sineapprox, cosineapprox, nw_clip, gv_inc
         .import rec_start, rec_flush
         .export nr_frame, nr_setup, nr_clear, nr_fillstamps, nr_wskip
 
@@ -234,10 +235,8 @@ nr_setup:
         sta VIEWCOS,x
         dex
         bpl :-
-        inc VALIDCOUNT          ; a new validcount
-        bne :+
-        inc VALIDCOUNT+1
-:       rts
+        jmp gv_inc              ; a new validcount (milestone 10: one
+                                ;   count, the game's gvalid.s)
 @angle: lda VIEWA16+1           ; M_A = viewangle16 >> 3
         lsr a
         sta M_A+1

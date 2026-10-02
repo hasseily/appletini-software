@@ -368,10 +368,13 @@ class Layout(unittest.TestCase):
         LL.check()
         uses = dict(LL.bank_map())
         # 112 at stage A; stage C's mobj game part takes 3 banks, not 6
-        # (docs/LEVELS.md "Stage C as built")
-        self.assertEqual(len(uses), 109)
+        # (docs/LEVELS.md "Stage C as built"); milestone 10's skeleton
+        # takes 72-74 (the code groups, the planes) and 91, 92 (DEMOB,
+        # GTEST) (docs/GAME.md "Skeleton as built")
+        self.assertEqual(len(uses), 114)
         self.assertEqual(LL.MOBJ, (69, 70, 71))
-        self.assertTrue({72, 73, 74} <= set(LL.SPARE))
+        self.assertEqual((LL.GCODE0, LL.GCODE1, LL.MOBJP), (72, 73, 74))
+        self.assertTrue({93, 94, 95, 96, 97} <= set(LL.SPARE))
         self.assertEqual(len(uses) + len(LL.SPARE), LL.BANKS_TOTAL)
         self.assertEqual(len(LL.TEX_BANKS), 31)
         for b in (R.LVSEG, R.LVMAP, R.RENDB, R.SPRT, R.WPRO, R.RTH):

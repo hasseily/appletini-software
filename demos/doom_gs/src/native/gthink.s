@@ -1,41 +1,60 @@
 ; gthink.s: the game core's thinker list, its pools and P_Random
-; (milestone 9, stage C; docs/LEVELS.md 2.4, 3.1, 3.2). A GPL-2 derivative
-; of upstream's p_think65.s (P_InitThinkers, P_AddThinker), p_spawn65.s
-; (poolInit, poolTake), p_map65.s (newSecnode's pool) and m_random65.s.
+; (milestone 9, stage C; docs/LEVELS.md 2.4, 3.1, 3.2; milestone 10's
+; skeleton: the final layouts, docs/GAME.md 1.3, 1.4, 3.1). A GPL-2
+; derivative of upstream's p_think65.s (P_InitThinkers, P_AddThinker),
+; p_spawn65.s (poolInit, poolTake), p_map65.s (newSecnode's pool) and
+; m_random65.s.
 ;
 ;   gt_init      the thinker list empty, the sector nodes' pools freed
-;                (Z_FreeTags, P_SetSecnodeFirstpoolToNull), no specials,
-;                no zone mobjs
+;                (Z_FreeTags, P_SetSecnodeFirstpoolToNull), no specials
+;                (each kind's free list empty), no zone mobjs (their free
+;                list empty), the planes' high-water 0
 ;   gt_add       P_AddThinker: the thinker GC_H at the list's end; GC_PREV
-;                = its previous one (the caller writes the new record's
+;                = its previous one (the caller writes the new thinker's
 ;                links: prev GC_PREV, next none); the old last one's next
-;                written in its record
+;                written: a mobj's in the planes, a special's in its record
+;                (through the object API)
 ;   gt_poolinit  poolInit: the pool's G_POOLN slots free (the bitmap
 ;                G_TPBITS: bit i & 7 of byte i >> 3, 1 free) and each
 ;                slot's records a free mobj: type MT_NOTHING, the rest 0
 ;                or none (Z_CallocLevel's zeros: the native nulls are
-;                $FFFF handles)
+;                $FFFF handles), its planes none
 ;   gt_pooltake  newMobj's slot: the pool's free slot with the highest
-;                index (poolTake), else the next zone slot (Z_MallocLevel:
-;                docs/LEVELS.md 3.1); GC_MO the slot, GC_K 1 when pooled
-;   gt_spectake  a special of kind X (llayout.SPEC_KINDS' order): the next
-;                slot of its range; GC_H its handle, GC_P its record's
-;                address in ZONE0
+;                index (poolTake), else a zone slot (Z_MallocLevel): the
+;                first of the zone's free list (G_ZMFREE, through the TNL
+;                and TNH planes), else the next one after the pool's and
+;                the zone's used ones (docs/LEVELS.md 3.1); GC_MO the slot,
+;                GC_K 1 when pooled; G_MOHWM the highest slot + 1
+;   gt_zfree     a zone mobj's slot GC_MO onto the zone's free list (its
+;                kind FN_FREE: no object for the bridge); a slot that
+;                CS_PREV1 or CS_PREV2 names becomes "stale" ($FFFE) and
+;                GT_ZPREV is raised (docs/GAME.md 1.8)
+;   gt_spectake  a special of kind X (llayout.SPEC_KINDS' order): the
+;                first of its free list (G_SPFREE), else the next slot of
+;                its range; GC_H its handle
+;   gt_spfree    special GC_H onto its kind's free list (its function
+;                none: no object for the bridge)
 ;   gt_nodetake  newSecnode's node: the first of the free list, a new pool
 ;                of SN_POOL linked nodes when the list is empty (so the free
 ;                list's length is upstream's); GC_N the node
 ;   gt_moaddr    GC_P = the records' address of the mobj slot A:X (RTHING
 ;                and the three game parts: RTHBASE + 24 slot)
-;   gt_mosave    the mobj LW_MOB (its RTHING and game parts A, B, C) into
-;                slot GC_MO
-;   g_random     A = P_Random(): rndtable[++index] (main $03EE)
+;   gt_mosave    the mobj at LW_MOB (its RTHING and game parts A, B, C)
+;                into slot GC_MO through the object API (mo_store), and its
+;                planes: next none, kind LW_MOB + MO_XFUNC, tics the low
+;                byte of LW_MOB + MO_XTICS
+;   g_random     A = P_Random(): rndtable[++index] (main $03EE);
+;                g_mrandom, g_mclearrandom (tic images): M_Random (main
+;                $03EF), M_ClearRandom
 ;   g_get, g_put Y bytes (0: 256) of FA_BANK:FA_SRC into main A:X, of
-;                main A:X to FA_BANK:FA_DST (far_get, far_put)
+;                main A:X to FA_BANK:FA_DST (far_get, far_put): the API's
+;                lower layer, and the level's tables no cache holds (the
+;                sector nodes, the block lists, the line tables, GTAB)
 ;
 ; A thinker handle is a mobj's slot (0-2,025) or SPEC_HANDLE + a special's
 ; slot; $FFFF is none (its high byte $FF names nothing else). The thinker
-; links are at the same offsets in a mobj's game part A and in a special's
-; record (MA_THPREV = SP_THPREV, MA_THNEXT = SP_THNEXT).
+; links: a mobj's prev in group A, its next in the planes; a special's
+; both in its record (SP_THPREV, SP_THNEXT).
 
         .setcpu "65C02"
         .macpack longbranch
@@ -45,12 +64,17 @@
         .include "lgame.inc"
 
         .export gt_init, gt_add, gt_poolinit, gt_pooltake, gt_spectake
-        .export gt_nodetake, gt_moaddr, gt_mosave, gt_threc, g_random
-        .export g_get, g_put, g_put2, g_zero, rndtable
-        .import far_get, far_put, ld_stop
+        .export gt_nodetake, gt_moaddr, gt_mosave, g_random, gt_zfree
+        .export gt_spfree, g_get, g_put, g_put2, g_zero, rndtable
+.ifndef LOADIMG
+        .export g_mrandom, g_mclearrandom
+.endif
+        .import far_get, far_put, ld_stop, mo_store, pl_get, pl_put
+        .import pl_setn, sp_get, sp_dirty
+        .include "ggame.inc"
 
-        .assert MA_THPREV = SP_THPREV && MA_THNEXT = SP_THNEXT, error,  "the thinker links' offsets"
         .assert >SPEC_HANDLE > >(MOBJ_CAP - 1), error, "thinker handles"
+        .assert >SPEC_HANDLE >= >PLANE_SLOTS, error, "thinker handles"
 
         .segment "LOADW"
 
@@ -84,6 +108,21 @@ g_random:
         ldx PRND
         lda rndtable,x
         rts
+.ifndef LOADIMG
+; g_mrandom: A = M_Random(): rndtable[++rndindex], its own index (main
+; $03EF, m_random65.s); g_mclearrandom: M_ClearRandom, both indexes 0
+; (wave 1 as integrated: the tic images' math is the render build's, which
+; has neither; docs/game-parts/flow.md request 4). Change X.
+g_mrandom:
+        inc MT_MRND
+        ldx MT_MRND
+        lda rndtable,x
+        rts
+g_mclearrandom:
+        stz MT_PRND
+        stz MT_MRND
+        rts
+.endif
 
 ; ---------------------------------------------------------------------------
 ; gt_init: an empty thinker list, no sector nodes, specials or zone mobjs
@@ -102,46 +141,22 @@ gt_init:
 :       stz G_SNHWM,x
         dex
         bpl :-
+        ldx #G_MOHWM + 2 - G_SPFREE - 1 ; the free lists none, the planes'
+:       lda #$FF                        ;   high-water 0
+        sta G_SPFREE,x
+        dex
+        bpl :-
+        stz G_MOHWM
+        stz G_MOHWM+1
         rts
         .assert G_SPN = G_SNHWM + 2 && G_ZMN = G_SPN + 14, error,  "the counts' order"
-
-; ---------------------------------------------------------------------------
-; gt_threc: FA_BANK and GC_P = the record of thinker A:X (a mobj's game
-; part A, a special's record). Changes A, X.
-; ---------------------------------------------------------------------------
-gt_threc:
-        cpx #>SPEC_HANDLE
-        bcs @spec
-        jsr gt_moaddr
-        lda #MOBJA
-        sta FA_BANK
-        rts
-@spec:  sec                     ; GC_P = SPEC_BASE + 32 (h - SPEC_HANDLE)
-        sbc #<SPEC_HANDLE
-        sta GC_P
-        txa
-        sbc #>SPEC_HANDLE
-        ldx #5
-:       asl GC_P
-        rol a
-        dex
-        bne :-
-        sta GC_P+1
-        clc
-        lda GC_P
-        adc #<SPEC_BASE
-        sta GC_P
-        lda GC_P+1
-        adc #>SPEC_BASE
-        sta GC_P+1
-        lda #ZONE0
-        sta FA_BANK
-        rts
+        .assert G_ZMFREE = G_SPFREE + 14 && G_MOHWM = G_ZMFREE + 2, error,  "the free lists' order"
 
 ; ---------------------------------------------------------------------------
 ; gt_add: P_AddThinker(GC_H): GC_PREV = the list's last thinker; its next
-; = GC_H (in its record), or the list's first when it was empty; the last
-; = GC_H. Changes A, X, Y, GC_P, FA_*.
+; = GC_H (a mobj's in the planes, a special's in its record), or the
+; list's first when it was empty; the last = GC_H. Changes A, X, Y, the
+; API's temporaries, FA_*.
 ; ---------------------------------------------------------------------------
 gt_add:
         lda G_THLAST
@@ -155,17 +170,24 @@ gt_add:
         lda GC_H+1
         sta G_THFIRST+1
         bra @last
-@link:  jsr gt_threc                ; the old last's next = GC_H
-        clc
-        lda GC_P
-        adc #MA_THNEXT
-        sta FA_DST
-        lda GC_P+1
-        adc #0
-        sta FA_DST+1
-        lda #<GC_H
-        ldx #>GC_H
-        jsr g_put2
+@link:  cpx #>SPEC_HANDLE
+        bcs @spec
+        lda GC_H                ; a mobj: its next plane
+        sta PL_N
+        lda GC_H+1
+        sta PL_N+1
+        lda GC_PREV
+        jsr pl_setn
+        bra @last
+@spec:  lda GC_PREV             ; a special: its record's next
+        jsr sp_get
+        ldy #SP_THNEXT
+        lda GC_H
+        sta (GC_XP),y
+        iny
+        lda GC_H+1
+        sta (GC_XP),y
+        jsr sp_dirty
 @last:  lda GC_H
         sta G_THLAST
         lda GC_H+1
@@ -203,34 +225,22 @@ gt_moaddr:
 
 ; ---------------------------------------------------------------------------
 ; gt_mosave: the mobj at LW_MOB (RTHING, game parts A, B, C, 24 bytes
-; each) into its slot GC_MO. Changes A, X, Y, GC_P, FA_*.
+; each: a mobj cache line's form) into its slot GC_MO through the object
+; API, and its planes: next none, kind MO_XFUNC, tics MO_XTICS's low byte
+; (-1: $FF). Changes A, X, Y, the API's temporaries, FA_*.
 ; ---------------------------------------------------------------------------
 gt_mosave:
+        jsr mo_store
+        lda #$FF
+        sta PL_N
+        sta PL_N+1
+        lda LW_MOB + MO_XFUNC
+        sta PL_K
+        lda LW_MOB + MO_XTICS
+        sta PL_T
         lda GC_MO
         ldx GC_MO+1
-        jsr gt_moaddr
-        ldx #3
-@part:  lda mo_banks,x
-        sta FA_BANK
-        lda GC_P
-        sta FA_DST
-        lda GC_P+1
-        sta FA_DST+1
-        phx
-        lda mo_parts,x
-        ldx #>LW_MOB
-        ldy #MO_SIZE
-        jsr g_put
-        plx
-        dex
-        bpl @part
-        rts
-mo_banks:
-        .byte RTH, MOBJA, MOBJB, MOBJC
-mo_parts:
-        .byte <LW_MOB, <(LW_MOB + MO_SIZE), <(LW_MOB + 2 * MO_SIZE)
-        .byte <(LW_MOB + 3 * MO_SIZE)
-        .assert >LW_MOB = >(LW_MOB + 4 * MO_SIZE - 1), error,  "LW_MOB in one page"
+        jmp pl_put
 
 ; ---------------------------------------------------------------------------
 ; gt_poolinit: poolInit for G_POOLN mobjs (at most POOL_MAX: LS_THINGS
@@ -279,7 +289,11 @@ gt_poolinit:
 :       cpx #POOL_MAX / 8
         bcs @tmpl
         sta G_TPBITS,x
-@tmpl:  jsr mo_free             ; the template
+@tmpl:  lda G_POOLN              ; the planes' high-water: the pool
+        sta G_MOHWM
+        lda G_POOLN+1
+        sta G_MOHWM+1
+        jsr mo_free             ; the template
         stz GC_MO
         stz GC_MO+1
 @slot:  lda GC_MO
@@ -297,10 +311,11 @@ gt_poolinit:
 ; mo_free: LW_MOB = a free mobj: every byte 0 but the handles (none) and
 ; the type (MT_NOTHING)
 mo_free:
-        ldx #4 * MO_SIZE - 1
+        ldx #4 * MO_SIZE + 3 - 1        ; (the spawn's MO_XTICS, MO_XFUNC: 0)
 :       stz LW_MOB,x
         dex
         bpl :-
+        .assert MO_XTICS = 4 * MO_SIZE && MO_XFUNC = MO_XTICS + 2, error,  "the spawn's working fields"
         ldx #mo_none_end - mo_none - 1
 :       ldy mo_none,x
         lda #$FF
@@ -314,7 +329,7 @@ mo_free:
 ; the handles of a mobj's records (their offsets in LW_MOB)
 mo_none:
         .byte TH_SNEXT
-        .byte MO_SIZE + MA_THPREV, MO_SIZE + MA_THNEXT, MO_SIZE + MA_SPREV
+        .byte MO_SIZE + MA_THPREV, MO_SIZE + MA_SPREV
         .byte MO_SIZE + MA_BNEXT, MO_SIZE + MA_BPREV, MO_SIZE + MA_SUBSEC
         .byte MO_SIZE + MA_TOUCH, MO_SIZE + MA_STATE, MO_SIZE + MA_TARGET
         .byte 3 * MO_SIZE + MC_LASTEN
@@ -332,7 +347,21 @@ gt_pooltake:
         bne @found
         dex
         bpl @byte
-        clc                     ; the zone: G_POOLN + G_ZMN
+        lda G_ZMFREE+1          ; the zone: its free list's first
+        cmp #$FF
+        beq @new
+        lda G_ZMFREE
+        sta GC_MO
+        ldx G_ZMFREE+1
+        stx GC_MO+1
+        jsr pl_get              ; the list: its next
+        lda PL_N
+        sta G_ZMFREE
+        lda PL_N+1
+        sta G_ZMFREE+1
+        stz GC_K
+        rts
+@new:   clc                     ; else the one after: G_POOLN + G_ZMN
         lda G_POOLN
         adc G_ZMN
         sta GC_MO
@@ -344,12 +373,20 @@ gt_pooltake:
         lda GC_MO+1
         sbc #>MOBJ_CAP
         bcs @full
+        lda GC_MO               ; the planes hold it (a stop past them)
+        cmp #<PLANE_SLOTS
+        lda GC_MO+1
+        sbc #>PLANE_SLOTS
+        bcs @planes
         inc G_ZMN
         bne :+
         inc G_ZMN+1
 :       stz GC_K
-        rts
+        jmp hwm
 @full:  lda #LS_ZONE
+        jmp ld_stop
+@planes:
+        lda #LS_PLANES
         jmp ld_stop
 @found: ldy #7                  ; its highest bit
 :       asl a
@@ -374,20 +411,98 @@ gt_pooltake:
         sta GC_MO
         lda #1
         sta GC_K
-        rts
+        ; (on into hwm)
+; hwm: G_MOHWM = GC_MO + 1 when that is more
+hwm:    clc
+        lda GC_MO
+        adc #1
+        sta GO_T
+        lda GC_MO+1
+        adc #0
+        sta GO_T+1
+        lda G_MOHWM
+        cmp GO_T
+        lda G_MOHWM+1
+        sbc GO_T+1
+        bcs :+
+        lda GO_T
+        sta G_MOHWM
+        lda GO_T+1
+        sta G_MOHWM+1
+:       rts
 bitmask:
         .byte $01, $02, $04, $08, $10, $20, $40, $80
 
 ; ---------------------------------------------------------------------------
-; gt_spectake: a special of kind X: the next slot of its range (LS_SPECIALS
-; when the range is full): GC_H = SPEC_HANDLE + the slot, GC_P = its
-; record's address, FA_BANK = ZONE0. Changes A, X, Y.
+; gt_zfree: zone slot GC_MO onto the zone's free list: its kind FN_FREE, its
+; next the old first; CS_PREV1, CS_PREV2 naming it become STALE and raise
+; GT_ZPREV (docs/GAME.md 1.8). Changes A, X, Y, the API's temporaries.
+; ---------------------------------------------------------------------------
+gt_zfree:
+        ldx #2                  ; CS_PREV2, then CS_PREV1
+@prev:  lda CS_PREV1,x
+        cmp GC_MO
+        bne :+
+        lda CS_PREV1+1,x
+        cmp GC_MO+1
+        bne :+
+        lda #<STALE
+        sta CS_PREV1,x
+        lda #>STALE
+        sta CS_PREV1+1,x
+        lda #1
+        sta GT_ZPREV
+:       dex
+        dex
+        bpl @prev
+        .assert CS_PREV2 = CS_PREV1 + 2, error, "CS_PREV1, CS_PREV2"
+        lda G_ZMFREE
+        sta PL_N
+        lda G_ZMFREE+1
+        sta PL_N+1
+        lda #FN_FREE
+        sta PL_K
+        stz PL_T
+        lda GC_MO
+        sta G_ZMFREE
+        ldx GC_MO+1
+        stx G_ZMFREE+1
+        jmp pl_put
+
+; ---------------------------------------------------------------------------
+; gt_spectake: a special of kind X: the first of its free list (G_SPFREE,
+; through its record's next), else the next slot of its range (LS_SPECIALS
+; when the range is full): GC_H = SPEC_HANDLE + the slot. Its record is the
+; caller's to write (sp_store). Changes A, X, Y, the API's temporaries.
 ; ---------------------------------------------------------------------------
 gt_spectake:
         txa
         asl a
-        tay                     ; Y = 2 kind: its count in G_SPN
-        lda G_SPN,y
+        tay                     ; Y = 2 kind
+        lda G_SPFREE+1,y
+        cmp #$FF
+        beq @new
+        lda G_SPFREE,y          ; the free list's first; the list its next
+        sta GC_H
+        ldx G_SPFREE+1,y
+        stx GC_H+1
+        phy
+        jsr sp_get
+        ply
+        lda #SP_THNEXT
+        sta GO_I
+        phy
+        ldy GO_I
+        lda (GC_XP),y
+        tax
+        iny
+        lda (GC_XP),y
+        ply
+        sta G_SPFREE+1,y
+        txa
+        sta G_SPFREE,y
+        rts
+@new:   lda G_SPN,y             ; (X: the kind)
         cmp spec_n,x
         lda G_SPN+1,y
         sbc spec_nh,x
@@ -411,13 +526,10 @@ gt_spectake:
         lda GC_H
         adc #<SPEC_HANDLE
         sta GC_H
-        tay
         lda GC_H+1
         adc #>SPEC_HANDLE
         sta GC_H+1
-        tax
-        tya
-        jmp gt_threc
+        rts
 @full:  lda #LS_SPECIALS
         jmp ld_stop
 spec_lo:
@@ -437,6 +549,55 @@ spec_nh:
         .byte >SPK_LIGHTFLASH_N, >SPK_STROBE_N, >SPK_GLOW_N
         .byte >SPK_SCROLL_N
         .assert SPK_PLAT = 0 && SPK_DOOR = 1 && SPK_FLOOR = 2 &&  SPK_LIGHTFLASH = 3 && SPK_STROBE = 4 && SPK_GLOW = 5 &&  SPK_SCROLL = 6, error, "the specials' kinds"
+
+; ---------------------------------------------------------------------------
+; gt_spfree: special GC_H onto its kind's free list (the kind from its
+; slot's range): its function none, its next the old first. Changes A, X,
+; Y, the API's temporaries.
+; ---------------------------------------------------------------------------
+gt_spfree:
+        sec                     ; the slot: GC_H - SPEC_HANDLE
+        lda GC_H
+        sbc #<SPEC_HANDLE
+        sta GO_T
+        lda GC_H+1
+        sbc #>SPEC_HANDLE
+        sta GO_T+1
+        ldx #SPK_SCROLL         ; the kind: the last range that starts at
+@kind:  lda GO_T                ;   or before it
+        cmp spec_lo,x
+        lda GO_T+1
+        sbc spec_loh,x
+        bcs :+
+        dex
+        bpl @kind
+:       txa
+        asl a
+        pha
+        lda GC_H
+        ldx GC_H+1
+        jsr sp_get
+        ply
+        lda #FN_NONE            ; no function
+        phy
+        ldy #SP_FUNC
+        sta (GC_XP),y
+        ply
+        lda G_SPFREE,y          ; its next: the list's first
+        phy
+        ldy #SP_THNEXT
+        sta (GC_XP),y
+        ply
+        lda G_SPFREE+1,y
+        phy
+        ldy #SP_THNEXT + 1
+        sta (GC_XP),y
+        ply
+        lda GC_H
+        sta G_SPFREE,y
+        lda GC_H+1
+        sta G_SPFREE+1,y
+        jmp sp_dirty
 
 ; ---------------------------------------------------------------------------
 ; gt_nodetake: GC_N = a free sector node, taken off the free list (a new

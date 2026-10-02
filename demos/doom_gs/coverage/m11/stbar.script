@@ -1,0 +1,135 @@
+# The status bar's value classes (docs/SCREENS.md 1.5.1, 6.1, part
+# s2cap): in E1M1, pokes of the player's fields at named tics, one value
+# class a few tics apart (injected state with a reason: demo3, newgame and
+# the tour may never show them): each of the 3 keys (NUMCARDS 3), each arm
+# owned, the ready weapon's ammo and every ammo and maxammo at 0, 9, 10,
+# 99, 100, 200, 400, health 0 (the dead face), 100, 200, armour 0 and 200,
+# the god mode's face (cheats CF_GODMODE 2), the backpack, the pain face
+# (damagecount), the evil grin (a new weapon with bonuscount), the fist
+# (LARGEAMMO: no ammo shown).
+#
+# The player (offsets.inc OFS_PL_*): health 35, armorpoints 37, cards 53
+# (3 words), backpack 59, readyweapon 61, weaponowned 65 (9 words), ammo
+# 83 (4 words), maxammo 91 (4 words), cheats 103, damagecount 117,
+# bonuscount 119.
+
+wait d_main65.s:pagedrawn == 1 within 90s   # the title page is up
+at +1s press escape                     # a new game at the default skill
+wait m_menu65.s:currentMenu == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+at +10f press return
+wait m_menu65.s:currentMenu == 2 within 10s
+wait m_menu65.s:itemOn == 2 within 1
+at +10f press return
+wait _g_usergame == 1 within 10s
+wait _g_gamestate == 0 within 10s
+wait long _g_gametic grows 1 within 60s # E1M1 is loaded
+at +2s note level
+at +6t poke _g_player+53 1   # key 0
+at +6t poke _g_player+55 1   # key 1
+at +6t poke _g_player+57 1   # key 2
+at +6t poke _g_player+53 0
+at +6t poke _g_player+55 0
+at +6t poke _g_player+57 0
+at +6t poke _g_player+65 1   # arm 0 owned
+at +6t poke _g_player+67 1   # arm 1 owned
+at +6t poke _g_player+69 1   # arm 2 owned
+at +6t poke _g_player+71 1   # arm 3 owned
+at +6t poke _g_player+73 1   # arm 4 owned
+at +6t poke _g_player+75 1   # arm 5 owned
+at +6t poke _g_player+77 1   # arm 6 owned
+at +6t poke _g_player+79 1   # arm 7 owned
+at +6t poke _g_player+81 1   # arm 8 owned
+at +6t poke _g_player+81 0
+at +6t poke _g_player+79 0
+at +6t poke _g_player+77 0
+at +6t poke _g_player+75 0
+at +6t poke _g_player+73 0
+at +6t poke _g_player+71 0
+at +6t poke _g_player+69 0
+at +6t poke _g_player+61 2   # ready weapon 2
+at +6t poke _g_player+61 3   # ready weapon 3
+at +6t poke _g_player+61 4   # ready weapon 4
+at +6t poke _g_player+61 5   # ready weapon 5
+at +6t poke _g_player+61 1   # ready weapon 1
+at +6t poke _g_player+83 0   # ammo 0 = 0
+at +6t poke _g_player+85 0
+at +6t poke _g_player+87 0
+at +6t poke _g_player+89 0
+at +6t poke _g_player+91 0   # maxammo = 0
+at +6t poke _g_player+93 0
+at +6t poke _g_player+95 0
+at +6t poke _g_player+97 0
+at +6t poke _g_player+83 9   # ammo 0 = 9
+at +6t poke _g_player+85 9
+at +6t poke _g_player+87 9
+at +6t poke _g_player+89 9
+at +6t poke _g_player+91 9   # maxammo = 9
+at +6t poke _g_player+93 9
+at +6t poke _g_player+95 9
+at +6t poke _g_player+97 9
+at +6t poke _g_player+83 10   # ammo 0 = 10
+at +6t poke _g_player+85 10
+at +6t poke _g_player+87 10
+at +6t poke _g_player+89 10
+at +6t poke _g_player+91 10   # maxammo = 10
+at +6t poke _g_player+93 10
+at +6t poke _g_player+95 10
+at +6t poke _g_player+97 10
+at +6t poke _g_player+83 99   # ammo 0 = 99
+at +6t poke _g_player+85 99
+at +6t poke _g_player+87 99
+at +6t poke _g_player+89 99
+at +6t poke _g_player+91 99   # maxammo = 99
+at +6t poke _g_player+93 99
+at +6t poke _g_player+95 99
+at +6t poke _g_player+97 99
+at +6t poke _g_player+83 100   # ammo 0 = 100
+at +6t poke _g_player+85 100
+at +6t poke _g_player+87 100
+at +6t poke _g_player+89 100
+at +6t poke _g_player+91 100   # maxammo = 100
+at +6t poke _g_player+93 100
+at +6t poke _g_player+95 100
+at +6t poke _g_player+97 100
+at +6t poke _g_player+83 200   # ammo 0 = 200
+at +6t poke _g_player+85 200
+at +6t poke _g_player+87 200
+at +6t poke _g_player+89 200
+at +6t poke _g_player+91 200   # maxammo = 200
+at +6t poke _g_player+93 200
+at +6t poke _g_player+95 200
+at +6t poke _g_player+97 200
+at +6t poke _g_player+83 400   # ammo 0 = 400
+at +6t poke _g_player+85 400
+at +6t poke _g_player+87 400
+at +6t poke _g_player+89 400
+at +6t poke _g_player+91 400   # maxammo = 400
+at +6t poke _g_player+93 400
+at +6t poke _g_player+95 400
+at +6t poke _g_player+97 400
+at +6t poke _g_player+83 50
+at +6t poke _g_player+91 200
+at +6t poke _g_player+85 50
+at +6t poke _g_player+93 200
+at +6t poke _g_player+87 50
+at +6t poke _g_player+95 200
+at +6t poke _g_player+89 50
+at +6t poke _g_player+97 200
+at +6t poke _g_player+61 0   # the fist: LARGEAMMO
+at +6t poke _g_player+61 1
+at +6t poke _g_player+35 0   # health 0
+at +6t poke _g_player+35 100   # health 100
+at +6t poke _g_player+35 200   # health 200
+at +6t poke _g_player+35 100   # health 100
+at +6t poke _g_player+37 0   # armour 0
+at +6t poke _g_player+37 200   # armour 200
+at +6t poke _g_player+37 0   # armour 0
+at +6t poke _g_player+103 2   # god mode
+at +20t poke _g_player+103 0
+at +6t poke _g_player+59 1   # the backpack
+at +6t poke _g_player+117 30   # the pain face
+at +30t poke _g_player+69 1          # a new weapon (the shotgun): the evil grin
+at +6t poke _g_player+119 6
+at +40t note end
+stop

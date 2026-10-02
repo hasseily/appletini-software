@@ -32,6 +32,12 @@
 ;               zero
 ;   lg_cmaps    CMAPS: colormaps A and B in LVC, A[i] = GSVIEW_A[COLORMAP
 ;               [i]] (i_viigs65.s:1063-1077), the same with B
+;   lg_gtabs    GTABS (milestone 10, docs/GAME.md 1.6; a game step: only in
+;               nl_setup): LVS's tables: each line's front and back sector
+;               (LNSECF, LNSECB: lg_prep's, the front twice for a one-sided
+;               line: upstream's LNSEC) and each sector's REJECT row
+;               (RJROW: sector x numsectors, the low 16 bits, 2 bytes a
+;               sector: upstream's SS_ROW by sector, p_sight65.s:1557-1605)
 ;
 ; Every store and window access goes through far_get and far_put (the
 ; card). W holds the scratch (llayout.py: each line's front and back
@@ -51,8 +57,9 @@
         .include "math.inc"
         .include "llayout.inc"
 
-        .export lg_lines, lg_group, lg_flood, lg_cmaps, lg_prep
+        .export lg_lines, lg_group, lg_flood, lg_cmaps, lg_prep, lg_gtabs
         .import far_get, far_put, ld_stop, ld_block
+        .include "lgame.inc"
 
         .assert SEC_CAP = 255, error, "a sector count is a byte"
         .assert <LVC_CMAPA = 0 && <LVC_CMAPB = 0, error, "colormap pages"
@@ -64,6 +71,70 @@ BOX_HI_Y   = 4
 BOX_LO_Y   = 6
 
         .segment "LOADW"
+
+; ===========================================================================
+; GTABS (milestone 10)
+; ===========================================================================
+lg_gtabs:
+        lda GS_GAME
+        bne :+
+        rts
+:       jsr lg_prep             ; LW_LFRONT, LW_LBACK; LG_NS the sectors
+        lda #>LW_LFRONT         ; the front sectors, then the back ones:
+        ldy #>LVS_LNSECF        ;   LINE_ROOM bytes each
+        jsr @pages
+        lda #>LW_LBACK
+        ldy #>LVS_LNSECB
+        jsr @pages
+        stz LG_C                ; RJROW: s * numsectors, from 0 in steps of
+        stz LG_C+1              ;   numsectors, into LW_CNTLO (2 bytes a
+        lda #<LW_CNTLO          ;   sector: 512 bytes)
+        sta LG_PF
+        lda #>LW_CNTLO
+        sta LG_PF+1
+        ldx #0
+@row:   cpx LG_NS
+        beq @put
+        lda LG_C
+        jsr @byte
+        lda LG_C+1
+        jsr @byte
+        clc
+        lda LG_C
+        adc LG_NS
+        sta LG_C
+        bcc :+
+        inc LG_C+1
+:       inx
+        bra @row
+@byte:  sta (LG_PF)
+        inc LG_PF
+        bne :+
+        inc LG_PF+1
+:       rts
+@put:   lda #>LW_CNTLO
+        ldy #>LVS_RJROW
+        ldx #2
+        bra @run
+; @pages: LINE_ROOM bytes of W page A to LVS page Y
+@pages: ldx #>LINE_ROOM
+@run:   sta FA_SRC+1
+        sty FA_DST+1
+        stx LG_K
+        stz FA_SRC
+        stz FA_DST
+        stz FA_N                ; (256)
+        lda #LVS
+        sta FA_BANK
+:       jsr far_put
+        inc FA_SRC+1
+        inc FA_DST+1
+        dec LG_K
+        bne :-
+        rts
+        .assert <LVS_LNSECF = 0 && <LVS_LNSECB = 0 && <LVS_RJROW = 0,  error, "LVS's tables on pages"
+        .assert LW_CNTHI = LW_CNTLO + $100, error, "RJROW's room"
+        .assert <LINE_ROOM = 0, error, "LINE_ROOM in pages"
 
 ; ===========================================================================
 ; LINES

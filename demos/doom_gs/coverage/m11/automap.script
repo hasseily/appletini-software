@@ -1,0 +1,53 @@
+# The automap (docs/SCREENS.md 6.1, part s2cap): in E1M1 the map key once
+# (the full map), zoom out and in (the minus and equals keys), follow off
+# (F: its message), a pan with the arrows, follow on again, the computer
+# map (idbehold a: upstream's map of every line, since it has no iddt;
+# SCREENS.md 6.1 names iddt), the map key
+# again (the overlay: rotate and follow, automapmode 15), a walk and a
+# turn with the overlay on, the map key (off).
+#
+# automapmode (am_map65.s): AM_ACTIVE 1, AM_OVERLAY 2, AM_ROTATE 4,
+# AM_FOLLOW 8; the map key goes full, overlay, off [R am_map65.s:323-333].
+
+wait d_main65.s:pagedrawn == 1 within 90s   # the title page is up
+at +1s press escape                     # a new game at the default skill
+wait m_menu65.s:currentMenu == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+at +10f press return
+wait m_menu65.s:currentMenu == 2 within 10s
+wait m_menu65.s:itemOn == 2 within 1
+at +10f press return
+wait _g_usergame == 1 within 10s
+wait _g_gamestate == 0 within 10s
+wait long _g_gametic grows 1 within 60s # E1M1 is loaded
+at +2s note level
+
+press tab                               # the full map
+wait am_map65.s:automapmode != 0 within 10s
+at +20t key down minus                  # zoom out
+at +20t key up minus
+at +10t key down equals                 # zoom in
+at +30t key up equals
+at +10t press f                         # follow off (a message)
+at +10t key down left                   # pan
+at +15t key up left
+key down up
+at +15t key up up
+at +10t key down right
+at +10t key up right
+at +10t press f                         # follow on (a message)
+at +20t type idbeholda                  # the computer map: every line
+                                        #   (upstream has no iddt: its
+                                        #   map of all lines is the
+                                        #   power pw_allmap [R
+                                        #   am_map65.s:1720, m_cheat65.s:241])
+at +30t press tab                       # the overlay
+wait am_map65.s:automapmode == 15 within 10s
+at +10t key down up                     # walk with it
+at +30t key up up
+key down right                          # and turn (it rotates)
+at +20t key up right
+at +20t press tab                       # off
+wait am_map65.s:automapmode == 0 within 10s
+at +20t note end
+stop

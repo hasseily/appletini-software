@@ -1,0 +1,44 @@
+{
+ "format": "game-args 1",
+ "note": "Part evfloor's entries (docs/GAME.md 2.4, 3.5 step 4; docs/game-parts/evfloor.md 1.2), in secfind's forms (\"as\" a line, a sector or a special kind). newFloor is a helper entry of upstream's (jsr from the three EV_ routines): it takes the type in C and the sector from p_floor65.s's near scratch FL_SEC, and leaves the floor in FL_FLOOR. The LSTAB entries lnFloor, lnStairs, lnDonut are reached through P_UseSpecialLine and P_CrossSpecialLine (part lines) in the synthetic cases, which use part lines' declarations (src/native/game/lines/args.json).",
+ "entries": {
+  "p_floor65.s:EV_DoFloor": {
+   "native": "EV_DoFloor",
+   "in": [
+    {"from": "dp:_Dp:4", "to": "ax", "as": "line"},
+    {"from": "a", "to": "y", "bytes": 1}
+   ],
+   "out": [
+    {"native": "a", "upstream": "a", "bytes": 1}
+   ]
+  },
+  "p_floor65.s:EV_BuildStairs": {
+   "native": "EV_BuildStairs",
+   "in": [
+    {"from": "dp:_Dp:4", "to": "ax", "as": "line"}
+   ],
+   "out": [
+    {"native": "a", "upstream": "a", "bytes": 1}
+   ]
+  },
+  "p_floor65.s:EV_DoDonut": {
+   "native": "EV_DoDonut",
+   "in": [
+    {"from": "dp:_Dp:4", "to": "ax", "as": "line"}
+   ],
+   "out": [
+    {"native": "a", "upstream": "a", "bytes": 1}
+   ]
+  },
+  "p_floor65.s:newFloor": {
+   "native": "newFloor",
+   "in": [
+    {"from": "abs:p_floor65.s:FL_SEC:4", "to": "a", "as": "sector"},
+    {"from": "a", "to": "y", "bytes": 1}
+   ],
+   "out": [
+    {"native": "ax", "upstream": "abs:p_floor65.s:FL_FLOOR:4", "as": "floor"}
+   ]
+  }
+ }
+}

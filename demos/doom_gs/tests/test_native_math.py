@@ -235,7 +235,7 @@ BUGS = (
     ('a division by zero giving 0', 'math.s',
      '        bne ud16go\n        lda #$FF\n',
      '        bne ud16go\n        lda #$00\n', 'udiv16'),
-    ('the cosine without its exceptions', 'math.s',
+    ('the cosine without its exceptions', 'mathgame.inc',
      'finecosine:\n        ldx cosexc',
      'finecosine:\n        bra @none\n        ldx cosexc', 'finecosine'),
     ('a remainder without the dividend\'s sign', 'math.s',
@@ -263,7 +263,8 @@ class PlantedBugs(unittest.TestCase):
         _, name, old, new, _ = bug
         src = tmp / 'src'
         src.mkdir()
-        for f in ('math.s', 'math.inc', 'mathdrv.s', 'math.cfg', 'math.mk'):
+        for f in ('math.s', 'mathgame.inc', 'math.inc', 'mathdrv.s', 'math.cfg',
+                  'math.mk'):
             shutil.copy(str(SRC / f), str(src / f))
         text = (src / name).read_text()
         self.assertEqual(text.count(old), 1, 'the bug no longer applies')

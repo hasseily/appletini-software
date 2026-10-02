@@ -9,15 +9,19 @@
 ;                   WP_NOCHANGE
 ;   gw_setpsprite   P_SetPsprite(psprite GS_PSP, state GS_ST): the state,
 ;                   its tics, its action, then the next state while the
-;                   tics are 0. The actions an up state reaches are known
-;                   (A_Raise); any other is a stop (LS_ACTION): milestone
-;                   10 completes the table
+;                   tics are 0. In the tic image the action goes through
+;                   ACTTAB (DCALL: milestone 10's skeleton, docs/GAME.md
+;                   2.2; a weapon action takes its psprite in GS_PSP); in
+;                   the load image the actions an up state reaches are
+;                   known (A_Raise) and any other is a stop (LS_ACTION)
 ;   A_Raise         sy -= RAISESPEED; at WEAPONTOP or above the weapon is
 ;                   ready (its ready state)
 ;
-; The chainsaw's raising sound (S_StartSound) is the sound's: milestone S4
-; and 11 (no sound here). A state's action is upstream's address in the
-; states table (GTAB holds upstream's records): A_Raise's is U_A_RAISE.
+; The chainsaw's raising sound (S_StartSound, sfx_sawup) goes to the sound
+; event log in the tic image's test builds (ghook.s); the load image has no
+; sound. A state's action is upstream's address in the states table (GTAB
+; holds upstream's records): A_Raise's is U_A_RAISE; act_num gives its
+; ACTTAB number in the tic image.
 
         .setcpu "65C02"
         .macpack longbranch
@@ -26,8 +30,13 @@
         .include "llayout.inc"
         .include "lgame.inc"
 
-        .export gw_setup, gw_setpsprite
+        .export gw_setup, gw_setpsprite, A_Raise, bringUpWeapon
         .import state_at, ld_stop
+        .include "ggame.inc"
+.ifndef LOADIMG
+        .include "gplace.inc"
+        .import act_num, dc_call, S_StartSound, ACTTAB
+.endif
 
 PLR     = G_PLAYER
 PSP_SIZE = PL_PSPRITES_1_STATE - PL_PSPRITES_0_STATE
@@ -51,7 +60,9 @@ gw_setup:
         sta PLR + PL_PENDINGWEAPON
         lda PLR + PL_READYWEAPON + 1
         sta PLR + PL_PENDINGWEAPON + 1
-        ; bringUpWeapon
+        ; bringUpWeapon (an entry of its own: part pspr's A_Lower calls
+        ; it, docs/game-parts/pspr.md R2)
+bringUpWeapon:
         lda PLR + PL_PENDINGWEAPON       ; WP_NOCHANGE: the ready one
         cmp #U_WP_NOCHANGE
         bne :+
@@ -70,6 +81,19 @@ gw_setup:
         sta GS_ST
         lda wi_up_hi,x
         sta GS_ST+1
+.ifndef LOADIMG
+        cpx #U_WP_CHAINSAW      ; the chainsaw: its raising sound
+        bne :+
+        lda PLR + PL_MO
+        ldx PLR + PL_MO + 1
+        phx
+        tax
+        ply
+        lda #UC_SFX_SAWUP
+        jsr S_StartSound
+        ldx PLR + PL_PENDINGWEAPON
+:
+.endif
         lda #U_WP_NOCHANGE      ; pending = WP_NOCHANGE
         sta PLR + PL_PENDINGWEAPON
         stz PLR + PL_PENDINGWEAPON + 1
@@ -114,6 +138,7 @@ gw_setpsprite:
         ora LW_STATE + U_ST_ACTION + 2
         ora LW_STATE + U_ST_ACTION + 3
         beq @next
+.ifdef LOADIMG
         lda LW_STATE + U_ST_ACTION
         cmp #<U_A_RAISE
         bne bad
@@ -128,6 +153,12 @@ gw_setpsprite:
         lda GS_PSP              ; A_Raise(the player, the psprite)
         pha
         jsr a_raise
+.else
+        lda GS_PSP              ; the action (ACTTAB), the psprite in GS_PSP
+        pha
+        jsr act_num
+        DCALL ACTTAB
+.endif
         pla
         sta GS_PSP
         tax
@@ -161,6 +192,7 @@ bad:    lda #LS_ACTION
 ; above WEAPONTOP: sy = WEAPONTOP and the ready state of the ready weapon
 ; on the weapon's psprite
 a_raise:
+A_Raise:
         ldx GS_PSP
         lda psp_off,x
         tax

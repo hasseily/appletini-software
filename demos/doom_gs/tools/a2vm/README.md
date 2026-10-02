@@ -511,6 +511,22 @@ the final one) `NAME.json` and `NAME.img` in place of `NAME.ram`:
 record for each range and bank, so `--image` loads it back. A full
 snapshot is 8.4 MB; a tic's game state is a few hundred KB.
 
+### The snapshot stream
+
+`--snapshot-stream FILE` (milestone 10's tic-level harness,
+`docs/GAME.md` 3.6) writes every snapshot of `--snapshot-ranges` (which
+it needs) into one stream instead of files, so a reader can digest each
+as it comes (a named pipe) and nothing is stored whole; `-` is the
+standard output (with `--state FILE`). The stream is a JSON line
+`{"format": "a2vm-snapshot-stream 1", "ranges": "..."}`; for each
+snapshot a JSON line `{"snapshot": N, "name", "cycles", "pc", "bytes":
+L}` followed by its L bytes, the `A2VMIMG1` image `NAME.img` would hold;
+and a last line `{"end": REASON, "snapshots": N}` (the run's end
+reason). `--snapshot-limit BYTES` (default 1 GiB) bounds it: a snapshot
+that would take the stream past the limit is not written, the stream
+ends with `{"end": "snapshot-limit", ...}` and the run with exit status
+2. `tests/test_a2vm_harness.py` checks both.
+
 ### The zero-page bank pair
 
 The firmware design's pair (`docs/firmware/zpbank-spec.md` as corrected
@@ -688,6 +704,19 @@ a run without it writes the same report as before (milestone 7, stage C;
 phases (0-31; a larger value counts in 31): milestone 8 numbers the
 renderer's to 18 (`docs/RENDER-MASKED.md` 4.4); the reports' `phases`
 lists have 32 entries.
+
+**The PC map of phases** (milestone 10's timing report, `docs/GAME.md`
+"Acceptance"): `--cost-pcmap FILE` with `--cost-pcmap-when N` (default
+18): while the phase last written to the `--cost-phase` byte is N, each
+instruction's phase is its PC's in the map, so a run is cut by the code
+that runs (the innermost routine) with no marks in it. The file's lines
+are `LO HI PHASE` (hex addresses, a decimal phase: code at a fixed
+place) or `LO HI PHASE SLOT GROUP` (code paged into a window: it holds
+while main `SLOT` holds `GROUP`, the tic image's `SLOT_GRP`); a PC the
+map lacks keeps the written phase; a write of any other phase turns the
+map off until N is written again. `tools/native/ticrun.py`'s
+`pcmap_text` writes the map of a tic image. The model still only
+observes.
 
     python3 tools/a2vm/doom.py --frames 21 --core w65c02s --amem --cost f121 --timed
     python3 tools/a2vm/cost_report.py          # both profiles, the tables below

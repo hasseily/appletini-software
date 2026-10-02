@@ -1,35 +1,51 @@
 ; gpos.s: the game core's things in the level (milestone 9, stage C;
-; docs/LEVELS.md 2.4). A GPL-2 derivative of upstream's r_iigs65.s
-; (R_PointInSubsector and its walk, shiftMul) and p_map65.s
-; (P_SetThingPosition, P_CreateSecNodeList with lineBlocks, walkRange,
-; PIT_GetSectors and P_AddSecnode, P_BoxOnLineSide's slanted case).
+; docs/LEVELS.md 2.4; milestone 10's skeleton: the object API, the LR_USE
+; path, the node lists of play, docs/GAME.md 1.1, 3.1). A GPL-2 derivative
+; of upstream's r_iigs65.s (R_PointInSubsector and its walk, shiftMul) and
+; p_map65.s (P_SetThingPosition, P_CreateSecNodeList with lineBlocks'
+; PIT_GetSectors mode and its LR_USE path, walkRange, getSectors,
+; addSecnode, newSecnode, P_BoxOnLineSide's slanted case).
 ;
 ;   gp_pointsub   R_PointInSubsector(GC_X, GC_Y): GC_S = the subsector. The
-;                 descent from the root through LVMAP's nodes with upstream's
-;                 side test (whole parts when dx or dy is 0; the signs; else
-;                 the low 32 bits of (y' >> 8) dx against (x' >> 8) dy); no
-;                 grid and no last-point cache (neither changes a result)
+;                 descent from the root through LVMAP's nodes (nd_get) with
+;                 upstream's side test (whole parts when dx or dy is 0; the
+;                 signs; else the low 32 bits of (y' >> 8) dx against
+;                 (x' >> 8) dy); no grid and no last-point cache (neither
+;                 changes a result)
 ;   gp_setpos     P_SetThingPosition of the mobj LW_MOB (slot GC_MO): its
 ;                 subsector; unless MF_NOSECTOR the head of its sector's
-;                 thing list (LVMAP's head, RTHING's snext, the game part's
-;                 sprev), then P_CreateSecNodeList; unless MF_NOBLOCKMAP the
-;                 head of its block's list (LVG1's blocklinks), none off the
-;                 map. GC_SEC = its subsector's sector
-;   gp_secnodes   P_CreateSecNodeList: validcount + 1 (gv_inc); the block
-;                 walk of the thing's box, x outer and y inner, each block's
-;                 list after its first entry, each line not stamped with
-;                 validcount stamped and tested (the box's edges in whole
-;                 units, the corners of a slanted line), the crossed lines'
-;                 front and back sectors added (P_AddSecnode); then the
-;                 thing's own sector; its node list the new ones, the last
-;                 first
+;                 thing list (the sector's render record, RTHING's snext,
+;                 group A's sprev), then P_CreateSecNodeList; unless
+;                 MF_NOBLOCKMAP the head of its block's list (LVG1's
+;                 blocklinks), none off the map. GC_SEC = its subsector's
+;                 sector
+;   gp_setposmo   P_SetThingPosition of mobj slot A:X (play: its record
+;                 through LW_MOB and back)
+;   gp_secnodesmo P_CreateSecNodeList of mobj slot A:X (play: the same)
+;   gp_secnodes   P_CreateSecNodeList(GC_MO) of the mobj LW_MOB: tmx, tmy
+;                 (GM_TMX, GM_TMY) = its x, y, as upstream leaves them (the
+;                 tic phase only; teleport.md R4); each node of the old list (_s_sector_list, G_SECLIST: the thing's
+;                 nodes P_UnsetThingPosition gave it) loses its thing;
+;                 validcount + 1 (gv_inc); MP_MODE 1; with LR_USE set (the
+;                 line record of P_CheckPosition's walk, mvNodes) LR_USE
+;                 cleared and each recorded line's sectors added, with no
+;                 block walk and no stamp (p_map65.s:1708-1726); else the
+;                 block walk of the thing's box, x outer and y inner, each
+;                 block's list after its first entry, each line not stamped
+;                 with validcount stamped and tested (the box's edges in
+;                 whole units, the corners of a slanted line), the crossed
+;                 lines' front and back sectors added; then the thing's own
+;                 sector; the nodes left with no thing deleted
+;                 (P_DelSecnode: part mobjstate's, FCALL); the thing's node
+;                 list the result, _s_sector_list none. A sector added:
+;                 its node of _s_sector_list gets the thing again, else a
+;                 new node (newSecnode) heads both lists
 ;
-; Every record of the level comes through far_get (g_get) into W, every
-; write goes through far_put (g_put): LVMAP's nodes, subsectors and
-; sectors, LVG0's lines, LVG1's sectors' game part and blocklinks, LVG2's
-; blockmap, ZONE1's nodes, MOBJA's links. The lines' front and back
-; sectors are lg_prep's tables in W (LW_LFRONT, LW_LBACK: the front twice
-; for a one-sided line, upstream's LNSEC).
+; The objects come through the object API (gobj.s): the mobjs (mo_get),
+; the sectors (sec_get), the lines with their two sectors (ln_get); the
+; nodes, subsectors and blocks of the level and the sector nodes and the
+; blocklinks (no cache holds them) through nd_get, ss_get and g_get,
+; g_put.
 
         .setcpu "65C02"
         .macpack longbranch
@@ -38,11 +54,17 @@
         .include "llayout.inc"
         .include "lgame.inc"
 
-        .export gp_pointsub, gp_setpos, gp_secnodes
-        .import g_get, g_put, g_put2, gt_moaddr, gt_nodetake, sn_addr
+        .export gp_pointsub, gp_setpos, gp_secnodes, gp_setposmo
+        .export gp_secnodesmo
+        .import g_get, g_put, g_put2, gt_nodetake, sn_addr
         .import gv_inc, ld_stop, mul32, mul8
-
-        .assert LW_LBACK = LW_LFRONT + LINE_ROOM, error, "the lines' sectors"
+        .import mo_get, mo_dirty, mo_store, sec_get, sec_dirty, ln_get
+        .import ln_dirty, nd_get, ss_get
+        .include "ggame.inc"
+.ifndef LOADIMG
+        .include "gplace.inc"
+        .import fc_call, fc_unbuilt
+.endif
 
 MO_A    = LW_MOB + MO_SIZE      ; the mobj's game parts in W
 MO_B    = LW_MOB + 2 * MO_SIZE
@@ -67,28 +89,10 @@ gp_pointsub:
         lda LVCOUNT2+7
         sbc #0
         sta GC_T+1
-@node:  lda GC_T                ; the node: NODEBASE + 32 n
-        sta FA_SRC
-        lda GC_T+1
-        ldx #5
-:       asl FA_SRC
-        rol a
-        dex
-        bne :-
-        sta FA_SRC+1
-        clc
-        lda FA_SRC
-        adc #<NODEBASE
-        sta FA_SRC
-        lda FA_SRC+1
-        adc #>NODEBASE
-        sta FA_SRC+1
-        lda #LVMAP
-        sta FA_BANK
-        lda #<LW_NODEB
-        ldx #>LW_NODEB
-        ldy #NODE_CH1 + 2
-        jsr g_get
+@node:  lda GC_T                ; the node (nd_get: LW_NODEB)
+        ldx GC_T+1
+        jsr nd_get
+        .assert NODEB_SIZE = NODE_CH1 + 2, error, "a node's fetch"
         lda GC_X                ; GC_V = x - (node.x << 16), GC_W = y -
         sta GC_V                ;   (node.y << 16)
         lda GC_X+1
@@ -252,52 +256,39 @@ gp_setpos:
         sta MO_A + MA_SUBSEC
         lda GC_S+1
         sta MO_A + MA_SUBSEC + 1
-        lda GC_S                ; GC_SEC = its sector: SUBBASE + 4 s
-        sta FA_SRC
-        lda GC_S+1
-        asl FA_SRC
-        rol a
-        asl FA_SRC
-        rol a
-        sta FA_SRC+1
-        clc
-        lda FA_SRC
-        adc #<(SUBBASE + SUB_SECTOR)
-        sta FA_SRC
-        lda FA_SRC+1
-        adc #>(SUBBASE + SUB_SECTOR)
-        sta FA_SRC+1
-        lda #LVMAP
-        sta FA_BANK
-        lda #<GC_SEC
-        ldx #>GC_SEC
-        ldy #1
-        jsr g_get
+        lda GC_S                ; GC_SEC = its sector (ss_get)
+        ldx GC_S+1
+        jsr ss_get
+        lda SS_BUF + SUB_SECTOR
+        sta GC_SEC
         lda MO_B + MB_FLAGS
         and #U_MF_NOSECTOR
         bne @block
-        jsr sec_head            ; the head of its sector's list
-        lda #<GC_H
-        ldx #>GC_H
-        ldy #2
-        jsr g_get
-        lda GC_H
+        lda GC_SEC              ; the head of its sector's list
+        jsr sec_get
+        ldy #SEC_THINGS
+        lda (GC_SP),y
+        sta GC_H
         sta LW_MOB + TH_SNEXT
-        lda GC_H+1
+        iny
+        lda (GC_SP),y
+        sta GC_H+1
         sta LW_MOB + TH_SNEXT + 1
         lda #$FF
         sta MO_A + MA_SPREV
         sta MO_A + MA_SPREV + 1
         lda #MA_SPREV           ; the old head's sprev = the thing
         jsr link_prev
-        jsr sec_head            ; the head = the thing
-        lda FA_SRC
-        sta FA_DST
-        lda FA_SRC+1
-        sta FA_DST+1
-        lda #<GC_MO
-        ldx #>GC_MO
-        jsr g_put2
+        lda GC_SEC              ; the head = the thing
+        jsr sec_get
+        ldy #SEC_THINGS
+        lda GC_MO
+        sta (GC_SP),y
+        iny
+        lda GC_MO+1
+        sta (GC_SP),y
+        lda #1
+        jsr sec_dirty
         jsr gp_secnodes
 @block: lda MO_B + MB_FLAGS
         and #U_MF_NOBLOCKMAP
@@ -329,11 +320,11 @@ gp_setpos:
         rol GC_T+1
         clc
         lda GC_T
-        adc LW_HDR + LHV_BLINKS
+        adc G_BLINKSAT
         sta GC_T
         sta FA_SRC
         lda GC_T+1
-        adc LW_HDR + LHV_BLINKS + 1
+        adc G_BLINKSAT+1
         sta GC_T+1
         sta FA_SRC+1
         lda #LVG1
@@ -367,51 +358,71 @@ gp_setpos:
         sta MO_A + MA_BPREV + 1
 @done:  rts
 
-; sec_head: FA_BANK:FA_SRC = the thing list head of sector GC_SEC (LVMAP)
-sec_head:
-        lda GC_SEC
-        stz FA_SRC+1
-        asl a
-        rol FA_SRC+1
-        asl a
-        rol FA_SRC+1
-        asl a
-        rol FA_SRC+1
-        asl a
-        rol FA_SRC+1
-        clc
-        adc #<(SECBASE + SEC_THINGS)
-        sta FA_SRC
-        lda FA_SRC+1
-        adc #>(SECBASE + SEC_THINGS)
-        sta FA_SRC+1
-        lda #LVMAP
-        sta FA_BANK
-        rts
-        .assert SEC_SIZE = 16, error, "a sector's render record"
-
 ; link_prev: when the old head GC_H is a thing, its link at offset A of
-; game part A (sprev, bprev) = GC_MO
+; game part A (sprev, bprev) = GC_MO (mo_get, mo_dirty)
 link_prev:
         ldx GC_H+1
         cpx #$FF
         beq @none
         pha
         lda GC_H
-        jsr gt_moaddr
+        jsr mo_get
         pla
         clc
-        adc GC_P
-        sta FA_DST
-        lda GC_P+1
-        adc #0
-        sta FA_DST+1
-        lda #MOBJA
-        sta FA_BANK
-        lda #<GC_MO
-        ldx #>GC_MO
-        jmp g_put2
+        adc #MO_SIZE
+        tay
+        lda GC_MO
+        sta (GC_MP),y
+        iny
+        lda GC_MO+1
+        sta (GC_MP),y
+        lda #2                  ; group A
+        jmp mo_dirty
 @none:  rts
+
+; ---------------------------------------------------------------------------
+; gp_setposmo: P_SetThingPosition of mobj slot A:X (play): its record into
+; LW_MOB, gp_setpos, then back (mo_store: every group dirty). GC_MO = the
+; slot.
+; ---------------------------------------------------------------------------
+; (the parts' names: FCALL P_SetThingPosition, P_CreateSecNodeList)
+P_SetThingPosition := gp_setposmo
+P_CreateSecNodeList := gp_secnodesmo
+        .export P_SetThingPosition, P_CreateSecNodeList
+gp_setposmo:
+        sta GC_MO
+        stx GC_MO+1
+        jsr mo_get
+        ldy #4 * MO_SIZE - 1
+:       lda (GC_MP),y
+        sta LW_MOB,y
+        dey
+        bpl :-
+        jsr gp_setpos
+        jmp mo_store
+
+; ---------------------------------------------------------------------------
+; gp_secnodesmo: P_CreateSecNodeList of mobj slot A:X (play: the entry the
+; routine harness and the parts call): its record into LW_MOB, GC_SEC its
+; subsector's sector, gp_secnodes, the record back (mo_store). GC_MO = the
+; slot.
+; ---------------------------------------------------------------------------
+gp_secnodesmo:
+        sta GC_MO
+        stx GC_MO+1
+        jsr mo_get
+        ldy #4 * MO_SIZE - 1
+:       lda (GC_MP),y
+        sta LW_MOB,y
+        dey
+        bpl :-
+        lda MO_A + MA_SUBSEC
+        ldx MO_A + MA_SUBSEC + 1
+        jsr ss_get
+        lda SS_BUF + SUB_SECTOR
+        sta GC_SEC
+        jsr gp_secnodes
+        jmp mo_store
 
 ; blk7: A = (d >> 7) & $FF of the word d = A:X (A its high byte), C its sign
 blk7:   sta GC_P
@@ -440,8 +451,32 @@ blk_index:
 ; GC_SEC). Changes everything but GC_MO and LW_MOB's other fields.
 ; ---------------------------------------------------------------------------
 gp_secnodes:
+.ifndef LOADIMG
+        ldx #7                  ; tmx, tmy = thing->x, y, left so as
+:       lda LW_MOB + TH_X,x     ;   upstream's (p_map65.s:2524-2531; wave 4
+        sta GM_TMX,x            ;   as integrated, teleport.md R4: a
+        dex                     ;   telefrag's drop moves the next stomps'
+        bpl :-                  ;   centre)
+        .assert TH_Y = TH_X + 4 && GM_TMY = GM_TMX + 4, error, "x, y"
+.endif
+        lda G_SECLIST           ; each node of _s_sector_list: no thing
+        ldx G_SECLIST+1
+@clear: cpx #$FF
+        beq @cleared
+        sta GC_N
+        stx GC_N+1
+        jsr sn_read             ; LW_SN
+        lda #$FF
+        sta LW_SN + SN_THING
+        sta LW_SN + SN_THING + 1
+        jsr sn_thing            ; (its m_thing written back)
+        lda LW_SN + SN_TNEXT
+        ldx LW_SN + SN_TNEXT + 1
+        bra @clear
+@cleared:
         jsr gv_inc
-        stz GS_NSEC
+        lda #1                  ; PIT_GetSectors
+        sta MP_MODE
         ldx #2                  ; the box: the low words the thing's, the
 @box:   lda LW_MOB + TH_X,x     ;   high words its x, y +- its radius
         sta GS_RIGHT,x          ;   (whole units below 256)
@@ -512,7 +547,25 @@ gp_secnodes:
         sta GS_BH
         lda #$7F
         sta GS_BH+1
-@range: jsr walkrange
+@range: lda G_LRUSE             ; the line record (mvNodes): its lines'
+        beq @walk               ;   sectors, no walk and no stamp
+        stz G_LRUSE
+        stz GS_NSEC             ; (the position, 2 a line)
+@rec:   lda GS_NSEC
+        cmp G_LRN
+        bcs @own
+        tax
+        lda G_LRLINES+1,x       ; the line: its entry / 2
+        lsr a
+        sta GS_LN+1
+        lda G_LRLINES,x
+        ror a
+        sta GS_LN
+        jsr lsectors
+        inc GS_NSEC
+        inc GS_NSEC
+        bra @rec
+@walk:  jsr walkrange
         bcs @own
         lda GS_XL               ; x outer, y inner
         sta GS_BX
@@ -531,7 +584,39 @@ gp_secnodes:
         bra @col
 @own:   lda GC_SEC              ; the thing's own sector
         jsr addsec
-        lda G_SECLIST           ; its list; _s_sector_list none
+        lda G_SECLIST           ; the nodes with no thing deleted
+        ldx G_SECLIST+1
+@del:   cpx #$FF
+        beq @list
+        sta GC_N
+        stx GC_N+1
+        jsr sn_read
+        lda LW_SN + SN_THING + 1
+        cmp #$FF
+        beq @gone
+        lda LW_SN + SN_TNEXT
+        ldx LW_SN + SN_TNEXT + 1
+        bra @del
+@gone:  lda GC_N                ; the first: _s_sector_list its next
+        cmp G_SECLIST
+        bne :+
+        lda GC_N+1
+        cmp G_SECLIST+1
+        bne :+
+        lda LW_SN + SN_TNEXT
+        sta G_SECLIST
+        lda LW_SN + SN_TNEXT + 1
+        sta G_SECLIST+1
+:       lda GC_N                ; P_DelSecnode(node): A:X its next
+        ldx GC_N+1
+.ifdef LOADIMG
+        lda #LS_API             ; (never at a setup: _s_sector_list starts
+        jmp ld_stop             ;   empty)
+.else
+        FCALL P_DelSecnode
+.endif
+        bra @del
+@list:  lda G_SECLIST           ; its list; _s_sector_list none
         sta MO_A + MA_TOUCH
         lda G_SECLIST+1
         sta MO_A + MA_TOUCH + 1
@@ -653,30 +738,7 @@ walkblock:
 ; stamped, the box's edges tested, a slanted line's corners, and the
 ; crossed line's sectors added
 walkline:
-        lda GS_LN               ; its record: LINE_BASE + 32 n
-        sta GC_P
-        lda GS_LN+1
-        ldx #5
-:       asl GC_P
-        rol a
-        dex
-        bne :-
-        sta GC_P+1
-        clc
-        lda GC_P
-        adc #<LINE_BASE
-        sta GC_P
-        sta FA_SRC
-        lda GC_P+1
-        adc #>LINE_BASE
-        sta GC_P+1
-        sta FA_SRC+1
-        lda #LVG0
-        sta FA_BANK
-        lda #<LW_LINEB
-        ldx #>LW_LINEB
-        ldy #LN_VALID + 2
-        jsr g_get
+        jsr lget                ; LW_LINEB: its record and sectors
         lda LW_LINEB + LN_VALID
         cmp G_VALID
         bne @test
@@ -715,24 +777,16 @@ walkline:
         jsr stamp
         lda LW_LINEB + LN_SLOPE ; a slanted line: its corners on one side:
         cmp #U_ST_POSITIVE      ;   out
-        bcc @cross
+        bcc lcross
         jsr corners
-        bne @cross
+        bne lcross
         rts
-@cross: clc                     ; its front and back sectors
-        lda GS_LN
-        adc #<LW_LFRONT
-        sta GC_P
-        lda GS_LN+1
-        adc #>LW_LFRONT
-        sta GC_P+1
-        lda (GC_P)
+; lcross: the front and back sectors of the line LW_LINEB (its two bytes
+; after the record: LNSECF, LNSECB, the front twice for a one-sided line):
+; getSectors
+lcross: lda LW_LINEB + LINE_SIZE
         sta GS_SIDE
-        clc
-        lda GC_P+1
-        adc #>LINE_ROOM
-        sta GC_P+1
-        lda (GC_P)
+        lda LW_LINEB + LINE_SIZE + 1
         sta GS_BP
         lda GS_SIDE
         jsr addsec
@@ -741,21 +795,34 @@ walkline:
         beq :+
         jmp addsec
 :       rts
-        .assert <LINE_ROOM = 0, error, "LINE_ROOM in pages"
 
-; stamp: the line's validcount (its record at GC_P) = G_VALID
-stamp:  clc
-        lda GC_P
-        adc #LN_VALID
-        sta FA_DST
-        lda GC_P+1
-        adc #0
-        sta FA_DST+1
-        lda #LVG0
-        sta FA_BANK
-        lda #<G_VALID
-        ldx #>G_VALID
-        jmp g_put2
+; lsectors: getSectors of line GS_LN (the LR_USE path: no stamp)
+lsectors:
+        jsr lget
+        bra lcross
+
+; lget: line GS_LN through the API (GC_LP) and its copy in LW_LINEB
+lget:   lda GS_LN
+        ldx GS_LN+1
+        jsr ln_get
+        ldy #LNC_LINE - 1
+:       lda (GC_LP),y
+        sta LW_LINEB,y
+        dey
+        bpl :-
+        rts
+
+; stamp: the line's validcount (its cache line GC_LP, which no other get
+; came between) = G_VALID
+stamp:  ldy #LN_VALID
+        lda G_VALID
+        sta (GC_LP),y
+        sta LW_LINEB + LN_VALID
+        iny
+        lda G_VALID+1
+        sta (GC_LP),y
+        sta LW_LINEB + LN_VALID + 1
+        jmp ln_dirty
 
 ; corners: A = 0 when the box's two corners of a slanted line LW_LINEB are
 ; on one side of it (P_BoxOnLineSide != -1): positive, (right, bottom) and
@@ -829,26 +896,32 @@ side:   lda 0,x                 ; GC_V = x - (v1.x << 16)
         rts
 
 ; ---------------------------------------------------------------------------
-; addsec: P_AddSecnode(sector A, GC_MO): a sector the thing has no node
-; for yet gets a new one at the head of the thing's list (G_SECLIST) and
-; of the sector's (its game record's TOUCH). Changes A, X, Y, GC_N, GC_P,
-; GC_T, FA_*.
+; addsec: P_AddSecnode(sector A, GC_MO) (upstream's addSecnode): the node
+; of _s_sector_list (G_SECLIST) for the sector gets the thing again; a
+; sector without one gets a new node (newSecnode) at the head of the
+; thing's list and of the sector's (its game record's TOUCH). Changes A, X,
+; Y, GC_N, GC_P, GC_T, the API's temporaries, FA_*.
 ; ---------------------------------------------------------------------------
 addsec: sta GS_S1
-        ldx GS_NSEC             ; one already: nothing (its m_thing is the
-:       dex                     ;   thing)
-        bmi @new
-        cmp LW_SECL,x
-        bne :-
-        rts
-@new:   ldx GS_NSEC
-        cpx #SECL_MAX
-        bcc :+
-        lda #LS_SECL
-        jmp ld_stop
-:       sta LW_SECL,x
-        inc GS_NSEC
-        jsr gt_nodetake         ; GC_N
+        lda G_SECLIST
+        ldx G_SECLIST+1
+@find:  cpx #$FF
+        beq @new
+        sta GC_N
+        stx GC_N+1
+        jsr sn_read
+        lda LW_SN + SN_SECTOR
+        cmp GS_S1
+        beq @again
+        lda LW_SN + SN_TNEXT
+        ldx LW_SN + SN_TNEXT + 1
+        bra @find
+@again: lda GC_MO               ; m_thing = the thing again
+        sta LW_SN + SN_THING
+        lda GC_MO+1
+        sta LW_SN + SN_THING + 1
+        jmp sn_thing
+@new:   jsr gt_nodetake         ; GC_N
         ldx #SN_SIZE - 1        ; its record
 :       stz LW_SN,x
         dex
@@ -868,11 +941,14 @@ addsec: sta GS_S1
         sta LW_SN + SN_TNEXT
         lda G_SECLIST+1
         sta LW_SN + SN_TNEXT + 1
-        jsr sg_touch            ; m_snext: the sector's head
-        lda #<(LW_SN + SN_SNEXT)
-        ldx #>(LW_SN + SN_SNEXT)
-        ldy #2
-        jsr g_get
+        lda GS_S1               ; m_snext: the sector's head
+        jsr sec_get
+        ldy #SEC_SIZE + SG_TOUCH
+        lda (GC_SP),y
+        sta LW_SN + SN_SNEXT
+        iny
+        lda (GC_SP),y
+        sta LW_SN + SN_SNEXT + 1
         lda GC_N                ; the node
         ldx GC_N+1
         jsr sn_addr
@@ -894,14 +970,16 @@ addsec: sta GS_S1
         ldx LW_SN + SN_SNEXT + 1
         ldy #SN_SPREV
         jsr node_prev
-        jsr sg_touch            ; the sector's head = the node
-        lda GC_T
-        sta FA_DST
-        lda GC_T+1
-        sta FA_DST+1
-        lda #<GC_N
-        ldx #>GC_N
-        jsr g_put2
+        lda GS_S1               ; the sector's head = the node
+        jsr sec_get
+        ldy #SEC_SIZE + SG_TOUCH
+        lda GC_N
+        sta (GC_SP),y
+        iny
+        lda GC_N+1
+        sta (GC_SP),y
+        lda #2                  ; (the game record)
+        jsr sec_dirty
         lda GC_N                ; the thing's head = the node
         sta G_SECLIST
         lda GC_N+1
@@ -928,25 +1006,37 @@ node_prev:
         jmp g_put2
 @none:  rts
 
-; sg_touch: GC_T, FA_SRC = sector GS_S1's TOUCH in LVG1 (SECG_BASE + 32 s +
-; SG_TOUCH), FA_BANK = LVG1
-sg_touch:
-        lda GS_S1
-        stz GC_T+1
-        ldx #5
-:       asl a
-        rol GC_T+1
-        dex
-        bne :-
-        clc
-        adc #<(SECG_BASE + SG_TOUCH)
-        sta GC_T
-        sta FA_SRC
-        lda GC_T+1
-        adc #>(SECG_BASE + SG_TOUCH)
-        sta GC_T+1
-        sta FA_SRC+1
-        lda #LVG1
+; sn_read: LW_SN = sector node GC_N's record (ZONE1)
+sn_read:
+        lda GC_N
+        ldx GC_N+1
+        jsr sn_addr
+        lda #ZONE1
         sta FA_BANK
-        rts
-        .assert SECG_SIZE = 32, error, "a sector's game record"
+        lda GC_P
+        sta FA_SRC
+        lda GC_P+1
+        sta FA_SRC+1
+        lda #<LW_SN
+        ldx #>LW_SN
+        ldy #SN_SIZE
+        jmp g_get
+
+; sn_thing: node GC_N's m_thing = LW_SN's
+sn_thing:
+        lda GC_N
+        ldx GC_N+1
+        jsr sn_addr
+        clc
+        lda GC_P
+        adc #SN_THING
+        sta FA_DST
+        lda GC_P+1
+        adc #0
+        sta FA_DST+1
+        lda #ZONE1
+        sta FA_BANK
+        lda #<(LW_SN + SN_THING)
+        ldx #>(LW_SN + SN_THING)
+        jmp g_put2
+        .assert SECG_SIZE = 32 && SEC_SIZE = 16, error, "a sector's records"

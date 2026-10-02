@@ -8,9 +8,10 @@ Usage:  python3 tools/testpar.py [--jobs N] [--timeout S] [--list]
 Each module runs in a process of its own, loaded the way the canonical
 command loads it (unittest's discover from tests/, with the pattern
 <module>.py), under tools/ref816/bounded.py's bounds: --timeout seconds of
-wall time (default 1200), files of at most 1 GiB (the tools' own bound).
-On a timeout or an interrupt, the module's process and every process it
-started are killed, whatever process group they are in (kill_tree). Up to
+wall time (default 1200; MODULE_TIMEOUTS gives a module more, with its
+reason), files of at most 1 GiB (the tools' own bound). On a timeout or
+an interrupt, the module's process and every process it started are
+killed, whatever process group they are in (kill_tree). Up to
 --jobs modules run at once (default 9, the ground rules' limit), the
 longest first, from the times of the last run kept in
 build/testpar-times.json (one number a module, rewritten at the end of
@@ -33,6 +34,12 @@ skips, then the totals, then the whole output of every module that failed,
 erred, crashed or ran out of time. The exit status is 1 if any did, 0
 otherwise. --json FILE also writes each test's outcome (for comparing two
 runs). --list prints the schedule and runs nothing.
+
+A work-in-progress module, tests/wip_test_*.py (a part's test while it is
+built: docs/SCREENS.md 7.1), is outside unittest's pattern, so neither the
+canonical command nor a run with no names takes it; it runs when named
+(`python3 tools/testpar.py tests/wip_test_PART.py`), loaded the same
+way.
 """
 
 import argparse
@@ -60,8 +67,23 @@ TESTS = ROOT / 'tests'
 BUILD = ROOT / 'build'
 TIMES = BUILD / 'testpar-times.json'
 PATTERN = 'test*.py'                # unittest discover's default
+WIP_PATTERN = 'wip_test_*.py'       # run only when named (discover)
 JOBS = 9
 TIMEOUT = 1200.0
+# Modules that need more than --timeout, each with its own limit (never
+# less than --timeout) and the reason: milestone 10's checkpoint S runs
+# milestone 9's whole acceptance again on the final layouts (57 setups
+# from two fills, checkpoint B, the disk, frame8.py's 1,458 runs) with
+# S2-S7: 295 s on a busy machine since its frame check samples (2026-10-01;
+# 1,301 s before, 1,085 of them frame8.py on all 729 loaded-level frames;
+# DOOM_GS_FULL=1 still runs them all)
+MODULE_TIMEOUTS: Dict[str, float] = {
+    'test_native_game_skeleton': 3600.0,
+    # part geom's checkpoint on every case from both fills, the iterators'
+    # 434 recording cases, 1.8 million random pairs, four plants: 2,164 s
+    # at its 2 processes (docs/game-parts/geom.md R12, wave 1 as
+    # integrated)
+    'test_native_game_geom': 3600.0}
 MAX_BYTES = bounded.TOOL_MAX_BYTES  # the largest file a tool may write
 PREBUILD_TIMEOUT = 900.0
 SHOW_LIMIT = 4 << 20                # the output shown of a failing module
@@ -102,6 +124,10 @@ def _make(makefile: str, out: Path, *variables: str) -> List[str]:
 REF816_USERS = ('test_ref816_calllog', 'test_ref816_capture',
                 'test_ref816_divscan', 'test_ref816_dump',
                 'test_ref816_inject', 'test_ref816_trace')
+# milestone 11's first half (docs/SCREENS.md 8.13): s2menu1.capture(),
+# s2menu2.capture() and s2ovl.capture() run title.build_machine() and
+# title.ensure_image() before their ref816 captures
+REF816_USERS += ('test_m11_s2menu1', 'test_m11_s2menu2', 'test_m11_s2ovl')
 CC65 = ('make', 'ca65', 'ld65')
 
 PREBUILD: Tuple[Step, ...] = (
@@ -111,7 +137,8 @@ PREBUILD: Tuple[Step, ...] = (
          ['make', '-s', '-C', str(ROOT / 'tools' / 'ref816'),
           str(BUILD / 'ref816' / 'ref816')], ('make', 'cc'),
          REF816_USERS + ('test_coverage', 'test_ref816_machine',
-                         'test_bridge_dumps'),
+                         'test_bridge_dumps', 'test_native_game_skeleton',
+                         'test_native_game_lockstep'),
          ('test_native_frame8', 'test_native_math', 'test_native_replay')),
     # title.ensure_image() writes build/ref816/memory.img, loader.img and
     # disk.hdv when they are missing, test_coverage and test_ref816_machine
@@ -122,7 +149,9 @@ PREBUILD: Tuple[Step, ...] = (
          [sys.executable, '-c', 'import sys; sys.path.insert(0, "tools"); '
           'from ref816 import make_image; sys.exit(make_image.main([]))'], (),
          REF816_USERS + ('test_bridge_dumps', 'test_interpreter',
-                         'test_coverage', 'test_ref816_machine')),
+                         'test_coverage', 'test_ref816_machine',
+                         'test_native_game_skeleton',
+                         'test_native_game_lockstep')),
     # test_native_math: make -C tools/native (build/native/math/mathref)
     Step('mathref', ['make', '-s', '-C', str(ROOT / 'tools' / 'native')],
          ('make', 'cc'), ('test_native_math',), ('test_native_render',)),
@@ -141,11 +170,23 @@ PREBUILD: Tuple[Step, ...] = (
          ('test_native_frame8', 'test_native_masked',
           'test_native_masked_b', 'test_native_render',
           'test_native_render_frame', 'test_native_render_walls'),
-         ('test_native_level_load',)),
+         ('test_native_level_load', 'test_native_game_skeleton')),
     # lrun.make(): level.mk into build/native/levels/obj
     Step('level.mk',
          _make('level.mk', BUILD / 'native' / 'levels' / 'obj'), CC65,
-         ('test_native_level_load', 'test_native_level_setup')),
+         ('test_native_level_load', 'test_native_level_setup',
+          'test_native_game_skeleton')),
+    # milestone 10: grun.make(): game.mk's shared outputs (build/native/
+    # game/shared: the generated includes, game.cfg, the game manifests,
+    # the call graph) and the skeleton's test image (build/native/game/
+    # skel). The parts' tests only read them (src/native/game/README.md)
+    # (the final integration: test_native_game_lockstep's ticrun.run makes
+    # the lockstep image `game` the same way, and ref816's machine and
+    # image for its start captures)
+    Step('game.mk',
+         ['make', '-s', '-C', str(SRC), '-f', 'game.mk', 'shared', 'skel',
+          'ROOT=%s' % ROOT], CC65, ('test_native_game_skeleton',
+                                    'test_native_game_lockstep')),
 )
 
 SHARED: Tuple[Shared, ...] = (
@@ -178,6 +219,7 @@ WRITER_CALLS: Dict[Tuple[str, str], str] = {
     ('title', 'ensure_image'): 'ref816 image',
     ('render_check', 'make'): 'render.mk',
     ('lrun', 'make'): 'level.mk',
+    ('grun', 'make'): 'game.mk',
 }
 # A `make` builds into the directory given as its first argument (or obj=,
 # out=): one that names a computed directory (tmp / 'obj') builds a private
@@ -335,6 +377,8 @@ NOT_WRITES: Dict[Tuple[str, str, str], str] = {
     ('test_native_level_load', 'render.mk', 'frame8.main()'):
         'it passes --no-build, so frame8.main() skips its RC.make(); the '
         'module reads build/native/render/obj (a reader of render.mk)',
+    ('test_native_game_skeleton', 'render.mk', 'frame8.main()'):
+        'S1 passes --no-build, as test_native_level_load does',
 }
 
 
@@ -636,17 +680,21 @@ def run_module(module: str, scratch: Path, timeout: float,
 # ---------------------------------------------------------------------------
 
 def discover(names: Sequence[str] = (), tests: Path = TESTS) -> List[str]:
-    """The test modules of `tests` (unittest's pattern), or `names`."""
+    """The test modules of `tests` (unittest's pattern), or `names`. A
+    work-in-progress module (tests/wip_test_*.py, which the pattern and
+    so the canonical command leave out) runs only when it is named."""
     found = sorted(p.stem for p in tests.glob(PATTERN) if p.is_file())
     if not names:
         return found
+    named = found + sorted(p.stem for p in tests.glob(WIP_PATTERN)
+                           if p.is_file())
     wanted = [Path(n).name for n in names]     # tests/test_x.py too
     wanted = [n[:-3] if n.endswith('.py') else n for n in wanted]
-    unknown = [n for n in wanted if n not in found]
+    unknown = [n for n in wanted if n not in named]
     if unknown:
         raise SystemExit('testpar: no such test module: %s'
                          % ', '.join(unknown))
-    return [n for n in found if n in wanted]
+    return [n for n in named if n in wanted]
 
 
 def load_times(path: Path = TIMES) -> Dict[str, float]:
@@ -872,7 +920,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     with tempfile.TemporaryDirectory(prefix='testpar-') as scratch:
         def run(module):
-            o = run_module(module, Path(scratch), args.timeout)
+            o = run_module(module, Path(scratch),
+                           max(args.timeout, MODULE_TIMEOUTS.get(module, 0)))
             with lock:
                 outcomes.append(o)
                 print('[%2d/%d] %-32s %7.1f s  %s' % (

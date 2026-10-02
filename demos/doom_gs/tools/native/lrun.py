@@ -84,13 +84,14 @@ SNAP_RANGES = ','.join(
      LL.SPR_BANKS])
 # stage C: the setup's state too (RTH, the mobjs' game parts, the
 # specials, the sector nodes)
-GAME_BANKS = (R.RTH,) + LL.MOBJ_BANKS + (LL.ZONE0, LL.ZONE1, LL.GTAB)
+GAME_BANKS = (R.RTH,) + LL.MOBJ_BANKS + (LL.ZONE0, LL.ZONE1, LL.GTAB,
+                                         LL.MOBJP, LL.LVS)
 SNAP_RANGES_SETUP = SNAP_RANGES + ',' + ','.join(
     'aux%d:0200-BFFF' % b for b in GAME_BANKS)
 # the cost phases of the profiling build (lload.s): 2 x n in PHASE
 PHASES = {1: 'image', 2: 'variants', 3: 'copies', 4: 'lines', 5: 'group',
           6: 'flood', 7: 'cmaps', 8: 'private', 9: 'spawn', 10: 'specials',
-          11: 'setup', 0: 'driver'}
+          11: 'setup', 12: 'gtabs', 0: 'driver'}
 # the size budgets of docs/LEVELS.md 4.4 (stages B and C)
 BUDGETS = {'lload': 1200, 'lgeom': 2000, 'lsetup': 500,
            'gspawn+gweap': 2200, 'gpos': 2200, 'gthink+gvalid': 700,
@@ -469,7 +470,8 @@ def allowed_cpu(b: RC.Build, loads: Sequence[Dict[str, Any]],
     if setup:                   # the pre-states' copies (drv_pre)
         driver += [('main', 0, R.ZP_FAR[0], R.ZP_FAR[1]),
                    ('main', 0, LL.GBLOCK, LL.GBLOCK_END),
-                   ('main', 0, LL.PRND, LL.MRND + 1)]
+                   ('main', 0, LL.PRND, LL.MRND + 1),
+                   ('main', 0, LL.G_VALID, LL.G_VALID + 2)]
     del lab
     return {'load': load, 'driver': driver}
 

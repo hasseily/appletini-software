@@ -1,0 +1,30 @@
+{
+ "format": "game-args 1",
+ "note": "Part pickup's entries (docs/GAME.md 2.4, 3.5 step 4; docs/game-parts/pickup.md). P_TouchSpecialThing: upstream's _Dp[0-3] (the special) and _Dp[4-7] (the toucher) as mobj slots in GA_0-1 and GA_2-3; nothing returned. P_GivePower: the power in A (upstream's C; its _Dp, &_g_player, is the one player), A = 1 given or 0 (upstream's A). C_Responder: natively the cheat's event number in A (GAME.md 3.7: the tic stream's events), which is no upstream register: the harness (tools/native/gparts/pickup.py cheat_of) finds it by upstream's own matcher on the call's memory and passes it; A = 1 (upstream's A for a completed cheat). power and m_cheat_giveAmmo are rts routines upstream with no captured call: they run inside the cheat cases. Schema: src/native/game/README.md.",
+ "entries": {
+  "p_inter65.s:P_TouchSpecialThing": {
+   "native": "P_TouchSpecialThing",
+   "in": [
+    {"from": "dp:_Dp:4", "to": "zp:GA_0", "as": "mobj"},
+    {"from": "dp:_Dp+4:4", "to": "zp:GA_2", "as": "mobj"}
+   ],
+   "out": []
+  },
+  "p_inter65.s:P_GivePower": {
+   "native": "P_GivePower",
+   "in": [
+    {"from": "a", "to": "a"}
+   ],
+   "out": [
+    {"native": "a", "upstream": "a", "bytes": 1}
+   ]
+  },
+  "m_cheat65.s:C_Responder": {
+   "native": "C_Responder",
+   "in": [],
+   "out": [
+    {"native": "a", "upstream": "a", "bytes": 1}
+   ]
+  }
+ }
+}

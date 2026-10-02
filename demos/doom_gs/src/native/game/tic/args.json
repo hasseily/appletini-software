@@ -1,0 +1,26 @@
+{
+ "format": "game-args 1",
+ "about": "Part tic's entries (docs/GAME.md 2.4 row tic, 3.5 step 4; docs/game-parts/tic.md). G_Ticker, P_Ticker, P_RunThinkers and P_MapEnd take no argument; G_Ticker's native A (0, or GT_LOAD with G_LOADACT for the load protocol) has no upstream counterpart (upstream's G_Ticker runs the load itself). P_MobjThinker is THTAB's: upstream enters it by the walk's JML [FN_P] (callFn), which ref816's --capture does not count, so its cases are the reference's own calls (ref816 --call) on captured P_RunThinkers states (tools/native/gparts/tic.py). P_MapEnd's tmthing (p_map65.s's scratch, R2) is a declared output: the native GM_TMTHING (GW, gw:NAME, a form of tic.py) against upstream's tmthing, as a mobj or none.",
+ "entries": {
+  "g_game65.s:G_Ticker": {
+   "native": "G_Ticker",
+   "in": [],
+   "out": []},
+  "p_think65.s:P_Ticker": {
+   "native": "P_Ticker",
+   "in": [],
+   "out": []},
+  "p_tick65.s:P_RunThinkers": {
+   "native": "P_RunThinkers",
+   "in": [],
+   "out": []},
+  "p_tick65.s:P_MobjThinker": {
+   "native": "P_MobjThinker",
+   "in": [{"from": "dp:_Dp:4", "to": "zp:GA_MO", "as": "mobj"}],
+   "out": []},
+  "p_map65.s:P_MapEnd": {
+   "native": "P_MapEnd",
+   "in": [],
+   "out": [{"native": "gw:GM_TMTHING", "upstream": "abs:p_map65.s:tmthing:4", "as": "mobj"}]}
+ }
+}

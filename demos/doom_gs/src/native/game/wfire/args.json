@@ -1,0 +1,43 @@
+{
+ "format": "game-args 1",
+ "about": "Part wfire's entries (docs/GAME.md 2.4 row wfire, 'Inputs and outputs'; docs/game-parts/wfire.md). The weapon actions (A_FirePistol, A_FireShotgun, A_FireCGun, A_FireMissile, A_Punch, A_Saw) are ACTTAB's, entered by upstream's JML through callAction, which ref816's --capture does not count: they are checked inside captured and synthetic calls of part pspr's P_MovePsprites (its own args.json entry), which reaches them through tickPsprite, setPsprite and ACTTAB, as part pspr checked its actions (tools/native/gparts/wfire.py). The entries below say each routine's inputs and outputs; forms beyond gameroutine.py's, read by wfire.py: the destination sb:NAME (a place of game/wfire/wfire.inc's scratch block, SB_WFIRE + its offset), the destination lz:NAME (a zero-page name of milestone 9's lgame.inc: GS_PSP) and \"as\": \"psp\" (upstream's psprite, its near address, becomes its number: 0 the weapon, 1 the flash). bulletSlope leaves bulletslope in upstream's WP_SLOPE (scratch), which gunShot reads: an output of one and an input of the other. P_SpawnPlayerMissile and the actions return nothing.",
+ "entries": {
+  "p_pspr65.s:A_FirePistol": {
+   "native": "A_FirePistol",
+   "in": [],
+   "out": []},
+  "p_pspr65.s:A_FireShotgun": {
+   "native": "A_FireShotgun",
+   "in": [],
+   "out": []},
+  "p_pspr65.s:A_FireCGun": {
+   "native": "A_FireCGun",
+   "in": [{"from": "dp:_Dp+4:2", "to": "lz:GS_PSP", "as": "psp"}],
+   "out": []},
+  "p_pspr65.s:A_FireMissile": {
+   "native": "A_FireMissile",
+   "in": [],
+   "out": []},
+  "p_pspr65.s:A_Punch": {
+   "native": "A_Punch",
+   "in": [],
+   "out": []},
+  "p_pspr65.s:A_Saw": {
+   "native": "A_Saw",
+   "in": [],
+   "out": []},
+  "p_spawn65.s:P_SpawnPlayerMissile": {
+   "native": "P_SpawnPlayerMissile",
+   "in": [{"from": "dp:_Dp:4", "to": "zp:GA_0", "as": "mobj"}],
+   "out": []},
+  "p_pspr65.s:bulletSlope": {
+   "native": "bulletSlope",
+   "in": [],
+   "out": [{"native": "sb:WF_SLOPE", "upstream": "abs:p_pspr65.s:WP_SLOPE:4", "bytes": 4}]},
+  "p_pspr65.s:gunShot": {
+   "native": "gunShot",
+   "in": [{"from": "a", "to": "a", "bytes": 1},
+          {"from": "abs:p_pspr65.s:WP_SLOPE:4", "to": "sb:WF_SLOPE", "bytes": 4}],
+   "out": []}
+ }
+}

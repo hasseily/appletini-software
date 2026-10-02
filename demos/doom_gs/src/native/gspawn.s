@@ -1,16 +1,18 @@
 ; gspawn.s: the game core's spawn (milestone 9, stage C; docs/LEVELS.md
-; 2.1 steps 5 and 12, 2.4). A GPL-2 derivative of upstream's p_setup65.s
-; (loadThings, loadBlockMap's globals, loadThings2), p_spawn65.s
-; (P_SpawnMapThing, spawnPlayer, P_SpawnMobj, newMobj, clearMo) and
-; g_game65.s (G_PlayerReborn).
+; 2.1 steps 5 and 12, 2.4; milestone 10's skeleton: P_SpawnMobj in play,
+; the object API, docs/GAME.md 3.1). A GPL-2 derivative of upstream's
+; p_setup65.s (loadThings, loadBlockMap's globals, loadThings2),
+; p_spawn65.s (P_SpawnMapThing, spawnPlayer, P_SpawnMobj, newMobj,
+; clearMo), r_list65.s (addIfFunc) and g_game65.s (G_PlayerReborn).
 ;
 ;   gs_spawn    the load program's SPAWN step (only in nl_setup: GS_GAME):
-;               the lines' front and back sectors (lg_prep, for the block
-;               walk and the specials), the level's game globals from the
-;               header (the pool's size, the blockmap's origin, size and
-;               place, the lumps' numbers, LOGP), LNMAP 0 (each line's
+;               the level's game globals from the header (the pool's size,
+;               the blockmap's origin, size and place, the lumps' numbers,
+;               LOGP; the places the tic phase needs: G_LTABAT, G_FLIDXAT,
+;               G_FLENTAT, G_BLINKSAT, G_REJECTAT), LNMAP 0 (each line's
 ;               r_flags), the pool (gt_poolinit), the player without a
-;               mobj, then each map thing in the lump's order
+;               mobj, then each map thing in the lump's order (the lines'
+;               sectors are LVS's: the GTABS step before it)
 ;   gs_mapthing P_SpawnMapThing of the map thing LW_MT: the player's start
 ;               spawns the player; a thing of the skill (the converter
 ;               precomputed P_FindDoomedNum's type) spawns with its tics
@@ -19,14 +21,19 @@
 ;               its angle and health, the player's new status, the weapon
 ;               up (gw_setup)
 ;   gs_reborn   G_PlayerReborn: a new player but the cheats and the counts
-;   gs_mobj     P_SpawnMobj(GC_X, GC_Y, ONFLOORZ, type A) into LW_MOB (the
-;               caller saves it): the pool's slot, mobjinfo's fields, one
-;               P_Random call, the spawn state without its action, the
-;               position (gp_setpos), the floor, ceiling and drop-off of
-;               its sector, z on the floor, the thinker (a full one below
-;               MT_MISC0, a brainless one for tics other than -1), totallive
-;
-; The setup's only z is ONFLOORZ: P_SpawnMapThing always passes it.
+;   gs_mobj     P_SpawnMobj(GC_X, GC_Y, GA_Z, type A) into LW_MOB (the
+;               caller saves it: gt_mosave): the pool's slot (or the
+;               zone's), mobjinfo's fields, one P_Random call, the spawn
+;               state without its action, the position (gp_setpos), the
+;               floor, ceiling and drop-off of its sector, z: ONFLOORZ the
+;               floor, ONCEILINGZ the ceiling less the height, else GA_Z;
+;               the thinker (a full one below MT_MISC0, a brainless one for
+;               tics other than -1, else none: upstream's addIfFunc keeps a
+;               mobj with no function off the thinker list), totallive;
+;               its tics and function in LW_MOB's working MO_XTICS,
+;               MO_XFUNC (the planes' at gt_mosave)
+;   gs_spawnmobj  P_SpawnMobj in play: GA_X, GA_Y, GA_Z, GA_TYPE in; the
+;               mobj made and saved; A:X = GC_MO = its slot
 
         .setcpu "65C02"
         .macpack longbranch
@@ -35,10 +42,17 @@
         .include "llayout.inc"
         .include "lgame.inc"
 
-        .export gs_spawn, gs_mobj, gs_reborn
+        .export gs_mobj, gs_reborn, gs_spawnmobj
+.ifdef LOADIMG
+        .export gs_spawn
+.endif
         .import g_get, g_put, g_zero, g_random, gt_add, gt_poolinit
-        .import gt_pooltake, gt_mosave, gp_setpos, gw_setup, lg_prep
-        .import ld_block, ld_stop, udiv16, mo_free
+        .import gt_pooltake, gt_mosave, gp_setpos, gw_setup
+        .import udiv16, mo_free, sec_get
+.ifdef LOADIMG
+        .import ld_block, ld_stop
+.endif
+        .include "ggame.inc"
 
 ; INC32 addr: the 32-bit game global at addr + 1
 .macro  INC32 addr
@@ -63,11 +77,22 @@ PLR     = G_PLAYER
 ; ---------------------------------------------------------------------------
 ; gs_spawn: the SPAWN step
 ; ---------------------------------------------------------------------------
+.ifdef LOADIMG
 gs_spawn:
         lda GS_GAME
         bne :+
         rts
-:       jsr lg_prep
+:       ldx #2 * 4 - 1          ; the places of LVG1: LTAB, FLIDX, FLENT,
+:       lda LW_HDR + LHV_LTAB,x ;   BLINKS (the header's order), REJECT's
+        sta G_LTABAT,x
+        dex
+        bpl :-
+        .assert G_FLIDXAT = G_LTABAT + 2 && G_FLENTAT = G_FLIDXAT + 2 &&  G_BLINKSAT = G_FLENTAT + 2 && G_REJECTAT = G_BLINKSAT + 2, error,  "the places' order"
+        .assert LHV_FLIDX = LHV_LTAB + 2 && LHV_FLENT = LHV_FLIDX + 2 &&  LHV_BLINKS = LHV_FLENT + 2, error, "the header's order"
+        lda LW_HDR + LH_REJECT
+        sta G_REJECTAT
+        lda LW_HDR + LH_REJECT + 1
+        sta G_REJECTAT+1
         lda LW_HDR + LHC_THINGS ; the pool: one mobj a map thing
         sta G_POOLN
         lda LW_HDR + LHC_THINGS + 1
@@ -176,6 +201,7 @@ gs_spawn:
         inc GS_I+1
         bra @thing
 @done:  rts
+.endif
 
 ; ---------------------------------------------------------------------------
 ; gs_mapthing: P_SpawnMapThing of LW_MT
@@ -201,25 +227,25 @@ gs_mapthing:
 :       jsr mt_xy
         lda LW_MT + MT_KIND
         jsr gs_mobj
-        lda MO_A + MA_TICS + 1  ; tics > 0: 1 + P_Random() % tics
+        lda LW_MOB + MO_XTICS + 1       ; tics > 0: 1 + P_Random() % tics
         bmi @counts
-        ora MO_A + MA_TICS
+        ora LW_MOB + MO_XTICS
         beq @counts
         jsr g_random
         sta M_A
         stz M_A+1
-        lda MO_A + MA_TICS
+        lda LW_MOB + MO_XTICS
         sta M_B
-        lda MO_A + MA_TICS + 1
+        lda LW_MOB + MO_XTICS + 1
         sta M_B+1
         jsr udiv16
         clc
         lda M_T
         adc #1
-        sta MO_A + MA_TICS
+        sta LW_MOB + MO_XTICS
         lda M_T+1
         adc #0
-        sta MO_A + MA_TICS + 1
+        sta LW_MOB + MO_XTICS + 1
 @counts:
         lda MO_B + MB_FLAGS + 2 ; kills, items
         and #U_MF_COUNTKILL_HI
@@ -238,8 +264,17 @@ gs_mapthing:
         sta MO_B + MB_FLAGS
 :       jmp gt_mosave
 
-; mt_xy: GC_X = mthing->x << 16, GC_Y = mthing->y << 16
-mt_xy:  stz GC_X
+; mt_xy: GC_X = mthing->x << 16, GC_Y = mthing->y << 16, GA_Z = ONFLOORZ
+; (P_SpawnMapThing's and spawnPlayer's z)
+mt_xy:  lda #<UC_ONFLOORZ_LO
+        sta GA_Z
+        lda #>UC_ONFLOORZ_LO
+        sta GA_Z+1
+        lda #<UC_ONFLOORZ_HI
+        sta GA_Z+2
+        lda #>UC_ONFLOORZ_HI
+        sta GA_Z+3
+        stz GC_X
         stz GC_X+1
         stz GC_Y
         stz GC_Y+1
@@ -459,9 +494,9 @@ gs_mobj:
         sta MO_A + MA_STATE + 1
         jsr state_get
         lda LW_STATE + U_ST_TICS
-        sta MO_A + MA_TICS
+        sta LW_MOB + MO_XTICS
         lda LW_STATE + U_ST_TICS + 1
-        sta MO_A + MA_TICS + 1
+        sta LW_MOB + MO_XTICS + 1
         lda LW_STATE + U_ST_SPRITE
         sta LW_MOB + TH_SPR
         lda LW_STATE + U_ST_FRAME
@@ -469,45 +504,79 @@ gs_mobj:
         lda LW_STATE + U_ST_FRAME + 1
         sta LW_MOB + TH_FRAME + 1
         jsr gp_setpos           ; the blocks and the sector (GC_SEC)
-        lda GC_SEC              ; floorz = dropoffz = the floor, ceilingz,
-        stz FA_SRC+1            ;   z = floorz (ONFLOORZ)
-        ldx #4
-:       asl a
-        rol FA_SRC+1
-        dex
-        bne :-
-        clc
-        adc #<SECBASE
-        sta FA_SRC
-        lda FA_SRC+1
-        adc #>SECBASE
-        sta FA_SRC+1
-        lda #LVMAP
-        sta FA_BANK
-        lda #<LW_SREC
-        ldx #>LW_SREC
-        ldy #SEC_SIZE
-        jsr g_get
+        lda GC_SEC              ; floorz = dropoffz = the floor, ceilingz
+        jsr sec_get
+        ldy #SEC_FLOOR + 3
         ldx #3
-:       lda LW_SREC + SEC_FLOOR,x
+:       lda (GC_SP),y
         sta MO_B + MB_FLOORZ,x
         sta MO_B + MB_DROPZ,x
-        sta LW_MOB + TH_Z,x
-        lda LW_SREC + SEC_CEIL,x
-        sta MO_B + MB_CEILZ,x
+        dey
         dex
         bpl :-
+        ldy #SEC_CEIL + 3
+        ldx #3
+:       lda (GC_SP),y
+        sta MO_B + MB_CEILZ,x
+        dey
+        dex
+        bpl :-
+        lda GA_Z+3              ; z: ONFLOORZ the floor, ONCEILINGZ the
+        cmp #>UC_ONFLOORZ_HI    ;   ceiling less the height, else GA_Z
+        bne @ceil
+        lda GA_Z+2
+        cmp #<UC_ONFLOORZ_HI
+        bne @given
+        lda GA_Z+1
+        cmp #>UC_ONFLOORZ_LO
+        bne @given
+        lda GA_Z
+        cmp #<UC_ONFLOORZ_LO
+        bne @given
+        ldx #3
+:       lda MO_B + MB_FLOORZ,x
+        sta LW_MOB + TH_Z,x
+        dex
+        bpl :-
+        bra @thinker
+@ceil:  cmp #>UC_ONCEILINGZ_HI
+        bne @given
+        lda GA_Z+2
+        cmp #<UC_ONCEILINGZ_HI
+        bne @given
+        lda GA_Z+1
+        cmp #>UC_ONCEILINGZ_LO
+        bne @given
+        lda GA_Z
+        cmp #<UC_ONCEILINGZ_LO
+        bne @given
+        sec
+        ldx #0
+        ldy #4
+:       lda MO_B + MB_CEILZ,x
+        sbc MO_B + MB_HEIGHT,x
+        sta LW_MOB + TH_Z,x
+        inx
+        dey
+        bne :-
+        bra @thinker
+@given: ldx #3
+:       lda GA_Z,x
+        sta LW_MOB + TH_Z,x
+        dex
+        bpl :-
+@thinker:
         ldx #FN_MOBJ            ; the thinker: full below MT_MISC0, the
         lda MO_A + MA_TYPE      ;   states only with tics other than -1,
         cmp #U_MT_MISC0         ;   else none
         bcc @fn
         ldx #FN_BRAINLESS
-        lda MO_A + MA_TICS
-        and MO_A + MA_TICS + 1
+        lda LW_MOB + MO_XTICS
+        and LW_MOB + MO_XTICS + 1
         cmp #$FF
         bne @fn
         ldx #FN_NONE
-@fn:    stx MO_A + MA_FUNC
+@fn:    stx LW_MOB + MO_XFUNC
         cpx #FN_NONE
         beq @live
         lda GC_MO
@@ -530,6 +599,28 @@ gs_mobj:
 :       sta LW_MOB + TH_FLAGS
         rts
         .assert >U_MF_COUNTKILL_HI = 0 && >U_MF_COUNTITEM_HI = 0 &&  >U_MF_SHADOW_HI = 0 && <U_MF_POOLED_HI = 0 &&  >U_MF_AMBUSH_LO = 0 && >U_MF_NOSECTOR = 0 &&  >U_MF_NOBLOCKMAP = 0, error, "the flags' bytes"
+
+; ---------------------------------------------------------------------------
+; gs_spawnmobj: P_SpawnMobj in play: GA_X, GA_Y, GA_Z, GA_TYPE in; the mobj
+; made and saved (gt_mosave: the object API and the planes); A:X = GC_MO
+; ---------------------------------------------------------------------------
+; (the parts' name for it: FCALL P_SpawnMobj, glayout.CORE_ENTRIES)
+P_SpawnMobj := gs_spawnmobj
+        .export P_SpawnMobj
+gs_spawnmobj:
+        ldx #3
+:       lda GA_X,x
+        sta GC_X,x
+        lda GA_Y,x
+        sta GC_Y,x
+        dex
+        bpl :-
+        lda GA_TYPE
+        jsr gs_mobj
+        jsr gt_mosave
+        lda GC_MO
+        ldx GC_MO+1
+        rts
 
 ; state_get: LW_STATE = the state MO_A's MA_STATE (GT_STATES + 16 n)
 state_get:

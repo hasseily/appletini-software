@@ -1,0 +1,227 @@
+# The palettes (docs/SCREENS.md 6.1, part s2cap): in E1M1, gamma through
+# the menu (OPTIONS, DISPLAY & SOUND, GAMMA) at each step 0 to 4 and back
+# to 0, the view and the status bar on screen after each change; then the
+# tints by pokes of the player's fields at named tics (injected state with
+# a reason: the pickups are not on E1M1's path): damagecount (the red
+# tints), bonuscount (the gold), powers[pw_ironfeet] (the radiation suit's
+# green), powers[pw_strength] (berserk's red), each left to run down.
+#
+# The player (offsets.inc): OFS_PL_POWERS 41 (6 words: IRONFEET 3,
+# STRENGTH 1), OFS_PL_DAMAGECOUNT 117, OFS_PL_BONUSCOUNT 119. Menus:
+# MAIN 0 (OPTIONS row 1), OPTIONS 6 (DISPLAY & SOUND row 1), VIDEO 12
+# (GAMMA row 1): right raises gamma, left lowers it.
+
+wait d_main65.s:pagedrawn == 1 within 90s   # the title page is up
+at +1s press escape                     # a new game at the default skill
+wait m_menu65.s:currentMenu == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+at +10f press return
+wait m_menu65.s:currentMenu == 2 within 10s
+wait m_menu65.s:itemOn == 2 within 1
+at +10f press return
+wait _g_usergame == 1 within 10s
+wait _g_gamestate == 0 within 10s
+wait long _g_gametic grows 1 within 60s # E1M1 is loaded
+at +2s note level
+
+at +10t press escape                    # gamma 1
+wait m_menu65.s:currentMenu == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return
+wait m_menu65.s:currentMenu == 6 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press right
+wait m_menu65.s:_g_gamma == 1 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 6 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+at +10f press escape
+wait _g_menuactive == 0 within 10s
+
+at +10t press escape                    # gamma 2
+wait m_menu65.s:currentMenu == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return
+wait m_menu65.s:currentMenu == 6 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press right
+wait m_menu65.s:_g_gamma == 2 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 6 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+at +10f press escape
+wait _g_menuactive == 0 within 10s
+
+at +10t press escape                    # gamma 3
+wait m_menu65.s:currentMenu == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return
+wait m_menu65.s:currentMenu == 6 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press right
+wait m_menu65.s:_g_gamma == 3 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 6 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+at +10f press escape
+wait _g_menuactive == 0 within 10s
+
+at +10t press escape                    # gamma 4
+wait m_menu65.s:currentMenu == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return
+wait m_menu65.s:currentMenu == 6 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press right
+wait m_menu65.s:_g_gamma == 4 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 6 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+at +10f press escape
+wait _g_menuactive == 0 within 10s
+
+at +10t press escape                    # gamma 3
+wait m_menu65.s:currentMenu == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return
+wait m_menu65.s:currentMenu == 6 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press left
+wait m_menu65.s:_g_gamma == 3 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 6 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+at +10f press escape
+wait _g_menuactive == 0 within 10s
+
+at +10t press escape                    # gamma 2
+wait m_menu65.s:currentMenu == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return
+wait m_menu65.s:currentMenu == 6 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press left
+wait m_menu65.s:_g_gamma == 2 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 6 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+at +10f press escape
+wait _g_menuactive == 0 within 10s
+
+at +10t press escape                    # gamma 1
+wait m_menu65.s:currentMenu == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return
+wait m_menu65.s:currentMenu == 6 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press left
+wait m_menu65.s:_g_gamma == 1 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 6 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+at +10f press escape
+wait _g_menuactive == 0 within 10s
+
+at +10t press escape                    # gamma 0
+wait m_menu65.s:currentMenu == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return
+wait m_menu65.s:currentMenu == 6 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press left
+wait m_menu65.s:_g_gamma == 0 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 6 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+at +10f press escape
+wait _g_menuactive == 0 within 10s
+
+at +20t poke _g_player+117 40           # damagecount: the red tints
+at +60t poke _g_player+119 10           # bonuscount: the gold tint
+at +30t poke _g_player+47 200           # powers[pw_ironfeet]: green
+at +60t poke _g_player+47 0
+at +10t poke _g_player+43 1             # powers[pw_strength]: berserk
+at +10t poke _g_player+117 20           #   with damage: red
+at +60t poke _g_player+43 0
+at +30t note end
+stop

@@ -6,6 +6,14 @@ canonical command: one process runs every module, one after another (about
 missing. The ground rules are in
 [`docs/MILESTONES.md`](../docs/MILESTONES.md#ground-rules).
 
+Unit tests stay quick: a check that reruns a whole acceptance (hundreds of
+frames or setups) runs an even sample by default, and all of it with
+`DOOM_GS_FULL=1` in the environment. The acceptance commands themselves
+(`frame8.py`, `level_check.py`, the tic checks) always run in full.
+`test_native_game_skeleton`'s frame check on loaded levels is the first:
+all 729 frames took about 18 of its 22 minutes, which made every full
+suite run at least 22 minutes long (2026-10-01).
+
 ## The parallel runner
 
 `python3 tools/testpar.py` runs the same modules with the same results in
@@ -14,7 +22,9 @@ the way the canonical command loads it (unittest's `discover` from
 `tests/`, with the pattern `<module>.py`). Up to 9 run at once (`--jobs N`),
 the longest first, from the times of the last run (`build/testpar-times.json`,
 one number a module, rewritten each run). Each has a time limit (`--timeout`,
-1,200 s by default) and the bounds of `tools/ref816/bounded.py`, which the
+1,200 s by default; `MODULE_TIMEOUTS` gives `test_native_game_skeleton`,
+milestone 10's checkpoint S with milestone 9's whole acceptance, 3,600 s)
+and the bounds of `tools/ref816/bounded.py`, which the
 module's process sets on itself. A timeout or Ctrl-C kills the module's
 process and every process it started, whatever process group it is in
 (`bounded.run`, and so `support.run` and the tools' makes and machines,
@@ -27,12 +37,17 @@ It prints one summary: for each module its time, tests, failures, errors
 and skips, then the totals, then the whole output of every module that
 failed, erred, crashed or ran out of time. The exit status is 1 if any did.
 `--json FILE` also writes each test's outcome, `--list` the order and the
-conflicts, and module names run only those modules.
+conflicts, and module names run only those modules. A work-in-progress
+module, `tests/wip_test_*.py` (a part's test while it is built,
+[`docs/SCREENS.md`](../docs/SCREENS.md) 7.1), is outside the pattern, so
+neither the canonical command nor a run without names takes it; it runs
+when named (`test_testpar.py` checks both).
 
 ```
 python3 tools/testpar.py                     # everything, 9 at a time
 python3 tools/testpar.py test_native_render  # one module (or tests/test_native_render.py)
 python3 tools/testpar.py --list              # the order, nothing run
+python3 tools/testpar.py tests/wip_test_PART.py      # a work-in-progress module, by name
 ```
 
 ### The races
@@ -56,15 +71,16 @@ Who writes where (`PREBUILD` and `SHARED` in `tools/testpar.py`):
 
 | Shared files under `build/` | How they are written | Written by | Read by | Runner |
 | --- | --- | --- | --- | --- |
-| `ref816/ref816` | `make -C tools/ref816 build/ref816/ref816` (`title.build_machine()`) | ref816_calllog, ref816_capture, ref816_divscan, ref816_dump, ref816_inject, ref816_trace, ref816_machine, coverage, bridge_dumps (when it is missing) | native_frame8, native_math, native_replay | prebuild |
-| `ref816/memory.img`, `loader.img`, `disk.hdv`, when missing | `title.ensure_image()` | ref816_calllog, ref816_capture, ref816_divscan, ref816_dump, ref816_inject, ref816_trace, interpreter, bridge_dumps (in `tools/bridge/dumps.py`) | the same | prebuild: `make_image.main([])`, which rewrites them as coverage and ref816_machine do, so a stale image is replaced before any module reads it |
+| `ref816/ref816` | `make -C tools/ref816 build/ref816/ref816` (`title.build_machine()`) | ref816_calllog, ref816_capture, ref816_divscan, ref816_dump, ref816_inject, ref816_trace, ref816_machine, coverage, bridge_dumps (when it is missing), native_game_skeleton (milestone 10's tools: `gamecap.py`), native_game_lockstep (`ticrun.py`'s start captures) | native_frame8, native_math, native_replay | prebuild |
+| `ref816/memory.img`, `loader.img`, `disk.hdv`, when missing | `title.ensure_image()` | ref816_calllog, ref816_capture, ref816_divscan, ref816_dump, ref816_inject, ref816_trace, interpreter, bridge_dumps (in `tools/bridge/dumps.py`), native_game_skeleton (`gamecap.py`), native_game_lockstep (`ticrun.py`) | the same | prebuild: `make_image.main([])`, which rewrites them as coverage and ref816_machine do, so a stale image is replaced before any module reads it |
 | `ref816/memory.img`, `loader.img`, `disk.hdv`, always | `make_image.main([])`: `write_bytes` and `copyfile`, in place | coverage, ref816_machine | ref816_calllog, ref816_capture, ref816_divscan, ref816_dump, ref816_inject, ref816_trace, interpreter, bridge_dumps (the machine reads them) | exclusive |
 | `gen/drawcol.s`, `gen/loadfont.s`, always | `frontend.generate()` (`support.frontend_results()`) | cppcheck, frontend, imgmatch, release, sections | the same | exclusive |
 | `native/math/mathref` | `make -C tools/native` | native_math | native_render (`sidecheck.MATHREF`) | prebuild |
 | `native/math/obj` | `math.mk` with `TABLES=build/native/math/tables` | native_math | | prebuild |
 | `native/obj` | `src/native/Makefile` (the replay) | native_replay | native_render_frame (`loader.read_build()`) | prebuild |
-| `native/render/obj` | `render.mk` (`render_check.make()`) | native_frame8, native_masked, native_masked_b, native_render, native_render_frame, native_render_walls | native_level_load | prebuild |
-| `native/levels/obj` | `level.mk` (`lrun.make()`) | native_level_load, native_level_setup | | prebuild |
+| `native/render/obj` | `render.mk` (`render_check.make()`) | native_frame8, native_masked, native_masked_b, native_render, native_render_frame, native_render_walls | native_level_load, native_game_skeleton | prebuild |
+| `native/levels/obj` | `level.mk` (`lrun.make()`) | native_level_load, native_level_setup, native_game_skeleton | | prebuild |
+| `native/game/shared`, `native/game/skel` | `game.mk shared skel` (`grun.make()`): milestone 10's generated includes, `game.cfg`, the game manifests, the call graph, and the skeleton's test image | native_game_skeleton, native_game_lockstep (`ticrun.run()` makes the lockstep image `game`, `gprof` for its timing) | every part's test (`test_native_game_<part>`, from wave 1: they only read them; their skip message names `make -s -C src/native -f game.mk shared skel ROOT=$PWD`) | prebuild |
 
 Nothing but the table says who writes where, so a module added later that
 writes shared files would race the others unseen: a plain failure now and
@@ -72,12 +88,13 @@ then, or no failure and a different `build/`. `Tables` in
 `test_testpar.py` guards the known writers: every module that calls one of
 `WRITER_CALLS` in `tools/testpar.py` (`support.frontend_results`,
 `match_results`, `release_targets`, `make_image.main` without `--out`,
-`title.build_machine`, `title.ensure_image`, `render_check.make` and
-`lrun.make` into their own build, and a module's own `make` of a makefile of
+`title.build_machine`, `title.ensure_image`, `render_check.make`,
+`lrun.make` and `grun.make` into their own build, and a module's own `make` of a makefile of
 `src/native`), directly or through functions of `tests/` and `tools/` at
 any depth, must be among the writers of its entry. `NOT_WRITES` lists the
-calls the scan follows that do not write at run time (one:
-native_level_load runs `frame8.main` with `--no-build`). A new kind of
+calls the scan follows that do not write at run time (two:
+native_level_load and native_game_skeleton run `frame8.main` with
+`--no-build`). A new kind of
 shared write, or a module that only reads shared files, still has to be
 added to the table by hand.
 

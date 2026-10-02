@@ -100,6 +100,41 @@ still in E1M1, and the title demo) and writes
 [docs/PROFILE.md](docs/PROFILE.md) from the traces, with the register
 widths of every executed instruction in `build/ref816/widths.json`.
 
+## Playing the game
+
+`build/native/DOOM.hdv` is the whole game on one ProDOS volume: the title
+loop with its music and demo, the menus, episode 1 from E1M1 with the
+keyboard and the mouse, the status bar, the HUD, the automap, the
+intermission, the music and the sound effects. Saving and loading say
+"not in this version". It has been played on a2vm only; the owner's guide
+for the card (the profile, the keys, the frame rates, the known problems)
+is [`docs/PLAY.md`](docs/PLAY.md) section 12.
+
+    python3 tools/fetch_upstream.py            # build/: upstream, the release, DOOM1.WAD
+    # the other milestones' builds the disk takes (playdisk.py names any missing)
+    python3 tools/native/playdisk.py           # build/native/DOOM.hdv (4.0 MB)
+
+The machine: an Apple //e (PAL or NTSC) with the Appletini in TURBO mode,
+8 MB RamWorks, the mouse card in slot 2, the Phasor in slot 4, and the
+Doom profile (`vtw.slowdown.cycles=32`). Boot the `.hdv` as a ProDOS
+volume: `DOOM.SYSTEM` loads everything from it and starts the title loop.
+
+| Key | Does |
+| --- | --- |
+| Up, down arrows, `W` `S` | forward, back |
+| Left, right arrows | turn |
+| `A` `D`, `,` `.` | strafe |
+| Open Apple, mouse button | fire |
+| `E`, `SPACE`, `RETURN`, Solid Apple | use (`RETURN` also selects in the menus) |
+| mouse left and right | turn |
+| `1`-`7` | weapons |
+| `TAB` | the automap, then its overlay, then off; `-` `=` zoom |
+| `ESC` | the menu |
+
+Run is the menu's OPTIONS, CONTROLS, ALWAYS RUN (the //e cannot see Shift
+alone). The menu's KEY SETUP changes the keys. QUIT GAME ends on a text
+screen.
+
 ## Licence
 
 Everything in this directory is licensed under the GNU General Public

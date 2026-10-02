@@ -21,7 +21,8 @@ replay's), holds:
                  file"), converted from the WAD's MUS lumps by mus2ay.py
                  now, in upstream's song order (mus.UPSTREAM_SONGS): keys
                  A to M
-  PROFILE.TXT    the Doom configuration profile: its key and how to
+  PROFILE.TXT    the Doom configuration profile: its keys (the window,
+                 chip 3's pans) and how to
                  install it (also DOOM_PROFILE.TXT beside the disk image,
                  build/sound/ by default, to copy beside the disk on the
                  SD card, where the Appletini's menu shows text files)
@@ -125,13 +126,17 @@ VERDICTS = {0: 'another window', 1: 'window 512', 2: 'window 32',
             3: 'FW-S1'}
 
 PROFILE_KEY = 'vtw.slowdown.cycles=32'
+# chip 3's pans (the effects: tables.FX_VOICES), keys phasor.pan.10-12
+PROFILE_PANS = tuple('phasor.pan.%d=%d' % (tables.FX_MENU_PAN_KEY + k, v.pan)
+                     for k, v in enumerate(tables.FX_VOICES))
 PROFILE_TEXT = """\
 DOOM CONFIGURATION PROFILE FOR THE APPLETINI (DOOM GS, MILESTONE S3)
 
-THE KEY
+THE KEYS
     vtw.slowdown.cycles=32
+    %(pans)s
 
-WHY
+WHY: THE WINDOW
     With the virtual Phasor on, every access to slot 4 runs the CPU at
     1 MHz for the next vtw.slowdown.cycles CPU cycles: 512 by default
     (504 us after each burst of AY writes). 32 cuts that tail to 31.5 us,
@@ -140,19 +145,30 @@ WHY
     Mockingboard detection loops time the VIA timers 8 cycles apart; 32
     still covers them.
 
+WHY: THE PANS
+    The sound effects play on the Phasor's fourth AY, the menu's AY3
+    (Phasor tab; keys phasor.pan.10 to 12 for AY3 A, B, C). A is the
+    left voice (pan 5: left full, right 10/16), B the right (pan 11:
+    left 9/16, right full), C the centre (pan 8: both sides full; on the
+    menu's scale 0-15, 8 is the only centred value). The menu's default
+    for AY3 C is 5 (left), so without this a centred sound (your own
+    shots, pickups, the menu) leans left. Only AY3 C changes. The music
+    plays on AY0 to AY2, whose pans stay the defaults.
+
 WHERE PROFILES LIVE (firmware F1.2.1, ps_sources/frontend)
     A profile is a folder on the card's SD volume, 0:/profiles/NAME/,
     holding appletini_cfg.txt (profile_manager.h). Loading one first
     resets every setting to its default, then applies the file's keys
     (config_menu.c, config_menu_read_settings_from_path), then saves the
     result as 0:/appletini_cfg.txt, so it stays after a reboot. A file
-    holding only the key above would therefore turn off the Phasor, the
+    holding only the keys above would therefore turn off the Phasor, the
     mouse card, RamWorks and TURBO: start from a full profile instead.
 
 INSTALL
     1. Boot into the Appletini menu with the setup DOOM needs: TURBO on,
        RamWorks on (8 MB), the mouse card in slot 2, the Phasor in slot 4
-       on and its Mockingboard only option off.
+       on and its Mockingboard only option off. In the Phasor tab, move
+       to AY3 C and press RETURN: RETURN centres a pan (8).
     2. Profiles tab: Save As, name DOOM. This writes every current setting
        to 0:/profiles/DOOM/appletini_cfg.txt.
     3. Open that file on the SD volume (the SD card in a computer, or the
@@ -165,6 +181,9 @@ INSTALL
            phasor.mockingboard.only=OFF
            slot2.card=MOUSE
            vtw.turbo.enabled=ON
+           %(pans_check)s
+       (if step 1's RETURN was missed, the last line says
+       phasor.pan.12=5: change it to phasor.pan.12=8).
     4. Profiles tab: Choose profile, DOOM. The status line says LOADED
        PROFILE DOOM. (Between steps 2 and 4, change no bezel or video ROM
        setting: the menu also writes those into the selected profile,
@@ -172,15 +191,26 @@ INSTALL
     5. Do not step the slowdown window in the menu afterwards: its presets
        are 256 to 65535, and a step replaces 32 with one of them.
 
+    With a DOOM profile made before: Profiles tab, Choose profile, DOOM;
+    Phasor tab, AY3 C, RETURN (8); Profiles tab, Save to current profile
+    (it writes every current setting, the window 32 with them). Or change
+    the file's line phasor.pan.12=5 to phasor.pan.12=8 and choose DOOM
+    again. A pan changed in the Phasor tab alone is saved in
+    0:/appletini_cfg.txt only: the next Choose profile, DOOM, sets it
+    back to the file's value.
+
 CHECK IT
     Boot MUSIC.HDV and press T: the timing test prints the window. It
     says "THE WINDOW IS 32: THE DOOM PROFILE" with the profile, and "THE
-    WINDOW IS 512: THE DEFAULT" without it.
+    WINDOW IS 512: THE DEFAULT" without it. Boot SOUNDS.HDV and press
+    RETURN: the effect plays on C CENTRE and is heard in the middle; A
+    plays it on the left, B on the right.
 
 UNDO
-    Choose another profile, or set the line back to 512 and choose DOOM
-    again.
-"""
+    Choose another profile, or set the lines back (512; phasor.pan.12=5)
+    and choose DOOM again.
+""" % {'pans': '\n    '.join(PROFILE_PANS),
+       'pans_check': '\n           '.join(PROFILE_PANS)}
 
 
 # ---------------------------------------------------------------------------

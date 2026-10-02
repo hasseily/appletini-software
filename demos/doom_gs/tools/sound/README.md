@@ -91,7 +91,16 @@ python3 tools/sound/mus2mid.py D_E1M1 build/sound/D_E1M1.mid    # MIDI
   and a sum of 2048 or more saturates (`mockingboard.sv:316-378`, `:500-505`).
   The pan word runs psg0 (VIA-A first AY), psg1 (VIA-B first AY), psg2,
   psg3, so with the drivers' chip numbers the pans are: chips 0 and 1
-  (VIA-A) 11, 5, 11; chips 2 and 3 (VIA-B) 5, 11, 5.
+  (VIA-A) 11, 5, 11; chips 2 and 3 (VIA-B) 5, 11, 5. The menu's scale is
+  0-15 (`config_menu_phasor.c:333-336`); the gains
+  (`mockingboard.sv:316-343`) keep the left at 16/16 for pans 0-8 and the
+  right at 16/16 for pans 8-15, so **8 is the one centred pan**, both
+  sides full (RETURN on a pan item in the menu sets it to 8,
+  `config_menu_phasor.c:398-409`). The menu labels the chips by psg:
+  chip 3 is "AY3 A/B/C", keys `phasor.pan.10`-`12` of
+  `appletini_cfg.txt` (`:16-29`, `:234-243`, `:296-298`). The Doom
+  profile sets chip 3's C to 8 (below, "Stereo by voice"); the music's
+  chips keep the defaults.
 - **Addressing.** As the Bilestoad, Bosconian and Pinball drivers do
   (`demos/bilestoad/src/sound.s:1-17,150-185`,
   `demos/appletini_bosconian/sound_io.s:1-22,101-134`,
@@ -369,7 +378,7 @@ Volume `MUSIC`, 219,136 bytes (428 blocks):
 | `MUSIC.SYSTEM` | SYS, `$2000` | 14,080 | The program (below): `$2000-$3FFF` its code, `$4000-$56FF` the card image `$E900-$FFFF` |
 | `PRODOS` | SYS | 17,128 | ProDOS 2.4.3, with its boot blocks, from `ProDOS_2_4_3.po` |
 | `E1M1.AY` ... `E1M9.AY`, `INTER.AY`, `INTRO.AY`, `VICTOR.AY`, `INTROA.AY` | BIN, `$1000` | 498 to 22,352 | The 13 song files, converted by `mus2ay.py` at build time, in upstream's song order (`mus.UPSTREAM_SONGS`): keys A to M |
-| `PROFILE.TXT` | TXT | 2,504 | The Doom configuration profile: the key and how to install it (below) |
+| `PROFILE.TXT` | TXT | 4,030 | The Doom configuration profile: its keys (the window, chip 3's pans) and how to install it (below) |
 
 `DOOM_PROFILE.TXT`, written beside the disk image (`build/sound/` by
 default; `--out` moves both), is the same text, to copy beside
@@ -498,7 +507,10 @@ write's bus cycle: on a2vm up to 1.3 cycles over the setting (below).
 ### The Doom configuration profile
 
 The owner's decision (NATIVE.md 15.1, row 2): ship a Doom profile with
-`vtw.slowdown.cycles=32`. Read in appletini-one F1.2.1
+`vtw.slowdown.cycles=32`; and since 2026-10-02 (`docs/SCREENS.md` 10,
+row 6) chip 3's pans `phasor.pan.10=5`, `phasor.pan.11=11`,
+`phasor.pan.12=8` (A left, B right, C centre: "Stereo by voice" below;
+only C differs from the menu's default, 5). Read in appletini-one F1.2.1
 (`ps_sources/frontend`):
 
 - A profile is a folder `0:/profiles/NAME/` on the card's SD volume
@@ -528,23 +540,37 @@ edited:
 
 1. Boot into the Appletini menu with the setup DOOM needs: TURBO on,
    RamWorks on, the mouse card in slot 2, the Phasor in slot 4 on and its
-   Mockingboard only option off.
+   Mockingboard only option off. In the Phasor tab, AY3 C: RETURN (pan
+   8, the centre).
 2. Profiles tab: Save As, name `DOOM`. This writes
    `0:/profiles/DOOM/appletini_cfg.txt`.
 3. On the SD volume (the card in a computer, or the menu's USB or FTP SD
    sharing), change that file's line `vtw.slowdown.cycles=512` to
    `vtw.slowdown.cycles=32`. Check `phasor.slot4.enabled=ON`,
    `phasor.mockingboard.only=OFF`, `slot2.card=MOUSE`,
-   `vtw.turbo.enabled=ON` while there.
+   `vtw.turbo.enabled=ON`, `phasor.pan.10=5`, `phasor.pan.11=11`,
+   `phasor.pan.12=8` while there.
 4. Profiles tab: Choose profile, `DOOM`; the status line says `LOADED
    PROFILE DOOM`. Between steps 2 and 4, change no bezel or video ROM
    setting: the menu also writes those into the selected profile, with
    the window it holds, 512 (`config_menu.c:6745-6750`, `:7019-7021`).
 5. Do not step the slowdown window in the menu afterwards.
 
-Undo: choose another profile, or set the line back to 512 and choose
-`DOOM` again. `PROFILE.TXT` on the disk and `DOOM_PROFILE.TXT` beside it
-say the same. The key is: `vtw.slowdown.cycles=32`.
+A DOOM profile made before 2026-10-02 lacks the centre: Choose profile,
+`DOOM`; Phasor tab, AY3 C, RETURN; Profiles tab, "Save to current
+profile" (`config_menu_profiles.c:647-665`: every current setting, the
+loaded window 32 with them). Or edit its line `phasor.pan.12=5` to
+`phasor.pan.12=8` and choose `DOOM` again. A pan changed in the Phasor
+tab alone is saved in `0:/appletini_cfg.txt` only
+(`config_menu_phasor.c:338-341`, `config_menu.c:3913-3918`), so the next
+"Choose profile" sets it back.
+
+Undo: choose another profile, or set the lines back (512,
+`phasor.pan.12=5`) and choose `DOOM` again. `PROFILE.TXT` on the disk and
+`DOOM_PROFILE.TXT` beside it say the same (`musicdisk.py`, the pans from
+`tables.FX_VOICES`). The keys are: `vtw.slowdown.cycles=32`,
+`phasor.pan.10=5`, `phasor.pan.11=11`, `phasor.pan.12=8`. The playable
+game's disk (`tools/native/playdisk.py`) carries no profile.
 
 ### Checks on a2vm
 
@@ -635,3 +661,411 @@ code falls against the bus clock.
 - Effects (S4) are not here; they get chip 3.
 - Upstream's `tools/dmxmus.py` was not used as an extra oracle; the second
   decoder is `mus2mid.py` with `midi.py`.
+
+## Effects (S4)
+
+Status: design, 2026-10-01 (revised the same day after the review in
+`docs/SCREENS.md` section 10), for milestone 11's first half
+([`docs/SCREENS.md`](../../docs/SCREENS.md): section 3 places the
+effects in the machine, section 7 gives the parts `fxconv`, `fxplay`,
+`fxchan` and `fxdisk`). The converter is built (part `fxconv`, wave 1,
+2026-10-01: [`docs/m11-parts/fxconv.md`](../../docs/m11-parts/fxconv.md)),
+and so are the player (part `fxplay`, wave 3), the channel logic (part
+`fxchan`, wave 4) and the test disk (part `fxdisk`, wave 7, 2026-10-02:
+[`docs/m11-parts/fxdisk.md`](../../docs/m11-parts/fxdisk.md)), and the
+first half's acceptance passes on a2vm (2026-10-02, `docs/SCREENS.md` 8.13
+and the report 8.14: "Results" below); nothing has run on the card yet.
+The music sections above
+are unchanged, and so is what the music writes: with no effect playing,
+the AY log stays S2's byte for byte (below, "The player").
+
+It follows the owner's decision (`NATIVE.md` 15.1, row 11): effects
+generated automatically, the 10 most frequent hand-tuned, stereo by
+picking a left- or right-panned voice (since 2026-10-02 also a centred
+one: "Stereo by voice"); and `docs/research/native-sound.md`
+4.5, whose prototype (`build/native-design/sound/sfx.py`) this replaces
+with tools of our own. Labels as in `NATIVE.md`: [M] measured, [R
+file:line] read, [A] assumed.
+
+### Sources
+
+| Lumps | What | Facts |
+| --- | --- | --- |
+| `DS*` | Digital effects: DMX format, a format word (3), the sample rate, the sample count, then 8-bit unsigned samples | 55 in `DOOM1.WAD`, 52 of them the game's sounds (`CONST_SFX_PISTOL` .. `GETPOW` [R `build/upstream/src/iigs/offsets.inc:448-499`]); `DSBDOPN`, `DSBDCLS`, `DSITMBK` are not; 515,136 samples for the 52, the longest 1.69 s [M: this design]; 11,025 Hz but `DSITMBK` 22,050 [M: sound 4.5] |
+| `DP*` | PC-speaker effects: a zero word, a count, then one tone index a 140 Hz tick (0 silent) | 55, all 52 game sounds present [M: this design]; `DPPISTOL` 27 ticks |
+
+Upstream's sound bank and DOC plans [R `s_sound65.s:1-13`] are not used.
+
+### The converter (`tools/sound/fxconv.py`)
+
+For each of the 52 game sounds, in upstream's order (`sfxPriority`'s [R
+`s_sound65.s:1274-1285`]), one script:
+
+| Per 140 Hz tick (78.75 samples at 11,025 Hz) | Rule |
+| --- | --- |
+| Tone | The `DP` tick's tone index, through the PC speaker's divisor table (Chocolate Doom's published table, `divisors[]` of `src/i_pcsound.c`, PIT clock 1,193,181 Hz; native-sound 4.5's quarter-tone reconstruction is within 7.4 cents of it [M: `docs/m11-parts/fxconv.md` 4]), to an AY period at the PAL native PSG clock, 2,031,250 Hz (this README, "Facts checked in the HDL"); a byte of 0 or 128 and up: no tone. NTSC plays the same periods, 8 cents sharp [A: inaudible on effects] |
+| Level | The `DS` tick's RMS in dB, to the music's attenuation unit (0.5 dB, 80 silent), so the effects use the music's `LEVEL` table; 0 dB is a full-scale sine; the DS's first and last 16 samples are DMX's padding and skipped |
+| Noise | On when the `DS` tick's zero crossings pass 2,500 a second, or when the tick has no tone after the quantization (the DS's sound past the DP's tones, a shot's or an explosion's decay, is heard as noise); its period from the crossing rate, 1-31 (31 with no crossing) |
+| Length | The longer of the two lumps; the tail after the last tick within 40 attenuation units (20 dB) of the effect's loudest trimmed; a tick at 80 or with neither tone nor noise is silent (0, 80, 0), and silent ticks at the end dropped |
+
+Then **quantized for the ring**: a change of level under one AY step, or
+a tone change held for one tick only, is dropped until the ring's budget
+holds: **every 42 ticks (300 ms) of any script take at most 128 bytes**
+(one ring, refilled once a frame: `docs/SCREENS.md` 3). The rules go in
+11 stages (L, H, N): an attenuation change under L half-dB units dropped
+unless from or to 80, a tone held at least H ticks, a noise period
+change under N dropped unless it turns the noise on or off; each script
+takes the first stage that holds the budget (`tools/sound/fxconv.py`,
+`STAGES`). The converter fails, naming the effect, if one cannot. The
+prototype's format took up to about 580 B a second (`BGACT`: 527 B over
+127 ticks [M: sound, `sfx_table.md`]); this one averages 283 B a second
+over the 52 effects, 128 B in the worst 300 ms [M:
+`docs/m11-parts/fxconv.md` 3].
+
+**The script format** (version 1; little endian):
+
+| Bytes | Meaning |
+| --- | --- |
+| header, 4 | version 1; flags (bit 0 tuned, bit 1 uses noise); the length of the steps |
+| `$00`-`$3F` | wait 1-64 ticks |
+| `$40`-`$4F` and fields | set: bit 0 the tone period follows (2 bytes, 0 = tone off), bit 1 the attenuation (1 byte, 0-80), bit 2 the noise period (1 byte, 0 = noise off), bit 3: one wait follows the fields and the script ends when it expires |
+| `$FF` | end: the voice falls silent |
+
+A voice starts at (tone 0, attenuation 80, noise 0); the header's last two
+bytes are the length of the steps after it.
+
+The scripts go into one bank file, `SFX.1` (bank `SFX`, 103), with a
+directory of 52 entries (bank address, length), the volume table (below)
+and nothing else. `SFX.1` is 11,385 B [M: `docs/m11-parts/fxconv.md`]:
+the directory (52 × 4 B, u16 address and u16 length) at `$0200`, `VATT`
+at `$02D0`, the scripts from `$0350`.
+
+**The second model (`tools/sound/fxmodel.py`)** reads `DOOM1.WAD`, the
+`DS` and `DP` lumps, with its own readers (no code shared with
+`fxconv.py` or `mus.py`), computes each tick's wanted tone, level and
+noise by the rules above, applies the quantization rules by its own code,
+and gives the per-tick state. The test decodes each script with a third,
+small decoder and requires the per-tick state to equal the model's
+exactly for every automatic script (as S1's two MUS decoders, above).
+
+### The ten tuned effects
+
+The 10 most frequent starts in demo3, DEMO1, DEMO2 and the tour (1,304
+starts, 36 distinct effects [M: this design, `docs/SCREENS.md`
+appendix A]):
+
+| Effect | Starts | Priority [R `s_sound65.s:1278-1285`] |
+| --- | ---: | ---: |
+| `BGACT` (imp, active) | 169 | 120 |
+| `PISTOL` | 162 | 64 |
+| `POSACT` (zombie, active) | 161 | 120 |
+| `SHOTGN` | 88 | 64 |
+| `PLPAIN` | 77 | 96 |
+| `FIRSHT` (imp fireball) | 76 | 70 |
+| `FIRXPL` (fireball hit) | 75 | 70 |
+| `STNMOV` (moving floor) | 51 | 119 |
+| `POPAIN` (zombie pain) | 41 | 96 |
+| `BGSIT2` (imp sight) | 36 | 98 |
+
+`tools/sound/fxtune.txt` holds a tuned script for each, in a text form
+one step a line: ticks, then any of `tone=HZ` or `period=N`, `att=DB`
+(0-40 dB), `noise=N` (1-31, 0 off), e.g.
+
+    PISTOL
+    2  noise=4 att=0
+    3  att=6
+    4  noise=9 att=12
+    6  att=24
+    end
+
+`fxconv.py` takes the tuned script in place of the automatic one when the
+file has the effect (flag bit 0), and the test disk keeps both. The
+first tuned versions are written in part `fxconv` from the WAV renders
+(`build/sound/fx/*.wav`, by `ayrender.py` from the model's AY log); they
+are a starting point for the owner's ear.
+
+**How the owner tunes them (milestone 12).** Boot `SOUNDS.hdv` (below)
+with the Doom profile; choose an effect; `T` switches between its tuned
+and its automatic version; play each, near and far, left and right, with
+and without music. Edit `tools/sound/fxtune.txt` on the host (each
+effect's steps, as above), run `python3 tools/sound/fxdisk.py`, copy
+`build/sound/SOUNDS.hdv` to the card, boot again. The disk's screen shows
+each effect's version (a checksum of its script), so a photo of the
+screen records what was heard. Notes go into
+`docs/results/sfx-tuning-<date>.md`.
+
+### The player (`src/sound/fx.s`, model `tools/sound/fxplay.py`)
+
+| Part | Where | Does |
+| --- | --- | --- |
+| `fx_step` | The VBL interrupt (`pl_vbl`, `docs/SCREENS.md` 2.3), before `snd_tick` | Its own tempo fraction (the music's: 2 + 52,135/65,536 ticks an interrupt on PAL, 2 + 22,043/65,536 on NTSC; this README, "The player") (it runs in an interrupt where a voice is active or ending; PAL or NTSC from `CLK_STD`); each active voice runs its ticks from its ring (a tick without all its bytes holds the voice, silent, for the rest of the interrupt); then compose chip 3 into its own register list: R0-R5 the three periods, R6 the noise period of the loudest voice with noise on (the lowest min(80, step + `VATT`), the first of a tie; unchanged when none), R7 the mixer (tone and noise bits of the three voices), R8-R10 `LEVEL[min(80, step attenuation + VATT[volume])]`. No I/O; the write list is built here, so `fx_burst` follows the music's burst with no computation between; with no voice active it returns at once. A voice that ends or is stopped gets level 0 once and goes idle |
+| `fx_burst` | The same interrupt, right after `snd_tick`'s burst | The registers of the list that differ from its shadow, ascending, to the second AY of VIA-B (`$C48x`, ORB `$17` latch, `$16` write, `$14` idle; this README, "Addressing"), with S2's 41-cycle loop; with the shadow invalid (`FX_INVAL`) and a voice active or ending, all of R0-R10, then the shadow is valid; nothing while `FX_HOLD` is set or `FX_ON` is 0 |
+| `fx_service` | The main loop, once a frame, in every frame image (`docs/SCREENS.md` 2.1) | The channels' mailboxes (below, "The game side"), each in order: a stop silences the channel's voice; a start frees the channel's voice, chooses one, copies the script's first 128 bytes (its 4-byte header with them, taken at once) into its ring and sets the voice active last; a volume sets the voice's attenuation; the mailbox is then empty. Every frame each active ring is refilled through a read window, a page of the ring published at a time, as S2's `snd_refill`. With `FX_ON` 0 it empties the mailboxes and starts nothing. The copies run in the card (`fx_copy`, `fx_volume`): a RAMRD window hides W |
+| `fx_song` | Wherever the game starts a song (main loop) | `FX_HOLD` set; S2's `snd_start`; `FX_INVAL` set; `FX_HOLD` cleared; returns `snd_start`'s carry and A. `snd_start` ends with `reset_chips`, a burst of R0-R12 of all four chips from the main loop with interrupts on (`src/sound/player.s:1008`, `:1056-1101`): an effect burst inside it would tear VIA-B's latch sequence, and after it chip 3 no longer holds what the effect player's shadow says |
+| `fx_init` | Boot, after `snd_probe` and `snd_init`; A = `snd_probe`'s answer | `FX_ON` 1 when `snd_probe` answered `SND_MUSIC` (native mode), else 0; the shadow invalid (before any song the chips hold the reset's values, R7 0 with every noise on, not the `$38` of S2's first burst); no voice active |
+
+**No effect, no write.** `fx_burst` writes nothing while no voice is
+active (an invalid shadow stays invalid until a voice starts), `fx_step`
+does no I/O, and `snd_tick` (S2's player) is unchanged, so a run without
+effects gives S2's AY log byte for byte. With effects, chips 0-2 still
+get exactly the music's writes in each interrupt; chip 3's follow them
+in the same interrupt.
+
+**No native mode.** With `SND_NO_MUSIC` the card keeps one AY behind
+each VIA and ORB `$17` reaches VIA-B's only AY, the music's chip 2
+(`snd_probe` detects the mode that way, `src/sound/probe.s:71`): the
+effects are off (`FX_ON` 0), as the music is. Effects on a plain
+Mockingboard would be the owner's call; not built.
+
+**Stereo by voice** (revised 2026-10-02, the owner's answer to
+`docs/SCREENS.md` 10, row 6). One table, `tables.FX_VOICES`, gives chip
+3's voices their sides and their pans in the Doom profile: **A left (pan
+5: left 16/16, right 10/16), B right (pan 11: left 9/16, right 16/16), C
+centre (pan 8: both 16/16)**. The model (`fxplay.py`), the 65C02 player
+(`fx.s`, through `tables65.py`'s `FX_VOICE_*` and `FX_SEP_*` equates in
+`build/sound65/tables.inc`), the test disk's voice names (`fxdisk.py`)
+and the effects' renders (`ayrender.DOOM_PANS`; the music's chips keep
+the menu's defaults) read it. The menu's own default for chip 3's C is 5,
+so the owner sets it to 8 in the Phasor menu or the profile (above, "The
+Doom configuration profile").
+
+The voice is chosen at the start (`tables.fx_voice_order`): a separation
+below 96 tries the left voice first, 96 to 160 the centre, above 160 the
+right; a busy voice falls back to the nearest free voice in pan: a side
+to the centre, then the other side; the centre to the side the
+separation leans to, 128 exactly to the left. So the orders are A, C, B
+(below 96); C, A, B (96-128); C, B, A (129-160); B, C, A (above 160). The
+channel's own voice is freed first, so with 3 channels and 3 voices there
+is always one. Below 128 is the left (upstream's pan law: left = vol ×
+(254 - sep) / 127, right = vol × sep / 127, `s_sound65.s:698-712`; sep =
+128 - swing × sin(angle), swing 96, `:552-564`, so a source within about
+20° of straight ahead or behind is in the centre band). Exactly 128 is
+every sound without an origin and every sound of the player
+(`s_sound65.s:221-235`: `PISTOL`, `SHOTGN`, `PLPAIN`, pickups, the menu,
+the intermission), the most frequent: they now take C, the centre, one
+voice for the whole sound. In `fx.s` three comparisons make the band 0,
+1, 3 or 7, the offset of its order in one overlapping 11-byte string
+(`fx_order`; `fx_service` 398 of its 400 B). The side is chosen at the
+start only; `S_UpdateSounds`' new separation changes nothing, its volume
+does.
+
+**How many centred voices.** One. On the four captured runs (demo1-3 and
+the tour: 1,076 starts, the reference's 8-channel stream played on 3
+voices by length, an estimate), 51% of the starts are in the centre band
+and 28% are exactly 128. With A left, B right, C centre, 65% of the
+starts get the voice of their band, 22% a neighbour (a side for a centred
+sound or the centre for a side's), 5% the opposite side (both nearer
+voices busy) and 8% none (more than three at once in the reference; the
+game's 3 channels evict by priority instead); with the menu's default
+pans (C left) 34%, 49%, 9%. Two centred voices (A and C centred, B
+right) give 61%, 29%, 2%, but no voice on the left at all: every left
+sound plays in the middle. Three centred is mono.
+
+**Volume.** `VATT[v]`, v 0-127 (upstream's volume: `snd_SfxVolume` × 8,
+less with distance [R `s_sound65.s:565-618`]), is 40 log10(127 / v) in
+the music's half-dB units, 80 at v = 0: the music's law (this README,
+"What needs the owner's ear", "Loudness").
+
+**Memory** (`docs/MEMORY_MAP.md` 4.2): voices `$E413-$E442` (16 B each),
+`FX_ON`, `FX_HOLD`, `FX_INVAL` and the tempo fraction in `$E737-$E73B`,
+rings `$E740-$E8BF` (3 × 128 B), `fx.s`'s card part (739 B: the
+routines and chip 3's `want`, `shadow` and write list) in `$F505-$F8FF`
+after S2's code, with `pl_vbl`: 983 of 1,019 B [M:
+`docs/m11-parts/fxplay.md`]; `VATT` read from `SFX.1` through a window;
+the interrupt's ring pointer and temporaries in zero page `$F7-$FC`,
+`fx_service`'s in `$E73C-$E73F`; the channel table and the mailboxes
+(3 × 4 B) in `$E8C0-$E8EF` (`docs/SCREENS.md` 4.4). `fx_service` (398 B
+[M]) is a shared object of every frame image.
+
+**Cost** [A on M]: an active voice writes about 1.6 registers an
+interrupt [M: sound 4.5], so one effect adds about 80 writes a second at
+50 Hz, 3.2 ms a second at 40.4 µs a write on F1.2.1; three voices about
+10 ms a second; with FW-S1 about a fifth. `fx_burst` follows the music's
+burst with no computation between, so the two share one slot-4 slowdown
+tail when both write; an interrupt where only the effects write pays a
+tail of its own (about 32 µs at the Doom profile's window 32, about 505
+µs at the default 512; this README, "The Doom configuration profile").
+`fxplay`'s checkpoint measures all of it.
+
+Measured (part `fxplay`, `docs/m11-parts/fxplay.md` 6): one effect 3.66
+ms/s in the interrupt, three 9.60; from the main loop 18.69 and 33.18
+ms/s at window 512, 4.00 and 10.64 at window 32, 1.66 and 4.27 with
+FW-S1; over D_E1M1 a burst the effects write alone pays a tail of 529 µs
+(window 512) or 42 µs (window 32), one that shares the music's pays
+none; the worst interrupt, three effects starting on D_INTRO's first
+chord, 2,048 µs in the Doom profile (the music alone 1,549 µs).
+
+### Results (the first half's acceptance, 2026-10-02)
+
+On a2vm (`docs/SCREENS.md` 8.13, 8.14), all with 0 problems:
+
+| Check | Result [M] |
+| --- | --- |
+| `fxconv` (`make -C src/native -f m11.mk fxconv`) | 52 scripts, `SFX.1` 11,385 B, every automatic script equal to `fxmodel.py` tick by tick; the five planted bugs caught |
+| `fxplay` (`fxrun65.py --checkpoint`, `--planted`) | every effect alone and over each of the 13 songs equal to the models; no effect: S2's AY log byte for byte; the hold across `fx_song` (5 VBLs landed in it); a tone effect before any song; `--phasor-mb-only` no chip-3 write; the eight planted bugs caught |
+| The music through the release's interrupt (`plclock.py --checkpoint`, since the final integration with `fx.s` linked, the effects on and none playing) | the 13 songs' AY logs equal to S2's; the worst interrupt 1,547.9 µs (S2 alone 1,543.8) |
+| `fxchan` (`fxcap.py --check`, `--planted`) | demo3 1,218, DEMO1 2,290, DEMO2 1,273, the tour 137 and the menu's 709 calls equal (`S_UpdateSounds` included); 134 eviction cases, every path; 10,000 random sequences; the seven planted bugs caught |
+| `fxdisk` (`fxdisk.py --check`, `--planted`) | `build/sound/SOUNDS.hdv` (143,360 B, SHA-1 `225f7d59`): places, left, right, tuned, music, NTSC, quit, no native mode; the four planted bugs caught |
+
+**Cost on D_E1M1** (`fxrun65.py --cost`, ms a second taken from the main
+loop; the Doom profile's window 32, then window 512 and FW-S1): the music
+alone 5.99 (17.73, 3.17); with the effects at demo3's measured start times
+(132 starts in 20 s) 16.24 (38.56, 7.49); with three effects started
+together every 45 VBLs 14.80 (35.91, 6.80). The worst interrupt at
+demo3's rate 1,111.5 µs (1,114.5, 339.0).
+
+**Sizes:** `fx.s`'s card part 739 B, with `pl_vbl` 983 of `$F505-$F8FF`'s
+1,019 B; `fx_service` 396 of 400 B in every frame image; `fx_chan` 1,085
+of 1,100 B (tic image), 970 in `MENUW` with `fx_pcache` 85; the card
+state as "Memory" above; `SOUNDS.SYSTEM` code 2,422 B, data 1,056 B.
+
+**The centre (2026-10-02).** Chip 3's voices became A left, B right, C
+centre ("Stereo by voice"): `fxrun65.py --checkpoint --jobs 2` 0 problems
+(every scenario as above; the stereo scenario now each band and its
+bounds, the four fallbacks and the channel's own voice; no effect: S2's
+AY log byte for byte for the 13 songs; worst interrupt 2,047.9 µs);
+`--planted --jobs 2` all nine caught (three new on the choice: the sides
+inverted, 128 falling back to the right, 96 to the left voice);
+`fxdisk.py --check --jobs 2` and `--planted --jobs 2` 0 problems
+(`SOUNDS.hdv` SHA-1 `05c7cac4`; the left check now also reads the voice
+on the screen after RETURN, A and C: `C CENTRE`, `A LEFT`, `C CENTRE`);
+`fx_service` 398 of 400 B; S2's `sound.lc` and `sound.main` byte for byte
+the same after `tables.inc` gained the equates.
+
+**For the owner's ear (milestone 12).** Copy `build/sound/SOUNDS.hdv` to
+the card and boot it with the Doom profile (`vtw.slowdown.cycles=32`,
+`PROFILE.TXT` on the disk); the keys are in "The test disk" below. The
+ten tuned effects are tuned as "The ten tuned effects" says: `T` toggles
+an effect between its tuned and automatic scripts, `R` repeats it every
+second, `1`-`3` the distance, `A`/`B` the side, `M` the music under it;
+edit `tools/sound/fxtune.txt`, run `python3 tools/sound/fxdisk.py`, boot
+again, and note what was heard (with the screen's `SUM`) in
+`docs/results/sfx-tuning-<date>.md`.
+
+### The game side (`src/native/fx_chan.s`, model `tools/sound/fxchan.py`)
+
+Upstream's channel logic [R `s_sound65.s:177-670`]: `S_StartSound`,
+`S_StartSound2` (the one fake mobj `FM` [R `:181-198`]), the pickup
+flag, the kill of the origin's earlier sound of the same kind,
+`getChannel`'s free channel, same origin, then priority [R `:284-334`],
+`S_StopSound`, `S_UpdateSounds` [R `:377-423`], and
+`S_AdjustSoundParams` (distance 160 to 1,200 map units, map 8's floor of
+15, the separation from the angle with the swing 96 [R `:425-618`]) on
+milestone 6's math. `NUM_CHANNELS` is 3 in the game and 8 in the
+comparison build `FXCH8` (upstream's [R `:30`]). Nothing of the DOC is
+kept [R native-sound 4.5 "Drop"]. The routines read their arguments in
+`GA_*` and ask `s2t_pos` for every position, the listener as the handle
+$FFFE; `MENUW` links them with `-D FXC_NOSEP` and `fx_pcache`
+(`docs/m11-parts/fxchan.md` 2). The channel record (12 B: the sound, the
+origin's kind with the pickup flag in bit 7, its handle, its last x and
+y) and `LS_ON`, `SND_SFXVOL` after the mailboxes are `s2layout.py`'s
+(`docs/SCREENS.md` 4.4; wave 4, FXCHAN-1 and -2).
+
+**One mailbox a channel** (4 B: flags, sound, volume, separation), so a
+frame's decisions are bounded by `NUM_CHANNELS` and none is dropped:
+`stopChannel`, whatever its cause, sets *stop* and clears *start* and
+*volume*; a start sets *start* with its sound, volume and separation (it
+implies stopping the channel's voice); `I_UpdateSoundParams` sets
+*volume* (its separation is not used: the side is chosen at the start).
+`fx_service` empties them once a frame (above).
+
+**`isPlaying`** is the channel's voice active **or** a start in its
+mailbox: `S_UpdateSounds` runs after the frame's tics and before
+`fx_service`, so without the second half it would stop every sound the
+frame's tics started.
+
+It runs in the tic phase from milestone 10's hooks, `sc_update` once a
+frame after the tics (`docs/SCREENS.md` 3, 4.7); the same object is
+linked into the menu's image, whose sounds start from `M_Responder` and
+whose paused frames run `sc_update` from the channel table's last
+positions.
+
+### The test disk `SOUNDS.hdv` (`tools/sound/fxdisk.py`)
+
+`SOUNDS.SYSTEM` (`src/sound/sounds.s`, `sounds.cfg`; with S2's player,
+`pl_vbl` and `fx.s` at the game's places), like `MUSIC.SYSTEM` above:
+the mouse card, RamWorks banks 1-103, the probe, `SFX.1` into bank
+`SFX` at `$0200` and the ten tuned effects' automatic scripts from
+`SFXAUTO.1` after it (`$2E79-$374A`), `E1M1.AY` into bank 100 at
+`$1000`, ProDOS's card saved in bank 1, `snd_init`, `fx_init`, PAL or
+NTSC (`pl_detect`). The disk (143,360 B): `SOUNDS.SYSTEM`, `PRODOS`,
+`SFX.1`, `SFXAUTO.1`, `E1M1.AY`, `PROFILE.TXT`.
+
+```
+DOOM GS: THE EFFECTS ON THE PHASOR
+PAL //E  PHASOR NATIVE  CHIP 3 MUSIC REP
+  PISTOL T     PLPAIN T     PDIEHI
+  ...  (52 effects, 3 columns of 18; > the chosen; T tuned, A a tuned
+        effect set to its automatic script)
+POSACT AUTO  SUM 63AB MID  B RIGHT
+ARROWS CHOOSE  RETURN PLAY  A B C VOICE
+1 NEAR 2 MID 3 FAR  T TUNED  R REPEAT
+M MUSIC  S STOP  V PAL/NTSC  Q QUIT
+```
+
+Row 20: the chosen effect, its version, `SUM` (a checksum of the script
+the bank's directory gives: for each byte the 16-bit sum rotated left
+one bit, then the byte added), the distance, and after a play the voice
+it got. A play stops every effect, then starts the chosen one by the
+game's mailbox (channel 0), one effect at a time.
+
+| Key | What |
+| --- | --- |
+| Up, down | The previous or next effect; left, right a column |
+| RETURN | Play it as a source ahead (separation 128): the game's rule gives voice C, the centre |
+| A, B | Play it on A (separation 64, left) or B (200, right) |
+| C | Play it on C (the centre) by the fallback: channel 0 takes A and channel 1 the effect at separation 64 in one service (A busy: C), then channel 0 is stopped, interrupts masked: A never sounds |
+| 1, 2, 3 | Distance: volume 127, 63 (about 680 units), 6 (1,150); the playing effect's volume follows |
+| T | Its tuned or automatic script (the ten tuned only): its directory entry in the bank is rewritten |
+| R | Repeat the last play every second (50 or 60 VBLs), to compare by ear |
+| M | `D_E1M1` under the effects (`fx_song`), or silence (`snd_stop`) |
+| S | Stop every effect, and the repeat |
+| V | PAL or NTSC: the effects' tempo (`pl_clkset`) and the song again on the other tables |
+| Q, ESC | Quit as `MUSIC.SYSTEM` (the chips reset, ProDOS's card back, the Phasor in Mockingboard mode) |
+
+On a card without native mode the second line says `NO EFFECTS: NO
+NATIVE MODE`, the song is not loaded, and no key writes an AY register.
+
+`fxdisk.py --check` runs it on a2vm (MLI trap, `--irq-bounds`, the AY
+log, a write log of the effects' state and the program's step marker):
+the program's steps equal a model of the keys, each in its visit, and
+every interrupt's writes equal the models' (`fxplay.py`'s for chip 3,
+S2's for the music): every effect on the centre and left voices
+(RETURN, A, C) and on the right one at the three distances, the voice
+named on the screen after the first plays, the ten tuned tuned and automatic, every effect
+over `D_E1M1` with V and M, NTSC with the volume, the repeat, S and
+ESC, q, and `--phasor-mb-only` (no AY write past the probe's and
+`snd_init`'s); the screen's rows; the quit as `MUSIC.SYSTEM`'s; four
+planted bugs caught (`docs/m11-parts/fxdisk.md`).
+
+### Tests
+
+| Test (`tests/test_m11_fx*.py`; `wip_test_m11_fx*.py` while built) | What it checks |
+| --- | --- |
+| `fxconv` | Every script against `fxmodel.py`, tick by tick; the ring budget; the tuned scripts against `fxtune.txt`; planted bugs |
+| `fxplay` | Every effect alone (PAL, NTSC, three volumes, each voice) and over each of the 13 songs: every interrupt's AY writes equal the models' (S2's `player.py` for chips 0-2, `fxplay.py` for chip 3); no effect: S2's log byte for byte; the IRQ bounds; underrun; an effect held across `fx_song`; a tone effect before any song; `--phasor-mb-only`; the voice choice (each band and its bounds, the fallbacks, the channel's own voice; on the model also every separation with every set of busy voices against the nearest voice in pan); the mailboxes' rules; the publish order on the write log; `fx_isplaying`'s answers; the cost and the tail (`tools/sound/fxrun65.py --cost`) |
+| `fxpan` | Chip 3's table (A left 5, B right 11, C centre 8) against the HDL's pan law (8 the only centred pan), the bands, the generated equates, the renders' mix (`DOOM_PANS`: chip 3's C centred, the music's chips the menu's), the profile's keys |
+| `fxchan` | Every captured call of demo3, DEMO1, DEMO2 and the tour (`FXCH8`, the reference's channel table and `isPlaying` answers injected) equal; every `S_UpdateSounds` (captured with `jumps=1`) equal; `ref816 --call` eviction cases with every path of `S_StartSound` and `getChannel` covered; a start and the same frame's `sc_update`; the 3-channel build equal to `fxchan.py` on the captured streams and 10,000 random sequences; the menu's paused frame |
+| `fxdisk` | The disk on a2vm: the keys' steps against a model of the keys, every effect left and right at three distances, the ten tuned both ways, over the music with V and M, NTSC, the repeat, the quit, `--phasor-mb-only`; the screen; the planted bugs |
+
+`tests/test_sound_*` stay as they are and green.
+
+### Open problems
+
+- The PC speaker's divisor table is read from Chocolate Doom's
+  `src/i_pcsound.c` over the network; no copy is kept offline.
+- One noise generator for three voices: the loudest voice's period wins,
+  a choice to judge by ear.
+- The centre needs the owner's setting: with the menu's default pans
+  (chip 3's C at 5) the centre voice leans left as before (16/16,
+  10/16). The profile (`PROFILE.TXT`) says how to set `phasor.pan.12=8`;
+  the program cannot read or set the pans.
+- Two centred sounds at once: the second takes a side voice (128 the
+  left), a choice to judge by ear; the estimate in "Stereo by voice"
+  puts 22% of the starts on a neighbouring voice.
+- The renders (`build/sound/fx/*.wav`) are on voice A, pan 5, as
+  before; they do not show the centre.
+- No effects on a card without native mode.
+- An effect starts at the frame after its tic, about 60-165 ms later on
+  f121 (`docs/SCREENS.md` 3).
+- Nothing has been heard yet; the owner tunes at milestone 12.

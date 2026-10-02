@@ -15,10 +15,14 @@
 ;                  W and handed to the memory API's transport
 ;     LINES, GROUP, FLOOD, CMAPS
 ;                  the static steps (lgeom.s)
-;     SPAWN, SPECIALS
-;                  stage C's game core (gspawn.s, gspec.s): run only when
+;     GTABS, SPAWN, SPECIALS
+;                  the game's steps (lgeom.s's LVS tables, milestone 10;
+;                  stage C's game core, gspawn.s, gspec.s): run only when
 ;                  the load is nl_setup's (nl_game: GS_GAME); nl_load alone
-;                  loads the level's data and skips them
+;                  loads the level's data and skips them. The object API
+;                  (gobj.s) the game core uses keeps its pointers in zero
+;                  page $38-$3F, over the program's LP_*: each game step
+;                  keeps the program's zero page on the stack
 ;     END          the end
 ;
 ; The code runs in W (the load phase's mode window, MEMORY_MAP.md 3.5),
@@ -49,7 +53,7 @@
         .export nl_load, nl_game, ld_stop, ld_find, ld_block, am_send
         .import far_get, far_put
         .import lg_lines, lg_group, lg_flood, lg_cmaps
-        .import gs_spawn, gx_specials
+        .import gs_spawn, gx_specials, lg_gtabs
         .include "lgame.inc"
 
 SP_DATA         = $CFF0         ; the memory API's raw FIFO transport in
@@ -192,7 +196,7 @@ ld_map: sta LP_MAP
         jne @bad
         lda LW_STEPS + LP_HEAD,y
         beq @end                ; END
-        cmp #LST_SPECIALS + 1
+        cmp #LST_GTABS + 1
         jcs @bad
         asl a
         tax
@@ -220,13 +224,45 @@ steps:  .word 0                 ; END (above)
         .word st_priv           ; PRIVREQ
         .word st_spawn          ; SPAWN (stage C)
         .word st_specials       ; SPECIALS (stage C)
+        .word st_gtabs          ; GTABS (milestone 10)
+        .assert LST_GTABS = LST_SPECIALS + 1, error, "the steps' order"
 
 st_spawn:
         MARK 9
-        jmp gs_spawn
+        lda #<gs_spawn
+        ldx #>gs_spawn
+        bra game_step
 st_specials:
         MARK 10
-        jmp gx_specials
+        lda #<gx_specials
+        ldx #>gx_specials
+        bra game_step
+st_gtabs:
+        MARK 12
+        lda #<lg_gtabs
+        ldx #>lg_gtabs
+; game_step: the step at X:A with the program's zero page (LZP1: the
+; object API's pointers overlay it) kept on the stack
+game_step:
+        sta gs_go
+        stx gs_go+1
+        ldx #LZP1_LEN - 1
+:       lda LP_MAP,x
+        pha
+        dex
+        bpl :-
+        jsr @go
+        ldx #0
+:       pla
+        sta LP_MAP,x
+        inx
+        cpx #LZP1_LEN
+        bne :-
+        rts
+@go:    jmp (gs_go)
+gs_go:  .res 2
+LZP1_LEN = LP_N + 2 - LP_MAP
+        .assert LP_MAP = $38, error, "LP_MAP first"
 
 st_lines:
         MARK 4

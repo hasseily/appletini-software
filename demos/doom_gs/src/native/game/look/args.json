@@ -1,0 +1,58 @@
+{
+ "format": "game-args 1",
+ "note": "Part look's entries (docs/GAME.md 2.4, 3.5 step 4; docs/game-parts/look.md). Upstream keeps the actor in AP (_Dp+8) and its target in AT (_Dp+12) for p_enemy65.s's helpers; natively each entry takes the actor in GA_0-1 (an action: GA_MO, the same place). The actions are entered by callFn's JML [FN_P]: their cases are captured at p_tick65.s:callFn (tools/native/gparts/look.py), _Dp[0-3] the actor. P_RadiusAttack: the spot, the source (NULL: $FFFF) and the damage in GA_0-1, GA_2-3, GA_4-5; PIT_RadiusAttack runs inside it (ITTAB). behindFast's outputs (its carry, and A when the carry is set; native A $FF when it cannot tell) are compared by look.py (its form 'bf'). Schema: src/native/game/README.md.",
+ "entries": {
+  "p_enemy65.s:A_Look": {
+   "native": "A_Look",
+   "in": [{"from": "dp:_Dp:4", "to": "zp:GA_0", "as": "mobj"}],
+   "out": []},
+  "p_enemy65.s:lookForPlayers": {
+   "native": "lookForPlayers",
+   "in": [{"from": "dp:_Dp+8:4", "to": "zp:GA_0", "as": "mobj"},
+          {"from": "a", "to": "a"}],
+   "out": [{"native": "a", "upstream": "a", "bytes": 1}]},
+  "p_enemy65.s:behindFast": {
+   "native": "behindFast",
+   "in": [{"from": "dp:_Dp+8:4", "to": "zp:GA_0", "as": "mobj"},
+          {"from": "dp:_Dp+12:4", "to": "zp:GA_2", "as": "mobj"}],
+   "out": [{"native": "bf", "upstream": "bf"}]},
+  "p_enemy65.s:checkMeleeRange": {
+   "native": "checkMeleeRange",
+   "in": [{"from": "dp:_Dp+8:4", "to": "zp:GA_0", "as": "mobj"}],
+   "out": [{"native": "a", "upstream": "a", "bytes": 1}]},
+  "p_enemy65.s:checkMissileRange": {
+   "native": "checkMissileRange",
+   "in": [{"from": "dp:_Dp+8:4", "to": "zp:GA_0", "as": "mobj"}],
+   "out": [{"native": "a", "upstream": "a", "bytes": 1}]},
+  "p_enemy65.s:A_FaceTarget": {
+   "native": "A_FaceTarget",
+   "in": [{"from": "dp:_Dp:4", "to": "zp:GA_0", "as": "mobj"}],
+   "out": []},
+  "p_enemy65.s:A_Scream": {
+   "native": "A_Scream",
+   "in": [{"from": "dp:_Dp:4", "to": "zp:GA_0", "as": "mobj"}],
+   "out": []},
+  "p_enemy65.s:A_XScream": {
+   "native": "A_XScream",
+   "in": [{"from": "dp:_Dp:4", "to": "zp:GA_0", "as": "mobj"}],
+   "out": []},
+  "p_enemy65.s:A_Pain": {
+   "native": "A_Pain",
+   "in": [{"from": "dp:_Dp:4", "to": "zp:GA_0", "as": "mobj"}],
+   "out": []},
+  "p_enemy65.s:A_Fall": {
+   "native": "A_Fall",
+   "in": [{"from": "dp:_Dp:4", "to": "zp:GA_0", "as": "mobj"}],
+   "out": []},
+  "p_enemy65.s:A_PlayerScream": {
+   "native": "A_PlayerScream",
+   "in": [{"from": "dp:_Dp:4", "to": "zp:GA_0", "as": "mobj"}],
+   "out": []},
+  "p_attack65.s:P_RadiusAttack": {
+   "native": "P_RadiusAttack",
+   "in": [{"from": "dp:_Dp:4", "to": "zp:GA_0", "as": "mobj"},
+          {"from": "dp:_Dp+4:4", "to": "zp:GA_2", "as": "mobj"},
+          {"from": "a", "to": "zp:GA_4", "bytes": 2}],
+   "out": []}
+ }
+}

@@ -25,9 +25,11 @@ PSG clock (the bus clock, twice it in native mode):
 - a channel sounds when (tone or tone off) and (noise or noise off); its
   8-bit value is the AY-3-8913 table at its fixed level or envelope level;
 - Phasor native mode: each channel is scaled by its pan gain (the menu's
-  defaults: 11 and 5 alternating, as config_menu_phasor.c:9-14) for left
-  and right, the 12 channels summed, a sum of 2048 or more saturates,
-  times 16 to 16 bits; Mockingboard mode sums chips 0 and 2 only.
+  defaults: 11 and 5 alternating, as config_menu_phasor.c:9-14; or, with
+  --pans doom and for the effects' renders, the Doom profile's, chip 3
+  from tables.FX_VOICES) for left and right, the 12 channels summed, a
+  sum of 2048 or more saturates, times 16 to 16 bits; Mockingboard mode
+  sums chips 0 and 2 only.
 
 Rendering: the tone is averaged over each output sample (a box filter:
 the fraction of the sample's prescaled ticks the tone is high), noise and
@@ -63,6 +65,13 @@ _DEFAULT_PAN_WORD = (11, 5, 11, 5, 11, 5, 11, 5, 11, 5, 11, 5)
 DEFAULT_PANS = {(chip, channel): _DEFAULT_PAN_WORD[3 * psg + channel]
                 for chip, psg in _PSG_OF_CHIP.items()
                 for channel in range(3)}
+# The Doom profile's pans: the music's chips 0-2 keep the menu's defaults,
+# chip 3 (the effects) takes its voices' pans from tables.FX_VOICES (A
+# left 5, B right 11, C centre 8).
+DOOM_PANS = dict(DEFAULT_PANS)
+DOOM_PANS.update({(3, channel): v.pan
+                  for channel, v in enumerate(tables.FX_VOICES)})
+PANS = {'menu': DEFAULT_PANS, 'doom': DOOM_PANS}
 
 
 def pan_gain_left(pan):
@@ -472,9 +481,13 @@ def main(argv=None):
     parser.add_argument('--seconds', type=float, default=60.0)
     parser.add_argument('--mono', action='store_true')
     parser.add_argument('--gain', type=float, default=LISTENING_GAIN)
+    parser.add_argument('--pans', choices=sorted(PANS), default='menu',
+                        help='the menu\'s default pans, or the Doom '
+                             'profile\'s (chip 3: A 5, B 11, C 8)')
     args = parser.parse_args(argv)
     bus_hz, multiplier, writes = read_log(args.log)
-    result = render(writes, bus_hz, multiplier, args.seconds)
+    result = render(writes, bus_hz, multiplier, args.seconds,
+                    pans=PANS[args.pans])
     peak = write_wav(args.out, result, stereo=not args.mono, gain=args.gain)
     print('%s: %.1f s, peak %d, %d saturated samples'
           % (args.out, args.seconds, peak, result.clipped))

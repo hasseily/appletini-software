@@ -742,7 +742,8 @@ def program(part: Part) -> None:
     steps += [('COPYREQ', k) for k in range(len(reqs))]
     steps += [('LINES', 0), ('GROUP', 0), ('FLOOD', 0), ('CMAPS', 0)]
     steps += [('PRIVREQ', len(reqs) + k) for k in range(len(priv))]
-    steps += [('SPAWN', 0), ('SPECIALS', 0), ('END', 0)]
+    # milestone 10: GTABS (LVS's tables) before the spawn, which reads them
+    steps += [('GTABS', 0), ('SPAWN', 0), ('SPECIALS', 0), ('END', 0)]
     part.steps = steps
 
 
@@ -1204,7 +1205,8 @@ class HostMachine:
                 self.cmaps(h)
             elif name == 'END':
                 break
-            # SPAWN, SPECIALS: stage C
+            # SPAWN, SPECIALS: stage C; GTABS: milestone 10 (game steps:
+            # nl_setup's only)
 
     # -- the static steps, from the store's and the window's bytes
     def game_lines(self, h) -> List[List[int]]:

@@ -1,0 +1,208 @@
+# The ten tuned effects (tools/sound/README.md, "The ten tuned effects").
+#
+# fxconv.py takes each script here in place of the automatic one (flag
+# bit 0 of the script). One step a line: its length in 140 Hz ticks,
+# then any of tone=HZ or period=N (the AY period at 2,031,250 Hz; 0 off),
+# att=DB (0-40 dB below full level in 0.5 dB steps; 40 is silent),
+# noise=N (the AY noise period 1-31; 0 off). A field not given keeps its
+# value; a script starts with the tone off, at 40 dB, the noise off, and
+# its last step ends with "end". '#' starts a comment.
+#
+# First versions (milestone 11, part fxconv, 2026-10-01), written from
+# the automatic scripts' per-tick states and their renders
+# (build/sound/fx/*.wav): the DP's pitch contour kept, the DS's loudness
+# contour smoothed into a few steps, the PC speaker's gating (a tone
+# every other tick, which the automatic script turns into tone and noise
+# alternating) replaced by a clean pulse. Nobody has heard them on the
+# card yet: they are a starting point for the owner's ear (milestone 12).
+
+PISTOL
+2  period=324 noise=8 att=0
+2  period=364 att=4
+2  period=315 noise=12 att=8
+3  period=445 att=10
+3  period=545 noise=16 att=13
+3  period=610 att=16
+3  period=0 noise=31 att=14
+4  att=18
+4  att=21
+6  att=25
+end
+
+SHOTGN
+2  period=257 noise=6 att=0
+3  noise=10 att=2
+4  period=364 att=5
+6  period=432 noise=14 att=7
+8  period=529 att=9
+6  period=628 noise=20 att=12
+10 period=0 noise=24 att=10
+14 noise=28 att=14
+16 noise=31 att=17
+20 att=20
+14 att=24
+end
+
+PLPAIN
+3  period=111 noise=22 att=16
+3  period=118 att=11
+4  period=167
+3  period=297
+3  period=445 noise=20
+8  period=0 noise=21 att=14
+10 noise=20 att=22
+12 noise=24 att=29
+20 noise=17 att=22
+20 att=24
+16 noise=19 att=29
+14 att=33
+end
+
+FIRSHT
+3  period=385 noise=13 att=28
+4  period=408 att=20
+4  period=432 noise=16
+5  period=472 att=14
+5  period=500 noise=18 att=20
+5  period=529
+5  period=562 noise=14 att=14
+6  period=593 att=18
+10 period=0 noise=16 att=14
+20 att=8
+16 noise=14 att=14
+20 noise=11 att=20
+20 noise=20 att=10
+20 noise=24 att=16
+end
+
+FIRXPL
+3  period=397 noise=17 att=16
+4  period=385 noise=13 att=10
+6  period=485 noise=16
+6  period=420 noise=19
+4  period=0 noise=31 att=12
+10 att=9
+12 att=14
+16 att=17
+20 att=19
+20 att=23
+24 att=28
+end
+
+STNMOV
+7  period=182 att=14
+4  period=0 noise=31 att=16
+6  att=18
+8  att=20
+8  noise=28 att=22
+6  att=26
+end
+
+POPAIN
+2  period=562 att=8
+2  period=514 att=6
+3  period=364
+4  period=250 att=7
+4  period=204
+4  period=182 att=6
+4  period=216
+4  period=193
+3  period=264 att=8
+3  period=324 att=10
+3  period=514 att=8
+3  period=648 att=12
+12 period=0 noise=31 att=12
+20 att=11
+20 att=10
+16 att=12
+end
+
+BGSIT2
+3  period=162 noise=22 att=20
+4  period=216
+4  period=264
+4  period=333 noise=21 att=15
+4  period=385
+3  period=0 noise=22
+4  period=257 noise=16 att=20
+8  period=222 att=15
+8  period=250 noise=13
+6  period=343 noise=19 att=10
+4  period=485 noise=20
+16 period=0 noise=17
+24 noise=16 att=5
+20 noise=20 att=10
+20 noise=22 att=15
+20 noise=20 att=20
+16 noise=24 att=22
+end
+
+BGACT
+3  period=280 att=26
+3  att=40
+3  period=333 att=26
+3  att=40
+3  period=364 att=26
+3  att=40
+3  period=343 att=24
+3  att=40
+3  period=280 att=24
+3  att=40
+3  period=235 att=20
+3  att=40
+3  period=210 att=20
+3  att=40
+3  period=204 att=19
+3  att=40
+3  period=216 att=19
+3  att=40
+3  period=235 att=19
+3  att=40
+3  period=272 att=20
+3  att=40
+3  period=354 att=20
+3  att=40
+3  period=420 att=22
+3  att=40
+3  period=485 att=24
+3  att=40
+3  period=529 att=26
+3  att=40
+3  period=577 att=27
+3  att=40
+3  period=686 att=28
+3  att=40
+3  period=725 att=29
+end
+
+POSACT
+3  period=280 att=28
+3  period=0 noise=31 att=34
+3  period=333 noise=0 att=28
+3  period=0 noise=31 att=34
+3  period=364 noise=0 att=28
+3  period=0 noise=31 att=34
+3  period=343 noise=0 att=26
+3  period=0 noise=31 att=32
+3  period=280 noise=0 att=24
+3  period=0 noise=31 att=30
+3  period=235 noise=0 att=22
+3  period=0 noise=31 att=28
+3  period=210 noise=0 att=21
+3  period=0 noise=31 att=27
+3  period=216 noise=0 att=21
+3  period=0 noise=31 att=27
+3  period=272 noise=0 att=21
+3  period=0 noise=31 att=27
+3  period=354 noise=0 att=21
+3  period=0 noise=31 att=27
+3  period=420 noise=0 att=21
+3  period=0 noise=31 att=27
+3  period=485 noise=0 att=22
+3  period=0 noise=31 att=28
+3  period=577 noise=0 att=24
+3  period=0 noise=31 att=30
+3  period=686 noise=0 att=26
+3  period=725 att=28
+12 period=0 noise=31 att=29
+end

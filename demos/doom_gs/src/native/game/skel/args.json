@@ -1,0 +1,32 @@
+{
+ "format": "game-args 1",
+ "note": "The skeleton's own entries in play (docs/GAME.md 3.5 step 4, S2): milestone 9's game core as the parts call it. Schema: src/native/game/README.md.",
+ "entries": {
+  "p_spawn65.s:P_SpawnMobj": {
+   "native": "P_SpawnMobj",
+   "in": [
+    {"from": "xc", "to": "zp:GA_X"},
+    {"from": "dp:_Dp:4", "to": "zp:GA_Y"},
+    {"from": "dp:_Dp+4:4", "to": "zp:GA_Z"},
+    {"from": "s:4:2", "to": "zp:GA_TYPE", "bytes": 1}
+   ],
+   "out": [
+    {"native": "ax", "upstream": "xc", "as": "mobj"}
+   ]
+  },
+  "p_map65.s:P_SetThingPosition": {
+   "native": "P_SetThingPosition",
+   "in": [
+    {"from": "dp:_Dp:4", "to": "ax", "as": "mobj"}
+   ],
+   "out": []
+  },
+  "p_map65.s:P_CreateSecNodeList": {
+   "native": "P_CreateSecNodeList",
+   "in": [
+    {"from": "dp:_Dp:4", "to": "ax", "as": "mobj"}
+   ],
+   "out": []
+  }
+ }
+}

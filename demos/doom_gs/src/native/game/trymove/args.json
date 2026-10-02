@@ -1,0 +1,36 @@
+{
+ "format": "game-args 1",
+ "about": "Part trymove's entries (docs/GAME.md 2.4 row trymove, 'Inputs and outputs'). Places beyond gameroutine.py's are read by tools/native/gparts/checkpos.py's place() (gw: glayout's tic GW fields), which tools/native/gparts/trymove.py uses. P_TryMove takes its thing, x and y as upstream's _Dp[0-3], X:C, _Dp[4-7] (natively GA_0-1, GA_2-5, GA_6-9, as P_CheckPosition) and returns A (1 moved, 0 not); it takes tmfloorz, tmceilingz, tmdropoffz as checkPos does (a thing that blocks the check with MP_TRY 1 leaves the last check's); its callers read the check's tmfloorz, tmceilingz, tmdropoffz and ceilingline after it; numspechit ends at -1 when the crossed lines were walked ($FF natively). P_NightmareRespawn takes the dead monster in _Dp[0-3] (natively A:X) and returns nothing.",
+ "entries": {
+  "p_map65.s:P_TryMove": {
+   "native": "P_TryMove",
+   "in": [
+    {"from": "dp:_Dp:4", "to": "zp:GA_0", "as": "mobj"},
+    {"from": "xc", "to": "zp:GA_2"},
+    {"from": "dp:_Dp+4:4", "to": "zp:GA_6"},
+    {"from": "abs:_g_tmfloorz:4", "to": "gw:GM_TMFLOORZ"},
+    {"from": "abs:_g_tmceilingz:4", "to": "gw:GM_TMCEILZ"},
+    {"from": "abs:_g_tmdropoffz:4", "to": "gw:GM_TMDROPZ"}
+   ],
+   "out": [
+    {"native": "a", "upstream": "a", "bytes": 1},
+    {"native": "gw:GM_TMFLOORZ", "upstream": "abs:_g_tmfloorz:4", "bytes": 4},
+    {"native": "gw:GM_TMCEILZ", "upstream": "abs:_g_tmceilingz:4", "bytes": 4},
+    {"native": "gw:GM_TMDROPZ", "upstream": "abs:_g_tmdropoffz:4", "bytes": 4},
+    {"native": "gw:GM_NSPEC", "upstream": "abs:_g_numspechit:2", "bytes": 1},
+    {"native": "main:G_CEILLINE", "upstream": "abs:_g_ceilingline:3", "as": "line"},
+    {"native": "main:G_LROK", "upstream": "abs:p_map65.s:LR_OK:1", "bytes": 1},
+    {"native": "main:G_LRUSE", "upstream": "abs:p_map65.s:LR_USE:1", "bytes": 1},
+    {"native": "main:G_LRN", "upstream": "abs:p_map65.s:LR_N:1", "bytes": 1},
+    {"native": "main:G_LRLINES", "upstream": "abs:p_map65.s:LR_LINES:48", "bytes": 48}
+   ]
+  },
+  "p_spawn65.s:P_NightmareRespawn": {
+   "native": "P_NightmareRespawn",
+   "in": [
+    {"from": "dp:_Dp:4", "to": "ax", "as": "mobj"}
+   ],
+   "out": []
+  }
+ }
+}

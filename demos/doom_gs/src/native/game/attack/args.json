@@ -1,0 +1,132 @@
+{
+ "format": "game-args 1",
+ "about": "Part attack's entries (docs/GAME.md 2.4 row attack, 'Inputs and outputs'; docs/game-parts/attack.md). Places beyond gameroutine.py's are read by tools/native/gparts/checkpos.py's place() (gw: glayout's tic GW fields; cp: a label of the part's image: attack.s exports its scratch block's places AK_*), which tools/native/gparts/attack.py uses. P_LineAttack takes t1, the angle, the distance as upstream's _Dp[0-3], X:C, _Dp[4-7] and the slope and the damage on the stack (S + 4, S + 8 at the JSL's entry), natively GA_0-1, GA_2-5, GA_6-9, GA_10-13, GA_14-15. P_AimLineAttack takes t1, the angle, the distance the same way and returns X:C, natively GA_0-3; linetarget (upstream's _g_linetarget) is the shared GM_LINETARGET (request R1, wave 5 as integrated). The near scratch of p_attack65.s that lives from one call to the next is compared as outputs: aimslope (an aim that finds no target keeps the last one: an input too), la_damage (P_AimLineAttack keeps it), attackrange (GM_ATRANGE, read by P_IsAttackRangeMeleeRange), shootz, shootthing, and the aim's topslope, bottomslope and linetarget (P_AimLineAttack's; P_LineAttack leaves them).",
+ "entries": {
+  "p_attack65.s:P_LineAttack": {
+   "native": "P_LineAttack",
+   "in": [
+    {
+     "from": "dp:_Dp:4",
+     "to": "zp:GA_0",
+     "as": "mobj"
+    },
+    {
+     "from": "xc",
+     "to": "zp:GA_2"
+    },
+    {
+     "from": "dp:_Dp+4:4",
+     "to": "zp:GA_6"
+    },
+    {
+     "from": "s:4:4",
+     "to": "zp:GA_10"
+    },
+    {
+     "from": "s:8:2",
+     "to": "zp:GA_14"
+    }
+   ],
+   "out": [
+    {
+     "native": "cp:AK_AIM",
+     "upstream": "abs:p_attack65.s:AT_AIM:4",
+     "bytes": 4
+    },
+    {
+     "native": "cp:AK_DMG",
+     "upstream": "abs:p_attack65.s:AT_DAMAGE:2",
+     "bytes": 2
+    },
+    {
+     "native": "gw:GM_ATRANGE",
+     "upstream": "abs:p_attack65.s:AT_RANGE:4",
+     "bytes": 4
+    },
+    {
+     "native": "cp:AK_Z",
+     "upstream": "abs:p_attack65.s:AT_Z:4",
+     "bytes": 4
+    },
+    {
+     "native": "cp:AK_SHOOT",
+     "upstream": "abs:p_attack65.s:AT_SHOOT:3",
+     "as": "mobj"
+    }
+   ]
+  },
+  "p_attack65.s:P_AimLineAttack": {
+   "native": "P_AimLineAttack",
+   "in": [
+    {
+     "from": "dp:_Dp:4",
+     "to": "zp:GA_0",
+     "as": "mobj"
+    },
+    {
+     "from": "xc",
+     "to": "zp:GA_2"
+    },
+    {
+     "from": "dp:_Dp+4:4",
+     "to": "zp:GA_6"
+    },
+    {
+     "from": "abs:p_attack65.s:AT_AIM:4",
+     "to": "cp:AK_AIM"
+    },
+    {
+     "from": "abs:p_attack65.s:AT_DAMAGE:2",
+     "to": "cp:AK_DMG"
+    }
+   ],
+   "out": [
+    {
+     "native": "zp:GA_0",
+     "upstream": "xc",
+     "bytes": 4
+    },
+    {
+     "native": "gw:GM_LINETARGET",
+     "upstream": "abs:_g_linetarget:3",
+     "as": "mobj"
+    },
+    {
+     "native": "cp:AK_TOP",
+     "upstream": "abs:p_attack65.s:AT_TOP:4",
+     "bytes": 4
+    },
+    {
+     "native": "cp:AK_BOT",
+     "upstream": "abs:p_attack65.s:AT_BOT:4",
+     "bytes": 4
+    },
+    {
+     "native": "cp:AK_AIM",
+     "upstream": "abs:p_attack65.s:AT_AIM:4",
+     "bytes": 4
+    },
+    {
+     "native": "cp:AK_DMG",
+     "upstream": "abs:p_attack65.s:AT_DAMAGE:2",
+     "bytes": 2
+    },
+    {
+     "native": "gw:GM_ATRANGE",
+     "upstream": "abs:p_attack65.s:AT_RANGE:4",
+     "bytes": 4
+    },
+    {
+     "native": "cp:AK_Z",
+     "upstream": "abs:p_attack65.s:AT_Z:4",
+     "bytes": 4
+    },
+    {
+     "native": "cp:AK_SHOOT",
+     "upstream": "abs:p_attack65.s:AT_SHOOT:3",
+     "as": "mobj"
+    }
+   ]
+  }
+ }
+}

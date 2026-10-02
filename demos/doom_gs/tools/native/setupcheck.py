@@ -72,6 +72,9 @@ GLOBAL_WRITES = (
 # the boot's constants (P_Init): the store's GTAB, not a pre-state
 BOOT_GLOBALS = ('p_switch65.s:switchlist', 'p_switch65.s:SW_IDX',
                 'p_spec65.s:animated_texture_basepic')
+# milestone 10: the setup clears the line record's LR_OK too
+# (p_setup65.s:104)
+GLOBAL_WRITES = GLOBAL_WRITES + (('p_map65.s:LR_OK',),)
 PLAYER_WRITES = (
     ('mo',), ('viewz',), ('killcount',), ('itemcount',), ('secretcount',),
     ('refire',), ('message',), ('damagecount',), ('bonuscount',),
@@ -195,6 +198,7 @@ def prestate(mf, d: Path, ref: Dict[str, Any], rm, fill: int,
     w.pool_fill = {}
     w.m.write(MAIN | LL.GBLOCK, bytes([fill]) * LL.PRE_RND)
     w.m.write(MAIN | LL.PRND, bytes([fill]) * 2)
+    w.m.write(MAIN | LL.G_VALID, bytes([fill]) * 2)
     types = {}
     for unit, labels in list(schema.GLOBALS.items()) + list(
             schema.EXTERNAL_GLOBALS.items()):
@@ -228,7 +232,9 @@ def prestate(mf, d: Path, ref: Dict[str, Any], rm, fill: int,
         w.encode(leaf, 0, value)
     main = w.m.read(MAIN | LL.GBLOCK, LL.PRE_RND)
     rnd = w.m.read(MAIN | LL.PRND, 2)
-    return bytes(main) + bytes(rnd)
+    # milestone 10: validcount is the frame block's (G_VALID), after them
+    valid = w.m.read(MAIN | LL.G_VALID, 2)
+    return bytes(main) + bytes(rnd) + bytes(valid)
 
 
 def _has(obj: Any, path: Sequence[Any]) -> bool:

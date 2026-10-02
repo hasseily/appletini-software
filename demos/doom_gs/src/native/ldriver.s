@@ -160,9 +160,20 @@ drv_pre:
         inc FA_SRC+1
 :       lda (FA_SRC),y
         sta PRND+1
+        iny                     ; then validcount (the frame block's,
+        bne :+                  ;   G_VALID: milestone 10)
+        inc FA_SRC+1
+:       lda (FA_SRC),y
+        sta G_VALID
+        iny
+        bne :+
+        inc FA_SRC+1
+:       lda (FA_SRC),y
+        sta G_VALID+1
         sta RAMRDOFF
         stz RWBANK
         rts
+        .assert PRE_VALID = PRE_RND + 2, error, "validcount after the indexes"
         .assert GBLOCK + ((PRE_RND + $FF) & $FF00) <= $2000, error, "pre-state pages"
         .assert PRE_RECORD >= ((PRE_RND + $FF) & $FF00), error, "pre-state pages"
 

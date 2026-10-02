@@ -1,8 +1,9 @@
 ; gspec.s: the game core's specials at the start of a level (milestone 9,
-; stage C; docs/LEVELS.md 2.5). A GPL-2 derivative of upstream's
-; p_spec65.s (P_SpawnSpecials, addScroller, getNextSector) and
-; p_lights65.s (P_SpawnLightFlash, P_SpawnStrobeFlash,
-; P_SpawnGlowingLight, P_FindMinSurroundingLight).
+; stage C; docs/LEVELS.md 2.5; milestone 10's skeleton: the object API,
+; docs/GAME.md 3.1). A GPL-2 derivative of upstream's p_spec65.s
+; (P_SpawnSpecials, addScroller, getNextSector) and p_lights65.s
+; (P_SpawnLightFlash, P_SpawnStrobeFlash, P_SpawnGlowingLight,
+; P_FindMinSurroundingLight).
 ;
 ;   gx_specials  the load program's SPECIALS step (only in nl_setup:
 ;                GS_GAME): each sector in order by its special: 1 a light
@@ -13,11 +14,13 @@
 ;                48, in line order. Each special is a thinker at the list's
 ;                end; its P_Random calls in this order
 ;
-; A sector's lines are its line table (LVG1: LFIRST, LCOUNT); a line's
-; other sector is upstream's getNextSector by lg_prep's front and back
-; sectors (the front twice for a one-sided line); the light levels are the
-; sectors' render records (LVMAP), a byte each (0-255: upstream's signed
-; compares of them are unsigned byte compares).
+; The sectors' records and the lines' come through the object API (sec_get,
+; ln_get: a line's two sectors, the front twice for a one-sided line, from
+; LVS); a sector's lines are its line table (LVG1: LFIRST, LCOUNT, no cache
+; holds it); a line's other sector is upstream's getNextSector; the light
+; levels are the sectors' render records, a byte each (0-255: upstream's
+; signed compares of them are unsigned byte compares); a new special's
+; record goes through sp_store.
 
         .setcpu "65C02"
         .macpack longbranch
@@ -27,7 +30,9 @@
         .include "lgame.inc"
 
         .export gx_specials
-        .import g_get, g_put, g_put2, g_random, gt_add, gt_spectake
+        .import g_get, g_random, gt_add, gt_spectake
+        .import sec_get, sec_dirty, ln_get, sp_store
+        .include "ggame.inc"
 
         .segment "LOADW"
 
@@ -44,12 +49,10 @@ gx_specials:
         lda #0
         sbc LVCOUNT+1
         jcs @buttons
-        jsr sg_addr             ; its game record
-        lda #<LW_SG
-        ldx #>LW_SG
-        ldy #SECG_SIZE
-        jsr g_get
-        lda LW_SG + SG_SPECIAL
+        lda GS_I                ; its game record's special
+        jsr sec_get
+        ldy #SEC_SIZE + SG_SPECIAL
+        lda (GC_SP),y
         cmp #1
         bne :+
         jsr flash
@@ -115,29 +118,11 @@ gx_specials:
         lda GS_I+1
         sbc LVCOUNT2+1
         bcs @done
-        lda GS_I                ; its record: LINE_BASE + 32 n
-        sta FA_SRC
-        lda GS_I+1
-        ldx #5
-:       asl FA_SRC
-        rol a
-        dex
-        bne :-
-        sta FA_SRC+1
-        clc
-        lda FA_SRC
-        adc #<LINE_BASE
-        sta FA_SRC
-        lda FA_SRC+1
-        adc #>LINE_BASE
-        sta FA_SRC+1
-        lda #LVG0
-        sta FA_BANK
-        lda #<LW_LINEB
-        ldx #>LW_LINEB
-        ldy #LN_SPECIAL + 1
-        jsr g_get
-        lda LW_LINEB + LN_SPECIAL
+        lda GS_I                ; its record (ln_get)
+        ldx GS_I+1
+        jsr ln_get
+        ldy #LN_SPECIAL
+        lda (GC_LP),y
         cmp #48
         bne :+
         jsr scroller
@@ -147,74 +132,33 @@ gx_specials:
         bra @line
 @done:  rts
 
-; sg_addr: FA_BANK:FA_SRC = sector GS_I's game record (LVG1), GC_T its
-; address
-sg_addr:
-        lda GS_I
-        stz GC_T+1
-        ldx #5
-:       asl a
-        rol GC_T+1
-        dex
-        bne :-
-        clc
-        adc #<SECG_BASE
-        sta GC_T
-        sta FA_SRC
-        lda GC_T+1
-        adc #>SECG_BASE
-        sta GC_T+1
-        sta FA_SRC+1
-        lda #LVG1
-        sta FA_BANK
-        rts
-
-; no_special: sector GS_I's special 0 (LVG1)
+; no_special: sector GS_I's special 0 (its game record, sec_dirty)
 no_special:
-        jsr sg_addr
-        clc
-        lda GC_T
-        adc #SG_SPECIAL
-        sta FA_DST
-        lda GC_T+1
-        adc #0
-        sta FA_DST+1
-        stz GC_V
-        lda #<GC_V
-        ldx #>GC_V
-        ldy #1
-        jmp g_put
+        lda GS_I
+        jsr sec_get
+        ldy #SEC_SIZE + SG_SPECIAL
+        lda #0
+        sta (GC_SP),y
+        lda #2
+        jmp sec_dirty
 
 ; light: GC_S = sector A's light level (a word)
-light:  stz FA_SRC+1
-        ldx #4
-:       asl a
-        rol FA_SRC+1
-        dex
-        bne :-
-        clc
-        adc #<(SECBASE + SEC_LIGHT)
-        sta FA_SRC
-        lda FA_SRC+1
-        adc #>(SECBASE + SEC_LIGHT)
-        sta FA_SRC+1
-        lda #LVMAP
-        sta FA_BANK
+light:  jsr sec_get
+        ldy #SEC_LIGHT
+        lda (GC_SP),y
+        sta GC_S
         stz GC_S+1
-        lda #<GC_S
-        ldx #>GC_S
-        ldy #1
-        jmp g_get
+        rts
 
 ; newlight: a special of kind X for sector GS_I, at the thinker list's
 ; end: LW_SPEC its record (function A, sector, links), GC_H its handle,
 ; GS_ST its address; GS_K = its sector's light level
 newlight:
         pha
-        jsr gt_spectake         ; GC_H, GC_P (ZONE0)
-        lda GC_P                ; (gt_add and minlight change GC_P)
+        jsr gt_spectake         ; GC_H
+        lda GC_H                ; (kept for putspec)
         sta GS_ST
-        lda GC_P+1
+        lda GC_H+1
         sta GS_ST+1
         jsr gt_add              ; GC_PREV
         ldx #SPEC_SIZE - 1
@@ -239,18 +183,13 @@ newlight:
         stz GS_K+1
         rts
 
-; putspec: LW_SPEC into its record GS_ST (ZONE0)
+; putspec: LW_SPEC into the special GS_ST (sp_store)
 putspec:
-        lda #ZONE0
-        sta FA_BANK
         lda GS_ST
-        sta FA_DST
+        sta GC_H
         lda GS_ST+1
-        sta FA_DST+1
-        lda #<LW_SPEC
-        ldx #>LW_SPEC
-        ldy #SPEC_SIZE
-        jmp g_put
+        sta GC_H+1
+        jmp sp_store
 
 ; flash: P_SpawnLightFlash(sector GS_I)
 flash:  jsr no_special          ; (takeSector)
@@ -313,11 +252,17 @@ glow:   lda #FN_GLOW
 ; scroller: addScroller(sidenum[0] of the line LW_LINEB): a T_Scroll
 ; thinker whose texture offset is that side's
 scroller:
+        ldy #LN_SIDE0           ; (the line's side 0, from its cache line)
+        lda (GC_LP),y
+        sta GS_K
+        iny
+        lda (GC_LP),y
+        sta GS_K+1
         ldx #SPK_SCROLL
         jsr gt_spectake
-        lda GC_P
+        lda GC_H
         sta GS_ST
-        lda GC_P+1
+        lda GC_H+1
         sta GS_ST+1
         jsr gt_add
         ldx #SPEC_SIZE - 1
@@ -334,9 +279,9 @@ scroller:
         sta LW_SPEC + SP_THNEXT
         sta LW_SPEC + SP_THNEXT + 1
         sta LW_SPEC + SP_SECTOR
-        lda LW_LINEB + LN_SIDE0
+        lda GS_K
         sta LW_SPEC + SPSC_SIDE
-        lda LW_LINEB + LN_SIDE0 + 1
+        lda GS_K+1
         sta LW_SPEC + SPSC_SIDE + 1
         jmp putspec
 
@@ -345,27 +290,28 @@ scroller:
 minlight:
         lda GS_K
         sta GS_L
-        jsr sg_addr             ; its count and first entry
-        lda #<LW_SG
-        ldx #>LW_SG
-        ldy #SG_LFIRST + 2
-        jsr g_get
-        lda LW_SG + SG_LCOUNT
+        lda GS_I                ; its count and first entry
+        jsr sec_get
+        ldy #SEC_SIZE + SG_LCOUNT
+        lda (GC_SP),y
         sta GC_N
-        lda LW_SG + SG_LCOUNT + 1
+        iny
+        lda (GC_SP),y
         sta GC_N+1
-        lda LW_SG + SG_LFIRST   ; GC_W = the table's entry: LTAB + 2 first
+        ldy #SEC_SIZE + SG_LFIRST       ; GC_W = the table's entry: LTAB + 2
+        lda (GC_SP),y                   ;   first
         asl a
         sta GC_W
-        lda LW_SG + SG_LFIRST + 1
+        iny
+        lda (GC_SP),y
         rol a
         sta GC_W+1
         clc
         lda GC_W
-        adc LW_HDR + LHV_LTAB
+        adc G_LTABAT
         sta GC_W
         lda GC_W+1
-        adc LW_HDR + LHV_LTAB + 1
+        adc G_LTABAT+1
         sta GC_W+1
 @entry: lda GC_N
         ora GC_N+1
@@ -380,21 +326,15 @@ minlight:
         ldx #>GC_X
         ldy #2
         jsr g_get
-        clc                     ; getNextSector: its front when not the
-        lda GC_X                ;   sector, else its back when not the
-        adc #<LW_LFRONT         ;   sector (one-sided: the front again),
-        sta GC_P                ;   else none
-        lda GC_X+1
-        adc #>LW_LFRONT
-        sta GC_P+1
-        lda (GC_P)
+        lda GC_X                ; getNextSector: its front when not the
+        ldx GC_X+1              ;   sector, else its back when not the
+        jsr ln_get              ;   sector (one-sided: the front again),
+        ldy #LINE_SIZE          ;   else none
+        lda (GC_LP),y
         cmp GS_I
         bne @other
-        clc
-        lda GC_P+1
-        adc #>LINE_ROOM
-        sta GC_P+1
-        lda (GC_P)
+        iny
+        lda (GC_LP),y
         cmp GS_I
         beq @skip
 @other: jsr light               ; its light below the least: the least
@@ -414,4 +354,3 @@ minlight:
 :       dec GC_N
         bra @entry
 @done:  rts
-        .assert <LINE_ROOM = 0, error, "LINE_ROOM in pages"

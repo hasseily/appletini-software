@@ -63,6 +63,14 @@
  *                       snapshots of these ranges only (README.md,
  *                       "Ranges"): NAME.img, an A2VMIMG1 image, in place
  *                       of the whole RAM's NAME.ram
+ *   --snapshot-stream FILE
+ *                       every snapshot (of --snapshot-ranges, which it
+ *                       needs) into one stream instead of files (README.md,
+ *                       "The snapshot stream"), "-" for stdout
+ *   --snapshot-limit BYTES
+ *                       the stream's bound (default 1 GiB): a snapshot
+ *                       that would pass it ends the stream and the run
+ *                       with exit status 2
  *   --state FILE        the final state as JSON (default: stdout)
  *   --bus-script FILE   instead of running the CPU, run the bus commands
  *                       of FILE (README.md) and print their results
@@ -79,6 +87,11 @@
  *                       phases: the phase is the value written / 2
  *   --cost-report FILE  a JSON line at every frame boundary: the model's
  *                       clocks, by phase, and its counters
+ *   --cost-pcmap FILE   a PC map of phases (cost.h, a2vm_cost_pcmap): while
+ *                       the phase written is --cost-pcmap-when's (default
+ *                       18), each instruction's phase is its PC's in the
+ *                       map (milestone 10's timing report by subsystem)
+ *   --cost-pcmap-when N the phase written under which the map holds
  *
  * Logs
  *   --ay-log FILE       a line for each AY register write that reaches a
@@ -249,8 +262,13 @@ typedef struct {
     const char *volume, *launched;
     const char *cost, *cost_report, *ay_log, *irq_bounds;
     const char *write_log, *write_log_file, *snapshot_ranges, *lowest_s_in;
+    const char *snapshot_stream;
+    uint64_t snapshot_limit;
+    int snapshot_limit_given;
     int zpbank, lowest_s;
     int cost_timed, cost_phase;
+    const char *cost_pcmap;
+    unsigned cost_pcmap_when;
     const char *loads[MAX_LIST], *aux_loads[MAX_LIST], *regs[MAX_LIST],
         *switches[MAX_LIST], *idles[MAX_LIST];
     unsigned load_count, aux_load_count, reg_count, switch_count, idle_count;
@@ -283,6 +301,7 @@ static void parse(int argc, char **argv, options *o)
     o->every_limit = EVERY_LIMIT;
     o->volume = "DOOM";
     o->cost_phase = -1;
+    o->cost_pcmap_when = 18;
     o->launched = "DOOM.SYSTEM";
     for (int i = 1; i < argc; i++) {
         const char *arg = argv[i];
@@ -412,6 +431,10 @@ static void parse(int argc, char **argv, options *o)
             o->cost_report = value;
         else if (!strcmp(arg, "--cost-phase"))
             o->cost_phase = address16(value);
+        else if (!strcmp(arg, "--cost-pcmap"))
+            o->cost_pcmap = value;
+        else if (!strcmp(arg, "--cost-pcmap-when"))
+            o->cost_pcmap_when = (unsigned)number(value, 0);
         else if (!strcmp(arg, "--ay-log"))
             o->ay_log = value;
         else if (!strcmp(arg, "--irq-bounds"))
@@ -422,6 +445,12 @@ static void parse(int argc, char **argv, options *o)
             o->write_log_file = value;
         else if (!strcmp(arg, "--snapshot-ranges"))
             o->snapshot_ranges = value;
+        else if (!strcmp(arg, "--snapshot-stream"))
+            o->snapshot_stream = value;
+        else if (!strcmp(arg, "--snapshot-limit")) {
+            o->snapshot_limit = number(value, 0);
+            o->snapshot_limit_given = 1;
+        }
         else if (!strcmp(arg, "--lowest-s-in")) {
             o->lowest_s_in = value;
             o->lowest_s = 1;
@@ -430,16 +459,26 @@ static void parse(int argc, char **argv, options *o)
     }
     if (!o->config.rom_path)
         fail("give --rom (the Apple //e enhanced ROM)");
-    if ((o->snapshot_boundaries || o->final_snapshot) && !o->snapshot_dir)
+    if ((o->snapshot_boundaries || o->final_snapshot) && !o->snapshot_dir &&
+        !o->snapshot_stream)
         fail("snapshots need --snapshot-dir");
-    if ((o->cost_timed || o->cost_report || o->cost_phase >= 0) && !o->cost)
+    if ((o->cost_timed || o->cost_report || o->cost_phase >= 0 ||
+         o->cost_pcmap) && !o->cost)
         fail("the cost options need --cost");
+    if (o->cost_pcmap && o->cost_phase < 0)
+        fail("--cost-pcmap needs --cost-phase");
     if (o->write_log_file && !o->write_log)
         fail("--write-log-file needs --write-log");
     if (o->write_log && !o->write_log_file && !o->snapshot_dir)
         fail("--write-log needs --write-log-file or --snapshot-dir");
     if (!o->write_log_limit)
         fail("--write-log-limit takes a count from 1");
+    if (o->snapshot_stream && !o->snapshot_ranges)
+        fail("--snapshot-stream needs --snapshot-ranges");
+    if (o->snapshot_limit_given && !o->snapshot_stream)
+        fail("--snapshot-limit needs --snapshot-stream");
+    if (o->snapshot_limit_given && !o->snapshot_limit)
+        fail("--snapshot-limit takes a count of bytes from 1");
     if (!o->cycles_given)
         o->cycles = DEFAULT_CYCLES;
 }
@@ -944,10 +983,85 @@ static void write_ranges_image(a2vm *m, const char *path)
         fail("cannot write %s", path);
 }
 
+/* --snapshot-stream: every snapshot into one stream (milestone 10): a
+   JSON line {"format": "a2vm-snapshot-stream 1", "ranges": "..."}; for
+   each snapshot a JSON line {"snapshot": N, "name", "cycles", "pc",
+   "bytes": L} and its L bytes, an A2VMIMG1 image of the ranges (what
+   NAME.img would hold); a last line {"end": REASON, "snapshots": N}. A
+   snapshot that would take the stream past its limit is not written: the
+   stream ends with {"end": "snapshot-limit", ...} and the run with exit
+   status 2. */
+static FILE *snap_stream;
+static uint64_t snap_stream_limit = 1ull << 30;
+static uint64_t snap_stream_bytes, snap_stream_count;
+
+static void stream_end(const char *reason)
+{
+    if (!snap_stream)
+        return;
+    fprintf(snap_stream, "{\"end\": \"%s\", \"snapshots\": %" PRIu64 "}\n",
+            reason, snap_stream_count);
+    if (snap_stream != stdout && fclose(snap_stream))
+        fail("cannot write the snapshot stream");
+    else if (snap_stream == stdout)
+        fflush(stdout);
+    snap_stream = NULL;
+}
+
+static void stream_snapshot(a2vm *m, const char *name)
+{
+    uint64_t length = 8;
+    for (unsigned i = 0; i < snapshot_range_count; i++) {
+        const a2vm_range *r = &snapshot_ranges[i];
+        unsigned banks = r->kind == A2VM_RANGE_AUX
+                             ? r->bank_high - r->bank_low + 1 : 1;
+        length += banks * (8 + ((uint64_t)r->high - r->low + 1));
+    }
+    char head[512];
+    int n = snprintf(head, sizeof head,
+                     "{\"snapshot\": %" PRIu64 ", \"name\": \"%s\", "
+                     "\"cycles\": %" PRIu64 ", \"pc\": %u, \"bytes\": %"
+                     PRIu64 "}\n", snap_stream_count + 1, name, a2vm_now(m),
+                     (unsigned)a2vm_pc(m), length);
+    if (n < 0 || (size_t)n >= sizeof head)
+        fail("a snapshot's name is too long for the stream");
+    if (snap_stream_bytes + (uint64_t)n + length > snap_stream_limit) {
+        stream_end("snapshot-limit");
+        fail("the snapshot %s would take the stream past --snapshot-limit "
+             "%" PRIu64 " bytes", name, snap_stream_limit);
+    }
+    if (fwrite(head, 1, (size_t)n, snap_stream) != (size_t)n ||
+        fwrite("A2VMIMG1", 1, 8, snap_stream) != 8)
+        fail("cannot write the snapshot stream");
+    for (unsigned i = 0; i < snapshot_range_count; i++) {
+        const a2vm_range *r = &snapshot_ranges[i];
+        unsigned first = r->kind == A2VM_RANGE_AUX ? r->bank_low : 0;
+        unsigned last = r->kind == A2VM_RANGE_AUX ? r->bank_high : 0;
+        for (unsigned bank = first; bank <= last; bank++) {
+            uint32_t size = (uint32_t)r->high - r->low + 1;
+            uint8_t header[8] = {
+                r->kind, (uint8_t)bank, (uint8_t)r->low,
+                (uint8_t)(r->low >> 8), (uint8_t)size,
+                (uint8_t)(size >> 8), (uint8_t)(size >> 16), 0
+            };
+            const uint8_t *data = a2vm_storage(m, r->kind, bank, r->low);
+            if (fwrite(header, 1, 8, snap_stream) != 8 ||
+                fwrite(data, 1, size, snap_stream) != size)
+                fail("cannot write the snapshot stream");
+        }
+    }
+    snap_stream_bytes += (uint64_t)n + length;
+    snap_stream_count++;
+}
+
 static void snapshot(a2vm *m, const char *directory, const char *name,
                      const char *extra)
 {
     char path[1200];
+    if (snap_stream) {
+        stream_snapshot(m, name);
+        return;
+    }
     snprintf(path, sizeof path, "%s/%s.json", directory, name);
     write_json(path, m, extra);
     if (snapshot_range_count) {
@@ -1173,7 +1287,7 @@ static void act(a2vm *m, const options *o, event *e, int *stop)
     case ACT_OA: m->buttons[0] = e->a ? 0x80 : 0; break;
     case ACT_CA: m->buttons[1] = e->a ? 0x80 : 0; break;
     case ACT_SNAPSHOT:
-        if (!o->snapshot_dir)
+        if (!o->snapshot_dir && !snap_stream)
             fail("the snapshot action needs --snapshot-dir");
         snapshot(m, o->snapshot_dir, name, NULL);
         break;
@@ -1347,6 +1461,10 @@ int main(int argc, char **argv)
         if (!cost)
             fail("out of memory");
         cost->phase_addr = o.cost_phase;
+        if (o.cost_pcmap && !a2vm_cost_pcmap(cost, o.cost_pcmap,
+                                             o.cost_pcmap_when, error,
+                                             sizeof error))
+            fail("%s", error);
         if (o.cost_report) {
             cost->report = fopen(o.cost_report, "w");
             if (!cost->report)
@@ -1385,6 +1503,21 @@ int main(int argc, char **argv)
         !a2vm_parse_ranges(o.snapshot_ranges, snapshot_ranges,
                            &snapshot_range_count, 0, error, sizeof error))
         fail("--snapshot-ranges: %s", error);
+    if (o.snapshot_stream) {
+        if (!strcmp(o.snapshot_stream, "-") && !o.state)
+            fail("--snapshot-stream - needs --state (stdout is the stream)");
+        if (o.snapshot_limit_given)
+            snap_stream_limit = o.snapshot_limit;
+        snap_stream = !strcmp(o.snapshot_stream, "-")
+                          ? stdout : fopen(o.snapshot_stream, "wb");
+        if (!snap_stream)
+            fail("cannot write %s", o.snapshot_stream);
+        int n = fprintf(snap_stream, "{\"format\": \"a2vm-snapshot-stream "
+                        "1\", \"ranges\": \"%s\"}\n", o.snapshot_ranges);
+        if (n < 0)
+            fail("cannot write the snapshot stream");
+        snap_stream_bytes = (uint64_t)n;
+    }
     if (o.ay_log) {
         m->ay_log = fopen(o.ay_log, "w");
         if (!m->ay_log)
@@ -1467,6 +1600,8 @@ int main(int argc, char **argv)
             break;
         }
         uint16_t pc = a2vm_pc(m);
+        if (o.cost_pcmap)
+            a2vm_cost_pc(m, pc);
         if (watch[pc >> 3] & (1u << (pc & 7))) {
             int main_zp = !m->sw[SW_ALTZP];
             if (o.has_boundary && pc == o.boundary && main_zp) {
@@ -1534,6 +1669,7 @@ int main(int argc, char **argv)
                       low_count);
     if (o.final_snapshot)
         snapshot(m, o.snapshot_dir, "final", extra);
+    stream_end(reason);
     if (m->cost && m->cost->report) {
         fputs("{\"final\": true,\n", m->cost->report);
         a2vm_cost_final(m, m->cost->report);

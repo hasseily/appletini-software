@@ -1,0 +1,53 @@
+{
+ "format": "game-args 1",
+ "note": "Part flow's entries (docs/GAME.md 2.4, 3.5 step 4); schema: src/native/game/README.md. Two extensions, asked of gameroutine.py in docs/game-parts/flow.md (request 5) and run by tools/native/gparts/flowcheck.py meanwhile: \"as\": \"symbol\" (an upstream pointer to a labelled constant as the native reference: tag 1, the manifest's symbol number, the offset) and \"load\": true (the entry runs up to a level load and returns GT_LOAD: the driver's routine-with-load mode, the continuation g_resume, compared after it); a native output may be \"zp:NAME\".",
+ "entries": {
+  "g_game65.s:readDemoTiccmd": {"native": "readDemoTiccmd", "in": [], "out": []},
+  "g_game65.s:G_CheckDemoStatus": {"native": "G_CheckDemoStatus", "in": [], "out": []},
+  "g_game65.s:doCompleted": {"native": "doCompleted", "in": [], "out": []},
+  "g_game65.s:G_ExitLevel": {"native": "G_ExitLevel", "in": [], "out": []},
+  "g_game65.s:G_SecretExitLevel": {"native": "G_SecretExitLevel", "in": [], "out": []},
+  "g_game65.s:G_WorldDone": {"native": "G_WorldDone", "in": [], "out": []},
+  "g_game65.s:G_ReloadDefaults": {"native": "G_ReloadDefaults", "in": [], "out": []},
+  "g_game65.s:G_DeferedInitNew": {
+   "native": "G_DeferedInitNew",
+   "in": [{"from": "a", "to": "ax"}],
+   "out": []},
+  "g_game65.s:G_DeferedPlayDemo": {
+   "native": "G_DeferedPlayDemo",
+   "in": [{"from": "dp:_Dp:4", "to": "zp:GA_0", "as": "symbol"}],
+   "out": []},
+  "g_game65.s:checkOverrun": {
+   "native": "checkOverrun",
+   "in": [{"from": "a", "to": "ax"}],
+   "out": []},
+  "g_game65.s:signLong": {
+   "native": "signLong",
+   "in": [{"from": "a", "to": "ax"}, {"from": "x", "to": "y"}],
+   "out": []},
+  "g_game65.s:div1000": {
+   "native": "div1000",
+   "in": [{"from": "abs:g_game65.s:GG_T:4", "to": "zp:GA_0"}],
+   "out": [{"native": "zp:GA_4", "upstream": "xc", "bytes": 4},
+           {"native": "zp:GA_0", "upstream": "dp:_Dp:4", "bytes": 4}]},
+  "g_game65.s:victory": {"native": "victory", "in": [], "out": []},
+  "g_game65.s:loadLevel": {"native": "loadLevel", "load": true, "in": [], "out": []},
+  "g_game65.s:doNewGame": {"native": "doNewGame", "load": true, "in": [], "out": []},
+  "g_game65.s:doWorldDone": {"native": "doWorldDone", "load": true, "in": [], "out": []},
+  "g_game65.s:doPlayDemo": {"native": "doPlayDemo", "load": true, "in": [], "out": []},
+  "g_game65.s:doLoadLevel": {"native": "doLoadLevel", "load": true, "in": [], "out": []},
+  "g_game65.s:readDemoHeader": {"native": "readDemoHeader", "load": true, "in": [], "out": []},
+  "g_game65.s:initNew": {
+   "native": "initNew", "load": true,
+   "in": [{"from": "a", "to": "ax"}, {"from": "dp:_Dp:2", "to": "zp:GA_0"}],
+   "out": []},
+  "wi_stuff65.s:WI_Start": {"native": "WI_Start", "in": [], "out": []},
+  "wi_stuff65.s:WI_End": {"native": "WI_End", "in": [], "out": []},
+  "wi_stuff65.s:WI_checkForAccelerate": {"native": "WI_checkForAccelerate", "in": [], "out": []},
+  "wi_stuff65.s:WI_Ticker": {"native": "WI_Ticker", "in": [], "out": []},
+  "st_stuff65.s:ST_Ticker": {
+   "native": "ST_Ticker", "in": [],
+   "out": [{"native": "a", "upstream": "abs:st_stuff65.s:st_randomnumber:1", "bytes": 1}]},
+  "hu_stuff65.s:HU_Ticker": {"native": "HU_Ticker", "in": [], "out": []}
+ }
+}

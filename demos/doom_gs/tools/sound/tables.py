@@ -91,6 +91,63 @@ def owned_registers(layout):
 
 
 # ---------------------------------------------------------------------------
+# Chip 3's voices for the effects (S4): the one table of their sides. The
+# effect player (fxplay.py, and src/sound/fx.s through tables65.py's
+# FX_VOICE_* and FX_SEP_* equates), the test disk (fxdisk.py) and the
+# renders of the effects (ayrender.DOOM_PANS) read it.
+#
+# A voice is (name, side, pan): its channel of chip 3 is its index, its
+# pan the value the Doom profile gives it in the Appletini's Phasor menu
+# (the menu's "AY3 A", "AY3 B", "AY3 C", keys phasor.pan.10-12 of
+# appletini_cfg.txt: FW/ps_sources/frontend/config_menu_phasor.c:16-29,
+# :234-243). The menu's scale is 0-15; the HDL's gains
+# (FW/hdl/apple/mockingboard.sv:316-343) are left 16/16 for pans 0-8 and
+# right 16/16 for pans 8-15, so 8 is the one centred value, both sides
+# full (also the value RETURN on a pan item resets it to,
+# config_menu_phasor.c:398-409). Pans 5 and 11 are the menu's defaults
+# for A and B (config_menu_phasor.c:9-14): 5 is left 16/16, right 10/16;
+# 11 is left 9/16, right 16/16. The menu's default for C is 5 (left); the
+# Doom profile sets it to 8 (tools/sound/README.md "Stereo by voice").
+# ---------------------------------------------------------------------------
+
+FxVoice = namedtuple('FxVoice', 'name side pan')
+
+FX_VOICES = (FxVoice('A', 'left', 5),
+             FxVoice('B', 'right', 11),
+             FxVoice('C', 'centre', 8))
+FX_MENU_PAN_KEY = 10           # phasor.pan.10-12: chip 3 (the menu's AY3)
+PAN_CENTRE = 8                 # the menu's centred pan: left and right full
+
+# The voice choice at a sound's start, from its separation (upstream's:
+# 128 the centre, below it the left: left = vol x (254 - sep) / 127,
+# s_sound65.s:698-712). Below FX_SEP_LEFT the left voice is tried first,
+# above FX_SEP_RIGHT the right one, from FX_SEP_LEFT to FX_SEP_RIGHT the
+# centre; a busy voice falls back to the nearest free voice in pan, the
+# centre to the side the separation leans to (128 to the left).
+FX_SEP_LEFT = 96
+FX_SEP_RIGHT = 160
+FX_SEP_CENTRE = 128
+
+
+def fx_voice(side):
+    """The index (chip 3's channel) of the voice on `side`."""
+    return next(k for k, v in enumerate(FX_VOICES) if v.side == side)
+
+
+def fx_voice_order(sep):
+    """The voices a start with separation `sep` (0-255) tries, in order:
+    indexes of FX_VOICES."""
+    left, centre, right = (fx_voice(s) for s in ('left', 'centre', 'right'))
+    if sep < FX_SEP_LEFT:
+        return (left, centre, right)
+    if sep > FX_SEP_RIGHT:
+        return (right, centre, left)
+    if sep <= FX_SEP_CENTRE:
+        return (centre, left, right)
+    return (centre, right, left)
+
+
+# ---------------------------------------------------------------------------
 # Pitch
 # ---------------------------------------------------------------------------
 

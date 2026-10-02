@@ -182,10 +182,17 @@ def state_ranges(header: Dict[str, Any], ref: Dict[str, Any]
     c = header['counts']
     o = ref['objects']
     out = [(0, 0, LL.GBLOCK, LL.GLOBALS_END - LL.GBLOCK),
-           (0, 0, LL.PRND, 2), (0, 0, LL.LNMAP, LL.LNMAP_END - LL.LNMAP)]
+           (0, 0, LL.PRND, 2), (0, 0, LL.LNMAP, LL.LNMAP_END - LL.LNMAP),
+           (0, 0, LL.G_VALID, 2)]
     mobjs = len(o.get('mobj', {})) + len(o.get('zmobj', {}))
     for bank in (R.RTH,) + LL.MOBJ_BANKS:
         out.append((1, bank, R.RTHINGS.base, LL.MO_SIZE * mobjs))
+    # milestone 10: the mobjs' planes (next, kind, tics), LVS's tables
+    for plane in (LL.PL_TNL, LL.PL_TNH, LL.PL_KIND, LL.PL_TICS):
+        out.append((1, LL.MOBJP, plane, mobjs))
+    out += [(1, LL.LVS, LL.LVS_LNSECF, c['lines']),
+            (1, LL.LVS, LL.LVS_LNSECB, c['lines']),
+            (1, LL.LVS, LL.LVS_RJROW, 2 * c['sectors'])]
     for kind, (lo, n) in LL.SPEC_RANGE.items():
         k = len(o.get(kind, {}))
         if k:
@@ -502,8 +509,9 @@ def store_check(mach, files, gamemap: int) -> int:
         if kind == 1:
             changed.setdefault(bank, set()).update(
                 range(address, address + len(data)))
-    for bank in (R.RTH,) + LL.MOBJ_BANKS + (LL.ZONE0, LL.ZONE1):
-        # (the setup's: stage C)
+    for bank in (R.RTH,) + LL.MOBJ_BANKS + (LL.ZONE0, LL.ZONE1, LL.MOBJP,
+                                            LL.LVS):
+        # (the setup's: stage C; the planes and LVS: milestone 10)
         changed.setdefault(bank, set()).update(range(LL.ROOM[0],
                                                      LL.ROOM[1]))
     n = 0

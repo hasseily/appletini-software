@@ -1,0 +1,56 @@
+{
+ "format": "game-args 1",
+ "note": "Part lines's entries (docs/GAME.md 2.4, 3.5 step 4; docs/game-parts/lines.md, Interfaces). Beyond src/native/game/README.md's schema (secfind's forms, request 6 of docs/game-parts/secfind.md: \"as\" a line or a mobj; an output's \"native\" \"zp:NAME\"), tools/native/gparts/lines.py reads three more: an output \"c\" (the native carry, the driver's dg_rp bit 0, against upstream's P bit 0 at the return), \"when\": \"c\" (an output compared only when upstream's carry is set: findSpecial's argument and index mean nothing without it) and \"div\" (upstream's value divided: spectab's offset in 8-byte entries against the native index). lnExit is LSTAB's entry, reached through P_UseSpecialLine and called alone in the synthetic cases: upstream's lnExit takes the line of its switch from SW_LINE (swLine, p_switch65.s:547) and its thing from SW_THING (isPlayer), as P_UseSpecialLine leaves them; the native handler takes them from GA_0-1 and GA_4-5.",
+ "entries": {
+  "p_switch65.s:P_UseSpecialLine": {
+   "native": "P_UseSpecialLine",
+   "in": [
+    {"from": "dp:_Dp:4", "to": "zp:GA_0", "as": "mobj"},
+    {"from": "dp:_Dp+4:4", "to": "zp:GA_2", "as": "line"}
+   ],
+   "out": [
+    {"native": "a", "upstream": "a", "bytes": 1}
+   ]
+  },
+  "p_switch65.s:P_CrossSpecialLine": {
+   "native": "P_CrossSpecialLine",
+   "in": [
+    {"from": "dp:_Dp:4", "to": "zp:GA_0", "as": "line"},
+    {"from": "dp:_Dp+4:4", "to": "zp:GA_2", "as": "mobj"},
+    {"from": "a", "to": "a", "bytes": 1}
+   ],
+   "out": []
+  },
+  "p_switch65.s:findSpecial": {
+   "native": "findSpecial",
+   "in": [
+    {"from": "abs:p_switch65.s:SW_LINE:4", "to": "ax", "as": "line"},
+    {"from": "x", "to": "y", "bytes": 1}
+   ],
+   "out": [
+    {"native": "c", "upstream": "c", "bytes": 1},
+    {"native": "a", "upstream": "a", "bytes": 1, "when": "c"},
+    {"native": "zp:GT_0", "upstream": "abs:p_switch65.s:SW_I:2", "bytes": 1, "div": 8, "when": "c"}
+   ]
+  },
+  "p_switch65.s:P_ChangeSwitchTexture": {
+   "native": "P_ChangeSwitchTexture",
+   "in": [
+    {"from": "dp:_Dp:4", "to": "ax", "as": "line"},
+    {"from": "a", "to": "y", "bytes": 1}
+   ],
+   "out": []
+  },
+  "p_switch65.s:lnExit": {
+   "native": "lnExit",
+   "in": [
+    {"from": "abs:p_switch65.s:SW_LINE:4", "to": "zp:GA_0", "as": "line"},
+    {"from": "a", "to": "zp:GA_2", "bytes": 2},
+    {"from": "abs:p_switch65.s:SW_THING:4", "to": "zp:GA_4", "as": "mobj"}
+   ],
+   "out": [
+    {"native": "a", "upstream": "a", "bytes": 1}
+   ]
+  }
+ }
+}

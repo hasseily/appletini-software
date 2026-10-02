@@ -215,6 +215,9 @@ class RunModule(unittest.TestCase):
         for name, text in MODULES.items():
             (tests / (name + '.py')).write_text(textwrap.dedent(text))
         (tests / 'helper.py').write_text('')    # not a test module
+        # a work-in-progress module: run only when named
+        (tests / 'wip_test_draft.py').write_text(textwrap.dedent(
+            MODULES['test_pass']))
         cls.scratch = cls.root / 'scratch'
         cls.scratch.mkdir()
 
@@ -236,6 +239,17 @@ class RunModule(unittest.TestCase):
                          ['test_fail'])
         with self.assertRaises(SystemExit):
             testpar.discover(['test_none'], tests=self.root / 'tests')
+        # tests/wip_test_*.py: not discovered, but runs when named
+        self.assertNotIn('wip_test_draft',
+                         testpar.discover(tests=self.root / 'tests'))
+        self.assertEqual(testpar.discover(['tests/wip_test_draft.py',
+                                           'test_pass'],
+                                          tests=self.root / 'tests'),
+                         ['test_pass', 'wip_test_draft'])
+        o = self.run_one('wip_test_draft')
+        self.assertEqual(o.status, 'ok', o.output)
+        self.assertEqual((o.counts['run'], o.counts['skipped']), (3, 1))
+        self.assertIn('wip_test_draft.T.test_one', o.outcomes)
 
     def test_passing(self):
         o = self.run_one('test_pass')

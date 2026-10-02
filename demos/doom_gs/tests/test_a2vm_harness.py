@@ -9,7 +9,9 @@
   - --snapshot-ranges: snapshots of chosen ranges only, as A2VMIMG1
     images that --image loads back;
   - input events at one PC: plain events all fire at the first visit, as
-    before; pc ADDR@N fires at the Nth visit and pc ADDR@* at every one.
+    before; pc ADDR@N fires at the Nth visit and pc ADDR@* at every one;
+  - --snapshot-stream FILE and --snapshot-limit BYTES (milestone 10):
+    every snapshot of the ranges into one stream, bounded.
 
 Each option is opt-in: without it the state has none of its fields (the
 comparison with a2sim.py and every earlier test depend on that).
@@ -339,6 +341,87 @@ class Events(Runs):
         _, result = self.run_program(self.LOOP, events=['pc 802@0 stop'])
         self.assertEqual(result.returncode, 2)
         self.assertIn('counts visits from 1', result.stdout)
+
+
+
+def read_stream(data):
+    """An a2vm snapshot stream: its head, its snapshots (head, records),
+    its end line."""
+    lines = data.split(b'\n', 1)
+    head = json.loads(lines[0])
+    rest = lines[1]
+    snaps = []
+    while True:
+        line, _, rest = rest.partition(b'\n')
+        h = json.loads(line)
+        if 'end' in h:
+            return head, snaps, h
+        body, rest = rest[:h['bytes']], rest[h['bytes']:]
+        snaps.append((h, read_image(body)))
+
+
+@have_tools
+class SnapshotStream(Runs):
+    LOOP = Events.LOOP
+    # stores X at $10 before each visit's count, so each snapshot differs
+    STORE = [0xA2, 0x00,            # 0800 ldx #0
+             0x86, 0x10,            # 0802 stx $10
+             0xE8,                  # 0804 inx
+             0xE0, 0x04,            # 0805 cpx #4
+             0xD0, 0xF9,            # 0807 bne $0802
+             0x80, 0xFE]            # 0809 bra *
+
+    def test_every_snapshot_into_one_stream(self):
+        stream = self.directory / 'snaps.stream'
+        _, result = self.run_program(
+            self.STORE, '--snapshot-ranges', 'main:0000-00FF',
+            '--snapshot-stream', stream,
+            events=['pc 802@* snapshot every', 'pc 809 stop'])
+        self.assertEqual(result.returncode, 0, result.stdout)
+        head, snaps, end = read_stream(stream.read_bytes())
+        self.assertEqual(head['format'], 'a2vm-snapshot-stream 1')
+        self.assertEqual([h['name'] for h, _ in snaps],
+                         ['every-%04d' % n for n in range(1, 5)])
+        self.assertEqual([h['snapshot'] for h, _ in snaps], [1, 2, 3, 4])
+        self.assertTrue(all(h['pc'] == 0x802 for h, _ in snaps))
+        # each body is what NAME.img would hold: the range, its bytes
+        values = []
+        for _, records in snaps:
+            self.assertEqual([(k, b, a, len(d)) for k, b, a, d in records],
+                             [(0, 0, 0, 0x100)])
+            values.append(records[0][3][0x10])
+        self.assertEqual(values[1:], [0, 1, 2])
+        self.assertEqual(end, {'end': 'stop', 'snapshots': 4})
+        # no files besides the stream
+        self.assertFalse(list(self.directory.glob('every-*')))
+
+    def test_the_limit_ends_the_stream_and_the_run(self):
+        stream = self.directory / 'snaps.stream'
+        one = 8 + 8 + 0x100         # a snapshot's image of one page
+        _, result = self.run_program(
+            self.STORE, '--snapshot-ranges', 'main:0000-00FF',
+            '--snapshot-stream', stream, '--snapshot-limit',
+            2 * (one + 120),
+            events=['pc 802@* snapshot every', 'pc 809 stop'])
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn('--snapshot-limit', result.stdout)
+        head, snaps, end = read_stream(stream.read_bytes())
+        self.assertEqual(end['end'], 'snapshot-limit')
+        self.assertEqual(end['snapshots'], len(snaps))
+        self.assertLess(len(snaps), 4)
+        self.assertLessEqual(len(stream.read_bytes()),
+                             2 * (one + 120) + 200)
+
+    def test_the_stream_needs_ranges(self):
+        _, result = self.run_program(
+            self.STORE, '--snapshot-stream', self.directory / 's',
+            events=['pc 809 stop'])
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('needs --snapshot-ranges', result.stdout)
+        _, result = self.run_program(
+            self.STORE, '--snapshot-limit', 100, events=['pc 809 stop'])
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('needs --snapshot-stream', result.stdout)
 
 
 if __name__ == '__main__':

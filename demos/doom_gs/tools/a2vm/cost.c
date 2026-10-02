@@ -153,6 +153,10 @@ void a2vm_cost_free(a2vm_cost *c)
 {
     if (!c)
         return;
+    free(c->pcmap_fixed);
+    for (int b = 0; b < c->pcmap_banks; b++)
+        for (int g = 0; g < 256; g++)
+            free(c->pcmap_bank[b].tab[g]);
     free(c->drain_at);
     free(c->deferred);
     free(c->deferred_list);
@@ -897,6 +901,15 @@ static void phase_to(a2vm_cost *c, unsigned phase)
     c->phase = phase;
 }
 
+/* A write of the phase byte: the phase, or with the PC map the phase
+   written, which the next instruction's PC map phase follows. */
+static void phase_written(a2vm_cost *c, unsigned phase)
+{
+    c->written = phase;
+    if (!c->pcmap)
+        phase_to(c, phase);
+}
+
 /* One access that is not a dropped dummy read: the path of its kind. */
 static void access_read(a2vm_cost *c, a2vm *m, uint16_t address,
                         const uint8_t *page)
@@ -938,7 +951,7 @@ static void access_write(a2vm_cost *c, a2vm *m, uint16_t address,
     int aux0 = phys >= 0x200;
     if (c->phase_addr >= 0 && address == (unsigned)c->phase_addr &&
         page == m->main + (address & 0xff00))
-        phase_to(c, value >> 1);
+        phase_written(c, value >> 1);
     /* a video-window write of main or aux bank 0 is posted
        (xl_is_posted, :565-569); a2vm's write flags mark exactly those */
     int posted = address < 0xc000 && m->wflag[address >> 8] != 0;
@@ -1032,7 +1045,7 @@ static void slow_access(a2vm_cost *c, a2vm *m, uint16_t address,
             int aux0 = phys >= 0x200;
             if (c->phase_addr >= 0 && address == (unsigned)c->phase_addr &&
                 page == m->main + (address & 0xff00))
-                phase_to(c, value >> 1);
+                phase_written(c, value >> 1);
             int posted = address < 0xc000 && m->wflag[address >> 8] != 0;
             if (posted && aux0 && c->p.quiet_switches && c->phys_bank != 0)
                 reconcile(c, m, 1);
@@ -1339,6 +1352,109 @@ static void write_zpb_counters(FILE *out, const a2vm *m,
     for (int i = 0; i < 6; i++)
         fprintf(out, ", \"%s\": %" PRIu64, names[i],
                 now[i] - (before ? before[i] : 0));
+}
+
+int a2vm_cost_pcmap(a2vm_cost *c, const char *path, unsigned when,
+                    char *error, size_t error_size)
+{
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        snprintf(error, error_size, "%s: cannot open", path);
+        return 0;
+    }
+    if (!c->pcmap_fixed) {
+        c->pcmap_fixed = malloc(0x10000);
+        if (!c->pcmap_fixed) {
+            fclose(f);
+            snprintf(error, error_size, "out of memory");
+            return 0;
+        }
+        memset(c->pcmap_fixed, -1, 0x10000);
+    }
+    char line[256];
+    unsigned n = 0;
+    while (fgets(line, sizeof line, f)) {
+        n++;
+        char *hash = strchr(line, '#');
+        if (hash)
+            *hash = 0;
+        unsigned lo, hi, phase, slot, group;
+        int got = sscanf(line, "%x %x %u %x %u", &lo, &hi, &phase, &slot,
+                         &group);
+        if (got <= 0)
+            continue;
+        if ((got != 3 && got != 5) || lo > hi || hi > 0xffff ||
+            phase >= COST_PHASES || (got == 5 && (slot > 0xffff ||
+                                                  group > 255))) {
+            fclose(f);
+            snprintf(error, error_size, "%s:%u: LO HI PHASE [SLOT GROUP]",
+                     path, n);
+            return 0;
+        }
+        if (got == 3) {
+            for (unsigned a = lo; a <= hi; a++)
+                c->pcmap_fixed[a] = (int8_t)phase;
+            continue;
+        }
+        int b;
+        for (b = 0; b < c->pcmap_banks; b++)
+            if (c->pcmap_bank[b].slot == slot)
+                break;
+        if (b == c->pcmap_banks) {
+            if (b == 4) {
+                fclose(f);
+                snprintf(error, error_size, "%s:%u: more than 4 slots",
+                         path, n);
+                return 0;
+            }
+            c->pcmap_banks++;
+            c->pcmap_bank[b].slot = (uint16_t)slot;
+            c->pcmap_bank[b].lo = (uint16_t)lo;
+            c->pcmap_bank[b].hi = (uint16_t)hi;
+        }
+        if (lo < c->pcmap_bank[b].lo)
+            c->pcmap_bank[b].lo = (uint16_t)lo;
+        if (hi > c->pcmap_bank[b].hi)
+            c->pcmap_bank[b].hi = (uint16_t)hi;
+        if (!c->pcmap_bank[b].tab[group]) {
+            c->pcmap_bank[b].tab[group] = malloc(0x10000);
+            if (!c->pcmap_bank[b].tab[group]) {
+                fclose(f);
+                snprintf(error, error_size, "out of memory");
+                return 0;
+            }
+            memset(c->pcmap_bank[b].tab[group], -1, 0x10000);
+        }
+        for (unsigned a = lo; a <= hi; a++)
+            c->pcmap_bank[b].tab[group][a] = (int8_t)phase;
+    }
+    fclose(f);
+    c->pcmap = 1;
+    c->pcmap_when = when;
+    c->written = c->phase;
+    return 1;
+}
+
+void a2vm_cost_pc(a2vm *m, uint16_t pc)
+{
+    a2vm_cost *c = m->cost;
+    if (!c || !c->pcmap)
+        return;
+    unsigned phase = c->written;
+    if (c->written == c->pcmap_when) {
+        int8_t p = c->pcmap_fixed[pc];
+        for (int b = 0; p < 0 && b < c->pcmap_banks; b++)
+            if (pc >= c->pcmap_bank[b].lo && pc <= c->pcmap_bank[b].hi) {
+                const int8_t *t = c->pcmap_bank[b].tab[
+                    m->main[c->pcmap_bank[b].slot]];
+                if (t)
+                    p = t[pc];
+            }
+        if (p >= 0)
+            phase = (unsigned)p;
+    }
+    if (phase != c->phase)
+        phase_to(c, phase);
 }
 
 void a2vm_cost_boundary(a2vm *m, uint64_t boundary)

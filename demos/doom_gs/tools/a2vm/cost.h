@@ -204,6 +204,16 @@ typedef struct a2vm_cost {
     uint64_t phase_cycles_start, phase_io_start;
     uint64_t phase_cycles[COST_PHASES], phase_io[COST_PHASES];
 
+    /* the PC map of phases (--cost-pcmap, milestone 10's timing report):
+       while the phase written is `pcmap_when`, the phase is the map's for
+       the PC of each instruction (a fixed address, or a banked region:
+       the phase of the group whose number main[slot] holds) */
+    int pcmap;
+    unsigned pcmap_when, written;
+    int8_t *pcmap_fixed;            /* 65,536 phases, -1: none */
+    struct { uint16_t lo, hi, slot; int8_t *tab[256]; } pcmap_bank[4];
+    int pcmap_banks;
+
     /* the report: one JSON line a frame boundary */
     FILE *report;
     uint64_t last_t, last_phase[COST_PHASES];
@@ -252,6 +262,15 @@ void a2vm_cost_skip(struct a2vm *m, uint64_t clocks);
 void a2vm_cost_amem(struct a2vm *m, const uint8_t *request, size_t length);
 /* A frame boundary: one line of the report. */
 void a2vm_cost_boundary(struct a2vm *m, uint64_t boundary);
+/* The PC map of phases: a file of lines "LO HI PHASE" (hex addresses, a
+   decimal phase: the code at LO-HI) or "LO HI PHASE SLOT GROUP" (the code
+   of group GROUP while main SLOT holds GROUP), # comments; `when`: the
+   phase written (--cost-phase) under which the map holds. Returns 0 and a
+   message in `error` on a malformed file. */
+int a2vm_cost_pcmap(a2vm_cost *c, const char *path, unsigned when,
+                    char *error, size_t error_size);
+/* The instruction at pc begins (the PC map's phase). */
+void a2vm_cost_pc(struct a2vm *m, uint16_t pc);
 void a2vm_cost_final(struct a2vm *m, FILE *out);
 
 #endif

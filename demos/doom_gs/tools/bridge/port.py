@@ -33,6 +33,14 @@ def get_path(obj: Any, path: Sequence[Any]) -> Any:
     return obj
 
 
+def _has(obj: Any, path: Sequence[Any]) -> bool:
+    try:
+        get_path(obj, path)
+        return True
+    except (KeyError, IndexError, TypeError):
+        return False
+
+
 def set_path(obj: Dict[str, Any], path: Sequence[Any], value: Any,
              templates: Dict[Tuple[Any, ...], str]) -> None:
     """Set obj[path] = value, making the dicts and lists on the way (an
@@ -60,10 +68,15 @@ def handle_null(enc: Dict[str, Any]) -> int:
     return enc.get('null', (1 << (8 * enc.get('bytes', 2))) - 1)
 
 
-def handle_decode(enc: Dict[str, Any], v: int, where: str) -> Optional[R]:
+STALE = 'stale'         # a reference that names no object (layout.py)
+
+
+def handle_decode(enc: Dict[str, Any], v: int, where: str) -> Any:
     """A handle's value as a reference (layout.py: "handle")."""
     if v == handle_null(enc):
         return None
+    if 'stale' in enc and v == enc['stale']:
+        return STALE
     for r in enc['ranges']:
         if r['lo'] <= v < r['lo'] + r['n']:
             if 'id' in r:
@@ -72,9 +85,13 @@ def handle_decode(enc: Dict[str, Any], v: int, where: str) -> Optional[R]:
     raise PortError('%s: handle $%X names nothing' % (where, v))
 
 
-def handle_encode(enc: Dict[str, Any], ref: Optional[R], where: str) -> int:
+def handle_encode(enc: Dict[str, Any], ref: Any, where: str) -> int:
     if ref is None:
         return handle_null(enc)
+    if ref == STALE:
+        if 'stale' not in enc:
+            raise PortError('%s: the layout cannot hold "stale"' % where)
+        return enc['stale']
     for r in enc['ranges']:
         if r['kind'] != ref.kind:
             continue
@@ -88,9 +105,40 @@ def handle_encode(enc: Dict[str, Any], ref: Optional[R], where: str) -> int:
     raise PortError('%s: the layout cannot name %r' % (where, ref))
 
 
+def selected(sel: Dict[str, Any], value: Any) -> bool:
+    """Whether a slot whose selector leaf holds value is an object (a
+    kind's "select", layout.py)."""
+    if 'in' in sel:
+        return value in sel['in']
+    return value not in sel['not']
+
+
+def rekind(value: Any, table: Dict[Tuple[str, Any], R]) -> Any:
+    """value with each reference R(kind, id) in table replaced (a removed
+    special: its kind changes)."""
+    if isinstance(value, R):
+        new = table.get((value.kind, value.id))
+        return new if new is not None else value
+    if isinstance(value, dict):
+        return {k: rekind(v, table) for k, v in value.items()}
+    if isinstance(value, list):
+        return [rekind(v, table) for v in value]
+    return value
+
+
 class _Codec:
     def __init__(self, manifest: Manifest):
         self.mf = manifest
+
+    def select_leaf(self, kind: str) -> Optional[Leaf]:
+        sel = self.mf.kinds[kind].get('select')
+        if sel is None:
+            return None
+        for leaf in self.mf.kinds[kind]['leaves']:
+            if leaf.path == sel['path']:
+                return leaf
+        raise PortError('%s: no leaf %s to select by' % (
+            kind, '.'.join(map(str, sel['path']))))
 
     def pool_leaf(self, pool: Dict[str, Any]) -> Leaf:
         """The encoding of a pool's elements: a handle, or a ref of its
@@ -154,7 +202,14 @@ class PortWriter(_Codec):
                 state.get('objects'), dict):
             raise PortError('not a canonical state: no globals or objects')
         bad: List[str] = []
+        rm = self.mf.removed
         for kind in sorted(state['objects'], key=str):
+            if kind == 'removed' and rm is not None:
+                for ident, o in state['objects'][kind].items():
+                    if o != {'function': rm['function']}:
+                        bad.append('removed[%s]: not a special waiting for '
+                                   'its removal' % ident)
+                continue
             if kind not in self.mf.kinds and state['objects'][kind]:
                 bad.append('%s: a kind the layout lacks' % kind)
         for kind, spec in self.mf.kinds.items():
@@ -162,10 +217,17 @@ class PortWriter(_Codec):
             if not isinstance(table, dict):
                 bad.append('%s: not a table of objects' % kind)
                 continue
+            sel = spec.get('select')
             for ident, o in sorted(table.items(), key=lambda i: str(i[0])):
                 where = '%s[%s]' % (kind, ident)
                 if not isinstance(o, dict):
                     bad.append('%s: not an object' % where)
+                    continue
+                if sel is not None and not selected(
+                        sel, get_path(o, sel['path']) if _has(
+                            o, sel['path']) else None):
+                    bad.append('%s: %s is not one the layout selects' % (
+                        where, '.'.join(map(str, sel['path']))))
                     continue
                 held = {lf.path for lf in spec['leaves']
                         if not lf.path[0].startswith('@') and not (
@@ -207,6 +269,24 @@ class PortWriter(_Codec):
         self.check(state)
         self.m = memory if memory is not None else PortMemory()
         self.pool_fill: Dict[str, int] = {n: 0 for n in self.mf.pools}
+        removed_ids: Set[Any] = set()
+        rm = self.mf.removed
+        if rm is not None and state['objects'].get('removed'):
+            # each removed special after the home kind's objects, every
+            # reference to it moved there
+            home = rm['home']
+            base = len(state['objects'].get(home, {}))
+            table = {('removed', i): R(home, base + k) for k, i in
+                     enumerate(sorted(state['objects']['removed']))}
+            objects = {k: v for k, v in state['objects'].items()
+                       if k != 'removed'}
+            objects = rekind(objects, table)
+            objects[home] = dict(objects.get(home, {}))
+            for r in table.values():
+                objects[home][r.id] = {'function': rm['function']}
+                removed_ids.add(r.id)
+            state = dict(state, objects=objects,
+                         globals=rekind(state['globals'], table))
         objects = state['objects']
         heads: List[Tuple[str, List[R]]] = []
         for kind, spec in self.mf.kinds.items():
@@ -231,6 +311,10 @@ class PortWriter(_Codec):
                         continue        # the lists write their links
                     if leaf.when and o.get(leaf.when[0]) != leaf.when[1]:
                         continue
+                    if rm is not None and kind == rm['home'] and \
+                            ident in removed_ids and \
+                            leaf.path != ('function',):
+                        continue        # (a removed special: its function)
                     try:
                         value = get_path(o, leaf.path)
                     except (KeyError, IndexError, TypeError):
@@ -376,6 +460,9 @@ class PortReader(_Codec):
         self.problems: List[str] = []
         objects: Dict[str, Dict[int, Dict[str, Any]]] = {}
         self.counts: Dict[str, int] = {}
+        self.unselected: Set[Tuple[str, int]] = set()
+        rm = self.mf.removed
+        removed: List[Tuple[str, int]] = []
         heads: List[Tuple[Dict, Tuple[Any, ...], str, Optional[R]]] = []
         for kind, spec in self.mf.kinds.items():
             n = spec['count'] if isinstance(spec['count'], int) else \
@@ -387,7 +474,18 @@ class PortReader(_Codec):
             if not n:
                 continue
             table = objects[kind] = {}
+            sel = spec.get('select')
+            sleaf = self.select_leaf(kind)
             for ident in range(n):
+                if sel is not None:
+                    v = self.decode(sleaf, ident)
+                    if not selected(sel, v):
+                        if rm is not None and kind in rm['kinds'] and \
+                                v == rm['function']:
+                            removed.append((kind, ident))
+                        else:
+                            self.unselected.add((kind, ident))
+                        continue
                 o: Dict[str, Any] = {}
                 whens = [lf for lf in spec['leaves'] if lf.when]
                 plain = [lf for lf in spec['leaves'] if not lf.when]
@@ -409,6 +507,16 @@ class PortReader(_Codec):
             set_path(gl, leaf.path, value, {})
         for owner, path, name, first in heads:
             set_path(owner, path, self.walk(name, first), {})
+        if removed:
+            # the specials waiting for their removal: kind "removed" (an
+            # identity unique across the kinds; renumber ranks them)
+            kinds = list(self.mf.kinds)
+            table = {(k, i): R('removed', kinds.index(k) << 16 | i, None)
+                     for k, i in removed}
+            objects = rekind(objects, table)
+            gl = rekind(gl, table)
+            objects['removed'] = {r.id: {'function': rm['function']}
+                                  for r in table.values()}
         # the port numbers these kinds by its slots: the canonical rules
         # number them from the lists (identity.py)
         return identity.renumber({'format': 'bridge-canonical 1',
@@ -447,7 +555,7 @@ class PortReader(_Codec):
             return self.ref_from(leaf, tag, ident, offset)
         if e == 'enum':
             values = leaf.enc['values']
-            i = self.get(planes, index)
+            i = self.get(planes, index) & leaf.enc.get('mask', 0xFF)
             if i >= len(values):
                 raise PortError('%s: enum %d' % (leaf.path, i))
             return values[i]
@@ -497,6 +605,9 @@ class PortReader(_Codec):
             if ref.id >= self.counts.get(ref.kind, 0):
                 raise PortError('list %s: %r is past its table' % (name,
                                                                    ref))
+            if (ref.kind, ref.id) in self.unselected:
+                raise PortError('list %s: %r is a slot the layout does not '
+                                'select (a free one)' % (name, ref))
             seq.append(ref)
             spec = self.mf.kinds[ref.kind]
             links = {lf.path[0]: lf for lf in spec['leaves']

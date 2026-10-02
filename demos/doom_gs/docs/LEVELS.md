@@ -660,6 +660,13 @@ renderer depends on it.
 
 ### 3.2 The native game layouts (provisional for milestone 10)
 
+**Superseded (milestone 10, 2026-10-02):** the game layouts as built are
+`docs/GAME.md` section 1 (the mobj, the thinker list and the walk's
+planes, the specials, the player and the globals, the sectors, lines and
+bank `$21`'s tables, `validcount`, the sight state, the intercepts, the
+placement), held by `tools/native/glayout.py` and the manifest
+`native-game-1`. The table below is stage C's, kept for the record.
+
 Records in RamWorks, power-of-two strides where they fit, fetched whole
 by `FAR_GET` (`RENDER.md` 1.1). Milestone 10 owns the game logic's
 layouts and may change these; the bridge's manifest (3.3) makes such a
@@ -1002,7 +1009,10 @@ becomes 93. The order changes the depth, so the check uses upstream's.) The nati
 (milestone 10's iterative `P_RecursiveSound`, `NATIVE.md` 6) is sized
 here: **512 entries of 3 bytes** (sector, sound blocks and the position
 in its list), 1,536 B in the tic window's scratch, which holds the bound
-of every E1 map; `MEMORY_MAP.md` 3.5's "about 600 B" becomes 1,536. A
+of every E1 map; `MEMORY_MAP.md` 3.5's "about 600 B" becomes 1,536. (As
+built in milestone 10, part `pspr`: 512 entries of 2 bytes, 1,024 B in
+the flood's code group, since a level's sector is recovered from the
+entry below it; `docs/game-parts/pspr.md` R7.) A
 closed door can make the walk deeper than all-open (a shortcut removed),
 which is why the stack holds the bound, not the measured depth.
 Acceptance 3 passes when every map's bound and measured depth fit 512.
@@ -1783,3 +1793,13 @@ After the fixes:
 | Acceptance 3 (`--flood`) | Unchanged: worst depths 23-93, all within 512 |
 | The disk (`ldisk.py --check`) | 20 setups, every CRC as expected, `f121` boot 1,144.5 ms (VBLs 9-33), `fastpath` 851.6 ms (6-20) |
 | Timing | `--setup-timing` unchanged (E1M1 216.3 / 130.8 ms ... E1M6 654.2 / 398.8); `--load-timing` E1M1 117.4 / 67.5 ... E1M6 275.1 / 153.0 (`report.md` now from this run) |
+
+**The gates left to milestone 10, closed (2026-10-02, `docs/GAME.md`
+"Acceptance"):**
+
+| Gate | Evidence |
+| --- | --- |
+| `VALIDCOUNT` and `G_VALID` one count (defect 3's premise) | `G_VALID` is the frame block's `VALIDCOUNT`, raised by the frame through `gv_inc`; in every lockstep run (demo3, DEMO1, DEMO2, newgame, the tour, G1, G3, G5) every tic's `validcount` and every line and sector stamp equal `ref816`'s, the native front end running at each of the reference's frames. The release's clear at the wrap in the renderer stays milestone 11's |
+| The first zone mobj, `LS_ZONE`, no slot handed out twice (defect 5) | Generated streams G1 (E1M1, UV) and G3 (E1M2, nightmare) make zone mobjs in play (4 and 3 at most at a tic); every tic equal to `ref816`'s, the port reader refusing two objects in one slot; the highest mobj slot of any run 449, of 768 |
+| The block walk's order on every move (defect 4) | 3,539 compared tics in which the reference changed the sector nodes and 6,673 in which it changed the block lists, each compared as a sequence, all equal |
+| Bank `$21`'s sight and move tables | `LNSECF`, `LNSECB`, `RJROW` against upstream's `LNSEC` and `SS_ROW` on all 57 setup dumps (`ticcap.py --tables`): 0 failures; every sight and move of the runs above equal |

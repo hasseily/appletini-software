@@ -1,0 +1,255 @@
+# Every menu page and item (docs/SCREENS.md 6.1, part s2cap): from the
+# title, the main menu's items with the arrows, the quit message (N), the
+# save message of a title with no game (any key), OPTIONS and each of its
+# pages: DISPLAY & SOUND (VIEW, GAMMA, SFX VOLUME), CONTROLS (ALWAYS RUN,
+# MOUSE, MOUSE SPEED, MOUSE MOVE, KEY SETUP), the key setup's eleven rows
+# with a binding changed (the first row, to Q) and the defaults back, LOAD
+# GAME's eight slots, NEW GAME's five skills and the nightmare message
+# (N); then E1M1: the menu over the view (the gray view), SAVE GAME's
+# eight slots, messages off and on (the HUD's message, OPTIONS row 0),
+# END GAME and its message (N), the menu closed.
+#
+# Menus (m_menu65.s MENU_*, currentMenu): MAIN 0, NEW 2, LOAD 4, OPTIONS
+# 6, CONTROLS (the key setup) 8, SAVE 10, VIDEO 12, INPUT 16. Messages
+# (messageKind): NIGHTMARE 0, QUIT 4, ENDGAME 8, SAVEDEAD 12. The main
+# menu has 5 rows at the title (QUIT is row 4) and 6 in a game (END GAME
+# row 4, QUIT row 5) [R m_menu65.s:2715-2730]. Every key waits for the
+# state it leads to, so the script runs at any CPU rate.
+
+wait d_main65.s:pagedrawn == 1 within 90s   # the title page is up
+at +10f press escape                     # MAIN, row 0 (NEW GAME)
+wait _g_menuactive == 1 within 10s
+wait m_menu65.s:currentMenu == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+at +10f press down                       # OPTIONS
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press down                       # LOAD GAME
+wait m_menu65.s:itemOn == 2 within 10s
+at +10f press down                       # SAVE GAME
+wait m_menu65.s:itemOn == 3 within 10s
+at +10f press return                     # no game: the SAVEDEAD message
+wait m_menu65.s:messageToPrint == 1 within 10s
+wait m_menu65.s:messageKind == 12 within 1
+at +10f press space                      # any key: the menu, row 0
+wait m_menu65.s:messageToPrint == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 2 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 3 within 10s
+at +10f press down                       # QUIT GAME
+wait m_menu65.s:itemOn == 4 within 10s
+at +10f press return                     # the quit message
+wait m_menu65.s:messageToPrint == 1 within 10s
+wait m_menu65.s:messageKind == 4 within 1
+at +10f press n                          # no: the menu closes
+wait m_menu65.s:messageToPrint == 0 within 10s
+wait _g_menuactive == 0 within 10s
+at +10f press escape                     # MAIN again, row 0
+wait _g_menuactive == 1 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 2 within 10s
+at +10f press return                     # LOAD GAME: the slots
+wait m_menu65.s:currentMenu == 4 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 2 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 3 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 4 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 5 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 6 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 7 within 10s
+at +10f press escape                     # back to MAIN, at LOAD GAME
+wait m_menu65.s:currentMenu == 0 within 10s
+at +10f press up
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return                     # OPTIONS
+wait m_menu65.s:currentMenu == 6 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+at +10f press down                       # DISPLAY & SOUND
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press down                       # CONTROLS
+wait m_menu65.s:itemOn == 2 within 10s
+at +10f press down                       # BENCHMARK (not chosen)
+wait m_menu65.s:itemOn == 3 within 10s
+at +10f press down                       # SAVE SETTINGS (not chosen)
+wait m_menu65.s:itemOn == 4 within 10s
+at +10f press up
+wait m_menu65.s:itemOn == 3 within 10s
+at +10f press up
+wait m_menu65.s:itemOn == 2 within 10s
+at +10f press up
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return                     # DISPLAY & SOUND: VIEW
+wait m_menu65.s:currentMenu == 12 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+at +10f press down                       # GAMMA
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press down                       # SFX VOLUME
+wait m_menu65.s:itemOn == 2 within 10s
+at +10f press escape                     # back to OPTIONS
+wait m_menu65.s:currentMenu == 6 within 10s
+at +10f press down                       # CONTROLS
+wait m_menu65.s:itemOn == 2 within 10s
+at +10f press return                     # INPUT: ALWAYS RUN
+wait m_menu65.s:currentMenu == 16 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+at +10f press down                       # MOUSE
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press down                       # MOUSE SPEED
+wait m_menu65.s:itemOn == 2 within 10s
+at +10f press down                       # MOUSE MOVE
+wait m_menu65.s:itemOn == 3 within 10s
+at +10f press down                       # KEY SETUP
+wait m_menu65.s:itemOn == 4 within 10s
+at +10f press return                     # the key setup, its first row
+wait m_menu65.s:currentMenu == 8 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+at +10f press return                     # bind the first row's action
+wait i_iigs65.s:iigs_bindwait == 1 within 10s
+at +10f press q                          # to Q
+wait i_iigs65.s:iigs_bindwait == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 2 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 3 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 4 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 5 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 6 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 7 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 8 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 9 within 10s
+at +10f press down                       # DEFAULT KEYS
+wait m_menu65.s:itemOn == 10 within 10s
+at +10f press return                     # the defaults back
+at +10f press escape                     # back to INPUT
+wait m_menu65.s:currentMenu == 16 within 10s
+at +10f press escape                     # OPTIONS
+wait m_menu65.s:currentMenu == 6 within 10s
+at +10f press escape                     # MAIN
+wait m_menu65.s:currentMenu == 0 within 10s
+at +10f press up                         # NEW GAME
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press return                     # the skills, at HURT ME PLENTY
+wait m_menu65.s:currentMenu == 2 within 10s
+wait m_menu65.s:itemOn == 2 within 1
+at +10f press up
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press up
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 2 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 3 within 10s
+at +10f press down                       # NIGHTMARE!
+wait m_menu65.s:itemOn == 4 within 10s
+at +10f press return                     # the nightmare message
+wait m_menu65.s:messageToPrint == 1 within 10s
+wait m_menu65.s:messageKind == 0 within 1
+at +10f press n                          # no: the menu closes
+wait m_menu65.s:messageToPrint == 0 within 10s
+wait _g_menuactive == 0 within 10s
+at +10f press escape                     # MAIN again, row 0
+wait _g_menuactive == 1 within 10s
+wait m_menu65.s:currentMenu == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press return                     # NEW GAME, at HURT ME PLENTY
+wait m_menu65.s:currentMenu == 2 within 10s
+wait m_menu65.s:itemOn == 2 within 1
+at +10f press return                     # HURT ME PLENTY: E1M1
+wait _g_usergame == 1 within 10s
+wait _g_gamestate == 0 within 10s
+wait long _g_gametic grows 1 within 60s # E1M1 is loaded
+at +2s note level
+
+press escape                            # the menu over the view
+wait _g_menuactive == 1 within 10s
+wait m_menu65.s:currentMenu == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 2 within 10s
+at +10f press down                       # SAVE GAME
+wait m_menu65.s:itemOn == 3 within 10s
+at +10f press return                     # the save slots
+wait m_menu65.s:currentMenu == 10 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 2 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 3 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 4 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 5 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 6 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 7 within 10s
+at +10f press escape                     # MAIN, at SAVE GAME
+wait m_menu65.s:currentMenu == 0 within 10s
+at +10f press down                       # END GAME
+wait m_menu65.s:itemOn == 4 within 10s
+at +10f press down                       # QUIT GAME
+wait m_menu65.s:itemOn == 5 within 10s
+at +10f press up
+wait m_menu65.s:itemOn == 4 within 10s
+at +10f press return                     # the end game message
+wait m_menu65.s:messageToPrint == 1 within 10s
+wait m_menu65.s:messageKind == 8 within 1
+at +10f press n                          # no: the menu closes
+wait m_menu65.s:messageToPrint == 0 within 10s
+wait _g_menuactive == 0 within 10s
+at +10f press escape                     # MAIN again, row 0
+wait _g_menuactive == 1 within 10s
+wait m_menu65.s:itemOn == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return                     # OPTIONS, at MESSAGES
+wait m_menu65.s:currentMenu == 6 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+at +10f press return                     # messages off
+wait m_menu65.s:showMessages == 0 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+at +10f press escape                     # the menu closed
+wait _g_menuactive == 0 within 10s
+at +70t press escape                    # (the message's time) again
+wait _g_menuactive == 1 within 10s
+wait m_menu65.s:currentMenu == 0 within 10s
+at +10f press down
+wait m_menu65.s:itemOn == 1 within 10s
+at +10f press return                     # OPTIONS, at MESSAGES
+wait m_menu65.s:currentMenu == 6 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+at +10f press return                     # messages on: "MESSAGES ON"
+wait m_menu65.s:showMessages == 1 within 10s
+at +10f press escape
+wait m_menu65.s:currentMenu == 0 within 10s
+at +10f press escape                     # the menu closed: the message
+wait _g_menuactive == 0 within 10s
+at +70t note end
+stop

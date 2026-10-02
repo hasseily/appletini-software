@@ -8,7 +8,9 @@ model (player.py) uses, so the 65C02 player and its oracle cannot drift
 apart: the voices of the layout (native12, the only one) and the
 registers the music owns, the period tables of the card's native mode
 for a PAL and an NTSC //e, the bend magnitudes, the attenuation-to-level
-table and the tempo. tests/test_sound_player65.py reads the tables back
+table and the tempo; and for the effect player (src/sound/fx.s), chip
+3's voices by side and the separations of its voice choice.
+tests/test_sound_player65.py reads the tables back
 from the assembled player and compares them with tables.py.
 
 Standard library only.
@@ -66,7 +68,17 @@ def generate():
              'TEMPO_FRAC_NTSC = %d' % tables.tempo(ntsc)[1],
              'ATT_MAX         = %d' % tables.ATT_MAX,
              'HW_DRUM_ATT     = %d' % tables.HW_DRUM_ATT,
-             '']
+             '',
+             '; the effects: chip 3\'s voices by side (tables.FX_VOICES) '
+             'and the',
+             '; separations of the voice choice (tables.fx_voice_order)']
+    for side in ('left', 'right', 'centre'):
+        lines.append('%-15s = %d' % ('FX_VOICE_' + side.upper(),
+                                     tables.fx_voice(side)))
+    lines += ['FX_SEP_LEFT     = %d' % tables.FX_SEP_LEFT,
+              'FX_SEP_CENTRE   = %d' % tables.FX_SEP_CENTRE,
+              'FX_SEP_RIGHT    = %d' % tables.FX_SEP_RIGHT,
+              '']
     lines.append('.macro SND_VOICE_TABLES')
     lines += byte_lines('v_tone', [c * 16 + 2 * ch for c, ch in voices])
     lines += byte_lines('v_level', [c * 16 + 8 + ch for c, ch in voices])

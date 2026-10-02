@@ -70,6 +70,25 @@ kind's "count" may be an integer: a constant count, kept in no memory.
 A leaf may have "when": [field, value]: it exists only in objects whose
 field has that value (the fields of a sector node that is not free).
 
+Milestone 10 (docs/GAME.md 1.11) adds, with every existing manifest
+unchanged (each is optional):
+
+    enum   "mask": m: only the bits of m are the index (a byte that keeps
+           a flag of the port's own in its other bits, the kind cache of
+           the native thinker walk); the writer writes them 0
+    handle "stale": v: the value v is the canonical "stale", a reference
+           that names no object (upstream's CS_PREV after its pool moved:
+           tools/bridge/upstream.py)
+    kind   "select": {"path": [...], "in": [...]} or {..., "not": [...]}:
+           a slot is an object only while the leaf at path decodes to one
+           of "in" (or to none of "not"); the reader skips the others (a
+           free slot of a free list), the writer writes no other value
+    top    "removed": {"function": f, "kinds": [...], "home": k}: a slot
+           of one of the kinds whose function is f is an object of kind
+           "removed" (a special waiting for its removal keeps its slot);
+           the writer puts the state's "removed" objects in the home
+           kind's slots after its own objects
+
 A leaf may have "stride": n (default 1): byte k of object i is then at
 planes[k] + n * i, so a manifest can describe records of n bytes (the
 native renderer's sectors and sides, tools/native/levelconv.py: a leaf's
@@ -185,6 +204,18 @@ class Manifest:
                 'count': count if isinstance(count, int) else
                 [port_address(p) for p in count],
                 'leaves': [Leaf.from_json(x) for x in k['leaves']]}
+            if 'select' in k:
+                sel = dict(k['select'])
+                if ('in' in sel) == ('not' in sel):
+                    raise ValueError('%s: a select needs "in" or "not"'
+                                     % kind)
+                sel['path'] = tuple(sel['path'])
+                self.kinds[kind]['select'] = sel
+        self.removed = data.get('removed')
+        if self.removed is not None:
+            for kind in self.removed['kinds'] + [self.removed['home']]:
+                if kind not in self.kinds:
+                    raise ValueError('removed: no kind %s' % kind)
         self.globals = [Leaf.from_json(x) for x in data['globals']['leaves']]
 
     @classmethod

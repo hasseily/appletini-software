@@ -140,12 +140,25 @@ this build adds to it (**new** rows are proposals for the map's owner):
 - The a2vm test build (`math.cfg`) links these areas at these addresses,
   so an overflow of `$D800-$DBFF` fails the link; its test driver lives in
   the card's `$E000` part, which the game gives the sound and IRQ code.
+- **The three builds of `math.s`.** This one (the whole module); the
+  render build (`-D RENDER`, `math-r.o`: `MATHW`'s subset the renderer
+  calls, `pta16` reading `tantoangle` from the aux card), which the render
+  images and the tic images share as W's `$6000-$65FF`; and, since
+  milestone 10's wave 2 (`docs/GAME.md` "Wave 2 as integrated",
+  `docs/game-parts/damage.md` R1), the game build (`-D GAMEMATH`,
+  `math-g.o`): only `R_PointToAngle3` (`pta3`, `pta_oct`), `finesine`,
+  `finecosine`, `cosexc` and, since wave 3 (`docs/game-parts/look.md`
+  request 2), `P_AproxDistance` (`aproxdist`), in the tic images' core
+  (826 B), on the
+  render build's `mt_far`, `udiv32` and octant table. Their code is one
+  text, `mathgame.inc`, which this build includes in `MATHW`; the render
+  build is unchanged byte for byte.
 
 ## Not in this module
 
 | Upstream | Why not | Where it goes |
 | --- | --- | --- |
-| `fixedDiv` of `p_trace65.s` (the C's `FixedDiv` of `P_InterceptVector`) | Part of the trace code: its operands in `TC_A`, `TC_B`, D used as data, the guards in `ivTest` | Milestone 10, with `P_PathTraverse`, on `udiv32`/`sdiv32`-style steps; `NATIVE.md` 3.2 lists it |
+| `fixedDiv` of `p_trace65.s` (the C's `FixedDiv` of `P_InterceptVector`) | Part of the trace code: its operands in `TC_A`, `TC_B`, D used as data, the guards in `ivTest` | Milestone 10, part `tracel`: mirrored from `p_trace65.s` step by step (upstream's own long division, whose shifts wrap for operands of 2^30 and more, so no `udiv32`-based divide gives its results; `docs/game-parts/tracel.md` R5); `NATIVE.md` 3.2 lists it |
 | `shiftMul`, `SIDEPROD`, `ivProd`, the inlined `QPROD` of `r_thing65.s` | Products inlined in their callers, with their own operand forms | Milestones 7 and 10, from `mulw`, `mul8`, `umul16` |
 | `R_ScaleFromGlobalAngle`, `scaleFast`, `FSTEP`, the sprite scale tables | Renderer approximations (`NATIVE.md` 3.3) | Milestone 7 |
 | `IIGS_SMul16` | Not in the release: absent from the link map | |

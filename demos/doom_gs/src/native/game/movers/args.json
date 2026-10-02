@@ -1,0 +1,27 @@
+{
+ "format": "game-args 1",
+ "note": "Part movers' entries (docs/GAME.md 2.4, 3.5 step 4; docs/game-parts/movers.md 1.2), in secfind's forms (\"as\" a special kind). T_VerticalDoor and T_PlatRaise are THTAB's: their calls are captured at callFn (p_tick65.s), whose JML [FN_P] enters them with the thinker in _Dp[0-3]. partLight is entered by a JSR from T_VerticalDoor and reads its door from p_doors65.s's near DR_DOOR. None of the three returns a value or leaves one in scratch that a caller reads (DR_RES, PL_RES and DL_* are the routines' own); their effects are canonical state and the sector sound events.",
+ "entries": {
+  "p_doors65.s:T_VerticalDoor": {
+   "native": "T_VerticalDoor",
+   "in": [
+    {"from": "dp:_Dp:4", "to": "zp:GA_0", "as": "door", "bytes": 2}
+   ],
+   "out": []
+  },
+  "p_doors65.s:partLight": {
+   "native": "partLight",
+   "in": [
+    {"from": "abs:p_doors65.s:DR_DOOR:4", "to": "ax", "as": "door"}
+   ],
+   "out": []
+  },
+  "p_plats65.s:T_PlatRaise": {
+   "native": "T_PlatRaise",
+   "in": [
+    {"from": "dp:_Dp:4", "to": "zp:GA_0", "as": "plat", "bytes": 2}
+   ],
+   "out": []
+  }
+ }
+}

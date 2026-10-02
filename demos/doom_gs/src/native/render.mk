@@ -89,7 +89,7 @@ PYTHON = python3
 SEGGEN ?= $(ROOT)/tools/native/seggen.py
 ASFLAGS = --cpu 65C02 -g -I $(HERE) -I $(GEN) --bin-include-dir $(TABLES)
 
-SOURCES := rframe rbsp rlight auxlc far wclip wpsp
+SOURCES := rframe rbsp rlight auxlc far wclip wpsp gvalid-r
 WALL := rwall rseg rsky rrec segloops
 MASK := mmain mproj mfar msprite mvis mwall mpsp
 TEST_OBJS := $(SOURCES:%=$(OUT)/%.o) $(OUT)/math-r.o $(OUT)/rdriver-l.o
@@ -137,6 +137,20 @@ $(GEN)/layout.inc $(GEN)/rows.s: $(ROOT)/tools/native/rowgen.py \
 $(GEN)/segloops.s: $(SEGGEN)
 	@mkdir -p $(GEN)
 	$(PYTHON) $(SEGGEN) $@
+
+# a copy of some of these sources (the tests' planted bugs) takes the
+# others from the tree (milestone 10: gvalid.s, the game's validcount)
+vpath %.s $(HERE) $(ROOT)/src/native
+
+# gvalid.s: validcount, one count with the game's (docs/GAME.md 1.7): the
+# render images' test builds increment as upstream (VCWRAP_UPSTREAM)
+$(OUT)/gvalid-r.o: gvalid.s $(GEN)/rlayout.inc
+	$(CA65) $(ASFLAGS) -D GV_RENDER -D VCWRAP_UPSTREAM -o $@ \
+	    -l $(OUT)/gvalid-r.lst $<
+
+$(OUT)/gvalid-r-p.o: gvalid.s $(GEN)/rlayout.inc
+	$(CA65) $(ASFLAGS) -D GV_RENDER -D VCWRAP_UPSTREAM -D RPROF -o $@ \
+	    -l $(OUT)/gvalid-r-p.lst $<
 
 $(OUT)/%.o: $(HERE)%.s $(GEN)/rlayout.inc $(HERE)math.inc $(HERE)rseg.inc \
             $(TABLES)/smap.bin

@@ -1082,7 +1082,9 @@ def diff_vis(ref: Dict[str, Any], nat: Dict[str, Any]) -> List[str]:
 
 K_TEXC, K_FUZZ, K_OVL = 6, 8, 10
 XP_FIRST = 0xCE
-NATIVE_SIZES = {K_TEX: 12, K_FILL: 6, K_TEXC: 8, K_FUZZ: 5}
+# K_OVL: the automap overlay's pixel (milestone 11: the kind, the column,
+# the row, the nibble kept, the colour; bucket.s's ssize)
+NATIVE_SIZES = {K_TEX: 12, K_FILL: 6, K_TEXC: 8, K_FUZZ: 5, K_OVL: 5}
 
 
 def patch_map(level_dir: Path) -> List[Tuple[int, int, int, int]]:
@@ -1136,7 +1138,7 @@ def walk_lists_all(d, sym: blink.Symbols, where: str
             if kind == K_NEXT:
                 page, off = d.read(at + 1, 1)[0], 0
                 continue
-            if kind not in UP_SIZES or kind == K_OVL:
+            if kind not in UP_SIZES:
                 raise CanonError('%s: column %d: a record of kind %d'
                                  % (where, c, kind))
             r = d.read(at, UP_SIZES[kind])
@@ -1153,6 +1155,8 @@ def walk_lists_all(d, sym: blink.Symbols, where: str
                                      'before it' % (where, c))
                 recs.append(('texc', r[1], r[2], r[3], r[4],
                              chain << 16 | le(r[5:7])))
+            elif kind == K_OVL:
+                recs.append(('ovl', r[1], r[2], r[3]))
             else:
                 recs.append(('fuzz', r[1], r[2], r[3]))
             off += UP_SIZES[kind]
@@ -1194,6 +1198,8 @@ def native_records_all(data: bytes, slots: Dict[Tuple[int, int], int],
                                  'it' % c)
             lst.append(('texc', r[2], r[3], r[4], r[5],
                         native_src(chain[c], le(r[6:8]), slots, pmap)))
+        elif kind == K_OVL:
+            lst.append(('ovl', r[2], r[3], r[4]))
         else:
             lst.append(('fuzz', r[2], r[3], r[4]))
         at += NATIVE_SIZES[kind]

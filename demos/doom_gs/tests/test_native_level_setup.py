@@ -507,10 +507,10 @@ class Planted(unittest.TestCase):
         nop                     ; (planted: after the tics, below)
         nop
         nop"""), ('gspawn.s', """        jsr gs_mobj
-        lda MO_A + MA_TICS + 1  ; tics > 0: 1 + P_Random() % tics""",
+        lda LW_MOB + MO_XTICS + 1       ; tics > 0: 1 + P_Random() % tics""",
                                               """        jsr gs_mobj
         jsr g_random            ; (planted: P_SpawnMobj's, after)
-        lda MO_A + MA_TICS + 1  ; tics > 0: 1 + P_Random() % tics""")]))
+        lda LW_MOB + MO_XTICS + 1       ; tics > 0: 1 + P_Random() % tics""")]))
 
     def test_a_thinker_for_tics_minus_one(self):
         self.assertDiffers(self.failures([('gspawn.s', """        cmp #$FF

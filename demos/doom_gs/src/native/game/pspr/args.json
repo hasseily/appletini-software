@@ -1,0 +1,32 @@
+{
+ "format": "game-args 1",
+ "about": "Part pspr's entries (docs/GAME.md 2.4 row pspr, 3.5 step 4; docs/game-parts/pspr.md). The weapon actions (A_WeaponReady, A_ReFire, A_Lower, A_GunFlash, A_Light0-2) are ACTTAB's, entered by upstream's JML through callAction, which ref816's --capture does not count: they run inside the captured P_MovePsprites calls (tickPsprite, setPsprite). Forms beyond gameroutine.py's, read by tools/native/gparts/pspr.py: the destination sb:NAME (a place of game/pspr/pspr.inc's scratch block), \"as\": \"psp\" (upstream's psprite, its near address in X, becomes its number: 0 the weapon, 1 the flash) and \"as\": \"sector\" (upstream's sector, its address in X in the bank DBR names, becomes its number).",
+ "entries": {
+  "p_pspr65.s:P_MovePsprites": {
+   "native": "P_MovePsprites",
+   "in": [],
+   "out": []},
+  "p_pspr65.s:tickPsprite": {
+   "native": "tickPsprite",
+   "in": [{"from": "x", "to": "a", "as": "psp"}],
+   "out": []},
+  "p_pspr65.s:fireWeapon": {
+   "native": "fireWeapon",
+   "in": [],
+   "out": []},
+  "p_pspr65.s:checkAmmo": {
+   "native": "checkAmmo",
+   "in": [],
+   "out": [{"native": "a", "upstream": "a", "bytes": 1}]},
+  "p_pspr65.s:P_CheckAmmo": {
+   "native": "P_CheckAmmo",
+   "in": [],
+   "out": [{"native": "a", "upstream": "a", "bytes": 1}]},
+  "p_pspr65.s:recursiveSound": {
+   "native": "recursiveSound",
+   "in": [{"from": "x", "to": "a", "as": "sector"},
+          {"from": "a", "to": "y", "bytes": 1},
+          {"from": "abs:p_pspr65.s:RS_TGT:4", "to": "sb:PS_TGT", "as": "mobj"}],
+   "out": []}
+ }
+}

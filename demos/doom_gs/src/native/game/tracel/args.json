@@ -1,0 +1,55 @@
+{
+ "format": "game-args 1",
+ "about": "Part tracel's entries (docs/GAME.md 2.4 row tracel, 1.9). Read by tools/native/gparts/tracel.py, which adds to part geom's forms (geom_check.py: deref, as line, ittab, zbyte, geo:/math: places, c) the trace's state: \"trace\" (upstream's _g_trace, TR_LONG, IV_ON, IV_ML, IV_MH, VT_INVB to the native TL_TRACE, TL_TRLONG, TL_IVON, TL_IVM, TL_INVB) and \"list\" (the intercepts: intercept_p's count, each intercept's frac and its line or mobj, IC_NEXT, IC_LAST to TL_ICN, ICPT, ICHAIN, TL_ICLAST); \"what\" (upstream's isaline in A and its line or thing at LD to the native what in A:X); \"icoffset\" (upstream's Y, an intercept's offset, to its index); as outputs, \"list\" and \"trace\" after the call compared exactly (the chain walked from its head), and \"as\": \"bool\" (the native C against upstream's A not 0). block_steps: P_BlockLinesIterator's inputs and outputs (part geom's args.json) with these added, for the block steps of P_PathTraverse (the callback PIT_AddLineIntercepts).",
+ "entries": {
+  "p_trace65.s:PIT_AddLineIntercepts": {
+   "native": "PIT_AddLineIntercepts",
+   "in": [{"from": "dp:_Dp:3", "to": "zp:GA_0", "as": "line", "bytes": 2},
+          {"from": "trace", "to": "trace"},
+          {"from": "list", "to": "list"}],
+   "out": [{"native": "c", "upstream": "a", "as": "bool"},
+           {"native": "list", "upstream": "list"},
+           {"native": "trace", "upstream": "trace"}]},
+  "p_trace65.s:interceptVector3": {
+   "native": "interceptVector3",
+   "in": [{"from": "abs:p_trace65.s:TC_X1:16", "to": "zp:GA_0"},
+          {"from": "trace", "to": "trace"}],
+   "out": [{"native": "zp:GA_16", "upstream": "xc", "bytes": 4},
+           {"native": "trace", "upstream": "trace"}]},
+  "p_trace65.s:divlineSide": {
+   "native": "divlineSide",
+   "in": [{"from": "abs:p_trace65.s:TC_X:8", "to": "zp:GA_0"},
+          {"from": "trace", "to": "trace"}],
+   "out": [{"native": "a", "upstream": "a", "bytes": 1, "as": "zbyte"},
+           {"native": "trace", "upstream": "trace"}]},
+  "p_trace65.s:addIntercept": {
+   "native": "addIntercept",
+   "in": [{"from": "what", "to": "ax"},
+          {"from": "abs:p_trace65.s:TC_T:4", "to": "zp:GA_16"},
+          {"from": "trace", "to": "trace"},
+          {"from": "list", "to": "list"}],
+   "out": [{"native": "c", "upstream": "c"},
+           {"native": "list", "upstream": "list"},
+           {"native": "trace", "upstream": "trace"}]},
+  "p_trace65.s:icInsert": {
+   "native": "icInsert",
+   "in": [{"from": "icoffset", "to": "a"},
+          {"from": "trace", "to": "trace"},
+          {"from": "list", "to": "list"}],
+   "out": [{"native": "list", "upstream": "list"},
+           {"native": "trace", "upstream": "trace"}]},
+  "p_trace65.s:ivSetup": {
+   "native": "ivSetup",
+   "in": [{"from": "trace", "to": "trace"}],
+   "out": [{"native": "a", "upstream": "a", "bytes": 1, "as": "zbyte"},
+           {"native": "trace", "upstream": "trace"}]}
+ },
+ "block_steps": {
+  "base": "p_map65.s:P_BlockLinesIterator",
+  "args": "src/native/game/geom/args.json",
+  "in": [{"from": "trace", "to": "trace"},
+         {"from": "list", "to": "list"}],
+  "out": [{"native": "list", "upstream": "list"},
+          {"native": "trace", "upstream": "trace"}]
+ }
+}

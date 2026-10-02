@@ -675,9 +675,20 @@ run_pre:
         inc bsrc+1
 :       lda (bsrc),y
         sta PRND+1
+        iny                     ; then validcount (the frame block's,
+        bne :+                  ;   G_VALID: milestone 10)
+        inc bsrc+1
+:       lda (bsrc),y
+        sta G_VALID
+        iny
+        bne :+
+        inc bsrc+1
+:       lda (bsrc),y
+        sta G_VALID+1
         sta RAMRDOFF
         stz RWBANK
         rts
+        .assert PRE_VALID = PRE_RND + 2, error, "validcount after the indexes"
 ROOM_FIRST      = $0200
 
 ; crcs: entry rn_k's two CRCs (its map rn_m's window ranges, then its

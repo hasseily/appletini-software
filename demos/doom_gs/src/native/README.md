@@ -1,4 +1,4 @@
-# src/native: the native record replay (milestone 5), the math (milestone 6), the renderer (milestones 7, 8), the level load (milestone 9)
+# src/native: the native record replay (milestone 5), the math (milestone 6), the renderer (milestones 7, 8), the level load (milestone 9), the 2D screens and the platform (milestone 11, first half)
 
 The replay is described first; the math has its own
 [`MATH.md`](MATH.md); the renderer's front end is the last section, "The
@@ -1356,3 +1356,118 @@ equal to the plain setup renumbered. Acceptance 3: worst flood depths
 1,497, `gpos.s` 1,770, `gthink.s` + `gvalid.s` 1,252 (over its 700: the
 256-byte random table and the release wrap), `gspec.s` 741; W's load
 code `$6600-$8692`.
+
+## The game logic (milestone 10)
+
+The tic phase: `docs/GAME.md` (the design, the parts, "Wave N as
+integrated", "Acceptance"), the parts' records `docs/game-parts/`, the
+conventions `src/native/game/README.md`. Files: the runtime `gobj.s`
+(the object API), `gcall.s` (`FCALL`, `DCALL`, the group loads),
+`ghook.s` (the hooks), the test driver `gdriver.s` (routine, load and
+lockstep modes, the frames, the stream), milestone 9's game core
+(`gthink.s`, `gpos.s`, `gspawn.s`, `gweap.s`, `gspec.s`, `gvalid.s`), and
+the 29 parts under `game/` (`game/*/part.mk`, built by `game.mk`).
+
+### Commands
+
+    make -s -C src/native -f game.mk shared skel game gprof release ROOT=$PWD
+    make -s -C src/native -f game.mk part P=tracel TL_TEST=1 ROOT=$PWD   # a part's own image
+    python3 tools/native/ticcap.py --runs demo3,demo1,demo2,newgame,tour,G1,G3,G5 --jobs 3
+    python3 tools/native/ticrun.py --run demo3 --frames front    # or full; --diff-at TIC
+    python3 tools/native/ticrun.py --plant all
+    python3 tools/native/ticrun.py --run demo3 --timing f121     # or fastpath
+    python3 tools/native/ticrun.py --report-md                   # build/native/game/report.md
+    python3 tools/native/gparts/path.py --acceptance-final --traces 200; ... --run-final
+    python3 tools/native/gsizes.py
+
+### Results (a2vm; the card waits for milestone 12)
+
+Every acceptance run of the lean rules equal to `ref816` at every
+compared tic, from the `$A5` machine: demo3 with `FRONT` frames (2,134
+tics) and with `FULL` frames (54 of 54 frames' records and view equal,
+31,439 records), newgame (512), the tour (427 level tics, 9 setups),
+DEMO1 (5,026, 8 setups), DEMO2 (3,836), generated streams G1, G3, G5
+(2,000 each); same-pair hits equal; `P_PathTraverse` on 203 traces of
+more than 64 intercepts, 1,218 runs equal; one planted bug a run, each
+caught; milestone 9's gates closed. Timing (`f121`): the game code 3-4 ms
+a tic in demo3, the tic 233.8 ms at the median because of 300 group
+loads a tic (89%): under 1 FPS with the render, the performance pass's
+first target. Sizes: the parts 51,543 B, the core 13,295 of 13,312 B, 28
+groups.
+
+## The 2D screens and the platform (milestone 11, first half)
+
+Design: `docs/SCREENS.md` (the parts' records in `docs/m11-parts/`, the
+requests to other milestones in `docs/m11-parts/design.md`); the effects:
+`tools/sound/README.md` "Effects (S4)"; the regions: `docs/MEMORY_MAP.md`
+section 18. Built in eight waves of 20 parts (2026-10-01 to 10-02) and
+integrated (SCREENS.md 8.5-8.13), on a2vm; the card waits for milestone
+12. The game's frame driver, `G_BuildTiccmd`'s wiring, the title loop and
+saves are the second half's (`design.md` R7).
+
+| File | What |
+| --- | --- |
+| `s2_draw.s`, `s2_pub.s` | The patch drawer into a band of W, raw rows, rectangles, the marks; `s2_publish`, the marked bytes to aux 0 by `RAMWRT` and CPU stores, `s2_begin` before the frame's first band (part s2draw) |
+| `s2_pal.s`, `s2_nib.s`, `s2_palw.s` | Palettes, tints, gamma, SCBs, `s2_begin`/`s2_finish` (the black step, `newColors`, `pictureColors`), the nibble tables; `PALW` builds `TINTPAL` and the 16 tables in `S2PAL` (part s2pal) |
+| `s2_st.s`, `s2t_st.s` | The status bar and the face in `P2DW`; `ST_Ticker`'s game half tic-side (part s2stbar) |
+| `s2_hu.s`, `s2t_hu.s` | The HUD's cached drawer in `P2DW`; `HU_Ticker`'s display half tic-side (part s2hud) |
+| `s2_menu.s`, `s2_mvid.s`, `s2_menu2.s` | `MENUW`: the menu engine, the pages, the gray view saved by the memory API and restored by CPU stores, the settings pages, the key setup with the //e's names, the slots (parts s2menu1, s2menu2) |
+| `s2_am.s`, `s2_amline.s`, `s2_ovl.s` | `AMAPW`, the full automap; `OVLW`, the overlay's `K_OVL` records between the masked phase and the bucket pass (parts s2amap, s2ovl) |
+| `s2_wi.s` | `WIW`, the intermission (part s2wi) |
+| `s2_fin.s`, `s2t_fin.s` | `FINW`: the finale, the pages, `F_LoadScreen`, the busy sign; `F_Ticker` tic-side (part s2fin) |
+| `pl_irq.s`, `pl_bridge.s` | `pl_vbl` (acknowledge, the 16-bit fractional tic clock, `fx_step`, S2's `snd_tick`, `fx_burst`), `pl_time`, `pl_clkset`, `pl_detect`; the aux card's bridge (part plclock) |
+| `pl_input.s`, `pl_keys.s` | `pl_poll` (the //e's keys, the Apple keys, the mouse card, upstream's events, the held-key policy) in every frame image; the key table's routines (part plinput) |
+| `fx_chan.s`, `fx_pcache.s` | Upstream's channel logic tic-side (and in `MENUW`), one mailbox a channel; `MENUW`'s positions (part fxchan); the player is `src/sound/fx.s` (part fxplay) |
+| `pl_boot.s` | `DOOM.SYSTEM`: the probes, every bank file, the CRCs, the card, the ready state (part plboot) |
+| `s2_drv.s`, `s2_ovd.s`, `*t.s`, `pl_ct.s`, `pl_bt.s`, `pl_it.s`, `fx_cdrv.s`, `s2_beginstub.s`, `s2_p2dwl.s` | Test drivers and glue (not the game); `s2_p2dwl.s` links `P2DW` whole for the size table (`m11/s2int.mk`) |
+| `m11.mk`, `m11/*.mk` | One fragment a part, `make -C src/native -f m11.mk part P=NAME`, `all`, `images`, `sizes`, `check` into `build/native/m11/` |
+
+Host tools (`tools/native/`): `s2layout.py` (every place, `s2.inc`,
+`check()` against `rlayout.py`, `llayout.py`, `glayout.py`), `s2run.py`,
+`s2check.py`, `s2cap.py` and `s2state.py` (the reference's captures and
+their injection), each part's checkpoint (`s2stbar.py`, `s2hud.py`,
+`s2pal.py`, `s2drawcase.py`, `s2data.py`, `s2menu1.py`, `s2menu2.py`,
+`s2amap.py`, `s2ovl.py`, `s2wi.py`, `s2fin.py`, `plclock.py`,
+`plinput.py`, `fxcap.py`, `pldisk.py`); `tools/sound/fxconv.py`,
+`fxmodel.py`, `fxplay.py`, `fxrun65.py`, `fxchan.py`, `fxdisk.py`.
+
+### Commands
+
+```
+make -C src/native -f m11.mk all -j4 && make -C src/native -f m11.mk sizes
+python3 tools/native/s2layout.py --check
+python3 tools/native/s2cap.py --capture --jobs 2        # the reference's cases
+python3 tools/native/s2stbar.py --all --jobs 2           # (and s2hud, s2pal, s2menu1,
+python3 tools/native/s2amap.py --capture; python3 tools/native/s2amap.py --all --jobs 2
+                                                         #  s2menu2, s2ovl, s2wi, s2fin)
+python3 tools/native/plclock.py --checkpoint --jobs 2    # the clock, the IRQ, the music
+python3 tools/native/plinput.py --checkpoint --jobs 2
+python3 tools/sound/fxrun65.py --checkpoint --jobs 2     # (--planted, --timing, --cost)
+python3 tools/native/fxcap.py --check --jobs 2
+python3 tools/sound/fxdisk.py --check                    # build/sound/SOUNDS.hdv
+python3 tools/native/pldisk.py --check --jobs 2          # build/native/m11/plboot/DOOM.hdv
+python3 tools/testpar.py tests/test_m11_s2lay.py         # (the 20 test_m11_* modules)
+```
+
+### Results (a2vm; the card waits for milestone 12)
+
+The acceptance of SCREENS.md 8.2 (8.13): every 2D region equal to
+ref816's from injected state with both fills and the poisoned marked
+bytes (the status bar's 5,204 cases and 534 chained frames, the HUD's 794
+frames, 1,652 palette frames, every menu page and cursor, 63 full-map
+frames and 415 calls, 102 overlay runs with 180,896 `K_OVL` records, 214
+intermission frames, the finale's, pages' and signs' cases), the publish
+order on every write log, `VIEWTOP` equal at all 734 `PV` points, 0 stray
+writes; the clock 34.9544 (PAL) and 34.9633 (NTSC) tics a second; 55
+input sequences, 3,690 events equal to the model; `DOOM.hdv` on a2vm,
+every CRC and the ready state (`f121` boot 5.84 s); the effects' and the
+channels' checkpoints, the music's AY log S2's byte for byte with no
+effect playing; `SOUNDS.hdv` for the owner. Every planted bug of the 20
+parts caught. Timing (`f121`): a level frame's `P2DW` with nothing
+changed about 2.8 ms (its load 1.90), a status bar refresh 44.1 ms, a
+menu open 137 ms, an intermission frame 81 ms median; the IRQ's cost on
+D_E1M1 in the Doom profile 5.99 ms a second, 16.24 with effects at
+demo3's start rate, worst interrupt 2,048 µs (SCREENS.md 8.14). Sizes:
+`P2DW` 6,093 of 7,424 B linked whole, `MENUW` 11,618 of 16,128, `AMAPW`
+6,953 of 10,240, `WIW` 5,116 and `FINW` 5,405 of 6,656, `PALW` 833,
+`OVLW` 6,115 of 13,312; the card `$F505-$F8FF` 983 of 1,019 B.

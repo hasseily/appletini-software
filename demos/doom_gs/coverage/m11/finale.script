@@ -1,0 +1,26 @@
+# The finale (docs/SCREENS.md 6.1, part s2cap): in E1M1, gameaction
+# poked to ga_victory (7, g_game65.s GA_VICTORY) at a named tic (injected
+# state with a reason: no coverage run reaches the finale, GAME.md 3.7):
+# the episode's text, the use key to accelerate it (the mid stage) and
+# again for the picture stage (finalestage 1) [R f_finale65.s:96-149].
+
+wait d_main65.s:pagedrawn == 1 within 90s   # the title page is up
+at +1s press escape                     # a new game at the default skill
+wait m_menu65.s:currentMenu == 0 within 10s
+wait m_menu65.s:itemOn == 0 within 1
+at +10f press return
+wait m_menu65.s:currentMenu == 2 within 10s
+wait m_menu65.s:itemOn == 2 within 1
+at +10f press return
+wait _g_usergame == 1 within 10s
+wait _g_gamestate == 0 within 10s
+wait long _g_gametic grows 1 within 60s # E1M1 is loaded
+at +2s note level
+at +10t poke _g_gameaction 7            # ga_victory: W_StartFinale
+wait _g_gamestate == 2 within 30s       # GS_FINALE
+at +3s note text
+at +60t press space                     # accelerate: the mid stage
+at +60t press space                     # and ask again: the picture
+wait f_finale65.s:finalestage == 1 within 60s
+at +3s note picture
+at +2s stop

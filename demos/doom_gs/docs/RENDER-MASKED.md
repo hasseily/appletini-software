@@ -1352,7 +1352,11 @@ cycles, M7 and `RENDER.md` 4.4]):
 | **Render, from `R_FillStamps` to the last SHR write** | **63-64** | **66-67** | **120-127** | A on M (the first version: 58-62, 61-64, 113-128) |
 | Render-only FPS | 15.6-15.9 | 14.9-15.1 | 7.9-8.3 | A |
 | Tics at 4 a frame | 3.0-6.7 | 18.4-41.3 | 41.3 | A: `NATIVE.md` 6 |
-| **Whole frame** (status bar, input and sound not counted: about 1-4% more [A: `NATIVE.md` 1.2]) | 66-71 ms, 14.1-15.2 FPS | 85-109 ms, 9.2-11.8 FPS | 161-168 ms, 5.9-6.2 FPS | A (the first version: 61-69, 79-106, 154-169 ms) |
+| **Whole frame** (status bar, input and sound not counted: about 1-4% more [A: `NATIVE.md` 1.2]) | 66-71 ms, 14.1-15.2 FPS | 85-109 ms, 9.2-11.8 FPS | 161-168 ms, 5.9-6.2 FPS | A (the first version: 61-69, 79-106, 154-169 ms); replaced by the [M] rows below |
+| Render, measured (milestone 8, `report8.md`, `f121`) | 64.1 | 72.5 | 164.4 | M: M8 |
+| Tic phase, measured: 4 tics, the tic image's exit and entry (11.8 ms) | | 983.6 (`f121`), 743.1 (`fastpath`) | 2,095.8 (`f121`), 1,586.2 (`fastpath`) | M: M10, `docs/GAME.md` "Acceptance" (the `gprof` build on a2vm; per demo3 frame, its own tics) |
+| **Whole frame, measured** (each demo3 frame: its tic phase + its render) | | 1,065 ms, **0.94 FPS** (`f121`); 815 ms, 1.23 FPS (`fastpath`) | 2,191 ms, 0.46 FPS (`demo3-474`, `f121`) | M: M10; all 532 frames under 6 FPS; with the tics a faster frame would run (35 x its time, 1-4) the same, every frame needing 4 |
+| Whole frame without the tic's group loads (for the owner: the performance pass's first target) | | 192 ms, 5.2 FPS (`f121`); 155 ms, 6.5 FPS (`fastpath`) | 333 ms, 3.0 FPS (`f121`) | M: M10 less its phase 28 |
 
 Stage A (2026-09-30) replaced three rows with measurements on a2vm's
 `f121` model ("Stage A as built" below). The bucket pass costs 1.3-2.1
@@ -1398,6 +1402,17 @@ width), so stage A measured it first (5.1, and the rows above); if the heavy fra
 sit near 6 FPS, optimisations 4 and 10 below, which touch the bucket
 pass and the replay, come before milestone 12 (an open point for
 the owner, section 7).
+
+**Milestone 10's measured tics (2026-10-02, the [M] rows above,
+`docs/GAME.md` "Acceptance").** The tic phase replaces `NATIVE.md` 6's
+estimate (18.4-41.3 ms at 4 tics in the demo): 983.6 ms at demo3's
+median frame on `f121`. The game code itself is near the estimate (3-4
+ms a tic); 89% of the tic is the tic image's group loads (300 a tic in
+demo3: the placement's same-slot calls its model did not count), 9% the
+object API's far fetches. So every demo3 frame is under 6 FPS as built,
+and the performance pass before milestone 12 starts with the tic's code
+placement, then its far fetches, then this section's render
+optimisations.
 
 **Optimisations that keep exactness, for a later pass (not now):**
 
