@@ -412,6 +412,10 @@ Before: 15.04 requests a frame (the frame slots' 7.52 loads and 7.52 restores), 
 
 **On the card.** a2vm's `f122-nod2` gave wave 2's benchmark within 0.001 FPS of the card (3.829 against 3.830) and the frame slots' within 0.03 (5.677 against 5.648): the card should show about **6.5 FPS**, `TIC` about 89, `3D` 18, `MASK` 11.6, `REST` 3.3. The requests' cost on the card is CALIB's (46 µs plus 0.038 µs a byte, page 2's lines within 4-9 µs a request).
 
+**The card's run** (the owner, 2026-10-03, F1.2.2, PAL, Disk II acceleration off, this disk `fd3ce9fd`; level loads and intermissions played without a problem): FPS **6.343**, `TIC 93.1  3D 18.1  MASK 11.7  DRAW 31.3  REST 3.5`, N 547. Against the model's 6.519 (`TIC 89.4  3D 18.0  MASK 11.6  DRAW 31.3  REST 3.3`, N 551) that is −2.7%, nearly all in TIC (+3.7 ms). Up from the frame slots' 5.648 on the card: +12.3%.
+
+The model's error grew with the requests: +0.90 ms a frame on the frame slots' disk (15.04 requests, 22.8 KB a frame) and +4.26 ms on this one (52.34 requests, 131.1 KB). Two disks give two unknowns: about **+27 µs a request and +0.022 µs a byte** beyond `f122`'s 46 µs and 0.038 µs. That is a fit through two points, not a measurement. Both terms are plausible. In the game a request arrives while the ARM is busy with other work (its compositor slices, USB); `CALIB.hdv`'s requests come back to back, with the ARM waiting for them. `CALIB.hdv`'s 16 KB lines also ran slower than the model (PR2 0.048, PR6 0.069 µs a byte against 0.041). A page of `CALIB.hdv` lines with requests spaced by CPU work, at the game's sizes (1.4 KB, 8-19 KB) and with large n, would separate the two terms.
+
 **Checks** (the owner's rule: what changed, once each):
 
 - the game code, the placement and the paging (`gr_load`'s request, the restore's one request): `python3 tools/native/ticrun.py --run demo3 --frames front --fills a5 --jobs 2` on the final placement: 2,134 tics compared, 0 failures, the same-pair hits equal (1,009);
