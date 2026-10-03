@@ -209,10 +209,12 @@ SHARED: Tuple[Shared, ...] = (
     # setUpClass; test_playtime.ExactIdle copies that directory and runs
     # its disk, so it must not see a rebuild half done (speed wave 1);
     # test_ticloads and test_play_glue's Tickers read its links (speed
-    # wave 2)
+    # wave 2); test_calib copies the game's routines out of its card and
+    # tic links (calibdisk.play_parts)
     Shared('build/native/play', ('test_play_runs', 'test_play_bench',
                                  'test_play_cardprof'),
-           ('test_playtime', 'test_ticloads', 'test_play_glue')),
+           ('test_playtime', 'test_ticloads', 'test_play_glue',
+            'test_calib')),
 )
 
 

@@ -156,6 +156,19 @@ The timing itself costs 0.8 ms a frame on f121 (0.26%: FPS 3.302 without it, 3.2
 
 Reading: no single phase is wrong; every phase that computes and reaches RamWorks runs 12-15% slower on the card than a2vm's f121 model, while DRAW, bound by the SHR drain that a2vm models from the card's own measurements, is 5.6% slower. Scale a2vm's estimates of TIC, 3D and MASK by about 1.14 for the card. TIC is 75% of the card's frame and 35 of its 42.5 extra ms, so the game's tic phase is where the speed is (waves 2 and 3: the object API, the tic loads, the glue, TIC_LC2, lazy `$C073`). OVF 1: in one frame the timing could not place two intervals of 3 VBLs or more (`PLAY.md` 15); the totals and the FPS are unaffected.
 
+**The card after wave 2** (the owner, 2026-10-03, disk SHA-1 `f92c81ae…`): FPS **3.015**, `TIC 250.4  3D 25.8` / `MASK 16.3  DRAW 33.2` / `REST 6.3  N 534`.
+
+| Row | Card, wave 1 | Card, wave 2 | Card's change | a2vm's predicted change |
+| --- | ---: | ---: | ---: | ---: |
+| TIC | 260.0 | 250.4 | -9.6 | -24.1 |
+| 3D | 26.1 | 25.8 | -0.3 | -0.3 |
+| MASK | 16.4 | 16.3 | -0.1 | 0 |
+| DRAW | 37.7 | 33.2 | -4.5 | -3.8 |
+| REST | 6.2 | 6.3 | +0.1 | 0 |
+| Frame | 346.4 (2.897 FPS) | 331.9 (3.015 FPS) | -14.5 | -28.3 |
+
+The renderer's and the replay's gains held on the card; the tic phase's did not (40% of the predicted gain). The card's TIC is now 25% above a2vm's (15% after wave 1): a2vm underestimates the tic phase's RamWorks work (far windows, small fetches, group copies). Next: `CALIB.hdv` measures those operations on the card to correct a2vm's cost model (`docs/results/calib.md`) before wave 3.
+
 **Integration** (2026-10-02). What the integrator changed beyond the parts' own files, and why:
 
 - The parts' requests: `playlayout.py` `DLM_FIELDS` names `DL_BENCH`, `DL_BVIEW`, `DL_BRT` (DLM 82 of 128 B; `dl.inc`'s fallback places removed); `s2_menu.s`'s bmStop comment; `play.mk`'s tic stamp depends on `placement.json`; `s2ovl.py` `ovlw_allowed()` lets OVLW's `mrec_room` write MCNT; `testpar.py` and `tests/README.md`: `build/native/play` written by `test_play_runs` and `test_play_bench`, read by `test_playtime`, and `playdisk.make` a guarded writer call; the docs each part named.

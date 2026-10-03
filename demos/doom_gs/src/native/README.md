@@ -1482,3 +1482,23 @@ demo3's start rate, worst interrupt 2,048 µs (SCREENS.md 8.14). Sizes:
 `P2DW` 6,093 of 7,424 B linked whole, `MENUW` 11,618 of 16,128, `AMAPW`
 6,953 of 10,240, `WIW` 5,116 and `FINW` 5,405 of 6,656, `PALW` 833,
 `OVLW` 6,115 of 13,312; the card `$F505-$F8FF` 983 of 1,019 B.
+
+## The calibration disk (2026-10-03)
+
+`build/native/CALIB.hdv` times 44 microbenchmarks on the card with the
+Phasor's timers and shows each beside a2vm f121's figure, so that a photo
+of its screen corrects a2vm's cost model ([`docs/SPEED.md`](../../docs/SPEED.md)
+5, [`docs/results/calib.md`](../../docs/results/calib.md)). Not part of
+the game: it runs the game's far_get, far_put, far_pload, far_gcopy and
+gobj.s's page-1 window from the play build's bytes, at the game's
+addresses.
+
+| File | What it is |
+| --- | --- |
+| `calib.s` | `CALIB.SYSTEM`: the timers (VIA-B's timer 1, VIA-A's for its wraps), the driver (n and 2n units, in the card), the units, the 64-bit arithmetic, the 80-column screen, R to run again |
+| `calib.cfg`, `calib.mk` | ld65's map and the build into `build/native/calib/obj`, from `calibdisk.py`'s `build/native/calib/gen` (the game's bytes, their addresses, a2vm's figures) |
+
+```
+python3 tools/native/calibdisk.py --doc     # gen, make, a2vm (f121 twice, fastpath, f121 window 512), the disk, docs/results/calib.md
+cd tests && python3 -m unittest test_calib  # about 20 s
+```
