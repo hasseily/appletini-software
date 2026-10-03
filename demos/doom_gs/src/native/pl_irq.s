@@ -14,7 +14,12 @@
 ;               clock; (4) fx_step; (5) snd_tick, S2's music player
 ;               unchanged; (6) fx_burst; (7) restore and RTI.
 ;   pl_vbody    steps 2-6 as a subroutine: pl_vbl's body, and what the aux
-;               card's bridge (pl_bridge.s) calls with ALTZP off
+;               card's bridge (pl_bridge.s) calls with ALTZP off. Without
+;               the Appletini's mouse card DOOM.SYSTEM writes its first 13
+;               bytes over (pl_boot.s mo_recs, docs/PLAY.md 20): the cause
+;               is then the Phasor's VIA-B timer 1 flag, cleared by
+;               writing it back to IFR, the branch to pl_vnone the same;
+;               pl_crash's mode and ACK become VIA-B's IER off
 ;   pl_crash    the crash stop: interrupts masked, the VBL off, a loop.
 ;               The code that stops writes its code to PL_STATUS first,
 ;               then BRK (MEMORY_MAP.md 15's rule)
@@ -54,7 +59,7 @@
 
         .import fx_step, fx_burst, snd_tick
         .export pl_vbl, pl_vbody, pl_crash, pl_halt, pl_time, pl_clkset
-        .export pl_detect, pl_wait, pl_nmi
+        .export pl_detect, pl_wait, pl_nmi, pl_vnone
         .exportzp vbl_count
         .export CLK_STEP, CLK_TIME3
 
@@ -101,7 +106,7 @@ pl_vbody:
         sta MOUSE_ACK
         txa
         and #MOUSE_VBL
-        beq @none               ; no VBL pending: nothing counts
+        beq pl_vnone            ; no VBL pending: nothing counts
         inc vbl_count
         bne :+
         inc vbl_count+1
@@ -123,7 +128,8 @@ pl_vbody:
 @steps: jsr fx_step             ; (4) the effects' steps, no I/O
         jsr snd_tick            ; (5) the music's burst, chips 0-2
         jmp fx_burst            ; (6) chip 3's, right after (its RTS)
-@none:  rts
+pl_vnone:
+        rts
 
 ; the crash stop: a BRK lands here (from pl_vbl, or from the aux card's
 ; bridge with ALTZP off). Writes nothing outside the IRQ contract.

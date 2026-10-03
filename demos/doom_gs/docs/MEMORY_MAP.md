@@ -957,7 +957,7 @@ waited for 4 × 64 K turns, about 0.5 s). Without an API (`$FF` not an
 Appletini ROM, `$FE` unavailable or a capability missing, `$6F` no reply,
 else the STATUS error) it says so on row 3 and, after the install, with
 the mouse card's VBL on and still masked (`bt_init`), `am_patch` writes
-its table `bt_patch` (640 B in `DOOM.SYSTEM`, `tools/native/amcpu.py`'s
+its table `bt_patch` (640 B in `DOOM.SYSTEM`, 512 B since section 20, `tools/native/amcpu.py`'s
 records, written by `playdisk.py`): every request is then done by the
 CPU, byte for byte, at the same point. With the API nothing of this runs.
 `probe_amem` keeps its place and its room in `DOOM.SYSTEM` (215 B at
@@ -991,6 +991,31 @@ load's, the menu's screen save (aux 0 to `S2VIEW`, 32 KB: about 0.13 s at
 each opening of the menu) and the busy sign's save (aux 0 to `S2STATE`,
 3,840 B: 15 ms). Test images (`grun.Image.cpu_copies`, `ticrun.py
 --no-amem`) take the same records.
+
+## 20. The mouse card optional (2026-10-03, `PLAY.md` 20)
+
+`DOOM.SYSTEM` uses the mouse card only when slot 2's ROM has the
+AppleMouse ID bytes and the Appletini's own (`$C200-$C201`,
+`$C20D-$C20F`: `pl_boot.s` `probe_mouse`, `mo_check`). Otherwise the
+interrupt is the Phasor's VIA-B timer 1, free-running at a frame's period
+(`bt_detect`), and `bt_init` writes these records after the install, with
+interrupts masked (`mo_recs` in `DOOM.SYSTEM`, then `bt_mpatch`'s, 52 B,
+`tools/native/nomouse.py`'s, written by `playdisk.py`):
+
+| Space | Range | Without the Appletini's mouse card |
+| --- | --- | --- |
+| card `$E000` part | `pl_vbody` (13 B) | `LDA $C48D`, `AND #$40`, `BEQ pl_vnone`, `STA $C48D`, 3 NOPs: the cause VIA-B's timer 1 flag, cleared by writing it back |
+| card `$E000` part | `pl_crash` + 1 (8 B) | `LDA #$7F`, `STA $C48E`, 3 NOPs: VIA-B's interrupts off |
+| main (boot) | `pl_init`'s `pl_iwin` (2 B) | `BRA pl_defaults`: no window or centring written to slot 2 |
+| P2DW (107), MENUW (108), WIW (95), FINW (96) | `pl_poll`'s read of `$C0A5` (3 B), `pl_mouse` (1 B) | `LDA #0`, `NOP` (no button down); `RTS` (no X read, no re-centring) |
+
+Rule 2 holds: the handler then reads and writes VIA-B's IFR (`$C48D`),
+inside `$C400-$C4FF`, and nothing of `$C0A0-$C0AF`. The boot's own use
+of VIA-B (the timer's latch check, the PAL/NTSC measure, ACR `$40`, the
+latch, IER `$C0`) comes after `snd_init`'s IER `$7F` and touches neither
+port, so the music's and the effects' register traffic is unchanged. With
+the Appletini's card none of this is written and the card is byte for
+byte as before.
 
 ## Appendix: the measurements made for this map
 

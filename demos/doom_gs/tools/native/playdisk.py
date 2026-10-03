@@ -38,7 +38,8 @@ files:
   RTABLES.1, SONGS.1, SFX.1, GFX.1, HUDTXT.1   as pldisk.py's
 
 --run boots the disk on a2vm (its MLI trap, the memory API unless
---no-amem, the mouse card's VBL clock, --cost-timed under the Doom profile, the interrupt
+--no-amem, the mouse card's VBL clock unless --mouse none or plain: then
+VIA-B's timer 1, a2vm --via-timers), --cost-timed under the Doom profile, the interrupt
 bounds of SCREENS.md 2.3) and plays SCRIPT: a2vm's input events (tools/
 a2vm/README.md "Input events"), with the names of the play link's labels
 for pc events (pc @dl_halt ...). Every run is bounded (bounded.run: its
@@ -88,7 +89,15 @@ PROFILES = {'f121': 'f121+phasor+window32',
             # as the owner's card ran it, the virtual Disk II's acceleration
             # off, and with it on
             'f122-nod2': 'f122+phasor+window32+nod2',
-            'f122': 'f122+phasor+window32'}
+            'f122': 'f122+phasor+window32',
+            # the same at 60 Hz (the card's frame of 262 lines)
+            'f122-nod2-ntsc': 'f122+phasor+window32+nod2+ntsc'}
+# slot 2 (run's `mouse`): the Appletini's mouse card, none, or a ROM with
+# the AppleMouse ID bytes and no Appletini registers (a2vm --mouse-plain);
+# without the Appletini's card the clock is VIA-B's timer 1, so a2vm runs
+# the Phasor's timers (--via-timers)
+MICE = {'appletini': [], 'none': ['--no-mouse', '--via-timers'],
+        'plain': ['--mouse-plain', '--via-timers']}
 IRQ_BOUNDS = pldisk.IRQ_BOUNDS
 MAX_BYTES = 512 << 20
 GROUP_FIRST = 0x0200
@@ -824,6 +833,33 @@ def with_patches(system: bytes, boot: pldisk.Boot, play: Path) -> bytes:
     at = lab['bt_patch'] - pldisk.BOOT_LO
     if any(system[at:at + size]):
         raise PlayError('bt_patch is not zero in the link')
+    system = system[:at] + data + system[at + size:]
+    return with_mouse_patches(system, boot, play)
+
+
+def with_mouse_patches(system: bytes, boot: pldisk.Boot,
+                       play: Path) -> bytes:
+    """DOOM.SYSTEM with the frame images' polls without the mouse in
+    bt_mpatch (nomouse.play_patches: what bt_init writes when slot 2 is
+    not the Appletini's mouse card, after its own mo_recs, whose bytes
+    nomouse.card_problems checks)."""
+    from native import amcpu, nomouse
+    lab = boot.labels
+    size = lab['bt_mpatch_end'] - lab['bt_mpatch']
+    if size != nomouse.MPATCH_SIZE:
+        raise PlayError('bt_mpatch is %d B, nomouse.MPATCH_SIZE %d' % (
+            size, nomouse.MPATCH_SIZE))
+    bad = nomouse.card_problems(boot, system,
+                                pldisk.card_images(boot)[1])
+    if bad:
+        raise PlayError('without the mouse card: %s' % '; '.join(bad))
+    try:
+        data = amcpu.table(nomouse.play_patches(play), size)
+    except amcpu.PatchError as e:
+        raise PlayError('without the mouse card: %s' % e)
+    at = lab['bt_mpatch'] - pldisk.BOOT_LO
+    if any(system[at:at + size]):
+        raise PlayError('bt_mpatch is not zero in the link')
     return system[:at] + data + system[at + size:]
 
 
@@ -914,12 +950,14 @@ def run(disk: Disk, script: str, work: Path, profile: str = 'f121',
         seconds: float = 60.0, timeout: float = 1800.0,
         snap_ranges: str = 'main:0000-BFFF,lc,lc1,aux0:2000-9FFF',
         extra: Sequence[str] = (), a2vm: Path = A2VM,
-        idle: str = 'exact', amem: bool = True) -> Run:
+        idle: str = 'exact', amem: bool = True,
+        mouse: str = 'appletini') -> Run:
     """Boot the disk and play the script for at most `seconds` of model
     time; the run's state, its snapshots and shots. `extra`: more a2vm
     options (playtime.py's --pclog); `a2vm`: the machine to run; `amem`:
     the memory API in slot 7 (a2vm --amem), else a //e with none, where
-    DOOM.SYSTEM's probe finds none and the CPU copies (docs/PLAY.md 19).
+    DOOM.SYSTEM's probe finds none and the CPU copies (docs/PLAY.md 19);
+    `mouse`: slot 2 (MICE; docs/PLAY.md 20).
 
     `idle`: how a2vm skips the two loops that wait for a tic, the
     kernel's menu wait (dl_mwait) and the brain's frame wait (dl_bwait).
@@ -980,6 +1018,7 @@ def run(disk: Disk, script: str, work: Path, profile: str = 'f121',
             '--state', str(work / 'state.json'), '--final-snapshot']
     if amem:
         args.append('--amem')
+    args += MICE[mouse]
     for spec in idles:
         args += ['--idle', spec]
     args += list(extra)
@@ -1046,6 +1085,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument('--keep', type=Path)
     parser.add_argument('--no-amem', action='store_true',
                         help='a2vm with no memory API (the CPU copies)')
+    parser.add_argument('--mouse', default='appletini', choices=sorted(MICE),
+                        help='slot 2: the Appletini\'s mouse card (its VBL '
+                        'the clock), none or a plain AppleMouse ROM (the '
+                        'clock VIA-B\'s timer 1)')
     args = parser.parse_args(argv)
     gone = missing()
     if gone:
@@ -1065,7 +1108,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                                       dir=str(BUILD)))
             try:
                 r = run(disk, args.run.read_text(), work, args.profile,
-                        args.seconds, amem=not args.no_amem)
+                        args.seconds, amem=not args.no_amem,
+                        mouse=args.mouse)
                 print(json.dumps(r.state, indent=1)[:2000])
             finally:
                 if not args.keep:

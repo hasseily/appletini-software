@@ -406,18 +406,52 @@ failures, each a check that assumed the old speed or layout (`SPEED.md`
    `DOOM.SYSTEM` says `NO MEMORY API: COPIES BY THE CPU $FF` on the
    loading screen's fourth row and goes on: the CPU makes the same copies,
    byte for byte, at the same points, and the game plays the same, only
-   slower (section 19 has the figures). So the game runs on an emulator,
-   which needs:
+   slower (section 19 has the figures). **The mouse card is optional
+   too** (since 2026-10-03, section 20): without the Appletini's own
+   mouse card the clock is the Phasor's timer and the game is played
+   from the keyboard. So the game runs on an emulator, which needs:
 
-   - an enhanced //e (65C02) with 8 MB of RamWorks (banks 1-126 at
-     `$C073`; bank 0 the base aux 64 KB) and its language card;
-   - Super Hi-Res on the //e: `NEWVIDEO` (`$C029`) bit 7 shows aux
-     `$2000-$9FFF` (the pixels, the SCBs at `$9D00`, the 16 palettes at
-     `$9E00`) as a IIgs shows bank `$E1` (a VidHD-style card);
-   - a mouse card in slot 2 that interrupts at each VBL (mode `$09`): the
-     game's clock, 35 tics a second, counts them;
+   - an enhanced //e (65C02) with 8 MB of RamWorks: 127 banks of 64 KB,
+     bank 0 the base aux 64 KB and banks 1-126 at `$C073` (the boot
+     writes each bank's number at its `$0200` and reads them back; a
+     missing bank stops it, "8 MB OF RAMWORKS NEEDED"), and the //e's
+     language card;
+   - Super Hi-Res on the //e: `NEWVIDEO` (`$C029`) bit 7 shows aux bank
+     0's `$2000-$9FFF` (the pixels, the SCBs at `$9D00`, the 16 palettes
+     at `$9E00`) as a IIgs shows bank `$E1` (a VidHD-style card), always
+     bank 0's whatever `$C073` selects (the game pages other banks in
+     while the picture shows);
    - a Phasor in slot 4, in native mode for the music and the effects
-     (without native mode the game says so and plays silent);
+     (without native mode the game says so and plays silent). Its two
+     6522s must be real ones at the //e's bus clock: register 15 (ORA
+     without handshake) writes port A as register 1 does (every AY
+     write goes through it), and timer 1 of the second VIA (`$C484-$C487`,
+     ACR `$C48B`, IFR `$C48D`, IER `$C48E`) counts the bus cycles in
+     free-run mode and interrupts at each time-out: without the
+     Appletini's mouse card it is the game's clock;
+   - slot 2: the Appletini's mouse card, or an AppleMouse II, or
+     nothing. `DOOM.SYSTEM` reads the AppleMouse ID bytes (`$C205`
+     `$38`, `$C207` `$18`, `$C20B` `$01`, `$C20C` `$20`) and then the
+     Appletini's own (`$C200-$C201` `LDX #2`, `$C20D-$C20F` `STA $C0AC`);
+     only with all of them does it use the card: its VBL interrupt (mode
+     `$09`) is the clock and its X and buttons are the mouse, as on your
+     card. Otherwise it says `NO APPLETINI MOUSE: PHASOR CLOCK, PAL` (or
+     `NTSC`) on the loading screen's sixth row, writes nothing to slot 2,
+     reads no mouse (the keyboard and the Apple keys only), and takes its
+     clock from VIA-B's timer 1 at a frame's period (20,280 bus cycles
+     PAL, 17,030 NTSC, as `MUSIC.SYSTEM` in `music/doom` does). With
+     neither that card nor a VIA-B timer it stops: `NO CLOCK: NO
+     APPLETINI MOUSE OR PHASOR`;
+   - the vertical blanking at `$C019` (RDVBLBAR, bit 7 low in the
+     blanking) at the real video rate: without the Appletini's mouse
+     card the boot times two frames of it against VIA-B's timer to
+     choose PAL or NTSC (both frames within 512 cycles of 20,280 or of
+     17,030 and within 256 of each other); a machine where it never
+     changes, or changes at another rate, gets NTSC and a `?` after it
+     on that row. The timer and the blanking must run at the real
+     machine's rate (about 1.02 MHz and 50 or 60 Hz) even when the
+     emulator runs the CPU faster: the game's tics (35 a second) and the
+     music's tempo come from them;
    - a ProDOS block device that boots `DOOM.hdv` (4 MB);
    - nothing in slot 7, or any card: the probe writes nothing there
      unless the slot's ROM and its FIFO read as the Appletini's (a card
@@ -429,7 +463,7 @@ failures, each a check that assumed the old speed or layout (`SPEED.md`
      its TURBO speed of about 110 MHz, some 17 and 23 million cycles: a
      1 MHz //e would show a frame every 20 s, so the emulator must run
      the CPU about a hundred times faster than a //e for the card's frame
-     rate.
+     rate (with the bus's timer and video at their real rate, above).
 4. Boot `DOOM.hdv` from the menu's file browser as the boot volume.
    `DOOM.SYSTEM` loads the 4 MB into RamWorks and the card, checks every
    CRC (milestone 11's boot, SCREENS.md), and starts
@@ -1073,3 +1107,147 @@ LC.BIN are byte for byte as in `fd3ce9fd`; only `DOOM.SYSTEM` differs.
   level's load). A bounce through a main page would cut them.
 - The test disks (`LEVELS.hdv`, `RENDER.hdv`, `REPLAY.hdv`, `CALIB.hdv`)
   keep their own probes and still need the API.
+
+## 20. What changed: the mouse card optional (2026-10-03)
+
+For the owner, so that `DOOM.hdv` runs on an emulator with an enhanced
+//e, 8 MB of RamWorks, a Phasor in slot 4 and Super Hi-Res, with a plain
+AppleMouse II in slot 2 or none. Until now the game took its 50 or 60 Hz
+interrupt (the tic clock, the music, the effects, the waits) from the
+Appletini mouse card's registers: an AppleMouse II passed the ID check
+and then never interrupted (the boot hung at `DOOM: LOADING`), and with
+no card the boot stopped. **With your card nothing changed**: the same
+card bytes, the same images in RamWorks, the same clock; the benchmark
+reads 6.519 FPS (551 frames, 2,958 realtics, `TIC 89.4`) on a2vm
+`f122-nod2`, as before. Section 12.1 lists what an emulator needs.
+
+**What was changed**
+
+1. **The probe** (`pl_boot.s` `probe_mouse`, in its old room of 44 B so
+   that the rest of the boot keeps its addresses): the four AppleMouse
+   ID bytes as before, then `mo_check` reads five bytes only the
+   Appletini's slot ROM has: `$C200-$C201` (`LDX #2`, its slot helper)
+   and `$C20D-$C20F` (`STA $C0AC`, its command stub, a register an
+   AppleMouse II does not have); appletini-one's
+   `scripts/build_mouse_rom.py` pins both. Reads only: nothing is written
+   to slot 2 unless all nine match. Otherwise (`mo_none`) the boot checks
+   that VIA-B's timer 1 is there (its latch holds `$55AA` then `$AA55`,
+   `MUSIC.SYSTEM`'s `timer_check`) or stops with `NO CLOCK: NO APPLETINI
+   MOUSE OR PHASOR` (`PL_NOMOUSE`, the old stop's code).
+2. **The clock without the card** (`bt_detect`, after `snd_init`, whose
+   IER `$7F` turned both VIAs' interrupts off): with interrupts masked,
+   two frames between starts of a blanking at `$C019` are each counted by
+   VIA-B's timer 1, restarted from `$FFFF` at every start (`vb_edge`; a
+   time-out ends the wait, so no count is taken across one: no blanking
+   for 65,536 counts, 64 ms at the bus clock, or a frame too long for the
+   timer). Then:
+   - two frames within 512 counts of the same standard and 256 of each
+     other choose it, and the timer runs with the latch 20,278 (PAL) or
+     17,028 (NTSC), a time-out every 20,280 or 17,030 bus cycles, the
+     rate of the VBL;
+   - two frames within 256 of each other and at least 16,384 counts but
+     near no standard (an emulator's VIA counting faster than the bus)
+     set the latch to the frame measured (plus the 13 counts from the
+     reading to the restart, less 2), so that the timer still times out
+     once a frame whatever its clock; the tic step is NTSC's, or PAL's
+     when half the frame is near PAL's (a VIA at twice the bus clock),
+     shown with a `?` (the review of 2026-10-03: before, any count
+     outside the windows gave NTSC's latch, and a VIA at twice the bus
+     clock ran the game at twice its speed, 2.4 times on a PAL machine);
+   - otherwise (no blanking, a frame of 65,536 counts or more, two
+     frames that differ) NTSC with its latch, and a `?`.
+   The timer free-runs with its interrupt on (IER `$C0`), as
+   `music/doom`'s `timer_on`, then `pl_clkset` with the standard. The
+   tic step a period is the VBL's (45,743 or 38,229 / 65,536), so the
+   clock is 34.955 tics a second either way.
+3. **The handler without the card** (`bt_init`, after the install, from
+   `pl_boot.s`'s own records `mo_recs`, `am_patch`'s form): the first 13
+   bytes of `pl_vbody` become `LDA $C48D`, `AND #$40`, `BEQ pl_vnone`,
+   `STA $C48D` (the flag cleared by writing it back, as `music/doom`'s
+   `snd_irq`: a read of T1C-L in native mode would step the counter once
+   more), three NOPs; the rest of the handler (the clock, `fx_step`,
+   `snd_tick`, `fx_burst`) is unchanged, and the effects' and the
+   music's port writes are untouched (the timer is VIA-B's own register
+   set, `$C484-$C48E`). `pl_crash` turns VIA-B's interrupt off instead of
+   the mouse card's mode. The IRQ contract is unchanged (`$C400-$C4FF`
+   was in it).
+4. **No mouse read without the card**: `pl_init`'s window and centring
+   writes are branched over; in each frame image that links the poll
+   (P2DW, MENUW, WIW, FINW) the buttons' read of `$C0A5` becomes `LDA #0`
+   (a floating bus would press them) and `pl_mouse` an `RTS`. These
+   eight records are `tools/native/nomouse.py`'s, written by
+   `playdisk.py` into `DOOM.SYSTEM`'s `bt_mpatch` (52 B, 49 used), which
+   also checks that the bytes `mo_recs` replaces are still the card's.
+   The keyboard, the arrows and the Apple keys (Open Apple fires, Solid
+   Apple uses) play the game.
+5. **With the card, the PAL/NTSC choice checked**: `bt_detect` calls
+   `pl_detect` as before and checks its count with the same windows; a
+   count near neither standard (a VIA counting another clock) gives
+   NTSC. Your card's count is in the window, so the result is the same.
+   This lives in `DOOM.SYSTEM` (`std_of`), not in the card.
+6. **Room**: the new code is in `DOOM.SYSTEM`'s `PLAMEM` segment; the
+   memory API's patch table `bt_patch` went from 640 B to 512 B (462
+   used) to make room (`amcpu.PATCH_SIZE`), 9 B free before `$3000`.
+   `PLBOOT` keeps its size and
+   every label's address; its bytes change at `probe_mouse`, at
+   `bt_installed` (a `BRA` over the old ACK and mode, which `bt_init`
+   now writes, in the same order), at the `jsr` to `bt_detect`, and in
+   the strings' room.
+7. **The tools**: a2vm `--mouse-plain` (slot 2's ROM with the AppleMouse
+   ID bytes and an AppleMouse II's first instruction, no registers);
+   `playdisk.py --mouse appletini|none|plain` (the last two add a2vm's
+   `--via-timers`), and the profile `f122-nod2-ntsc`; `pldisk.py`'s
+   `nomouse` check (no mouse card and a2vm without `--via-timers`, so no
+   VIA-B timer) expects the new stop message.
+
+**How it was checked** (once each, as the owner asked; he will validate
+on an emulator):
+
+- `tests/test_m11_plboot.py` without its planted bugs (`Pure`, the disk's
+  files and sizes, the images against the card, the checkpoint's eight
+  boots): 11 tests, OK;
+- with the Appletini mouse card, `python3 tools/native/playtime.py
+  --scene bench --profile f122-nod2`: the title with its music (230 AY
+  writes before the menu at 7 s), the BENCHMARK 6.519 FPS, 551 frames,
+  2,958 realtics, rows `TIC 89.4 3D 18.0 MASK 11.6 DRAW 31.3 REST 3.3`,
+  as before;
+- no mouse card, PAL (`playdisk.run`, `mouse='none'`, `f122-nod2`, 46 s):
+  row 5 `NO APPLETINI MOUSE: PHASOR CLOCK, PAL`, PL_STATUS ready, the
+  title, then the title demo; over 15-45 s 1,502 VIA-B interrupts, 50.080
+  a second, and `CLK_TICS` 328 to 1,376: 34.966 tics a second (0.10%
+  under 35);
+  after the review's fix of the measured latch (`vb_edge` restarting the
+  timer at each blanking, the latch from the frame near no standard),
+  this run again: row 5 `NO APPLETINI MOUSE: PHASOR CLOCK, PAL` (no `?`),
+  `CLK_STD` PAL, 1,502 VIA-B interrupts over 15-45 s (50.067 a second)
+  and `CLK_TICS` 328 to 1,377, 34.967 tics a second; the NTSC and plain
+  ROM runs below were not rerun, and a2vm's VIA counts the bus clock, so
+  the new path for a VIA near no standard has not run;
+- the same NTSC (`f122-nod2-ntsc`): `NTSC`, 59.923 interrupts a second,
+  34.966 tics a second;
+- slot 2 a plain AppleMouse ROM (`--mouse-plain`, PAL, 46 s): no hang; the
+  same row 5, the same 50.080 interrupts and 34.966 tics a second, 1,160
+  AY writes in 15-45 s (the music and the effects), and at 46 s the demo
+  playing on E1M7 (`G_DEMOPLAY` 1, gametic 1,307).
+
+**The disk**: `build/native/DOOM.hdv`, 4,029,952 bytes, SHA-1
+`0b9470bac765ea4d6032b9727c013d7e0924fea8` (after the review's fix of
+the measured latch; before it `7c479a808bd7d6346d0a41d2cf3c774886273081`).
+
+**Open problems**
+
+- Without the Appletini's card there is no mouse at all: an AppleMouse
+  II's own protocol (its firmware's READMOUSE, or its interrupts) is not
+  used.
+- A VIA counting 3.85 times the bus clock or more (3.2 on a PAL
+  machine) has frames of 65,536 counts or more, which timer 1's 16 bits
+  cannot hold: the boot falls back to NTSC's latch and the game runs that
+  many times too fast (with a `?` on row 5). One interrupt a frame there
+  would need the handler to count several time-outs a tic, a change on
+  the card. Between 1 and 3.85 times, the latch follows the frame, but
+  the tic step is NTSC's unless the VIA is at twice the bus clock on a
+  PAL machine, so a PAL machine at another rate runs 17% slow.
+- Not run here: a real emulator, a Mockingboard instead of a Phasor (its
+  second VIA would be the clock, the game silent), and the default path
+  (no blanking at `$C019`: NTSC with a `?`).
+

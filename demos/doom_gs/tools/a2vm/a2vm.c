@@ -42,6 +42,26 @@ static const uint8_t mouse_rom[256] = {
     0xea, 0xea, 0xea, 0xea
 };
 
+/* --mouse-plain: a slot ROM with the AppleMouse ID bytes ($Cn05 $38,
+   $Cn07 $18, $Cn0B $01, $Cn0C $20, $CnFB $D6) and an AppleMouse II's
+   first instruction (BIT $FF58), nothing of the Appletini's firmware and
+   no registers behind $C0n0-$C0nF: a card the AppleMouse ID check
+   accepts that is not the Appletini's (DOOM GS's probe, docs/PLAY.md 20). */
+static uint8_t plain_mouse_rom(unsigned offset)
+{
+    switch (offset) {
+    case 0x00: return 0x2c;
+    case 0x01: return 0x58;
+    case 0x02: return 0xff;
+    case 0x05: return 0x38;
+    case 0x07: return 0x18;
+    case 0x0b: return 0x01;
+    case 0x0c: return 0x20;
+    case 0xfb: return 0xd6;
+    default: return 0x00;
+    }
+}
+
 static void halt(a2vm *m, const char *reason)
 {
     if (!m->halt[0])
@@ -1138,6 +1158,9 @@ static uint8_t slow_read(a2vm *m, uint16_t address)
     if (m->mouse_on && !m->sw[SW_INTCXROM] && address < 0xc800 &&
         slot == m->mouse_slot)
         return mouse_rom[address & 0xff];
+    if (m->mouse_plain && !m->sw[SW_INTCXROM] && address < 0xc800 &&
+        slot == m->mouse_slot)
+        return plain_mouse_rom(address & 0xff);
     return m->rom[address - 0xc000];
 }
 
@@ -1898,6 +1921,7 @@ a2vm *a2vm_new(const a2vm_config *config, char *error, size_t error_size)
         m->io_cycles = config->turbo ? m->frame_cycles / A2VM_FRAME_1MHZ : 0;
     m->ramworks_banks = config->ramworks_banks;
     m->mouse_on = config->mouse;
+    m->mouse_plain = config->mouse_plain;
     m->phasor_slot = config->phasor_slot;
     m->mouse_slot = config->mouse_slot;
     m->amem_on = config->amem;

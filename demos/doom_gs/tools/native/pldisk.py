@@ -83,7 +83,10 @@ card) and whose persistent places and zero page hold $A5:
   nomouse, banks
                --no-mouse, --banks 64: the boot stops at bt_halt with
                PL_NOMOUSE, PL_BANKS (the first missing bank 64) in
-               PL_STATUS and its message on the screen
+               PL_STATUS and its message on the screen (without the
+               Appletini's mouse card the clock is the Phasor's VIA-B
+               timer 1, which a2vm has only with --via-timers: here
+               neither, so no clock; docs/PLAY.md 20)
 
 --planted builds each planted bug of PLANTED in a scratch copy (of
 pl_boot.s, or of this file for the disk's table) and runs the checks it
@@ -982,7 +985,7 @@ CHECKS = (
     Check('boot-ntsc', PROFILES[0] + '+ntsc', {}, None, ''),
     Check('nomusic', PROFILES[0], {'mb_only': True}, None, 'NO MUSIC'),
     Check('nomouse', PROFILES[0], {'mouse': False}, 'NOMOUSE',
-          'NO MOUSE CARD IN SLOT 2'),
+          'NO CLOCK: NO APPLETINI MOUSE OR PHASOR'),
     Check('banks', PROFILES[0], {'banks': 64}, 'BANKS',
           '8 MB OF RAMWORKS NEEDED: NO BANK $40'),
     Check('noamem', PROFILES[0], {'amem': False}, None,

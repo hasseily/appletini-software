@@ -13,7 +13,10 @@
 ;      number written to its $0200, from 126 down to 0, then each read
 ;      back from 1 up: the first that does not hold its number is the
 ;      first missing, PL_BANKS); the mouse card in slot 2 (its ROM's ID
-;      bytes, PL_NOMOUSE); the memory API in slot 7 (COPY, FILL,
+;      bytes and the Appletini's own: probe_mouse, mo_check; without the
+;      Appletini's card the clock is the Phasor's VIA-B timer 1, and
+;      without that either the stop PL_NOMOUSE, docs/PLAY.md 20); the
+;      memory API in slot 7 (COPY, FILL,
 ;      PRIVATE: probe_amem; without it a message, and the game goes on
 ;      with the CPU's copies: step 4's am_patch; docs/PLAY.md 19);
 ;      snd_probe (no native mode: a message, the game goes on without
@@ -41,13 +44,17 @@
 ;      the game's globals, the key table) and ProDOS's global page
 ;      $BF00-$BFFF cleared, zero page $00-$17 cleared and the pair
 ;      $06-$07 zeroed [R NATIVE.md 10; MEMORY_MAP.md 2];
-;   5. the mouse card's VBL on (mode $09, masked), bt_init (without the
-;      memory API, am_patch writes bt_patch's records: the transport's
-;      CPU version over the card, each W image's walker over its own
+;   5. bt_init: the mouse card's VBL on (mode $09, masked), or without
+;      the Appletini's card mo_recs and bt_mpatch's records (the handler
+;      on VIA-B's timer 1, no mouse read: tools/native/nomouse.py); then
+;      (without the memory API) am_patch writes bt_patch's records: the
+;      transport's CPU version over the card, each W image's walker over its own
 ;      transport in its bank, tools/native/amcpu.py), pl_init (the input
 ;      block, the key table, the mouse's window), snd_init, fx_init with
 ;      snd_probe's answer, pl_clkset (PAL until pl_detect), CLI,
-;      pl_detect (PAL or NTSC: its clock), PL_STATUS = PL_READY, and the
+;      bt_detect (PAL or NTSC: its clock; pl_detect with the mouse card,
+;      else the VBL flag timed by VIA-B's timer, which then runs at a
+;      frame's period, and row 5 says so), PL_STATUS = PL_READY, and the
 ;      ready loop pl_ready in the card, which the second half replaces
 ;      with the title loop.
 ;
@@ -70,6 +77,7 @@
         .include "s2.inc"
 
         .import snd_probe, snd_init, fx_init, pl_clkset, pl_detect, pl_init
+        .import pl_vbody, pl_vnone, pl_crash, pl_iwin, pl_defaults
         .importzp vbl_count
         .export boot, bt_halt, bt_installed, bt_done, check_files, load_card
         .export pl_ready, pl_ridle, pl_rvbl
@@ -103,6 +111,27 @@ MOUSE_MODE      = $C0AE
 MOUSE_ACK       = $C0AF
 MODE_VBL        = $09           ; the mouse card on, its VBL interrupt on
 ACK_ALL         = $03
+MOUSE_ROOM      = 44            ; probe_mouse's bytes in A (fd3ce9fd)
+RDVBLBAR        = $C019         ; bit 7 low in the vertical blanking
+VIA_B_T1CL      = $C484         ; the Phasor's VIA-B, timer 1 (both modes;
+VIA_B_T1CH      = $C485         ;   a Mockingboard's second VIA too)
+VIA_B_T1LL      = $C486
+VIA_B_T1LH      = $C487
+VIA_B_ACR       = $C48B
+VIA_B_IFR       = $C48D
+VIA_B_IER       = $C48E
+ACR_FREE        = $40           ; ACR: timer 1 free-running, no PB7 output
+IFR_T1          = $40           ; IFR and IER bit 6: timer 1
+PAL_FRAME       = 20280         ; bus cycles a frame: 312 lines of 65
+NTSC_FRAME      = 17030         ;   and 262
+T1_PAL          = PAL_FRAME - 2 ; VIA-B's latch: free-running, a 6522's
+T1_NTSC         = NTSC_FRAME - 2 ;  timer 1 times out every latch + 2
+FRAME_WIN       = 512           ; a frame's count: within this of either
+FRAME_MIN       = $40           ; a measured frame's high byte: at least
+                                ;   16,384 counts (under NTSC's window)
+FRAME_FIX       = 11            ; the latch from a measured frame: + the
+                                ;   13 counts from its reading to the
+                                ;   restart (vb_edge), less 2
 SP_DATA         = $CFF0         ; the memory API's FIFO (slot 7)
 SP_CTRL         = $CFF1
 SP_POP          = $CFF2
@@ -112,10 +141,12 @@ AMEM_TIMEOUT    = $6F
 AMEM_MAX        = 16            ; descriptors a request (llayout.AMEM_MAX)
 AMEM_WAIT       = 4             ; STATUS's wait: 64 K turns times this
 PROBE_ROOM      = 215           ; probe_amem's bytes in A (fd3ce9fd)
-PATCH_SIZE      = 640           ; am_patch's table (amcpu.PATCH_SIZE)
+PATCH_SIZE      = 512           ; am_patch's table (amcpu.PATCH_SIZE)
+MPATCH_SIZE     = 52            ; bt_mpatch (nomouse.MPATCH_SIZE)
 
 SND_MUSIC       = 0             ; snd_probe's answer: native mode
 STD_PAL         = 0             ; pl_clkset's standard
+STD_NTSC        = $80
 BANKS           = 126           ; the banks the game needs (NATIVE.md 15.1)
 ZP_PAIR         = $06           ; zp_rd, zp_wr (MEMORY_MAP.md 2)
 ZP_PLATFORM_END = $18           ; $00-$17: the platform's (cleared)
@@ -250,11 +281,9 @@ boot:   sei
         stz ZP_PAIR             ; the pair zeroed [R NATIVE.md 10]
         stz ZP_PAIR + 1
 bt_installed:                   ; (a2vm's snapshot: the card as the image)
-        lda #ACK_ALL            ; the VBL on, still masked
-        sta MOUSE_ACK
-        lda #MODE_VBL
-        sta MOUSE_MODE
-        jsr bt_init             ; (am_patch without the memory API), then
+        bra :+                  ; (bt_init: the mouse card's VBL on, still
+        .res 8                  ;   masked; A's ACK and mode had this room)
+:       jsr bt_init             ; (am_patch without the memory API), then
                                 ;   pl_init: the input, the key table
         jsr snd_init
         lda bt_music
@@ -262,7 +291,7 @@ bt_installed:                   ; (a2vm's snapshot: the card as the image)
         lda #STD_PAL
         jsr pl_clkset           ; the clock defined until pl_detect
         cli
-        jsr pl_detect           ; PAL or NTSC, the clock from 0
+        jsr bt_detect           ; PAL or NTSC, the clock from 0
         lda #PL_READY
         sta PL_STATUS
         lda #4
@@ -316,7 +345,12 @@ probe_banks:
         lda #PL_BANKS
         jmp bt_stop
 
-; probe_mouse: the mouse card's ROM in slot 2 (its ID bytes), else the stop
+; probe_mouse: the Appletini's mouse card in slot 2: its ROM's AppleMouse
+; ID bytes, as A's probe read them, then mo_check its own bytes (an
+; AppleMouse II has the same ID bytes but not the Appletini's register
+; model). Else bt_mouse $FF and the clock is VIA-B's timer 1, or the stop
+; when there is none (mo_none). In A's room (MOUSE_ROOM): the routines
+; after it keep their addresses.
 probe_mouse:
         sta INTCXROMOFF
         lda MOUSE_ROM + $05
@@ -331,12 +365,10 @@ probe_mouse:
         lda MOUSE_ROM + $0C
         cmp #$20
         bne @none
-        rts
-@none:  ldx #<s_nomouse
-        ldy #>s_nomouse
-        jsr fail_say
-        lda #PL_NOMOUSE
-        jmp bt_stop
+        jmp mo_check
+@none:  jmp mo_none
+        .assert * - probe_mouse <= MOUSE_ROOM, error, "probe_mouse's room"
+        .res MOUSE_ROOM - (* - probe_mouse)
 
 ; probe_amem: the memory API in slot 7 (appletini-one README_MEMORY_API.md
 ; sections 1, 2 and 7) with COPY, FILL and PRIVATE, available: returns
@@ -1143,10 +1175,11 @@ s_nomusic:
         .byte "NO MUSIC OR EFFECTS: NO NATIVE MODE", 0
 s_banks:
         .byte "8 MB OF RAMWORKS NEEDED: NO BANK $", 0
-s_nomouse:
-        .byte "NO MOUSE CARD IN SLOT 2", 0
-        .res 26                 ; (A's s_noamem: the strings and the parts
-                                ;   after DOOM.SYSTEM's PLBOOT stay put)
+s_noclock:                      ; (in A's s_nomouse and s_noamem: the
+        .byte "NO CLOCK: NO APPLETINI MOUSE OR PHASOR", 0 ; strings and the
+s_pal:  .byte "PAL", 0          ;   parts after DOOM.SYSTEM's PLBOOT stay
+s_ntsc: .byte "NTSC", 0         ;   put)
+        .res 50 - (* - s_noclock)
 s_prodos:
         .byte "PRODOS ERROR $", 0
 s_notbank:
@@ -1181,10 +1214,25 @@ am_none:
         pla
         jmp hex
 
-; bt_init: after the install, interrupts masked: am_patch when probe_amem
-; found no API, then pl_init (with the API one test more than A's boot)
+; bt_init: after the install, interrupts masked. With the Appletini's
+; mouse card its VBL interrupt on (mode $09, as A's boot did at
+; bt_installed); without it mo_recs's records (the card's handler on
+; VIA-B's timer 1, pl_init over the mouse's window, then playdisk.py's
+; records in bt_mpatch: the frame images' polls without the mouse). Then
+; am_patch when probe_amem found no API, then pl_init.
 bt_init:
-        bit bt_amem
+        bit bt_mouse
+        bmi @nomouse
+        lda #ACK_ALL
+        sta MOUSE_ACK
+        lda #MODE_VBL
+        sta MOUSE_MODE
+        bra @amem
+@nomouse:
+        lda #<mo_recs
+        ldx #>mo_recs
+        jsr am_records
+@amem:  bit bt_amem
         bpl :+
         jsr am_patch
 :       jmp pl_init
@@ -1195,9 +1243,10 @@ bt_init:
 ; address, the bytes. Interrupts masked; after the install.
 am_patch:
         lda #<bt_patch
+        ldx #>bt_patch
+am_records:                     ; (A/X: the records)
         sta bsrc
-        lda #>bt_patch
-        sta bsrc+1
+        stx bsrc+1
 @rec:   lda (bsrc)              ; the length
         beq @done
         sta blen
@@ -1239,6 +1288,267 @@ pr_is:  .byte $20, $00, $03, $00, $0A
 s_cpu:  .byte "NO MEMORY API: COPIES BY THE CPU $", 0
 bt_amem:
         .byte 0                 ; bit 7: no memory API (the CPU's copies)
+bt_mouse:
+        .byte 0                 ; bit 7: not the Appletini's mouse card
+                                ;   (the clock VIA-B's timer 1)
+
+; ---------------------------------------------------------------------------
+; The mouse card optional (docs/PLAY.md 20): with the Appletini's mouse
+; card in slot 2 the boot and the game are A's; without it (an emulator's
+; AppleMouse II, or no card) the clock is the Phasor's VIA-B timer 1 at a
+; frame's period, as MUSIC.SYSTEM's (music/doom), and the game reads no
+; mouse.
+; ---------------------------------------------------------------------------
+
+; mo_check: the ID bytes matched; the Appletini's own bytes too: its slot
+; helper at $C200 (LDX #2) and its command stub at $C20D (STA $C0AC), both
+; pinned by appletini-one's scripts/build_mouse_rom.py (an AppleMouse II's
+; ROM starts BIT $FF58 and has no register at $C0AC)
+mo_check:
+        ldx #MO_N - 1
+:       ldy mo_at,x
+        lda MOUSE_ROM,y
+        cmp mo_is,x
+        bne mo_none
+        dex
+        bpl :-
+        rts                     ; bt_mouse 0: the Appletini's
+; mo_none: no Appletini mouse card: VIA-B's timer 1 must be there (its
+; latch holds what is written, MUSIC.SYSTEM's timer_check), else the stop
+mo_none:
+        dec bt_mouse
+        ldx #$55
+        jsr @try
+        bcs @stop
+        ldx #$AA
+@try:   stx VIA_B_T1LL
+        txa
+        eor #$FF
+        sta VIA_B_T1LH
+        cpx VIA_B_T1LL
+        bne @stop
+        cmp VIA_B_T1LH
+        bne @stop
+        clc
+        rts
+@stop:  ldx #<s_noclock
+        ldy #>s_noclock
+        jsr fail_say
+        lda #PL_NOMOUSE
+        jmp bt_stop
+
+; bt_detect: PAL or NTSC, the clock from 0 (after snd_init, whose IER $7F
+; turned both VIAs' interrupts off; interrupts enabled). With the
+; Appletini's mouse card: pl_detect, as before, then its count checked
+; (std_of): near neither frame, the clock is NTSC's. Without it, masked:
+; two frames between starts of a blanking seen at RDVBLBAR, each counted
+; by VIA-B's timer 1 from $FFFF (vb_edge), and then:
+;   - both near the same standard (std_of) and within 256 counts of each
+;     other: that standard, the timer at its frame (T1_PAL, T1_NTSC);
+;   - within 256 counts of each other and at least 16,384, but near no
+;     standard (a VIA counting another clock than the bus's, such as an
+;     emulator's accelerated one): the timer at the frame measured, so
+;     that it still times out once a frame, and the tic step NTSC's, or
+;     PAL's when half the frame is near PAL's (a VIA at twice the bus
+;     clock), with a '?';
+;   - else (no blanking, or a frame of 65,536 counts or more, or two
+;     frames that differ): NTSC, the timer at its frame, with a '?';
+; then the timer free-running, its interrupt on, row 5 saying so, CLI.
+VB      = crcz                  ; (5) the first frame, the standard, its
+                                ;   mark, the second's standard
+bt_detect:
+        bit bt_mouse
+        bmi @via
+        jsr pl_detect           ; A = the standard, X:Y = the count
+        jsr std_of
+        bcs :+
+        lda #STD_NTSC
+        jsr pl_clkset
+:       rts
+@via:   sei
+        lda #ACR_FREE
+        sta VIA_B_ACR
+        lda #'?' | $80          ; until measured: NTSC, marked
+        sta VB+3
+        lda #STD_NTSC
+        sta VB+2
+        lda #$FF
+        sta VIA_B_T1LL
+        sta VIA_B_T1CH          ; counting down from $FFFF
+        jsr vb_edge             ; to a blanking's start
+        bcs @dflt
+        jsr vb_edge             ; the first frame, X:Y (high, low)
+        bcs @dflt
+        sty VB
+        stx VB+1
+        jsr vb_edge             ; the second
+        bcs @dflt
+        sec                     ; the two within 256 counts
+        tya
+        sbc VB
+        txa
+        sbc VB+1
+        inc a
+        cmp #2
+        bcs @dflt
+        cpx #FRAME_MIN          ; not a blanking flag gone wild
+        bcc @dflt
+        jsr std_of              ; the second's standard
+        bcc @meas
+        sta VB+4
+        ldy VB
+        ldx VB+1
+        jsr std_of              ; the first's
+        bcc @meas
+        cmp VB+4
+        bne @meas
+        sta VB+2                ; that standard, measured
+        stz VB+3
+        asl a
+        bcs @dflt               ; NTSC: its frame
+        ldx #<T1_PAL
+        ldy #>T1_PAL
+        bra @set
+@meas:  lda VB+1                ; near no standard: half of it near one,
+        lsr a                   ;   that one (a VIA at twice the bus
+        tax                     ;   clock)
+        lda VB
+        ror a
+        tay
+        jsr std_of
+        bcc :+
+        sta VB+2
+:       clc                     ; the timer at the frame measured
+        lda VB
+        adc #FRAME_FIX
+        tax
+        lda VB+1
+        adc #0
+        tay
+        bcc @set
+@dflt:  ldx #<T1_NTSC           ; (and a latch past $FFFF)
+        ldy #>T1_NTSC
+@set:   stx VIA_B_T1CL          ; the low latch
+        sty VIA_B_T1CH          ; the high latch: the count starts
+        lda VB+2
+        jsr pl_clkset           ; (php, sei, plp: still masked)
+        lda #$80 | IFR_T1
+        sta VIA_B_IER
+        lda #5
+        ldx #<s_viaclk
+        ldy #>s_viaclk
+        jsr say
+        ldx #<s_pal
+        ldy #>s_pal
+        bit VB+2
+        bpl :+
+        ldx #<s_ntsc
+        ldy #>s_ntsc
+:       jsr puts
+        lda VB+3
+        beq :+
+        jsr putc
+:       cli
+        rts
+
+; std_of: X:Y (high, low) bus cycles a frame: C set and A the standard
+; when within FRAME_WIN of 17,030 (NTSC) or 20,280 (PAL), else C clear
+std_of: cpy #<(NTSC_FRAME - FRAME_WIN)
+        txa
+        sbc #>(NTSC_FRAME - FRAME_WIN)
+        bcc @no
+        cmp #>(2 * FRAME_WIN)
+        lda #STD_NTSC
+        bcc @yes
+        cpy #<(PAL_FRAME - FRAME_WIN)
+        txa
+        sbc #>(PAL_FRAME - FRAME_WIN)
+        bcc @no
+        cmp #>(2 * FRAME_WIN)
+        lda #STD_PAL
+        bcc @yes
+@no:    clc
+        rts
+@yes:   sec
+        rts
+        .assert <(2 * FRAME_WIN) = 0, error, "std_of's window"
+
+; vb_edge: to the start of the next blanking (RDVBLBAR bit 7 goes low, as
+; MUSIC.SYSTEM's vbl_start), then VIA-B's timer 1 read (the high byte the
+; same before and after) and restarted from $FFFF (the write to T1C-H
+; clears its flag): X:Y (high, low) = the counts since the last restart
+; ($FFFF less the reading) and C clear. C set when the timer times out
+; first: 65,536 counts or more since the restart (no blanking: 64 ms at
+; the bus clock; or a frame too long for the timer). A count is never
+; taken across a time-out, so it is never a wrapped one.
+vb_edge:
+@end:   bit VIA_B_IFR           ; in a blanking: to its end
+        bvs @no
+        bit RDVBLBAR
+        bpl @end
+@disp:  bit VIA_B_IFR           ; the display: to the blanking
+        bvs @no
+        bit RDVBLBAR
+        bmi @disp
+@read:  ldx VIA_B_T1CH
+        ldy VIA_B_T1CL
+        cpx VIA_B_T1CH
+        bne @read
+        lda #$FF
+        sta VIA_B_T1CH          ; restarted (13 cycles from the reading)
+        txa
+        eor #$FF
+        tax
+        tya
+        eor #$FF
+        tay
+        clc
+        rts
+@no:    sec
+        rts
+
+; the card's records without the Appletini's mouse card (am_records' form,
+; bank 0: main and the main card), then bt_mpatch's (playdisk.py's: each
+; frame image's pl_poll without the mouse, tools/native/nomouse.py), 0
+; ending them:
+;   pl_vbody's head: the cause VIA-B's timer 1 flag (IFR bit 6), cleared by
+;     writing it back (MUSIC.SYSTEM's snd_irq: in native mode a read of
+;     T1C-L would step the counter once more), in A's 13 bytes
+;   pl_crash's: VIA-B's interrupts off, for the mouse card's mode and ACK
+;   pl_init's: a BRA over the mouse card's window and centring
+mo_recs:
+        .byte VH_N, 0
+        .word pl_vbody
+mo_vh:  .byte $AD               ; lda VIA_B_IFR
+        .word VIA_B_IFR
+        .byte $29, IFR_T1       ; and #IFR_T1
+        .byte $F0, <(pl_vnone - (pl_vbody + 7))  ; beq pl_vnone
+        .byte $8D               ; sta VIA_B_IFR: the flag cleared
+        .word VIA_B_IFR
+        .byte $EA, $EA, $EA
+VH_N = * - mo_vh
+        .byte VC_N, 0
+        .word pl_crash + 1
+mo_vc:  .byte $A9, $7F          ; lda #$7F
+        .byte $8D               ; sta VIA_B_IER
+        .word VIA_B_IER
+        .byte $EA, $EA, $EA
+VC_N = * - mo_vc
+        .byte 2, 0
+        .word pl_iwin
+        .byte $80, <(pl_defaults - (pl_iwin + 2))   ; bra pl_defaults
+bt_mpatch:
+        .res MPATCH_SIZE
+bt_mpatch_end:
+        .assert VH_N = 13 && VC_N = 8, error, "the card's records"
+        .assert pl_vnone - (pl_vbody + 7) < 128, lderror, "pl_vnone's branch"
+        .assert pl_defaults - (pl_iwin + 2) < 128, lderror, "pl_iwin's branch"
+
+MO_N    = 5
+mo_at:  .byte $00, $01, $0D, $0E, $0F   ; slot 2's ROM: where and what
+mo_is:  .byte $A2, $02, $8D, $AC, $C0
+s_viaclk:
+        .byte "NO APPLETINI MOUSE: PHASOR CLOCK, ", 0
 
 ; the patch table (zero in m11's link: nothing to patch)
 bt_patch:

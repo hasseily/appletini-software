@@ -13,6 +13,8 @@
  *   --io-cycles N       the extra cycles of an access to $C000-$CFFF
  *   --banks N           RamWorks banks, 1-128 (default 128)
  *   --no-mouse          no mouse card in slot 2
+ *   --mouse-plain       slot 2's ROM an AppleMouse-style one (its ID
+ *                       bytes) with no registers: not the Appletini's card
  *   --amem              the memory API in slot 7 (FakeSmartPortMemory)
  *   --amem-unsupported, --amem-unavailable
  *                       its STATUS answers $21, its CONTROL $60
@@ -336,6 +338,11 @@ static void parse(int argc, char **argv, options *o)
         const char *arg = argv[i];
         if (!strcmp(arg, "--no-mouse")) {
             o->config.mouse = 0;
+            continue;
+        }
+        if (!strcmp(arg, "--mouse-plain")) {
+            o->config.mouse = 0;
+            o->config.mouse_plain = 1;
             continue;
         }
         if (!strcmp(arg, "--amem")) {

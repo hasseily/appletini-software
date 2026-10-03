@@ -226,6 +226,8 @@ typedef struct a2vm {
 
     /* slots */
     int mouse_on, phasor_slot, mouse_slot;
+    int mouse_plain;                /* --mouse-plain: an AppleMouse-style
+                                       ROM in slot 2, no registers */
     a2vm_mouse mouse;
     a2vm_phasor phasor;
     int amem_on;
@@ -325,6 +327,7 @@ typedef struct {
     int64_t io_cycles;              /* -1: a2sim's default for the speed */
     unsigned ramworks_banks;        /* 1-128 */
     int mouse, phasor_slot, mouse_slot;
+    int mouse_plain;                /* the plain ROM instead (mouse 0) */
     int amem;                       /* attach the memory API */
 } a2vm_config;
 

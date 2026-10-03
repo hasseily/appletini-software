@@ -27,6 +27,8 @@
 
         .import pl_bold, pl_mask, pl_diff, pl_centre
         .export pl_init, pl_defaults, pl_bind, pl_action
+        .export pl_iwin         ; (pl_boot.s: without the Appletini's mouse
+                                ;   card the boot branches over the window)
 
         .segment "S2CODE"
 
@@ -37,6 +39,7 @@ pl_init:
         bpl :-
         lda #BIND_IDLE
         sta PL_BIND
+pl_iwin:
         stz MOUSE_CLAMPSEL      ; X's window 0-$FFFF
         stz MOUSE_MIN
         stz MOUSE_MIN+1

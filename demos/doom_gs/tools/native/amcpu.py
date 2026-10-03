@@ -41,7 +41,7 @@ sys.path.insert(0, str(HERE.parent))
 
 from native import glayout as GL, llayout as LL  # noqa: E402
 
-PATCH_SIZE = 640                # pl_boot.s PATCH_SIZE
+PATCH_SIZE = 512                # pl_boot.s PATCH_SIZE
 CARD = 0                        # a record's bank: the main card
 WALKER_SIZE = 53
 ENTRIES = (('cq', 'am_req'), ('c_begin', 'am_begin'), ('c_push', 'am_push'),
