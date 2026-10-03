@@ -246,6 +246,20 @@ class Image:
                                                0x60, 0]))
             self.poke_word('dg_nlsetup', level.labels['nl_setup'])
 
+    def cpu_copies(self) -> None:
+        """The machine without the memory API (docs/PLAY.md 19): the card's
+        transport and the load image's as DOOM.SYSTEM's am_patch leaves
+        them (amcpu.py: the tic build's AMEMCPU segments over its AMEMLC,
+        the walker over LCODE's am_send). Run it without --amem."""
+        from native import amcpu
+        for _, address, data in amcpu.card_patches(self.b):
+            self.recs.append((3 if address < 0xE000 else 2, 0, address,
+                              bytes(data)))
+        if self.level is not None:
+            bank, address, data = amcpu.lcode_patch(self.level,
+                                                    self.b.labels)
+            self.recs.append((1, bank, address, data))
+
     # -- writes into the image --
     def main(self, address: int, data: bytes) -> None:
         self.recs.append((0, 0, address, bytes(data)))
@@ -347,12 +361,15 @@ def run(img: Image, work: Path, mode: int, entry: Optional[str] = None,
         profile: Optional[str] = None, write_log: Optional[str] = None,
         every_limit: int = 64, cycles: int = CYCLE_LIMIT,
         stream: Optional[Tuple[Path, int]] = None,
-        timeout: float = RUN_TIMEOUT, extra: Sequence[str] = ()) -> Run:
+        timeout: float = RUN_TIMEOUT, extra: Sequence[str] = (),
+        amem: bool = True) -> Run:
     """One run of the driver: mode (GL.MODES), entry (a label: the routine
     of the routine modes); events (a2vm input lines, the snapshot points);
     the snapshots' banks besides main and the driver's card. A snapshot
     "done" at drv_done and "crash" at drv_crash always. stream (path,
-    limit): every snapshot into one stream (a2vm --snapshot-stream)."""
+    limit): every snapshot into one stream (a2vm --snapshot-stream).
+    amem: the memory API in slot 7 (a2vm --amem); without it the image
+    must hold the CPU's copies (Image.cpu_copies)."""
     work.mkdir(parents=True, exist_ok=True)
     lab = img.b.labels
     img.poke_label('dg_mode', bytes([mode]))
@@ -369,7 +386,7 @@ def run(img: Image, work: Path, mode: int, entry: Optional[str] = None,
     (work / 'image.bin').write_bytes(img.bytes())
     (work / 'rom.bin').write_bytes(bytes(0x4000))
     args = [str(A2VM), '--rom', str(work / 'rom.bin'), '--core', 'w65c02s',
-            '--amem', '--image', str(work / 'image.bin'),
+            '--image', str(work / 'image.bin'),
             '--switch', 'lc_read=1', '--switch', 'lc_write=1',
             '--switch', 'lc_bank2=0',
             '--reg', 'pc=%X' % lab['drv_game'], '--reg', 's=%X' % DRV_STACK,
@@ -383,6 +400,8 @@ def run(img: Image, work: Path, mode: int, entry: Optional[str] = None,
             '--snapshot-dir', str(work),
             '--snapshot-ranges', snap_ranges(banks),
             '--every-limit', str(every_limit)]
+    if amem:
+        args.append('--amem')
     ev = ['pc %X snapshot done' % lab['drv_done'],
           'pc %X snapshot crash' % lab['drv_crash']] + list(events)
     (work / 'events.txt').write_text('\n'.join(ev) + '\n')

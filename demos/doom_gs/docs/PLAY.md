@@ -399,6 +399,37 @@ failures, each a check that assumed the old speed or layout (`SPEED.md`
    active, every TURBO cycle is replayed to it and the CPU runs at about
    67 MHz instead of 110 (`docs/SPEED.md` 5, `docs/results/calib.md`).
    The card's figures since 2026-10-03 are firmware F1.2.2 with this key.
+
+   **The memory API is optional** (since 2026-10-03, section 19). With it
+   (the Appletini's slot 7, F1.1.4 or later; F1.2.2 for its copy engine)
+   every bulk copy goes by the API, exactly as before. Without it
+   `DOOM.SYSTEM` says `NO MEMORY API: COPIES BY THE CPU $FF` on the
+   loading screen's fourth row and goes on: the CPU makes the same copies,
+   byte for byte, at the same points, and the game plays the same, only
+   slower (section 19 has the figures). So the game runs on an emulator,
+   which needs:
+
+   - an enhanced //e (65C02) with 8 MB of RamWorks (banks 1-126 at
+     `$C073`; bank 0 the base aux 64 KB) and its language card;
+   - Super Hi-Res on the //e: `NEWVIDEO` (`$C029`) bit 7 shows aux
+     `$2000-$9FFF` (the pixels, the SCBs at `$9D00`, the 16 palettes at
+     `$9E00`) as a IIgs shows bank `$E1` (a VidHD-style card);
+   - a mouse card in slot 2 that interrupts at each VBL (mode `$09`): the
+     game's clock, 35 tics a second, counts them;
+   - a Phasor in slot 4, in native mode for the music and the effects
+     (without native mode the game says so and plays silent);
+   - a ProDOS block device that boots `DOOM.hdv` (4 MB);
+   - nothing in slot 7, or any card: the probe writes nothing there
+     unless the slot's ROM and its FIFO read as the Appletini's (a card
+     that reads so but does not answer holds the boot about half a
+     second);
+   - speed: the game runs its tics at 35 a second whatever the CPU (at
+     most four tics a frame, upstream's rule), and the benchmark's frame
+     takes the card about 154 ms with the API and 209 ms without it at
+     its TURBO speed of about 110 MHz, some 17 and 23 million cycles: a
+     1 MHz //e would show a frame every 20 s, so the emulator must run
+     the CPU about a hundred times faster than a //e for the card's frame
+     rate.
 4. Boot `DOOM.hdv` from the menu's file browser as the boot volume.
    `DOOM.SYSTEM` loads the 4 MB into RamWorks and the card, checks every
    CRC (milestone 11's boot, SCREENS.md), and starts
@@ -880,3 +911,165 @@ full suite (`python3 tools/testpar.py --jobs 5`).
 
 **The disk**: `build/native/DOOM.hdv`, 4,029,952 bytes, SHA-1
 `fd3ce9fd7e44c4e642dcd76101870609d2f01382`.
+
+## 19. What changed: the memory API optional (2026-10-03)
+
+For the owner, who asked "Can you make the memory API optional? so that
+emulators can run the game?": the game no longer needs the Appletini's
+memory API. With it nothing changed: your card runs the same code, makes
+the same requests at the same points, and the benchmark reads the same
+(a2vm `f122-nod2`: 6.519 FPS, 551 frames, 2,958 realtics, `TIC 89.4`,
+as before; the boot reaches its ready state at the same cycle). Without
+it (an emulator, or a card whose firmware has none) `DOOM.SYSTEM` puts
+`NO MEMORY API: COPIES BY THE CPU $FF` on the loading screen's fourth row
+and goes on, and the CPU makes every copy the API made, byte for byte, at
+the same point: the game plays exactly the same, only slower. Section
+12.1 lists what an emulator needs.
+
+**What you will notice** (a2vm `f122-nod2`, your card's setting;
+`playtime.py --scene bench`, with `--no-amem` for the second column):
+
+| | With the API | Without the API |
+| --- | ---: | ---: |
+| The menu's BENCHMARK | **6.519 FPS** (551 frames, 2,958 realtics) | **4.794 FPS** (534 frames, 3,898 realtics) |
+| Its rows | TIC 89.4, 3D 18.0, MASK 11.6, DRAW 31.3, REST 3.3 | TIC 136.8, 3D 22.0, MASK 13.8, DRAW 31.4, REST 5.0 |
+| ms a frame (mean) | 153.6 | 208.9 |
+| The copies, ms a frame | 7.65 (the copy engine) | 59.75 (the CPU) |
+
+Without the API the CPU's copies cost 52 ms more a frame: the groups into
+W's slots 17.3 ms (3.9 with the API), the frame slots' loads and restores
+29.4 ms (1.3: in main `$2000-$5FFF` every CPU store is a video write, about
+1 µs a byte on the card, `MEMORY_MAP.md` rule 3), `K_TIC`'s core and
+planes 3.6 ms, the images of the 3D view, the sprites and the status bar
+8.8 ms. On the card without an API the game would show about 4.8 FPS; an
+emulator's speed depends on how fast it runs the 65C02.
+
+**What was changed**
+
+1. **The probe** (`pl_boot.s` `probe_amem`, at its old place in
+   `DOOM.SYSTEM` and in its old room of 215 bytes, so that every other
+   routine of the boot keeps its address; the message and the patcher in
+   a new segment `PLAMEM` after the boot's): it writes nothing into slot
+   7 until the slot reads as the Appletini's, twice over (an empty slot
+   reads the floating bus):
+   the SmartPort ID bytes `$C701`, `$C703`, `$C705`, `$C707` (`$20`,
+   `$00`, `$03`, `$00`; a Disk II's `$C707` is `$3C`), the ProDOS entry's
+   offset `$C7FF` (`$0A`, the SmartPort entry `$C70D` of
+   `README_MEMORY_API.md`; appletini-one's slot ROM image
+   `smartport_a2retronet_style_c700.mem` has both), then its FIFO's
+   control register `$CFF1` (bits 0-5 `$20`, the vTW bit and no reply
+   pending). Only then does the STATUS request go into the FIFO, as
+   before; its reply is waited for 4 × 64 K turns (about 0.5 s; the old
+   probe waited 256 × 64 K, some 33 s, which a card whose ROM reads as
+   the Appletini's but which does not answer would hold the boot for:
+   four times the wait `am_fin` gives every CONTROL in the game). A
+   refusal, an error, no reply, a capability or the available
+   bit missing: the CPU's copies (the answer after the message: `$FF` not
+   an Appletini ROM, `$FE` a capability missing or unavailable, `$6F` no
+   reply, else the API's error). The boot no longer stops for it
+   (`PL_NOAMEM` is no longer used).
+2. **The CPU's version, written at the boot when there is no API**
+   (`am_patch`, after the install, from `bt_init`, which then goes on to
+   `pl_init`; the table `bt_patch`, 640 B in
+   `DOOM.SYSTEM`, 462 used, built by `tools/native/amcpu.py` and written
+   by `playdisk.py`), so that the API's path has no test to make:
+   - over the card's transport (`gcall.s` segment `AMEMCPU` over
+     `AMEMLC`, whose entries it keeps): `am_begin` returns, `am_push` does
+     the template's descriptor (`cx_exec`, with interrupts enabled as the
+     far layer's copies before the copy engine; `am_fin` puts the
+     caller's flags back), `am_runs` is the far layer's `far_pload`. So
+     `gr_load`, `fs_restore`, `planes_out` and the kernel's `K_TIC` and
+     `K_LOAD` are unchanged. `cx_exec` sets RAMRD for the source's
+     space, RAMWRT for the destination's and `$C073` to their bank, and
+     copies or fills a part page at a time; from one RamWorks bank to
+     another it switches `$C073` at each byte, as RAMRD and RAMWRT share
+     it. Its pages loop and its inner loops (`AMEMCPUD`, `AMEMCPUF`) go
+     into two ranges of the card that no link uses (`$DFE6-$DFFF`,
+     `$FE45-$FE7A`), which `playdisk.py` checks at every build;
+   - over each W image's own transport, which no code reaches without the
+     API: a 53-byte walker of its request through `cx_exec` (the load
+     image's `am_send`, DLINIT's static tables, the menu's screen save,
+     the busy sign's save).
+3. **The checks' tools**: `ticrun.py --no-amem` runs the lockstep build on
+   a2vm without the API, its image patched as `DOOM.SYSTEM` patches the
+   disk (`grun.Image.cpu_copies`); `playdisk.py --run` and `playtime.py`
+   take `--no-amem`; `pldisk.py`'s boot checks `noamem` and the new
+   `amemoff` (the Appletini ROM with the API unavailable) expect the
+   ready state and the message instead of the stop.
+
+**How it was checked** (the owner's rule: what changed, once each):
+
+- the lockstep demo3 run against ref816, with the API (`python3
+  tools/native/ticrun.py --run demo3 --frames front --fills a5 --jobs 2`)
+  and without it (the same with `--no-amem`: the groups into W's and the
+  frame slots, the restores and the level load by the CPU): 2,134 tics
+  compared, 0 failures, same-pair hits 1,009 = 1,009, in both;
+- the BENCHMARK with the API (`python3 -m unittest test_play_bench`): the
+  colormaps right at 43 replays, the images right at 129 loads, FPS
+  6.458 on the short demo, as before;
+- without the API, the new `tests/test_play_noamem.py`: one bounded run
+  from the boot through the title, a new game (E1M1's load, the menu) and
+  the BENCHMARK (E1M7's load) to its result page: the message, the card's
+  CPU version, DLINIT's static tables equal to their sources, the
+  colormaps right at 109 replays, W right at 327 K_CALLs, the core and
+  the planes right at 146 K_TICs; FPS 5.675 on the short demo;
+- `tests/test_amcpu.py`: the walker's bytes against ca65's, the table's
+  format, and one request of sixteen descriptors of every kind (COPY
+  between main, RamWorks banks, aux 0's screen; FILL; one byte to 8 KB,
+  odd addresses, page crossings, each reading an earlier one's result)
+  done by the CPU's version on a2vm: main and the banks byte for byte as
+  the API's model leaves them, nothing else written, the far layer's
+  zero page kept. A planted bug (the per-byte loop writing to the read
+  bank) is caught by it and by the play run (the boot crashes in DLINIT);
+- then the fast full suite (`python3 tools/testpar.py --jobs 6`).
+
+**After the review** (three findings fixed, the checks above rerun once
+each with the results given there and in the table):
+
+- the boot with the API was 179.7 ms (9 VBLs) later than before: moving
+  `probe_amem` out of `PLBOOT` had moved the CRC loop (`crc_page`
+  `$253D` to `$2471`) into TURBO read-cache sets shared with its zero
+  page variables, so `check_files` ran 4.5% slower in the model, the
+  benchmark's scripted keys landed 6 gametics later and its page read
+  6.522 instead of 6.519. `probe_amem` is back at its place in its old
+  room (215 B, padded), its data at theirs, `am_patch`'s call moved into
+  `bt_init` (the same `jsr` that called `pl_init`) and `s_noamem`'s 26
+  bytes kept as room: `DOOM.SYSTEM` differs from `fd3ce9fd`'s only in the
+  probe's room, that `jsr`'s target and the 26 bytes, and the boot with
+  the API reaches `pl_ready` at 741,792,217 fabric clocks as before
+  (765,753,813 in the reviewed build);
+- a card whose ROM shows the six bytes but does not answer held the
+  boot 33 s (a2vm, a ROM made for it: the title at 38.6 s); the wait is
+  now 4 × 64 K turns (6.06 s against 5.56 s with slot 7 empty). Such a
+  card still gets the one STATUS request: no read of a ROM tells a ROM
+  made to match from the Appletini's;
+- the per-byte switching of `$C073` also slows the menu's and the busy
+  sign's saves (the open problems below say how much);
+- the fast full suite (`python3 tools/testpar.py --jobs 6`): 133
+  modules, 2,120 tests, 27 skipped, one failure, `test_m11_plboot`'s
+  planted bug "fx_init called before snd_probe's answer", whose anchor
+  line the fix had left one space short; the space put back (the same
+  bytes), the module passes.
+
+**The disk**: `build/native/DOOM.hdv`, 4,029,952 bytes, SHA-1
+`9d2c23d6dd68c47114cfaf90f29b51d94878b7ed`. Every image in RamWorks and
+LC.BIN are byte for byte as in `fd3ce9fd`; only `DOOM.SYSTEM` differs.
+
+**Open problems**
+
+- On an Appletini without the API, the CPU's stores reach main
+  `$4078-$407F` (the frame slot at page `$40`, colormap B's level 0),
+  where the firmware looks for `A2Li` (`MEMORY_MAP.md` rule 8):
+  `playdisk.py` checks the pinned groups, not the level palettes'
+  colormap bytes there.
+- From one AUX bank to another (aux 0 counts as bank 0) the CPU switches
+  `$C073` twice a byte (`cx_tog`): 3.9 µs a byte on a2vm `f122-nod2`
+  against 0.8 µs within one bank (about 6 µs on the card at CALIB's
+  2.95 µs a switch). The level load makes such copies (a second or so
+  more there), and so do two copies of the 2D layer: the menu's screen
+  save (`mv_amem`, aux 0 `$2000-$9FFF` to `S2VIEW`, 32 KB: 0.13 s on
+  a2vm, about 0.2 s on the card, at every opening of the menu) and the
+  busy sign's save (`sgsave`, aux 0 to `S2STATE`, 3,840 B: 15 ms, at a
+  level's load). A bounce through a main page would cut them.
+- The test disks (`LEVELS.hdv`, `RENDER.hdv`, `REPLAY.hdv`, `CALIB.hdv`)
+  keep their own probes and still need the API.

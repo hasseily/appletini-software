@@ -179,7 +179,7 @@ PREBUILD: Tuple[Step, ...] = (
          _make('level.mk', BUILD / 'native' / 'levels' / 'obj'), CC65,
          ('test_native_level_load', 'test_native_level_setup',
           'test_native_game_skeleton', 'test_play_runs',
-          'test_play_bench', 'test_play_cardprof')),
+          'test_play_bench', 'test_play_cardprof', 'test_play_noamem')),
     # milestone 10: grun.make(): game.mk's shared outputs (build/native/
     # game/shared: the generated includes, game.cfg, the game manifests,
     # the call graph) and the skeleton's test image (build/native/game/
@@ -210,11 +210,13 @@ SHARED: Tuple[Shared, ...] = (
     # its disk, so it must not see a rebuild half done (speed wave 1);
     # test_ticloads and test_play_glue's Tickers read its links (speed
     # wave 2); test_calib copies the game's routines out of its card and
-    # tic links (calibdisk.play_parts)
+    # tic links (calibdisk.play_parts); test_play_noamem runs the disk
+    # without the memory API as test_play_bench runs it, and test_amcpu
+    # reads its tic link's CPU version (docs/PLAY.md 19)
     Shared('build/native/play', ('test_play_runs', 'test_play_bench',
-                                 'test_play_cardprof'),
+                                 'test_play_cardprof', 'test_play_noamem'),
            ('test_playtime', 'test_ticloads', 'test_play_glue',
-            'test_calib')),
+            'test_calib', 'test_amcpu')),
 )
 
 

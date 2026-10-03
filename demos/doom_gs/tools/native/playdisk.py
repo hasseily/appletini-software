@@ -37,8 +37,8 @@ files:
                       save slots' text), SPRBOUND in SPRT (sprbound())
   RTABLES.1, SONGS.1, SFX.1, GFX.1, HUDTXT.1   as pldisk.py's
 
---run boots the disk on a2vm (its MLI trap, the memory API, the mouse
-card's VBL clock, --cost-timed under the Doom profile, the interrupt
+--run boots the disk on a2vm (its MLI trap, the memory API unless
+--no-amem, the mouse card's VBL clock, --cost-timed under the Doom profile, the interrupt
 bounds of SCREENS.md 2.3) and plays SCRIPT: a2vm's input events (tools/
 a2vm/README.md "Input events"), with the names of the play link's labels
 for pc events (pc @dl_halt ...). Every run is bounded (bounded.run: its
@@ -752,15 +752,92 @@ def card_main(boot: pldisk.Boot, play: Path) -> Tuple[bytes, bytes]:
     return aux, main
 
 
+def amem_cpu_problems(boot: pldisk.Boot, main: bytes) -> List[str]:
+    """The memory API's CPU version (docs/PLAY.md 19) writes the card's
+    glayout.AMEM_CPU ranges outside AMEMLC (AMEMCPUD in bank 1, AMEMCPUF
+    in $E000-$FFFF) when DOOM.SYSTEM finds no API: they must be free in the
+    play card, in no segment of its links (rcard's bank 1 and replay parts,
+    the tic image's AMEMLC, the card link's) and no layout's region (S2's,
+    the kernel's), and zero in LC.BIN."""
+    rc = RC.load_build(pldisk.RCARD, 'rcard')
+    bank1 = [(n, rc.segments[n]) for n in ('MATHLC', 'MATHFAR', 'RFAR',
+                                           'RLOAD', 'MFAR')
+             if n in rc.segments]
+    bank1.append(('AMEMLC', (GL.AMEM_LC[0], GL.AMEM_LC[1] - 1)))
+    high = [(n, rc.segments[n]) for n in ('RCODE', 'BKNEAR', 'BKCARD')
+            if n in rc.segments]
+    high += [('the card link\'s ' + n, r) for n, r in boot.segments.items()
+             if r[0] >= 0xE000]
+    high += [(name, (lo, hi - 1)) for name, lo, hi in S.S2_CARD]
+    high += [(r.what, (r.start, r.end - 1)) for r in PL.regions()
+             if r.space == 'card']
+    out = []
+    for seg, (lo, hi) in sorted(GL.AMEM_CPU.items()):
+        if seg == 'AMEMCPU':
+            continue
+        used = bank1 if lo < 0xE000 else high
+        for name, (a, b) in used:
+            if a < hi and lo <= b:
+                out.append('%s $%04X-$%04X overlaps %s $%04X-$%04X' % (
+                    seg, lo, hi - 1, name, a, b))
+        at = pldisk.card_offset(lo, True)
+        if any(main[at:at + hi - lo]):
+            out.append('%s $%04X-$%04X is not zero in LC.BIN' % (seg, lo,
+                                                                  hi - 1))
+    return out
+
+
+A2LI = bytes([0xC1, 0xB2, 0xCC, 0xE9])     # hi-ASCII 'A2Li' (rule 8)
+
+
+def a2li_problems(play: Path) -> List[str]:
+    """Without the memory API a frame slot's group comes into main
+    $2000-$5FFF by CPU stores (docs/PLAY.md 19, MEMORY_MAP.md rule 3), and
+    on an Appletini the firmware reads $4078-$407C from its shadow of main
+    (rule 8: hi-ASCII 'A2Li' there arms its legacy modes or holds the
+    frame): no group of the tic link may hold the signature at $4078."""
+    from native import gplacerec as REC
+    out = []
+    b = PK.tic_build(play)
+    for g, (path, at, n) in sorted(REC.group_files(b).items()):
+        if at < 0 or not (at <= 0x4078 and 0x407C <= at + n):
+            continue
+        if path.read_bytes()[0x4078 - at:0x407C - at] == A2LI:
+            out.append('group %d holds \'A2Li\' at $4078 (rule 8)' % g)
+    return out
+
+
+def with_patches(system: bytes, boot: pldisk.Boot, play: Path) -> bytes:
+    """DOOM.SYSTEM with the memory API's CPU version in bt_patch
+    (amcpu.play_patches: what am_patch writes when the probe finds no
+    API)."""
+    from native import amcpu
+    lab = boot.labels
+    size = lab['bt_patch_end'] - lab['bt_patch']
+    if size != amcpu.PATCH_SIZE:
+        raise PlayError('bt_patch is %d B, amcpu.PATCH_SIZE %d' % (
+            size, amcpu.PATCH_SIZE))
+    try:
+        data = amcpu.table(amcpu.play_patches(play))
+    except amcpu.PatchError as e:
+        raise PlayError('the CPU version: %s' % e)
+    at = lab['bt_patch'] - pldisk.BOOT_LO
+    if any(system[at:at + size]):
+        raise PlayError('bt_patch is not zero in the link')
+    return system[:at] + data + system[at + size:]
+
+
 def build(play: Path, out: Path = OUT) -> Disk:
     boot = pldisk.load_boot(play / 'card')
     system = boot.area('boot')
     if len(system) != pldisk.BOOT_HI - pldisk.BOOT_LO:
         raise PlayError('DOOM.SYSTEM is %d bytes' % len(system))
     aux, main = card_main(boot, play)
-    bad = problems(play, main)
+    bad = problems(play, main) + amem_cpu_problems(boot, main) + \
+        a2li_problems(play)
     if bad:
         raise PlayError('; '.join(bad[:6]))
+    system = with_patches(system, boot, play)
     files = bank_files(play)
     bad = pldisk.layout_problems(files)
     if bad:
@@ -837,10 +914,12 @@ def run(disk: Disk, script: str, work: Path, profile: str = 'f121',
         seconds: float = 60.0, timeout: float = 1800.0,
         snap_ranges: str = 'main:0000-BFFF,lc,lc1,aux0:2000-9FFF',
         extra: Sequence[str] = (), a2vm: Path = A2VM,
-        idle: str = 'exact') -> Run:
+        idle: str = 'exact', amem: bool = True) -> Run:
     """Boot the disk and play the script for at most `seconds` of model
     time; the run's state, its snapshots and shots. `extra`: more a2vm
-    options (playtime.py's --pclog); `a2vm`: the machine to run.
+    options (playtime.py's --pclog); `a2vm`: the machine to run; `amem`:
+    the memory API in slot 7 (a2vm --amem), else a //e with none, where
+    DOOM.SYSTEM's probe finds none and the CPU copies (docs/PLAY.md 19).
 
     `idle`: how a2vm skips the two loops that wait for a tic, the
     kernel's menu wait (dl_mwait) and the brain's frame wait (dl_bwait).
@@ -898,8 +977,9 @@ def run(disk: Disk, script: str, work: Path, profile: str = 'f121',
             '--every-limit', '400',
             '--input', str(work / 'events.txt'),
             '--ay-log', str(work / 'ay.log'),
-            '--amem',
             '--state', str(work / 'state.json'), '--final-snapshot']
+    if amem:
+        args.append('--amem')
     for spec in idles:
         args += ['--idle', spec]
     args += list(extra)
@@ -964,6 +1044,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         choices=sorted(PROFILES))
     parser.add_argument('--seconds', type=float, default=60.0)
     parser.add_argument('--keep', type=Path)
+    parser.add_argument('--no-amem', action='store_true',
+                        help='a2vm with no memory API (the CPU copies)')
     args = parser.parse_args(argv)
     gone = missing()
     if gone:
@@ -983,7 +1065,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                                       dir=str(BUILD)))
             try:
                 r = run(disk, args.run.read_text(), work, args.profile,
-                        args.seconds)
+                        args.seconds, amem=not args.no_amem)
                 print(json.dumps(r.state, indent=1)[:2000])
             finally:
                 if not args.keep:

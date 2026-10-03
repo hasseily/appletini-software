@@ -65,6 +65,8 @@
         .export ld_stop, fc_go, grp_bank, grp_src, grp_pages, grp_slot
         .export grp_tail, fs_restore, am_one
         .export am_req, am_begin, am_push, am_fin, am_sent, am_runs
+        .export cq, cx_exec
+        .import far_pload
         .export ACTTAB, THTAB, ITTAB, TRVTAB, LSTAB
 
 ; the directory's entries: group 0 (none), the placement's groups (gplace.py
@@ -92,6 +94,7 @@ AMD_BANK   = AM_DESC + 3        ; the descriptor's fields
 AMD_SRC    = AM_DESC + 5        ;   (the source's page)
 AMD_DST    = AM_DESC + 9        ;   (the destination's page)
 AMD_COUNT  = AM_DESC + 10
+AMEM_LC_SIZE = $DC00 - AM_REQ   ; AMEMLC's room (glayout.AMEM_LC)
         .exportzp AMD_BANK, AMD_SRC, AMD_DST, AMD_COUNT, AM_DESC, AM_DESC_N
 
         .segment "LOADW"
@@ -542,6 +545,148 @@ am_sent:                        ; (the request done: playtime.py times
         lda #GS_AMEM            ;   names the stop)
         sta GS_STATUS
         brk
+
+; ---------------------------------------------------------------------------
+; Without the memory API (docs/PLAY.md 19, MEMORY_MAP.md rule 3): the same
+; requests done by the CPU, byte for byte, at the same points. Nothing runs
+; these bytes while the API is there. When DOOM.SYSTEM's probe finds none,
+; it writes them over the card (tools/native/amcpu.py's patch table):
+; AMEMCPU over AMEMLC (am_req's head, then from am_begin on: the template's
+; descriptor stays), AMEMCPUD into $DFE6-$DFFF and AMEMCPUF into
+; $FE45-$FE7A (glayout.AMEM_CPU: free in every card a tic image runs with,
+; which playdisk.py checks); and a walker of its request through cx_exec
+; over each W image's own transport (amcpu.walker: lload.s am_send,
+; dl_init.s dli_send, s2_mvid.s mv_amem, s2_fin.s sgsave). The entries are
+; AMEMLC's own addresses, so its callers are unchanged:
+;
+;   am_begin  rts
+;   am_push   the template's descriptor (am_req + AM_DESC) into cq and done
+;             by cx_exec with interrupts enabled (the CPU's copies before the
+;             copy engine ran unmasked: rule 2 keeps the IRQ out of
+;             $0200-$BFFF and off $C073); am_fin's plp puts back the
+;             caller's P from its php
+;   am_runs   far_pload: the same arguments (a list of page runs in the
+;             card, a bank), the copies before the copy engine
+;   am_fin    plp, rts
+;   cx_exec   the descriptor at cq (the API's 16 bytes: COPY or FILL, MAIN
+;             or AUX bank 0-126 endpoints, any address and count) by the
+;             CPU: RAMRD for the source's space, RAMWRT for the
+;             destination's, $C073 their AUX bank (per byte when the source
+;             and the destination are AUX of two banks: RAMRD and RAMWRT
+;             share it), a part page at a time with far_get's loop. Changes
+;             A, X, Y, FA_DST, FA_SRC, FA_N (gr_load's and the CPU copies'
+;             before the copy engine: no caller reads them after); RAMRD,
+;             RAMWRT and $C073 off at the end
+; ---------------------------------------------------------------------------
+
+        .segment "AMEMCPU"      ; (at AM_REQ, over AMEMLC)
+cq:     .res AM_DESC_N          ; the descriptor cx_exec does (am_req's head:
+                                ;   no CPU-mode code writes the head)
+cj:     .addr cx_fast           ; cx_in's loop (cx_set writes its low byte)
+        .res AM_HEAD - AM_DESC_N - 2
+        .res AM_DESC_N          ; (the template's descriptor: not written)
+        .assert * - cq = am_begin - am_req, error, "AMEMCPU's am_begin"
+c_begin:
+        rts
+cx_last:
+        lda cq + 10             ; the last part page (0: none)
+        beq cx_done
+        sta FA_N
+        jsr cx_in
+cx_done:
+        sta RAMRDOFF
+        sta RAMWRTOFF
+        stz RWBANK
+        rts
+        .assert * - cq <= am_push - am_req, error, "AMEMCPU passes am_push"
+        .res (am_push - am_req) - (* - cq)
+c_push: cli
+        jmp cxp
+cx_in:  ldy #0                  ; a page or its part: the loop cx_set chose
+        jmp (cj)
+        .assert * - cq <= am_runs - am_req, error, "AMEMCPU passes am_runs"
+        .res (am_runs - am_req) - (* - cq)
+c_runs: jmp far_pload
+cxp:    ldx #AM_DESC_N - 1      ; the template's descriptor
+:       lda am_req + AM_DESC,x
+        sta cq,x
+        dex
+        bpl :-
+cx_exec:
+        lda cq + 4              ; the source's address
+        sta FA_SRC
+        lda cq + 5
+        sta FA_SRC+1
+        lda cq + 8              ; the destination's
+        sta FA_DST
+        lda cq + 9
+        sta FA_DST+1
+        ldx cq + 2              ; RAMRD: the source's space (0 MAIN, 1 AUX)
+        sta RAMRDOFF,x
+        ldx cq + 6              ; RAMWRT: the destination's
+        sta RAMWRTOFF,x
+        jmp cx_set
+        .assert * - cq <= am_fin - am_req, error, "AMEMCPU passes am_fin"
+        .res (am_fin - am_req) - (* - cq)
+c_fin:  plp
+        rts
+cx_set: ldy #<cx_fast           ; the loop and $C073
+        lda cq + 3              ; from AUX: the source's bank
+        ldx cq + 2
+        bne @aux
+        lda cq + 7              ; from MAIN: the destination's bank
+        lsr cq + 0              ; (1 COPY: C; 2 FILL, whose source is MAIN
+        bcs @set                ;   bank 0: on with A = its bank)
+        ldy #<cx_fill
+@aux:   ldx cq + 6              ; AUX to AUX of another bank: per byte
+        beq @set
+        cmp cq + 7
+        beq @set
+        ldy #<cx_tog
+@set:   sta RWBANK
+        sty cj
+        jmp cx_chunk
+        .assert * - cq <= AMEM_LC_SIZE, error, "AMEMCPU passes AMEMLC"
+        .assert RAMRDON = RAMRDOFF + 1 && RAMWRTON = RAMWRTOFF + 1, error, "the switches"
+
+        .segment "AMEMCPUD"     ; (at $DFE6)
+cx_chunk:
+        lda cq + 11             ; whole pages left
+        bne :+
+        jmp cx_last
+:       stz FA_N                ; (256 bytes)
+        jsr cx_in
+        inc FA_SRC+1
+        inc FA_DST+1
+        dec cq + 11
+        bra cx_chunk
+
+        .segment "AMEMCPUF"     ; (at $FE45: cj's page)
+cx_fast:                        ; RAMRD, RAMWRT, $C073 set
+        lda (FA_SRC),y
+        sta (FA_DST),y
+        iny
+        cpy FA_N
+        bne cx_fast
+        rts
+cx_fill:
+        lda cq + 12             ; the FILL value
+        sta (FA_DST),y
+        iny
+        cpy FA_N
+        bne cx_fill
+        rts
+cx_tog: ldx cq + 3              ; RAMRD and RAMWRT on: the source's bank,
+        stx RWBANK              ;   then the destination's, a byte at a time
+        lda (FA_SRC),y
+        ldx cq + 7
+        stx RWBANK
+        sta (FA_DST),y
+        iny
+        cpy FA_N
+        bne cx_tog
+        rts
+        .assert >cx_fast = >cx_fill && >cx_fast = >cx_tog, error, "cx_in's loops in one page"
 
 
         .segment "LOADW"

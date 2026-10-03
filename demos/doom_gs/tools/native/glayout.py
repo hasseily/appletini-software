@@ -353,6 +353,13 @@ AMEM_LC = (0xDB5C, 0xDC00)
 # 1 for a write log without them (gparts' stray checks)
 AM_REQ = (AMEM_LC[0], AMEM_LC[0] + 36)
 LC1_LOG = 'lc1:D000-%04X,lc1:%04X-DFFF' % (AM_REQ[0] - 1, AM_REQ[1])
+# the transport's CPU version (gcall.s AMEMCPU over AMEMLC, AMEMCPUD,
+# AMEMCPUF; docs/PLAY.md 19): DOOM.SYSTEM writes it over the card when it
+# finds no memory API (tools/native/amcpu.py), into two ranges no card a
+# tic image runs with uses (after MFAR in bank 1, between the replay's
+# BKNEAR and the kernel's bytes: playdisk.py checks the play card)
+AMEM_CPU = {'AMEMCPU': AMEM_LC, 'AMEMCPUD': (0xDFE6, 0xE000),
+            'AMEMCPUF': (0xFE45, 0xFE7B)}
 # the tic phase's stack (4.5), the IRQ's, an FCALL across images' cost
 TIC_STACK, IRQ_STACK, FCALL_STACK = 160, R.IRQ_STACK, 5
 # page 1 below the stack (speed wave 2, part objapi, docs/speed-parts/
@@ -1799,6 +1806,9 @@ def game_cfg(place: Optional[Dict[str, Any]] = None,
         lo, hi = slot_range(groups, int(g['slot']))
         lines.append('    G%d:   start = $%04X, size = $%04X, file = '
                      '"%%O.g%d";' % (i, lo, hi - lo, i))
+    for seg, (lo, hi) in sorted(AMEM_CPU.items()):
+        lines.append('    %s: start = $%04X, size = $%04X, file = "%%O.%s";'
+                     % (seg[4:], lo, hi - lo, seg.lower()))
     lines += ['    LC1:  start = $D800, size = $0400, file = "%O.lc1";',
               '    FAR:  start = $DC00, size = $0400, file = "%O.far";',
               '    LCE:  start = $E000, size = $0E00, file = "%O.lce";',
@@ -1807,6 +1817,9 @@ def game_cfg(place: Optional[Dict[str, Any]] = None,
               '    MATHLC:  load = LC1, type = ro;',
               '    AMEMLC:  load = LC1, type = rw, start = $%04X, define = '
               'yes;' % AMEM_LC[0],
+              '    AMEMCPU: load = CPU, type = ro, define = yes;',
+              '    AMEMCPUD: load = CPUD, type = ro, define = yes;',
+              '    AMEMCPUF: load = CPUF, type = ro, define = yes;',
               '    MATHFAR: load = FAR, type = ro;',
               '    RFAR:    load = FAR, type = rw;',
               '    RLOAD:   load = FAR, type = ro;',

@@ -6,7 +6,7 @@ and the acceptance report.
 
 Usage:  python3 tools/native/ticrun.py --run demo3 [--frames front|full|
                     none] [--fills a5[,5a]] [--tics N] [--jobs 8]
-                    [--json FILE]
+                    [--json FILE] [--no-amem]
         python3 tools/native/ticrun.py --run demo1 --diff-at TIC
         python3 tools/native/ticrun.py --run demo3 --timing f121|fastpath
                     [--json FILE]
@@ -48,6 +48,11 @@ when the display kept them. --diff-at keeps both states of a tic whole
 
 A tic in which the native divides by zero (GT_DIV0) ends the comparison
 of the run there, reported by name (T8).
+
+--no-amem runs the machine with no memory API (a2vm without --amem):
+the image holds the CPU's version of every request (grun.Image.cpu_copies,
+tools/native/amcpu.py: what DOOM.SYSTEM writes when its probe finds no
+API), so the fallback is what runs (docs/PLAY.md 19).
 
 --timing runs the gprof build under the cost model with a PC map of its
 code (a2vm --cost-pcmap: each routine's subsystem, GAME.md 5.4's phases)
@@ -102,9 +107,10 @@ def digest_machine(m, mf, window: bool = False) -> Dict[str, str]:
 
 def stream_run(img: G.Image, work: Path, banks: Sequence[int],
                on_tic, tics: int, timeout: float = G.RUN_TIMEOUT,
-               events: Sequence[str] = ()) -> G.Run:
+               events: Sequence[str] = (), amem: bool = True) -> G.Run:
     """A lockstep run with the snapshot stream on a named pipe, each
-    snapshot given to on_tic(head, machine) as it comes."""
+    snapshot given to on_tic(head, machine) as it comes; amem False: no
+    memory API (the image holds the CPU's copies: build_image's)."""
     import os
     fifo = work / 'snaps.fifo'
     work.mkdir(parents=True, exist_ok=True)
@@ -128,7 +134,7 @@ def stream_run(img: G.Image, work: Path, banks: Sequence[int],
               events=['pc %X@* snapshot tic' % lab['drv_tic']] +
               list(events), banks=banks,
               stream=(fifo, STREAM_LIMIT), every_limit=tics + 8,
-              cycles=200_000_000_000, timeout=timeout)
+              cycles=200_000_000_000, timeout=timeout, amem=amem)
     t.join(5)
     if t.is_alive():
         try:
@@ -531,9 +537,12 @@ def _in_window(windows, tic: int) -> bool:
 def run(run_name: str, fills: Sequence[int] = (0xA5,),
         image: str = 'game', tics: Optional[int] = None,
         frames: str = 'front', jobs: int = DECODE_JOBS,
-        say=print, keep_fail: bool = True) -> Dict[str, Any]:
+        say=print, keep_fail: bool = True,
+        amem: bool = True) -> Dict[str, Any]:
     """The run in lockstep-schedule mode on each fill: every tic's
-    digests against the reference's (GAME.md 3.6)."""
+    digests against the reference's (GAME.md 3.6). amem False: a machine
+    with no memory API, every request done by the CPU as DOOM.SYSTEM
+    leaves the play disk then (docs/PLAY.md 19)."""
     ref = TC.load(run_name)
     if ref is None:
         raise TicRunError('no reference of %s (python3 tools/native/'
@@ -544,17 +553,17 @@ def run(run_name: str, fills: Sequence[int] = (0xA5,),
         return {'run': run_name, 'ok': False,
                 'stopped': 'G_Ticker is not built'}
     out: Dict[str, Any] = {'run': run_name, 'image': image,
-                           'frames': frames, 'fills': {}}
+                           'frames': frames, 'amem': amem, 'fills': {}}
     for fill in fills:
         out['fills']['%02x' % fill] = run_fill(run_name, ref, b, fill,
                                                tics, frames, jobs, say,
-                                               keep_fail)
+                                               keep_fail, amem)
     out['ok'] = all(r.get('ok') for r in out['fills'].values())
     return out
 
 
 def build_image(run_name: str, ref: Dict[str, Any], b, fill: int,
-                frames: str, stop: int, say=print):
+                frames: str, stop: int, say=print, amem: bool = True):
     from native import gameroutine as GR
     from native.gparts import flowcheck as FC
     case = start_case(run_name, ref, say)
@@ -626,12 +635,14 @@ def build_image(run_name: str, ref: Dict[str, Any], b, fill: int,
     else:
         img.poke_word('dg_frame', 0)
         img.gtest(GL.GTB['GT_SCHEDULE'], bytes(3))
+    if not amem:
+        img.cpu_copies()
     return img, case, up, banks
 
 
 def run_fill(run_name: str, ref: Dict[str, Any], b, fill: int,
              tics: Optional[int], frames: str, jobs: int, say=print,
-             keep_fail: bool = True) -> Dict[str, Any]:
+             keep_fail: bool = True, amem: bool = True) -> Dict[str, Any]:
     from concurrent.futures import ProcessPoolExecutor
     import time
     from native import gameroutine as GR
@@ -644,7 +655,8 @@ def run_fill(run_name: str, ref: Dict[str, Any], b, fill: int,
                           run_name)
     last = order[-1] if tics is None else order[min(tics, len(order)) - 1]
     stop = last + 1
-    img, case, up, _ = build_image(run_name, ref, b, fill, frames, stop, say)
+    img, case, up, _ = build_image(run_name, ref, b, fill, frames, stop, say,
+                                   amem)
     banks = set()
     for m in range(1, 10):
         banks |= set(GR.manifest(m)[2])
@@ -730,7 +742,8 @@ def run_fill(run_name: str, ref: Dict[str, Any], b, fill: int,
     try:
         r = stream_run(img, work, banks, on_tic, (last - res['start']) + 8,
                        timeout=max(900.0, (last - res['start']) /
-                                   TICS_A_SECOND * 60), events=events)
+                                   TICS_A_SECOND * 60), events=events,
+                       amem=amem)
         res['ended'] = r.ended()
         res['cycles'] = r.state.get('cycles')
         if res['ended'] != 'halt':
@@ -1419,6 +1432,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument('--plant', help='a planted bug (plants()), or all')
     parser.add_argument('--report-md', action='store_true')
     parser.add_argument('--selftest', action='store_true')
+    parser.add_argument('--no-amem', action='store_true',
+                        help='no memory API: the CPU does every request '
+                        '(docs/PLAY.md 19)')
     args = parser.parse_args(argv)
     if args.report_md:
         REPORT_MD.write_text(report_md())
@@ -1461,7 +1477,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if not args.run:
         parser.error('--run RUN, --plant, --report-md or --selftest')
     r = run(args.run, [int(x, 16) for x in args.fills.split(',')],
-            args.image, args.tics, args.frames, args.jobs)
+            args.image, args.tics, args.frames, args.jobs,
+            amem=not args.no_amem)
     print(json.dumps(r, indent=1))
     if args.json:
         args.json.write_text(json.dumps(r, indent=1) + '\n')

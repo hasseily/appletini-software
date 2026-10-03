@@ -247,7 +247,7 @@ $(CARD)/dl_kern.o: dl_kern.s $(INCS) $(GEN)/playsym.inc $(GEN)/playk.inc
 $(CARD)/%.o: %.s $(INCS)
 	@mkdir -p $(CARD)
 	$(CA65) $(S2FLAGS) -o $@ -l $(@:.o=.lst) $<
-$(CARD)/card.cfg: $(LINK) $(LAYOUTS)
+$(CARD)/card.cfg: $(LINK) $(LAYOUTS) $(TOOLS)/pldisk.py
 	@mkdir -p $(CARD)
 	$(PYTHON) $(LINK) --card-cfg $@
 # (named plboot, as m11's link: tools/native/pldisk.py's functions read it)

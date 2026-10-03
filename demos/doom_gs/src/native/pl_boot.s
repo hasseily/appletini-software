@@ -14,8 +14,10 @@
 ;      back from 1 up: the first that does not hold its number is the
 ;      first missing, PL_BANKS); the mouse card in slot 2 (its ROM's ID
 ;      bytes, PL_NOMOUSE); the memory API in slot 7 (COPY, FILL,
-;      PRIVATE; PL_NOAMEM); snd_probe (no native mode: a message, the game
-;      goes on without music or effects, the effect player off);
+;      PRIVATE: probe_amem; without it a message, and the game goes on
+;      with the CPU's copies: step 4's am_patch; docs/PLAY.md 19);
+;      snd_probe (no native mode: a message, the game goes on without
+;      music or effects, the effect player off);
 ;   2. CATALOG (the bank files' names), then every bank file through the
 ;      MLI ("A2DM", version 1, a segment count, 5 bytes a segment: bank,
 ;      address, length; zero padding to 256 bytes; the bytes): each
@@ -39,7 +41,10 @@
 ;      the game's globals, the key table) and ProDOS's global page
 ;      $BF00-$BFFF cleared, zero page $00-$17 cleared and the pair
 ;      $06-$07 zeroed [R NATIVE.md 10; MEMORY_MAP.md 2];
-;   5. the mouse card's VBL on (mode $09, masked), pl_init (the input
+;   5. the mouse card's VBL on (mode $09, masked), bt_init (without the
+;      memory API, am_patch writes bt_patch's records: the transport's
+;      CPU version over the card, each W image's walker over its own
+;      transport in its bank, tools/native/amcpu.py), pl_init (the input
 ;      block, the key table, the mouse's window), snd_init, fx_init with
 ;      snd_probe's answer, pl_clkset (PAL until pl_detect), CLI,
 ;      pl_detect (PAL or NTSC: its clock), PL_STATUS = PL_READY, and the
@@ -105,6 +110,9 @@ SP_RELEASE      = $CFFF
 SP_ROM          = $C700
 AMEM_TIMEOUT    = $6F
 AMEM_MAX        = 16            ; descriptors a request (llayout.AMEM_MAX)
+AMEM_WAIT       = 4             ; STATUS's wait: 64 K turns times this
+PROBE_ROOM      = 215           ; probe_amem's bytes in A (fd3ce9fd)
+PATCH_SIZE      = 640           ; am_patch's table (amcpu.PATCH_SIZE)
 
 SND_MUSIC       = 0             ; snd_probe's answer: native mode
 STD_PAL         = 0             ; pl_clkset's standard
@@ -190,7 +198,7 @@ boot:   sei
         bpl :-
         jsr probe_banks
         jsr probe_mouse
-        jsr probe_amem
+        jsr probe_amem          ; none: bt_amem's bit 7 (its message)
         jsr snd_probe           ; native mode or not
         sta bt_music
         cmp #SND_MUSIC
@@ -246,7 +254,8 @@ bt_installed:                   ; (a2vm's snapshot: the card as the image)
         sta MOUSE_ACK
         lda #MODE_VBL
         sta MOUSE_MODE
-        jsr pl_init             ; the input, the key table
+        jsr bt_init             ; (am_patch without the memory API), then
+                                ;   pl_init: the input, the key table
         jsr snd_init
         lda bt_music
         jsr fx_init             ; A: snd_probe's answer
@@ -329,26 +338,42 @@ probe_mouse:
         lda #PL_NOMOUSE
         jmp bt_stop
 
-; probe_amem: the memory API in slot 7 with COPY, FILL and PRIVATE
-; (appletini-one README_MEMORY_API.md; as lboot.s's amem_probe), else the
-; stop with the answer ($FF none, $FE a capability missing, $6F no reply,
-; else its error)
+; probe_amem: the memory API in slot 7 (appletini-one README_MEMORY_API.md
+; sections 1, 2 and 7) with COPY, FILL and PRIVATE, available: returns
+; with bt_amem 0. Else bt_amem $FF (bit 7: the CPU's copies) and row 3
+; says so with the answer ($FF no Appletini SmartPort ROM in slot 7, $FE a
+; capability missing or the API unavailable, $6F no reply, else the
+; STATUS call's error). Nothing is written to slot 7 before its bytes read
+; as the Appletini's, twice over (an empty slot reads the floating bus):
+; the SmartPort ID bytes $C701, $C703, $C705, $C707 ($20, $00, $03, $00: a
+; Disk II's $C707 is $3C), the ProDOS entry's offset $C7FF ($0A: the
+; SmartPort entry $C70D), then in its C8 space the FIFO's control register
+; $CFF1, bits 0-5 $20 (vTW's flag, no reply pending); only then the STATUS
+; request goes into the FIFO ($CFF0, $CFF1). The reply is waited for
+; AMEM_WAIT times 64 K turns (about 0.5 s on the card, four times am_fin's
+; wait for a CONTROL), so that a card whose ROM shows those bytes but does
+; not answer holds the boot that long, not the 33 s of a CONTROL's wait.
+; At A's place in PLBOOT, in A's room (PROBE_ROOM): everything after it in
+; DOOM.SYSTEM stays where it was, so the boot's time with the API is A's
+; (docs/PLAY.md 19: the CRC loop's TURBO read-cache sets).
 probe_amem:
         sta INTCXROMOFF
-        bit SP_RELEASE
-        lda SP_ROM + 1
-        cmp #$20
-        jne @absent
-        lda SP_ROM + 3
-        ora SP_ROM + 7
-        jne @absent
-        lda SP_ROM + 5
-        cmp #3
-        jne @absent
-        lda SP_CTRL
+        bit SP_RELEASE          ; (no card's C8 space selected)
+        lda #2                  ; each byte twice
+        sta wcount
+@twice: ldx #PR_N - 1
+@id:    ldy pr_at,x             ; the slot ROM's bytes
+        lda SP_ROM,y
+        cmp pr_is,x
+        bne @absent
+        dex
+        bpl @id
+        lda SP_CTRL             ; (slot 7's C8 space: its ROM was read)
         and #$3F
         cmp #$20
-        jne @absent
+        bne @absent
+        dec wcount
+        bne @twice
         bit SP_RELEASE
         bit SP_ROM
         ldy #0
@@ -361,7 +386,8 @@ probe_amem:
         sta SP_CTRL
         ldx #0
         ldy #0
-        stz wcount
+        lda #AMEM_WAIT
+        sta wcount
 @wait:  lda SP_CTRL
         bmi @ready
         dex
@@ -371,6 +397,9 @@ probe_amem:
         dec wcount
         bne @wait
         lda #AMEM_TIMEOUT
+        bra @fail
+@absent:
+        lda #$FF
         bra @fail
 @ready: lda SP_DATA
         sta SP_POP
@@ -411,19 +440,12 @@ probe_amem:
         beq @bad
         bit SP_RELEASE
         rts
-@absent:
-        lda #$FF
-        bra @fail
 @bad:   lda #$FE
 @fail:  bit SP_RELEASE
-        pha
-        ldx #<s_noamem
-        ldy #>s_noamem
-        jsr fail_say
-        pla
-        jsr hex
-        lda #PL_NOAMEM
-        jmp bt_stop
+        dec bt_amem             ; $FF: the CPU's copies
+        jmp am_none             ; (PLAMEM: the message)
+        .assert * - probe_amem <= PROBE_ROOM, error, "probe_amem's room"
+        .res PROBE_ROOM - (* - probe_amem)
 
 ; ---------------------------------------------------------------------------
 ; the bank files
@@ -1123,8 +1145,8 @@ s_banks:
         .byte "8 MB OF RAMWORKS NEEDED: NO BANK $", 0
 s_nomouse:
         .byte "NO MOUSE CARD IN SLOT 2", 0
-s_noamem:
-        .byte "NO MEMORY API IN SLOT 7 $", 0
+        .res 26                 ; (A's s_noamem: the strings and the parts
+                                ;   after DOOM.SYSTEM's PLBOOT stay put)
 s_prodos:
         .byte "PRODOS ERROR $", 0
 s_notbank:
@@ -1141,6 +1163,88 @@ s_at:
         .assert IOBUF >= STAGE + STAGE_SIZE, error, "ProDOS's buffer"
         .assert DATABUF + DATAMAX <= IOBUF, error, "the data buffer"
         .assert CRCBUF + CRC_MAX <= MLI, error, "CRCLIST's buffer"
+
+; ===========================================================================
+.segment "PLAMEM"
+; ===========================================================================
+; Without the memory API, the CPU's copies (docs/PLAY.md 19): the message
+; and the patch, in a segment of their own after the boot's (pl_boot.s's
+; own code, PLBOOT, keeps its 2 KB budget and A's layout: probe_amem).
+
+; am_none: probe_amem's answer A on row 3 (nothing else runs it)
+am_none:
+        pha
+        lda #3
+        ldx #<s_cpu
+        ldy #>s_cpu
+        jsr say
+        pla
+        jmp hex
+
+; bt_init: after the install, interrupts masked: am_patch when probe_amem
+; found no API, then pl_init (with the API one test more than A's boot)
+bt_init:
+        bit bt_amem
+        bpl :+
+        jsr am_patch
+:       jmp pl_init
+
+; am_patch: bt_patch's records (playdisk.py writes them: tools/native/
+; amcpu.py's table), each a length (1-255; 0 ends them), a bank (0 the
+; main card, its bank 1 at $D000; else that RamWorks bank, RAMWRT on), an
+; address, the bytes. Interrupts masked; after the install.
+am_patch:
+        lda #<bt_patch
+        sta bsrc
+        lda #>bt_patch
+        sta bsrc+1
+@rec:   lda (bsrc)              ; the length
+        beq @done
+        sta blen
+        stz blen+1
+        ldy #1
+        lda (bsrc),y            ; the bank
+        sta bnk
+        iny
+        lda (bsrc),y            ; the address
+        sta bdst
+        iny
+        lda (bsrc),y
+        sta bdst+1
+        clc                     ; the bytes
+        lda bsrc
+        adc #4
+        sta bsrc
+        bcc :+
+        inc bsrc+1
+:       lda bnk
+        sta RWBANK
+        beq :+
+        sta RAMWRTON
+:       jsr copy                ; (bsrc as it was: under a page)
+        sta RAMWRTOFF
+        stz RWBANK
+        clc                     ; the next record
+        lda bsrc
+        adc blen
+        sta bsrc
+        bcc @rec
+        inc bsrc+1
+        bra @rec
+@done:  rts
+
+PR_N    = 5
+pr_at:  .byte $01, $03, $05, $07, $FF   ; slot 7's ROM: where and what
+pr_is:  .byte $20, $00, $03, $00, $0A
+s_cpu:  .byte "NO MEMORY API: COPIES BY THE CPU $", 0
+bt_amem:
+        .byte 0                 ; bit 7: no memory API (the CPU's copies)
+
+; the patch table (zero in m11's link: nothing to patch)
+bt_patch:
+        .res PATCH_SIZE
+bt_patch_end:
+        .assert * <= BOOT_END, error, "the boot passes $3000"
 
 ; ===========================================================================
 .segment "PLRES"

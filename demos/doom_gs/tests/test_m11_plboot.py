@@ -20,8 +20,10 @@ builds (make -f src/native/m11.mk), the WAD and appletini-one's ProDOS:
   with --amem, f121 and fastpath: every CRC equal (the boot's own check,
   and every bank file's byte in its bank), PL_STATUS ready, the card as
   the image, the clock running, the boot's time reported; no mouse card,
-  too few banks, no memory API each stop with its message; no music goes
-  on with its message, the effects off and no AY write but the probe's;
+  too few banks each stop with its message; no memory API (slot 7 empty,
+  or the API unavailable) goes on with its message (docs/PLAY.md 19); no
+  music goes on with its message, the effects off and no AY write but the
+  probe's;
 - the planted bugs, each in a scratch copy, caught.
 
 Run by name: python3 tools/testpar.py tests/test_m11_plboot.py

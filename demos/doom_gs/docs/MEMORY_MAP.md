@@ -49,12 +49,12 @@ Banks 1-126 are RamWorks PSRAM; 127 is never used [R `NATIVE.md` §4.4].
 | --: | --- | --- |
 | 1 | The language card is always RAM for reading and writing. Bank 1 of `$D000` is selected in every phase except the replay; the replay selects bank 2 on entry and bank 1 on exit (`bit $C083` twice, `bit $C08B` twice). | Two 4 KB banks at `$D000` serve two sets of phases [R `tools/a2vm/README.md:195`: two reads of an odd address enable writes]. |
 | 2 | The IRQ handler touches only zero page `$D8-$FF`, the stack page, `$E000-$FFFF` and I/O (`$C0A0-$C0AF`, `$C400-$C4FF`). Never `$D000-$DFFF` (its bank depends on the phase), never `$0200-$BFFF` (RAMRD, RAMWRT, `$C073` and the pair may be set). | The IRQ contract of S2 [R `src/sound/README.md`, "The IRQ contract"], tightened from `$D000-$FFFF` to `$E000-$FFFF`. |
-| 3 | Main `$0400-$0BFF` and `$2000-$5FFF`, and aux 0 `$0400-$0BFF`, hold only read-only data written by memory-API PRIVATE copies. No CPU store ever targets them after boot. (Since the frame slots, 2026-10-03: during the tic phase `$2000-$5FFF` also holds the placement's pinned groups, code that PRIVATE copies in and that runs there but never stores there; PRIVATE puts the colormap bytes back before the tic phase ends: 3.4, section 17, `SPEED.md` 9.) | A CPU store there is a video write that leaves a mirror byte [R `tools/a2vm/a2vm.c:651-656`; `memory` §1.1]. |
+| 3 | Main `$0400-$0BFF` and `$2000-$5FFF`, and aux 0 `$0400-$0BFF`, hold only read-only data written by memory-API PRIVATE copies. No CPU store ever targets them after boot. (Since the frame slots, 2026-10-03: during the tic phase `$2000-$5FFF` also holds the placement's pinned groups, code that PRIVATE copies in and that runs there but never stores there; PRIVATE puts the colormap bytes back before the tic phase ends: 3.4, section 17, `SPEED.md` 9.) **Without the memory API** (2026-10-03, section 19, `PLAY.md` 19) the same copies, at the same points, are CPU stores: the frame slots' loads and restores, the level's colormaps (`$2000-$5FFF`, `$0400-$07FF`) and `FUZZDARK` (aux 0 `$0800`), DLINIT's static tables (`$0800-$0BFF`, aux 0 `$0200`, `$0900`, `$0A00`). They are video writes: harmless in an emulator, about 1 µs a byte on an Appletini, which has the API. No other code stores there. | A CPU store there is a video write that leaves a mirror byte [R `tools/a2vm/a2vm.c:651-656`; `memory` §1.1]. |
 | 4 | Aux 0 `$2000-$9FFF` is written only by CPU stores with RAMWRT on. PRIVATE never targets it. | PRIVATE writes are never shown [R `appletini-one/README_MEMORY_API.md` §4]. |
 | 5 | Inside a far window only zero page, the stack page and the language card are near; code in a read window runs from the card or zero page. | `NATIVE.md` §4.5 rules 1-2. |
 | 6 | During the replay's draw pass (RAMWRT on, `$C073` = 0), the replay writes only zero page `$48-$6F`, the stack, the row-block patch bytes in card bank 2, and aux 0 `$2000-$88FF`. | With RAMWRT on, every store to `$0200-$BFFF` goes to aux 0 [R `a2vm.c:643-648`]. Upstream writes back into records (`texStart`, `fillStart`) and resets `COLW` and `CV_ROW` during the replay [R `r_list65.s:601-605`, `:636-638`, `:1102`, `:1123`]; the native replay keeps those values in zero page and clears the covered ranges of a strip's columns after that strip's draw pass (RAMWRT off). |
 | 7 | On F1.2.1, `ALTZP` is on only inside a window of straight-line code bracketed by SEI and CLI, which keeps results in registers or in main `$0200-$BFFF`. | The F1.2.1 aux card is full of tables and has no vectors (section 4.3). With `ALTZP` on, zero page and stack are aux's [R `appletini-hardware.md:109`]. |
-| 8 | Nothing is ever written to main `$0878-$087F` or `$4078-$407F` by the CPU. | The firmware reads an `A2Li` signature and a load-hold byte there from its shadow of main memory, and treats writes there as immediate [R `appletini-one/hdl/apple/vtw_video_policy.sv:33-37`; `ps_sources/frontend/apple_cycle_renderer.c:2283-2336`]. PRIVATE writes emit no capture records, so a colormap loaded there by PRIVATE never reaches that shadow [R `README_MEMORY_API.md` §4]. |
+| 8 | Nothing is ever written to main `$0878-$087F` or `$4078-$407F` by the CPU, except without the memory API (section 19), where the frame slot at page `$40` and colormap B's level 0 come by CPU stores: `playdisk.py` checks that no group pinned there holds `A2Li` at `$4078`; colormap B's bytes there (the level palette's) are not checked. | The firmware reads an `A2Li` signature and a load-hold byte there from its shadow of main memory, and treats writes there as immediate [R `appletini-one/hdl/apple/vtw_video_policy.sv:33-37`; `ps_sources/frontend/apple_cycle_renderer.c:2283-2336`]. PRIVATE writes emit no capture records, so a colormap loaded there by PRIVATE never reaches that shadow [R `README_MEMORY_API.md` §4]. |
 | 9 | Slot holes of main `$0400-$07FF` (`$x78-$x7F`, `$xF8-$xFF`) and `$07F8` are written by slot firmware and SmartPort calls. The pages there are reloaded after any firmware call. | [R `NATIVE.md` §4.1, §10]. |
 | 10 | Aux 0 `$9DC8-$9DFF` stays zero. | Standard SHR. The bytes `"SHR4"`\|`$80` at `$9DFC-$9DFF` would switch the card to its PAL256 mode [R `demos/doom/docs/DESIGN.md:60-72`]. |
 
@@ -338,8 +338,8 @@ runs):
 | Range | Bytes | Content | Size, label |
 | --- | ---: | --- | --- |
 | `$D000-$D7FF` | 2,048 | Quarter squares: four 512 B tables, page aligned | M: `experiment` (b) |
-| `$D800-$DBFF` | 1,024 | 16 × 16 multiply (114 B [M: `experiment` (b)]), `FixedMul` family, divides written from the call sites, 16/32-bit helpers | about 600 B [A]; built `MATHLC` `$D800-$DB5B` (860 B); since the copy engine (2026-10-03, `docs/SPEED.md` 10) `$DB5C-$DBFF` the tic image's memory-API transport `AMEMLC` (164 of 164 B: the request's template `am_req` first, `$DB5C-$DB7F`, which the callers patch, then `am_begin`, `am_push`, `am_fin`, the kernel's `am_runs`), which the play disk's card takes from the tic image (`playdisk.card_main`) and the test images from their own (`lrun.card_records`) |
-| `$DC00-$DFFF` | 1,024 | Far layer (F1.2.1 or pair back end), the RamWorks table lookup, phase loader (CPU copy RamWorks → W with RAMRD on). The memory-API transport moved to the window of the mode that calls it (4.1 fallback 3, taken by milestone 7: section 12) | `MATHFAR` 67 B at `$DC00`, `far.s` 313 B at `$DC43-$DD7B` [M: `src/native/render.mk` sizes, stage A]; stage B adds the `FSTEP` gather, stage C the phase loader: 642 B in all [M] |
+| `$D800-$DBFF` | 1,024 | 16 × 16 multiply (114 B [M: `experiment` (b)]), `FixedMul` family, divides written from the call sites, 16/32-bit helpers | about 600 B [A]; built `MATHLC` `$D800-$DB5B` (860 B); since the copy engine (2026-10-03, `docs/SPEED.md` 10) `$DB5C-$DBFF` the tic image's memory-API transport `AMEMLC` (164 of 164 B: the request's template `am_req` first, `$DB5C-$DB7F`, which the callers patch, then `am_begin`, `am_push`, `am_fin`, the kernel's `am_runs`), which the play disk's card takes from the tic image (`playdisk.card_main`) and the test images from their own (`lrun.card_records`); without the memory API (section 19) `DOOM.SYSTEM` writes the CPU version over it (`AMEMCPU`: `am_req`'s 20-byte head, then `$DB80-$DBFD`, the template's descriptor kept) |
+| `$DC00-$DFFF` | 1,024 | (Without the memory API, section 19: `$DFE6-$DFFF`, after milestone 8's `MFAR`, holds the CPU version's `AMEMCPUD`, 22 of 26 B.) Far layer (F1.2.1 or pair back end), the RamWorks table lookup, phase loader (CPU copy RamWorks → W with RAMRD on). The memory-API transport moved to the window of the mode that calls it (4.1 fallback 3, taken by milestone 7: section 12) | `MATHFAR` 67 B at `$DC00`, `far.s` 313 B at `$DC43-$DD7B` [M: `src/native/render.mk` sizes, stage A]; stage B adds the `FSTEP` gather, stage C the phase loader: 642 B in all [M] |
 
 **`$E000-$FFFF`** (always visible):
 
@@ -644,7 +644,7 @@ and fails on any breach. Spaces: `main`, `aux0`, `auxN`, `mainlc1`,
 
 **Write-expensive pages**
 
-- [ ] Every region in main `$0400-$0BFF`, `$2000-$5FFF` and aux 0 `$0400-$0BFF` is read-only and loaded by PRIVATE.
+- [ ] Every region in main `$0400-$0BFF`, `$2000-$5FFF` and aux 0 `$0400-$0BFF` is read-only and loaded by PRIVATE (without the memory API, by the CPU's version of the same request: section 19).
 - [ ] Regions in main `$0400-$07FF` are flagged "reload after firmware calls", and every firmware call site reloads them.
 
 **Language card**
@@ -742,7 +742,7 @@ Sizes are the build's [M: `render_check.py --sizes`, the link maps];
 | RamWorks | 49 | C: `WPRO`: `WPIDX` (`$0200`, a patch index to its profile, `$FFFF` none) and the profiles from `$0700` (header, then 2 B a column and each column's posts, 5 B each): 26,793 B for the 28 weapon lumps of E1M7, made iff upstream's `wbMake` would fit them into an empty arena 0 |
 | card `$E000` part | `$FD8D-$FE7A` | C (replaces the prototype's row): `BKNEAR` 238 B (the chunk copy with a 24-bit count, the parking and bring-back, `bstop`); `BKCARD` is gone (its routines moved to `BKFAR`/`BKFAR2`). With the replay's `RCODE` (`$F900-$FD8C`), `$F900-$FE7A` holds 1,403 B |
 | card `$E000` part | `$FD8D-$FE4A` | Speed wave 1 (replaces the row above): `BKNEAR` 190 B (`$FD8D-$FE4A`): the chunk's window part `cwin`, the parking and bring-back, `bstop`, and in the game build `bk_cut`, `bk_kept` and `walk1`. With `RCODE`, `$F900-$FE4A`; `$FE4B-$FE7A` (48 B) free |
-| card `$E000` part | `$F900-$FD86`, `$FD87-$FE44` | Speed wave 2 (replaces the row above, `docs/speed-parts/replay.md`): `RCODE` 1,159 B (6 B shorter: `p1_image` and `jtent` moved to bank 2 `$DBD1-$DBF8`), `BKNEAR` 190 B from `$FD87`; `$FE45-$FE7A` (54 B) free before the kernel's `KVARS`. With `-D RELEASE`, `$F900-$FEF5` (10 B free) |
+| card `$E000` part | `$F900-$FD86`, `$FD87-$FE44` | Speed wave 2 (replaces the row above, `docs/speed-parts/replay.md`): `RCODE` 1,159 B (6 B shorter: `p1_image` and `jtent` moved to bank 2 `$DBD1-$DBF8`), `BKNEAR` 190 B from `$FD87`; `$FE45-$FE7A` (54 B) free before the kernel's `KVARS` (without the memory API the CPU version's `AMEMCPUF` takes 43 B of it: section 19). With `-D RELEASE`, `$F900-$FEF5` (10 B free) |
 | card bank 1 | `$DE4D-$DE97`, `$DE98-$DFE5` | Speed wave 2 (`docs/speed-parts/frontend.md`): `RLOAD` 75 B with `far_wloadt` (the front end's image from page `$65`, for the game's kernel); `MFAR` after it in rcard (`$DFE6` in ftest/mtest); 25 B free at the area's end |
 | card bank 1 | `$DB5C-$DBFF` | The copy engine (2026-10-03, `docs/SPEED.md` 10): `AMEMLC`, the tic image's memory-API transport (164 B), after `MATHLC`; the play build's kernel no longer calls `far_wloadt`, `far_mload` or `far_pload` (its `K_LOAD`s, the brain's `img_wload` and `img_mload` with their runs, are requests), which stay for the renderer's own drivers and `lcard` |
 | RamWorks 8 (`RENDB`) | `$1C00-$1C04`, `$2040-$2C3F` | Speed wave 2: the walk's box corner cache, `CCSTATE` (the view's map unit and the stamp) and `CCANG` (node n's two corner angles at `$2040 + 4n`) |
@@ -948,6 +948,49 @@ The 2D store is 296,665 B; the spare banks after milestones 9-11 are 1-3
 (4 and 5 hold milestone 9's test data), 125 and 126. Rule 2's IRQ
 contract is unchanged: `pl_vbl` touches only the card, zero page
 `$D8-$FF`, the stack and the mouse card's and the Phasor's I/O.
+
+## 19. The memory API optional (2026-10-03, `PLAY.md` 19)
+
+`DOOM.SYSTEM`'s probe (`pl_boot.s` `probe_amem`) reads slot 7's ROM and,
+only when it reads as the Appletini's, sends the API its STATUS (its reply
+waited for 4 × 64 K turns, about 0.5 s). Without an API (`$FF` not an
+Appletini ROM, `$FE` unavailable or a capability missing, `$6F` no reply,
+else the STATUS error) it says so on row 3 and, after the install, with
+the mouse card's VBL on and still masked (`bt_init`), `am_patch` writes
+its table `bt_patch` (640 B in `DOOM.SYSTEM`, `tools/native/amcpu.py`'s
+records, written by `playdisk.py`): every request is then done by the
+CPU, byte for byte, at the same point. With the API nothing of this runs.
+`probe_amem` keeps its place and its room in `DOOM.SYSTEM` (215 B at
+`$2171`, as in `fd3ce9fd`), so the rest of the boot sits where it did and
+its time with the API is unchanged (`PLAY.md` 19).
+
+| Space | Range | Without the memory API |
+| --- | --- | --- |
+| card bank 1 | `$DB5C-$DB6F` | `am_req`'s head: `cq`, the descriptor the CPU does (16 B), `cj`, its inner loop's address |
+| card bank 1 | `$DB70-$DB7F` | the template's descriptor, kept (its callers patch it as before) |
+| card bank 1 | `$DB80-$DBFD` | `AMEMCPU` over `AMEMLC`, the entries at `AMEMLC`'s: `am_begin` an RTS, `am_push` (`cli`, the template's descriptor into `cq`, `cx_exec`), `am_runs` a JMP to `far_pload`, `am_fin` (`plp`, `rts`); `cx_exec`: RAMRD for the source's space, RAMWRT for the destination's, `$C073` their AUX bank, a part page at a time |
+| card bank 1 | `$DFE6-$DFFB` | `AMEMCPUD`: `cx_chunk`, the pages of a descriptor (after `MFAR`; `playdisk.amem_cpu_problems` checks the range free) |
+| card `$E000` part | `$FE45-$FE6F` | `AMEMCPUF`: the inner loops in one page, `cx_fast` (one bank), `cx_fill`, `cx_tog` (AUX to AUX of two banks: `$C073` switched at each byte, as RAMRD and RAMWRT share it) |
+| LCODE (98) | `am_send` (53 of 92 B) | a walker of the request at `LW_REQ`: the far layer's zero page `$00-$05` kept on the stack (`run_list` reads `FA_SRC`, `FA_BANK` after), each descriptor into `cq` and `cx_exec`; the request's length word its count |
+| DLBANK (1) | DLINIT `dli_send` (59 of 90 B) | `jsr` the walker of the request at `$6E02`, then `jmp dli_screen` |
+| MENUW (108) | `mv_amem` (53 of 75 B) | the walker of `am_copy` (aux 0 `$2000-$9FFF` to `S2VIEW`) |
+| FINW (96) | `sgsave` (53 of 73 B) | the walker of `am_copy` (aux 0 `$5700`, 3,840 B, to `S2STATE`'s `SS_SIGN`) |
+
+Rules: rule 2 holds (the CPU copies run with interrupts enabled, as the
+far layer's did before the copy engine: the IRQ never touches
+`$0200-$BFFF` nor `$C073`; `am_fin`'s `plp` puts back the caller's P);
+rule 3's CPU stores are listed there; rule 8's `$4078-$407F` gets the
+frame slot's group and colormap B by the CPU (`playdisk.a2li_problems`
+checks the groups). The CPU copies change the far layer's `FA_DST`,
+`FA_SRC`, `FA_N` (in the tic image's and the kernel's requests: their
+callers set them before any use, as with `far_gcopy` before the copy
+engine) and leave RAMRD, RAMWRT and `$C073` off. A copy from one AUX
+bank to another takes `cx_tog`, two `$C073` stores a byte (about 3.9 µs
+a byte on a2vm `f122-nod2`, against 0.8 µs with one bank): the level
+load's, the menu's screen save (aux 0 to `S2VIEW`, 32 KB: about 0.13 s at
+each opening of the menu) and the busy sign's save (aux 0 to `S2STATE`,
+3,840 B: 15 ms). Test images (`grun.Image.cpu_copies`, `ticrun.py
+--no-amem`) take the same records.
 
 ## Appendix: the measurements made for this map
 

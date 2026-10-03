@@ -64,8 +64,9 @@ dli_main:
         sta DLZ
         lda #>(REQ + 2)
         sta DLZ+1
-        php
-        sei
+dli_send:                       ; (the request; without the memory API
+        php                     ;   DOOM.SYSTEM writes a CPU walker of it
+        sei                     ;   here, to dli_screen: tools/native/amcpu.py)
         bit SP_RELEASE
         bit SP_ROM
         ldy #0
@@ -102,13 +103,13 @@ dli_main:
 @done:  bit SP_RELEASE
         plp
         cmp #0
-        beq @screen
+        beq dli_screen
         sta LV_AMEM_B
         lda #PL_DLINIT
         sta PL_STATUS
         brk
         .byte 0
-@screen:
+dli_screen:
         sta RAMWRTON            ; the SCBs and palettes black ($9D00-$9FFF
         ldx #0                  ;   of aux 0: rule 10's $9DC8-$9DFF stays
 :       stz $9D00,x             ;   zero)

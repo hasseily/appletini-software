@@ -92,9 +92,12 @@ def to_benchmark(t):
     return s, t + 3.5
 
 
-@needs_build
-class Benchmark(unittest.TestCase):
-    """The disk with the short demo3, made once for the class."""
+class BenchRun:
+    """The disk with the short demo3, made once for the class, its runs
+    (AMEM: with the memory API in slot 7, a2vm --amem; test_play_noamem's
+    without) and the checks of the frame slots and the kernel's loads."""
+
+    AMEM = True
 
     @classmethod
     def setUpClass(cls):
@@ -116,12 +119,12 @@ class Benchmark(unittest.TestCase):
     def tearDownClass(cls):
         shutil.rmtree(str(cls.tmp), ignore_errors=True)
 
-    def play(self, script, seconds, ranges=None):
+    def play(self, script, seconds, ranges=None, extra=()):
         work = Path(tempfile.mkdtemp(prefix='run-', dir=str(self.tmp)))
         kw = {'snap_ranges': ranges} if ranges else {}
         try:
             return P.run(self.disk, script, work, 'f121', seconds,
-                         timeout=900, **kw)
+                         timeout=900, amem=self.AMEM, extra=extra, **kw)
         finally:
             shutil.rmtree(str(work), ignore_errors=True)
 
@@ -226,6 +229,11 @@ class Benchmark(unittest.TestCase):
                         M_BFPS_SIZE])
         self.assertIn(0, raw)
         return raw[:raw.index(0)].decode('ascii')
+
+
+@needs_build
+class Benchmark(BenchRun, unittest.TestCase):
+    """The menu's benchmark with the memory API."""
 
     def test_runs_demo3_to_its_result(self):
         """OPTIONS, BENCHMARK closes the menu and plays demo3 (E1M7) with

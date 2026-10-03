@@ -73,10 +73,17 @@ card) and whose persistent places and zero page hold $A5:
                the step 38,229
   nomusic      --phasor-mb-only: the same ready state with the message, the
                effect player off (FX_ON 0) and no AY register written
-  nomouse, banks, noamem
-               --no-mouse, --banks 64, no --amem: the boot stops at bt_halt
-               with PL_NOMOUSE, PL_BANKS (the first missing bank 64),
-               PL_NOAMEM in PL_STATUS and its message on the screen
+  noamem, amemoff
+               no --amem (slot 7 empty), --amem --amem-unavailable (the
+               Appletini's ROM, its STATUS without the available bit): the
+               same ready state with the message "NO MEMORY API: COPIES BY
+               THE CPU" and the answer ($FF, $FE): the memory API is
+               optional since 2026-10-03 (docs/PLAY.md 19; this disk's
+               DOOM.SYSTEM has no patch to write, the play disk's does)
+  nomouse, banks
+               --no-mouse, --banks 64: the boot stops at bt_halt with
+               PL_NOMOUSE, PL_BANKS (the first missing bank 64) in
+               PL_STATUS and its message on the screen
 
 --planted builds each planted bug of PLANTED in a scratch copy (of
 pl_boot.s, or of this file for the disk's table) and runs the checks it
@@ -199,6 +206,7 @@ def cfg_text() -> str:
         '    S2CODE:    load = BOOT,  type = ro, define = yes;',
         '    S2RODATA:  load = BOOT,  type = ro, define = yes;',
         '    SNDBOOT:   load = BOOT,  type = ro, define = yes;',
+        '    PLAMEM:    load = BOOT,  type = rw, define = yes;',
         '    SNDZP:     load = SNDZP, type = zp;',
         '    SNDRING:   load = RING,  type = bss, align = $100;',
         '    SNDLIST:   load = LIST,  type = bss;',
@@ -716,7 +724,7 @@ def poison_image() -> bytes:
 
 def run(disk: Disk, work: Path, profile: str = PROFILES[0], *,
         mouse: bool = True, banks: Optional[int] = None, amem: bool = True,
-        mb_only: bool = False, ready: bool = True,
+        amem_off: bool = False, mb_only: bool = False, ready: bool = True,
         timeout: float = BOOT_TIMEOUT) -> Run:
     """Boot the disk's DOOM.SYSTEM on a2vm (the module docstring)."""
     work = Path(work).resolve()
@@ -762,6 +770,8 @@ def run(disk: Disk, work: Path, profile: str = PROFILES[0], *,
             '--state', str(work / 'state.json'), '--final-snapshot']
     if amem:
         args.append('--amem')
+        if amem_off:
+            args.append('--amem-unavailable')
     if not mouse:
         args.append('--no-mouse')
     if banks is not None:
@@ -842,8 +852,9 @@ def card_problems(disk: Disk, img, when: str, exact: bool) -> List[str]:
 
 
 def ready_problems(disk: Disk, r: Run, music: bool,
-                   ntsc: bool = False) -> List[str]:
-    """The checks of a run that must reach the ready state."""
+                   ntsc: bool = False, amem: bool = True) -> List[str]:
+    """The checks of a run that must reach the ready state (amem: the
+    memory API there, else the boot's message that it is not)."""
     out = []
     lab = disk.boot.labels
     if r.state.get('pc') in (lab['bt_halt'], lab['pl_crash']) or \
@@ -930,6 +941,10 @@ def ready_problems(disk: Disk, r: Run, music: bool,
     if said == music:
         out.append('later: the no-music message %s' % (
             'shown with music' if said else 'missing'))
+    said = any(row.startswith('NO MEMORY API') for row in screen)
+    if said == amem:
+        out.append('later: the no-API message %s' % (
+            'shown with the API' if said else 'missing'))
     # snd_probe's two writes (R0 of chip 0, then of chip 1: in Mockingboard
     # mode both reach chip 0 [R src/sound/probe.s]), then none: no song
     # plays before the second half's, no effect without a start, and
@@ -970,8 +985,10 @@ CHECKS = (
           'NO MOUSE CARD IN SLOT 2'),
     Check('banks', PROFILES[0], {'banks': 64}, 'BANKS',
           '8 MB OF RAMWORKS NEEDED: NO BANK $40'),
-    Check('noamem', PROFILES[0], {'amem': False}, 'NOAMEM',
-          'NO MEMORY API IN SLOT 7'),
+    Check('noamem', PROFILES[0], {'amem': False}, None,
+          'NO MEMORY API: COPIES BY THE CPU $FF'),
+    Check('amemoff', PROFILES[0], {'amem_off': True}, None,
+          'NO MEMORY API: COPIES BY THE CPU $FE'),
 )
 CHECK = {c.name: c for c in CHECKS}
 
@@ -986,8 +1003,14 @@ def one_check(check: Check, disk: Disk, work: Path) -> Dict[str, Any]:
                            'pc': r.state.get('pc')}
     lab = disk.boot.labels
     if ready:
+        amem = check.options.get('amem', True) and \
+            not check.options.get('amem_off')
         problems = ready_problems(disk, r, 'mb_only' not in check.options,
-                                  check.profile.endswith('+ntsc'))
+                                  check.profile.endswith('+ntsc'), amem)
+        if check.message and 'later' in r.images and not any(
+                row.startswith(check.message)
+                for row in text_rows(r.images['later'][(0, 0)])):
+            problems.append('no "%s" on the screen' % check.message)
         out['boot_ms'] = boot_ms(disk, r, check.profile)
         out['phases_ms'] = {n: boot_ms(disk, r, check.profile, n) for n in
                             ('loaded', 'checked', 'installed', 'ready')}

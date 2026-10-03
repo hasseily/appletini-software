@@ -547,7 +547,7 @@ def measure(scene: str, profile: str = 'f121',
             window: Optional[Tuple[float, float]] = None,
             seconds: Optional[float] = None, idle: str = 'exact',
             keep: Optional[Path] = None, a2vm: Path = P.A2VM,
-            timeout: float = 3600.0) -> Dict[str, Any]:
+            timeout: float = 3600.0, amem: bool = True) -> Dict[str, Any]:
     spec = SCENES[scene]
     if gametics is None and window is None:
         gametics = spec.get('gametics')
@@ -576,7 +576,7 @@ def measure(scene: str, profile: str = 'f121',
         r = P.run(d, scene_script(scene, pr.hz), work / 'run', profile,
                   seconds, timeout=timeout,
                   snap_ranges='main:1D00-1FFF,main:BF00-BFFF',
-                  extra=extra, a2vm=a2vm, idle=idle)
+                  extra=extra, a2vm=a2vm, idle=idle, amem=amem)
         if r.state.get('end') not in ('cycles', 'stop-word'):
             raise TimeError('the run ended with %s: %s' % (
                 r.state.get('end'), r.state.get('halt') or r.out[-800:]))
@@ -598,6 +598,7 @@ def measure(scene: str, profile: str = 'f121',
         out = OrderedDict([('scene', scene), ('profile', profile),
                            ('disk', str(disk) if disk else
                             'the play link\'s'), ('idle', idle),
+                           ('amem', amem),
                            ('run_seconds', round(
                                r.state.get('run_cycles', 0) / pr.hz, 2)),
                            ('idle_skipped_ms', round(
@@ -715,6 +716,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument('--keep', type=Path)
     parser.add_argument('--a2vm', type=Path, default=P.A2VM,
                         help=argparse.SUPPRESS)
+    parser.add_argument('--no-amem', action='store_true',
+                        help='no memory API: the CPU copies (docs/PLAY.md '
+                        '19)')
     args = parser.parse_args(argv)
     gone = P.missing()
     if gone:
@@ -725,7 +729,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         r = measure(args.scene, args.profile, args.disk, args.play,
                     pair(args.gametics, int) if args.gametics else None,
                     pair(args.window, float) if args.window else None,
-                    args.seconds, args.idle, args.keep, args.a2vm)
+                    args.seconds, args.idle, args.keep, args.a2vm,
+                    amem=not args.no_amem)
     except (TimeError, P.PlayError) as e:
         print('playtime: %s' % e, file=sys.stderr)
         return 1
