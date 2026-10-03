@@ -99,10 +99,15 @@ def reference(lines, pr, t0, t1):
         elif ln.name == 'k_jsr' and phase is not None:
             name = T.call_name(pr, ln.target, image)
             to(T.PHASE_OF.get(name, 'REST'), ln.t)
-        elif ln.name == 'far_pload' and phase == 'REST' and image is None:
+        elif ln.name == 'k_lrun' and phase == 'REST' and image is None:
+            # (K_LOAD's image by its bank; since the copy engine the front
+            # end's window and the masked image are K_LOADs, docs/SPEED.md
+            # 10: their phases 3D and MASK, as K_WLOAD's and K_MLOAD's)
             image = pr.banks.get(ln.y)
-            if image == 'OVLW':
+            if image in ('OVLW', 'MCODE'):
                 to('MASK', ln.t)
+            elif image == 'WCODE':
+                to('3D', ln.t)
         elif ln.name == 'nat_replay':
             to('DRAW', ln.t)
         elif ln.name == 'nb_rret':

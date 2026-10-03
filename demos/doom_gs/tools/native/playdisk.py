@@ -732,12 +732,32 @@ def problems(play: Path, main: bytes) -> List[str]:
     return out
 
 
+def card_main(boot: pldisk.Boot, play: Path) -> Tuple[bytes, bytes]:
+    """pldisk.card_images with the tic image's memory-API transport
+    (gcall.s AMEMLC, in bank 1 after the products: glayout.AMEM_LC; docs/
+    SPEED.md 10), which the kernel's loads and the tic phase's requests
+    run from."""
+    aux, main = pldisk.card_images(boot)
+    tb = PK.tic_build(play)
+    if 'AMEMLC' not in tb.segments:
+        raise PlayError('the tic image has no AMEMLC')
+    lo, hi = tb.segments['AMEMLC']
+    if lo != GL.AMEM_LC[0] or hi >= GL.AMEM_LC[1]:
+        raise PlayError('AMEMLC at $%04X-$%04X' % (lo, hi))
+    data = (tb.obj / 'tic.lc1').read_bytes()[lo - 0xD800:hi + 1 - 0xD800]
+    at = pldisk.card_offset(lo, True)
+    if any(main[at:at + len(data)]):
+        raise PlayError('the card\'s $%04X-$%04X is not free' % (lo, hi))
+    main = main[:at] + data + main[at + len(data):]
+    return aux, main
+
+
 def build(play: Path, out: Path = OUT) -> Disk:
     boot = pldisk.load_boot(play / 'card')
     system = boot.area('boot')
     if len(system) != pldisk.BOOT_HI - pldisk.BOOT_LO:
         raise PlayError('DOOM.SYSTEM is %d bytes' % len(system))
-    aux, main = pldisk.card_images(boot)
+    aux, main = card_main(boot, play)
     bad = problems(play, main)
     if bad:
         raise PlayError('; '.join(bad[:6]))

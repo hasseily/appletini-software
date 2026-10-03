@@ -25,20 +25,21 @@
 ;               unbuilt entry: GS_ARG = its number and table, GS_UNBUILTD
 ;   act_num     A = the ACTTAB number of the action of the state LW_STATE
 ;               (0 none; a stop GS_ACTION for an action not in ACT_ADDR)
-;   gr_load     group A into its slot (its image's whole pages from its
-;               bank, then the used bytes of its last page: far_gcopy, one
-;               read window each in the play build's kernel, dl_kern.s;
-;               far_get a page at a time in the test builds' driver,
-;               gdriver.s); SLOT_GRP updated. A frame slot's group (slot
-;               FS_FIRST and up, main $2000-$5FFF: docs/GAME.md 4.1, 4.3)
-;               comes by one memory-API PRIVATE request instead (fs_load)
+;   gr_load     group A into its slot, a W slot's or a frame slot's (slot
+;               FS_FIRST and up, main $2000-$5FFF: docs/GAME.md 4.1, 4.3):
+;               its length (its image's whole pages from its bank, then
+;               the used bytes of its last page) by one memory-API PRIVATE
+;               request (am_one; docs/SPEED.md 9 and 10); SLOT_GRP updated
 ;   fs_restore  the colormap bytes of every frame slot loaded since the
 ;               tic phase began, back from the level's copy in LVC: one
-;               PRIVATE request a slot (at most 2,048 B each, interrupts
-;               masked for one request at a time), the slots emptied,
-;               FS_DIRTY set. The play build's brain calls it at the tic
-;               phase's end (dl_brain.s), the test drivers before a frame
-;               (gdriver.s): every replay reads the colormaps
+;               PRIVATE request, a descriptor a slot (at most 2,048 B
+;               each, interrupts masked for the request), the slots
+;               emptied, FS_DIRTY set. The play build's brain calls it at
+;               the tic phase's end (dl_brain.s), the test drivers before
+;               a frame (gdriver.s): every replay reads the colormaps
+;   am_*        the memory API's transport (AMEMLC, in the main card: the
+;               request's head and descriptor am_req, am_begin, am_push,
+;               am_fin, and the kernel's am_runs; docs/SPEED.md 10)
 ;   g_stop      A = a stop code: GS_STATUS = A, then BRK
 ;   ld_stop     the game core's stops in the tic image (LV_STATUS, BRK),
 ;               as lload.s's in the load image
@@ -62,10 +63,9 @@
 
         .export fc_call, fc_unbuilt, dc_call, act_num, gr_load, g_stop
         .export ld_stop, fc_go, grp_bank, grp_src, grp_pages, grp_slot
-        .export grp_tail, fs_restore, fs_load, fs_send, fs_sent
+        .export grp_tail, fs_restore, am_one
+        .export am_req, am_begin, am_push, am_fin, am_sent, am_runs
         .export ACTTAB, THTAB, ITTAB, TRVTAB, LSTAB
-        .import far_gcopy       ; (game.cfg: the kernel's, KERN_GCOPY,
-                                ;   unless the test driver links its own)
 
 ; the directory's entries: group 0 (none), the placement's groups (gplace.py
 ; MAX_GROUPS, 43, at most: the disk's CODE.2 holds 49 segments), then the
@@ -75,6 +75,24 @@ MAXGRP  = 43 + 5 + 1
         .assert GROUPS < MAXGRP, error, "too many groups"
 
         .include "gdisp.inc"
+
+; the memory API's transport (below: AMEMLC)
+SP_DATA    = $CFF0              ; the memory API's raw FIFO transport in slot
+SP_CTRL    = $CFF1              ;   7 (appletini-one README_MEMORY_API.md
+SP_POP     = $CFF2              ;   section 7)
+SP_RELEASE = $CFFF
+SP_ROM     = $C700
+FS_TIMEOUT = $6F                ; (ours: no reply came)
+AM_HEAD    = 20                 ; am_req: the CONTROL head and the list's
+AM_DESC    = AM_HEAD            ;   head, then the descriptor
+AM_DESC_N  = 16
+AM_MAX     = 15                 ; descriptors a request (the list's length
+                                ;   8 + 16 N a byte; the API takes 16)
+AMD_BANK   = AM_DESC + 3        ; the descriptor's fields
+AMD_SRC    = AM_DESC + 5        ;   (the source's page)
+AMD_DST    = AM_DESC + 9        ;   (the destination's page)
+AMD_COUNT  = AM_DESC + 10
+        .exportzp AMD_BANK, AMD_SRC, AMD_DST, AMD_COUNT, AM_DESC, AM_DESC_N
 
         .segment "LOADW"
 
@@ -146,11 +164,7 @@ fc_ret: php
         sta SLOT_NEED-1,y       ; (the slot's need again)
         cmp SLOT_GRP,y
         beq @back
-        ldy FC_PS               ; (gr_load counts its pages in FC_PS: the
-        phy                     ;   callee's P kept on the stack; wave 1
-        jsr gr_load             ;   as integrated, secfind.md request 11)
-        pla
-        sta FC_PS
+        jsr gr_load             ; (FC_PS, the callee's P, stays)
 @back:  lda FC_PS
         pha
         lda FC_A
@@ -257,30 +271,22 @@ act_num:
 ; gr_load: group A into its slot, from page grp_src of bank grp_bank to the
 ; slot's first page (both page aligned): its grp_pages whole pages (at
 ; least one: 0 marks a group the image does not hold) and, when grp_tail
-; is not 0, the first grp_tail bytes (an even count) of the page after
-; them: the group's length, not its last page's padding (docs/SPEED.md 4,
-; item 4; playdisk.py and grun.py choose the entry: grun.group_entry). One
-; far_gcopy call copies them all (part ticloads' request 3, speed wave 2
-; as integrated): FA_N = the pages + 1 from the page before, low byte
-; grp_tail, and Y = 256 - grp_tail, so its first page is the group's
-; first grp_tail bytes and the pages after them end at its last. far_gcopy
-; copies FA_N pages from FA_SRC + Y to FA_DST + Y (the first page from
-; byte Y). The play build's is the kernel's one read window (dl_kern.s):
-; with RAMRD on, the fetches of $0200-$BFFF come from the bank, so the
-; core cannot hold the copy. The test builds' is the driver's, far_get a
-; page at a time with the pages counted in FC_PS, as gr_load's own loop
-; was (gdriver.s: the parts' write checks allow far_get's stores into the
-; slots; fc_ret keeps the callee's P across a load). Both leave X as it
-; was. The slot's bytes past the group keep what they held: no group
+; is not 0, the first grp_tail bytes of the page after them: the group's
+; length, not its last page's padding (docs/SPEED.md 4, item 4;
+; playdisk.py and grun.py choose the entry: grun.group_entry). One
+; memory-API PRIVATE request copies it (am_one: docs/SPEED.md 10; the
+; copy engine of F1.2.2 moves a byte in 0.038 us, the CPU in 0.231), into
+; a W slot (main $9E00, $A600) as into a frame slot (the frame slots
+; below). The slot's bytes past the group keep what they held: no group
 ; reads them (its link's segments end within its length, which
-; playdisk.py checks).
+; playdisk.py checks). Changes A, X, Y and the far layer's zero page.
 ; ---------------------------------------------------------------------------
 gr_load:
 .ifdef TESTBUILD                ; (a test build's harness: the timing)
 .ifdef GPROF
-        ldy #2 * 28             ; the paging's phase (docs/GAME.md 5.4: the
-        sty PHASE               ;   copy is far_get's, which the PC map
-.endif                          ;   counts as the object API's)
+        ldy #2 * 28             ; the paging's phase (docs/GAME.md 5.4)
+        sty PHASE
+.endif
 .endif
         tax
         lda grp_pages,x         ; the whole pages
@@ -288,32 +294,19 @@ gr_load:
         lda #GS_GROUP           ; (a group the image does not hold)
         jmp g_stop
 :       ldy grp_slot,x
-        cpy #FS_FIRST           ; a frame slot: one PRIVATE request
-        bcc @w
-        jsr fs_load
-        bra @loaded
-@w:     sta FA_N
-        lda grp_bank,x
-        sta FA_BANK
-        lda grp_src,x
-        sta FA_SRC+1
         txa
         sta SLOT_GRP,y
-        lda slot_page-1,y
-        sta FA_DST+1
-        ldy #0
-        lda grp_tail,x          ; a tail: one page more, from byte 256 -
-        sta FA_SRC              ;   grp_tail of the page before the group
-        sta FA_DST
-        beq :+
-        dec FA_SRC+1
-        dec FA_DST+1
-        inc FA_N
-        eor #$FF
-        inc a
-        tay
-:       jsr far_gcopy
-@loaded:
+        cpy #FS_FIRST           ; a frame slot: its own place
+        bcc @w
+        stz FS_DIRTY            ; (bit 7 clear: fs_restore has work)
+        lda fs_page-FS_FIRST,y
+        bra @go
+@w:     lda slot_page-1,y
+@go:    sta FA_DST+1
+        lda grp_bank,x
+        ldy grp_src,x
+        jsr am_one
+gr_loaded:                      ; (playtime.py times am_one to here)
         inc FC_LOADS
         bne :+
         inc FC_LOADS+1
@@ -330,146 +323,93 @@ slot_page:
         .assert <TW_SLOT1 = 0 && <TW_SLOT2 = 0, error, "slots on pages"
 
 ; ---------------------------------------------------------------------------
+; am_one: one PRIVATE request of one COPY (the transport's am_begin, am_push,
+; am_fin in the card, below): group X's length, grp_pages pages and
+; grp_tail bytes, from page Y of RamWorks bank A to main page FA_DST+1.
+; Interrupts masked for the request. Changes A, X, Y.
+; ---------------------------------------------------------------------------
+am_one:
+        php
+        sei
+        sta am_req + AMD_BANK   ; the descriptor: the source's bank, page
+        sty am_req + AMD_SRC
+        lda FA_DST+1            ; the destination's page
+        sta am_req + AMD_DST
+        lda grp_tail,x          ; the count
+        sta am_req + AMD_COUNT
+        lda grp_pages,x
+        sta am_req + AMD_COUNT + 1
+        lda #1
+        jsr am_begin
+        ldx #AM_DESC
+        ldy #AM_DESC_N
+        jsr am_push
+        stz am_req + AMD_COUNT  ; (whole pages: am_runs' and planes_out's)
+        jmp am_fin
+
+; ---------------------------------------------------------------------------
 ; The frame slots (docs/GAME.md 4.1, 4.3; docs/SPEED.md 9). A pinned group
 ; (slot FS_FIRST and up: glayout.py frame_slots) has its own place in main
 ; $2000-$5FFF, colormaps A and B of light levels 0-31, which only the
 ; replay reads (MEMORY_MAP.md 3.4). A CPU store there is a video write
-; (rule 3): the group comes in by the memory API's PRIVATE copy, which
-; writes no capture record, and no group that stores into its own bytes
-; is pinned (gplace.py; playdisk.py checks the links). Before the tic
+; (rule 3): the group comes in by the memory API's PRIVATE copy (gr_load),
+; which writes no capture record, and no group that stores into its own
+; bytes is pinned (gplace.py; playdisk.py checks the links). Before the tic
 ; phase ends fs_restore copies the colormap bytes each loaded slot covered
 ; back from the level's copy in LVC (lg_cmaps's, the same bytes the load's
 ; PRIVATE request put there), so every replay finds its colormaps.
 ;
-; fs_load: group X into its frame slot Y, its length (grp_pages pages and
-; grp_tail bytes) from its image in bank grp_bank, page grp_src; the slot
-; then holds it until K_TIC (or fs_restore) empties it
-; ---------------------------------------------------------------------------
-fs_load:
-        txa
-        sta SLOT_GRP,y
-        stz FS_DIRTY            ; (bit 7 clear: fs_restore has work)
-        lda grp_bank,x
-        sta FA_BANK
-        lda grp_src,x
-        sta FA_SRC+1
-        lda fs_page-FS_FIRST,y
-        sta FA_DST+1
-        ; (on into fs_copy)
-
-; fs_copy: group X's length from page FA_SRC+1 of bank FA_BANK to main page
-; FA_DST+1: one request
-fs_copy:
-        lda grp_tail,x          ; the count: grp_pages pages, grp_tail bytes
-        sta FA_SRC
-        cmp #1                  ; (C: a tail)
-        lda grp_pages,x
-        sta FA_N
-        adc #0                  ; A = the pages the copy touches (playtime.py
-                                ;   logs it at fs_send)
-        ; (on into fs_send)
-
-; fs_send: one COPY with PRIVATE through slot 7's FIFO (lload.s's am_send,
-; the request streamed from fs_head and the far layer's zero page): FA_N
-; pages and FA_SRC bytes from page FA_SRC+1 of RamWorks bank FA_BANK to main
-; page FA_DST+1 (both on pages). Interrupts masked meanwhile; a refusal
-; stops (GS_AMEM, GS_ARG the result). Changes A, X, Y.
-SP_DATA    = $CFF0              ; the memory API's raw FIFO transport in slot
-SP_CTRL    = $CFF1              ;   7 (appletini-one README_MEMORY_API.md
-SP_POP     = $CFF2              ;   section 7)
-SP_RELEASE = $CFFF
-SP_ROM     = $C700
-FS_TIMEOUT = $6F                ; (ours: no reply came)
-fs_send:
-        php
-        sei
-        bit SP_RELEASE
-        bit SP_ROM
-        ldx #0
-@head:  lda fs_head,x
-        sta SP_DATA
-        inx
-        cpx #FS_HEAD_N
-        bne @head
-        lda FA_BANK             ; the source: AUX, the bank, its page
-        sta SP_DATA
-        stz SP_DATA
-        lda FA_SRC+1
-        sta SP_DATA
-        stz SP_DATA             ; the destination: MAIN, bank 0, its page
-        stz SP_DATA
-        stz SP_DATA
-        lda FA_DST+1
-        sta SP_DATA
-        lda FA_SRC              ; the count
-        sta SP_DATA
-        lda FA_N
-        sta SP_DATA
-        ldx #4                  ; no fill value, the reserved bytes
-@zero:  stz SP_DATA
-        dex
-        bne @zero
-        lda #2                  ; execute
-        sta SP_CTRL
-        ldx #0
-        ldy #0
-@wait:  lda SP_CTRL
-        bmi @ready
-        dex
-        bne @wait
-        dey
-        bne @wait
-        lda #FS_TIMEOUT
-        bra fs_sent
-@ready: lda SP_DATA             ; the result
-        sta SP_POP
-fs_sent:                        ; (the request done: playtime.py times
-        bit SP_RELEASE          ;   fs_send to here)
-        plp
-        cmp #0
-        bne :+
-        rts
-:       sta GS_ARG
-        lda #GS_AMEM
-        jmp g_stop
-fs_head:
-        .byte 4, 3, 0, 0, 0, $80, 0, 0, 0, 0   ; CONTROL, unit 0, selector $80
-        .word 8 + 16                           ; the list: one descriptor
-        .byte "AMEM", 1, 1, 0, 0
-        .byte 1, 1, 1                          ; COPY, PRIVATE, from AUX
-FS_HEAD_N = * - fs_head
-        .assert FS_HEAD_N = 23, error, "fs_head is not the descriptor's head"
-
-; ---------------------------------------------------------------------------
 ; fs_restore: every frame slot that holds a group: its group's length back
-; from LVC (the slot's colormap bytes there, fs_src), then the slot empty;
-; FS_DIRTY set. Changes A, X, Y and the far layer's zero page.
+; from LVC (the slot's colormap bytes there, fs_src), a descriptor each,
+; all in one request (at most AM_MAX of them: glayout.py's frame slots);
+; then the slots empty, FS_DIRTY set. Changes A, X, Y.
 ; ---------------------------------------------------------------------------
 fs_restore:
-        bit FS_DIRTY            ; (with no frame slot fs_load never runs and
-        bmi @done               ;   FS_DIRTY stays $FF: the loop is the same
-        ldy #FS_FIRST + FSLOTS - 1      ;   bytes in every placement, as
-                                ;   gplace.py measures the core)
+        bit FS_DIRTY            ; (with no frame slot gr_load never sets it
+        bmi @done               ;   and FS_DIRTY stays $FF: the loop is the
+        ldx #0                  ;   same bytes in every placement, as
+        ldy #FS_FIRST + FSLOTS - 1      ;   gplace.py measures the core)
+@count: lda SLOT_GRP,y          ; the slots that hold a group: X (at least
+        cmp #$FF                ;   one: FS_DIRTY is clear)
+        beq :+
+        inx
+:       dey
+        cpy #FS_FIRST
+        bcs @count
+        php
+        sei
+        txa
+        jsr am_begin
+        lda #LVC                ; every source in LVC
+        sta am_req + AMD_BANK
+        ldy #FS_FIRST + FSLOTS - 1
 @slot:  ldx SLOT_GRP,y
         cpx #$FF
         beq @next
         lda #$FF
         sta SLOT_GRP,y
-        lda #LVC
-        sta FA_BANK
         lda fs_src-FS_FIRST,y
-        sta FA_SRC+1
+        sta am_req + AMD_SRC
         lda fs_page-FS_FIRST,y
-        sta FA_DST+1
+        sta am_req + AMD_DST
+        lda grp_tail,x
+        sta am_req + AMD_COUNT
+        lda grp_pages,x
+        sta am_req + AMD_COUNT + 1
         phy
-        jsr fs_copy
+        ldx #AM_DESC
+        ldy #AM_DESC_N
+        jsr am_push
         ply
 @next:  dey
         cpy #FS_FIRST
         bcs @slot
+        stz am_req + AMD_COUNT
         lda #$FF
         sta FS_DIRTY
+        jmp am_fin
 @done:  rts
+        .assert FSLOTS <= AM_MAX, error, "more frame slots than a request's descriptors"
 
 ; each frame slot's first page in main and its colormap bytes' first page
 ; in LVC (glayout.py's, in gplace.inc)
@@ -483,6 +423,128 @@ fs_src:
         .byte .ident(.sprintf("FSLOT%d_SRC", I + FS_FIRST))
         .endrepeat
         .assert FS_FIRST + FSLOTS <= FS_FIRST + FS_MAX, error, "frame slots"
+
+; ---------------------------------------------------------------------------
+; The memory API's transport (docs/SPEED.md 10; appletini-one
+; README_MEMORY_API.md sections 3, 4 and 7), in the main card's bank 1
+; after MATHLC (AMEMLC, $DB5C-$DBFF: MEMORY_MAP.md 4.2), near in every
+; phase but the replay. A request may replace all of W, the core with it
+; (the kernel's loads: K_TIC's core, the images of K_LOAD), and the code
+; that waits for its result must survive it: so the card. The request
+; streams through slot 7's FIFO (lload.s's am_send): the SmartPort CONTROL
+; head and the list's head from am_req, then each descriptor, am_req's
+; template, which the callers patch: COPY, PRIVATE (every main destination
+; needs it; a RamWorks one takes it), from AUX bank AMD_BANK page AMD_SRC
+; to MAIN page AMD_DST, AMD_COUNT bytes (each address on a page). A
+; caller that patches the spaces (dl_disp.s planes_out) puts them back.
+; AMD_COUNT's low byte is 0 between requests (am_runs copies whole pages).
+;
+;   am_begin  A = the descriptors (1-AM_MAX): the request's head into the
+;             FIFO, C8 selected. The caller has masked interrupts (php,
+;             sei) and pushes each descriptor (am_push) before am_fin.
+;             Leaves X = 20, Y = 0
+;   am_push   Y bytes of am_req from X into the FIFO
+;   am_fin    execute; the result (FS_TIMEOUT when no reply comes); C8
+;             released; a refusal stops (GS_AMEM, GS_ARG the result); then
+;             plp and rts: the caller's P from its php, interrupts as they
+;             were, and back to the caller's caller
+;   am_runs   (the kernel's: K_TIC, K_LOAD) the page runs of the list at
+;             A:X (A the low byte; each run its first page and its count,
+;             a first page of 0 ends it; at most AM_MAX runs) of RamWorks
+;             bank Y into the same addresses of main: one request, a
+;             descriptor a run, interrupts masked for it (far_pload's
+;             arguments). Changes A, X, Y, FA_DST.
+; ---------------------------------------------------------------------------
+
+        .segment "AMEMLC"
+
+; the request's head and descriptor first, at AM_REQ (glayout.py: the
+; parts' write logs leave these bytes out, the transport's own working
+; memory)
+am_req: .byte 4, 3, 0, 0, 0, $80, 0, 0, 0, 0   ; CONTROL, unit 0, selector $80
+        .word 0                                ; the list's length (am_begin)
+        .byte "AMEM", 1, 0, 0, 0               ; (the count: am_begin)
+        .byte 1, 1, 1, 0, 0, 0, 0, 0, 0, 0     ; COPY, PRIVATE, from AUX bank
+        .word 0                                ;   b page p to MAIN page q, the
+        .byte 0, 0, 0, 0                       ;   count, no fill value
+        .assert * - am_req = AM_HEAD + AM_DESC_N, error, "am_req"
+        .assert am_req = AM_REQ, lderror, "am_req is not at AM_REQ"
+
+am_begin:
+        sta am_req + 17         ; the count, the list's length 8 + 16 N
+        asl a
+        asl a
+        asl a
+        asl a
+        ora #8
+        sta am_req + 10
+        bit SP_RELEASE          ; C8: Appletini's
+        bit SP_ROM
+        ldx #0
+        ldy #AM_HEAD
+am_push:
+        lda am_req,x
+        sta SP_DATA
+        inx
+        dey
+        bne am_push
+        rts
+
+am_runs:
+        sta FA_DST
+        stx FA_DST+1
+        sty am_req + AMD_BANK
+        php
+        sei
+        ldy #$FE                ; the runs: Y = 2 N
+:       iny
+        iny
+        lda (FA_DST),y
+        bne :-
+        tya
+        lsr a
+        jsr am_begin            ; (Y = 0)
+@run:   lda (FA_DST),y          ; a run: from its page to the same page
+        beq am_fin
+        sta am_req + AMD_SRC
+        sta am_req + AMD_DST
+        iny
+        lda (FA_DST),y          ; its pages
+        sta am_req + AMD_COUNT + 1
+        iny
+        phy
+        ldx #AM_DESC
+        ldy #AM_DESC_N
+        jsr am_push
+        ply
+        bra @run
+
+am_fin: lda #2                  ; execute
+        sta SP_CTRL
+        ldy #0                  ; (X as it is: the wait, 64 K turns at most)
+@wait:  lda SP_CTRL
+        bmi @ready
+        dex
+        bne @wait
+        dey
+        bne @wait
+        lda #FS_TIMEOUT
+        bra am_sent
+@ready: lda SP_DATA             ; the result
+        sta SP_POP
+am_sent:                        ; (the request done: playtime.py times
+        bit SP_RELEASE          ;   am_begin to here)
+        tax
+        bne @stop
+        plp
+        rts
+@stop:  sta GS_ARG              ; (BRK: pl_crash, drv_crash; GS_STATUS
+        lda #GS_AMEM            ;   names the stop)
+        sta GS_STATUS
+        brk
+
+
+        .segment "LOADW"
 
 ; ---------------------------------------------------------------------------
 ; The stops

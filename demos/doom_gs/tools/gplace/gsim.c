@@ -13,18 +13,22 @@
        the tic image does not hold), group g in slot S_g with N_g pages.
        Slots 1 and 2 are W's; slots FIRST_FRAME and up are frame slots
        (main $2000-$5FFF: glayout.py frame_slots), one group each, loaded
-       by a PRIVATE copy at its first call in a phase and its colormap
-       pages restored once at the phase's end (gcall.s fs_load,
-       fs_restore). POLICY 0: gcall.s's restore (the slot's group at the
+       at its first call in a phase and its colormap pages restored once
+       at the phase's end, all of a phase's restores in one memory-API
+       request (gcall.s gr_load, fs_restore; every load is a PRIVATE
+       request since docs/SPEED.md 10). POLICY 0: gcall.s's restore (the
+       slot's group at the
        call is loaded again at the return when another is there); 1: the
        lazy restore (only the group the slot's innermost active call
        needs).
        Answer: for each trace "loads pages cross tics phases fpages
-       rpages floads restores", where loads counts every load, pages a W
-       slot's loads' pages, cross the calls that go through fc_call's path
-       (the target in a group, not the caller's), fpages the frame slots'
-       loads' pages, rpages the pages their restores copy back, floads the
-       frame slots' loads and restores their restores (a request each).
+       rpages floads restores rreqs", where loads counts every load, pages
+       a W slot's loads' pages, cross the calls that go through fc_call's
+       path (the target in a group, not the caller's), fpages the frame
+       slots' loads' pages, rpages the pages their restores copy back,
+       floads the frame slots' loads, restores their restores (a
+       descriptor each) and rreqs the restores' requests (one a phase that
+       loaded a frame slot).
      V ... (as P): the check against the loads the trace recorded (gr_load's
        writes of SLOT_GRP): for each trace "bad_phases rec_loads sim_loads
        rec_groups_sum sim_groups_sum" (a phase is bad when its loads'
@@ -152,7 +156,7 @@ static void note(int kind, int caller, int callee, int pg)
 static void run(int t, int policy, char mode)
 {
     long loads = 0, pg = 0, cross = 0, phases = 0;
-    long fpg = 0, rpg = 0, floads = 0, restores = 0;
+    long fpg = 0, rpg = 0, floads = 0, restores = 0, rreqs = 0;
     long bad = 0, rec_loads = 0, sim_loads = 0, rec_sum = 0, sim_sum = 0;
     long ph_rec = 0, ph_sim = 0, ph_rsum = 0, ph_ssum = 0;
     int cur[MAXS], need[MAXS], used[MAXS];
@@ -163,18 +167,22 @@ static void run(int t, int policy, char mode)
     const event *e = tr[t];
     for (size_t i = 0; i < trn[t]; i++, e++) {
         switch (e->op) {
-        case 2:
-            /* (a phase's start: the last one's frame slots restored) */
+        case 2: {
+            /* (a phase's start: the last one's frame slots restored, one
+               request) */
+            int any = 0;
             for (int k = 0; k < MAXS; k++) {
                 if (used[k])
-                    rpg += used[k], restores++;
+                    rpg += used[k], restores++, any = 1;
                 cur[k] = need[k] = EMPTY;
                 used[k] = 0;
             }
+            rreqs += any;
             depth = 0;
             phases++;
             ph_rec = ph_sim = ph_rsum = ph_ssum = 0;
             break;
+        }
         case 4:
             if (ph_rec != ph_sim || ph_rsum != ph_ssum)
                 bad++;
@@ -256,9 +264,11 @@ static void run(int t, int policy, char mode)
     }
     if (overflow)
         fail("a trace deeper than the model's stack");
-    for (int k = 0; k < MAXS; k++)     /* (the last phase's restores) */
+    int any = 0;                        /* (the last phase's restores) */
+    for (int k = 0; k < MAXS; k++)
         if (used[k])
-            rpg += used[k], restores++;
+            rpg += used[k], restores++, any = 1;
+    rreqs += any;
     if (mode == 'V')
         printf("%ld %ld %ld %ld %ld ", bad, rec_loads, sim_loads, rec_sum,
                sim_sum);
@@ -268,8 +278,8 @@ static void run(int t, int policy, char mode)
                    causes[i].caller, causes[i].callee, causes[i].loads,
                    causes[i].pages);
     } else
-        printf("%ld %ld %ld %ld %ld %ld %ld %ld %ld ", loads, pg, cross,
-               tics[t], phases, fpg, rpg, floads, restores);
+        printf("%ld %ld %ld %ld %ld %ld %ld %ld %ld %ld ", loads, pg, cross,
+               tics[t], phases, fpg, rpg, floads, restores, rreqs);
 }
 
 int main(int argc, char **argv)

@@ -4,8 +4,9 @@ wave 1 of the speed plan, docs/SPEED.md 4 #1, docs/speed-parts/place.md):
 each routine of the part table in the core or in a group of a slot.
 
 Usage:  python3 tools/native/gplace.py [--write] [--placement FILE]
-            [--no-search] [--page-us 80] [--call-us 5]
-            [--fpage-us F] [--request-us R] [--no-frame-slots]
+            [--no-search] [--page-us P] [--load-us L] [--call-us 5]
+            [--fpage-us F] [--request-us R] [--desc-us D]
+            [--no-frame-slots]
             [--restore auto|lazy|eager] [--train S,...] [--hold S,...]
             [--sweeps N] [--anneal N] [--seed N] [--core-reserve B]
             [--traces DIR] [--json FILE]
@@ -17,13 +18,17 @@ gplacerec.py): the machine's cost on recorded call traffic. Each scene
 of TRAIN (the play build standing still, walking, demo3 in the title
 loop; the lockstep build's demo3) is replayed by gsim, a model of gcall.s
 that reproduces the loads the runs recorded exactly (gplacesim.py
---check), under a candidate placement; its cost is the pages copied at
---page-us (gr_load copies whole pages: 100.3 us a page before wave 1,
-63.8 with part paging's far_gcopy on a2vm before the card corrected it,
-80 on the card, the default since the frame slots) plus --call-us a call
-through fc_call (5 us), plus the frame slots' PRIVATE copies (each load's
-and each restore's pages at --fpage-us, a request's own --request-us: a2vm's
-model of the memory API), in ms a tic summed over the scenes, with gcall.s's
+--check), under a candidate placement; its cost is the loads' memory-API
+requests (docs/SPEED.md 10: a W slot's load --load-us and its pages at
+--page-us; a frame slot's load --request-us and its pages at --fpage-us;
+a phase's restores one request, --desc-us each further descriptor, their
+pages at --fpage-us; the defaults gplacesim.amem_prices', F1.2.2 as
+a2vm's profile f122+nod2 prices it: 46.3 us a request, 9.84 us a page,
+3.5 us a descriptor; before the copy engine a W slot's pages were the
+CPU's, 100.3 us a page before wave 1, 63.8 with part paging's far_gcopy
+on a2vm before the card corrected it, 80 on the card F1.2.1, and the
+frame slots' 85 us a page and 10 us a request), plus --call-us a call
+through fc_call (5 us), in ms a tic summed over the scenes, with gcall.s's
 restore at a return (--restore lazy, part paging's SLOT_NEED of wave 1;
 eager, the rule before it; auto, the default: the builds' own). The
 search starts from
@@ -36,7 +41,7 @@ The slots: 1 and 2 in W (2,048 B each), and the frame slots (slot 3 and
 up, docs/SPEED.md 9): a group pinned to a place of its own in main
 $2000-$5FFF, the replay's colormaps, loaded by one PRIVATE request at its
 first call in a frame and its colormap pages restored at the tic phase's
-end (gcall.s fs_load, fs_restore). The search moves a group to a frame
+end (gcall.s gr_load, fs_restore). The search moves a group to a frame
 slot as to a W slot (the model numbers the pinned groups' slots); the
 output numbers them 3, 4, ... in the groups' order, and glayout.py's
 frame_slots places them. The rules:
@@ -59,7 +64,8 @@ frame_slots places them. The rules:
     GCODE1;
   - the frame slots: their pages (each group's bytes and GROUP_MARGIN,
     glayout.frame_pages) fit main $2000-$5FFF, none across $4000, at most
-    glayout.FS_MAX of them; no group in a frame slot holds a routine whose
+    glayout.FS_MAX of them and glayout.AM_MAX (fs_restore's one request
+    takes a descriptor each); no group in a frame slot holds a routine whose
     bytes the tic code stores into (an absolute store into its range in
     any build, or NO_PIN's): a CPU store there is a video write
     (MEMORY_MAP.md rule 3);
@@ -109,13 +115,18 @@ GROWTH = 1.3                    # native bytes a byte of upstream (2.4)
 PAGE_US_NOW = 100.3
 PAGE_US_A2VM = 63.8             # wave 1's far_gcopy on a2vm before the card
 #                                 corrected it (2026-10-03)
-PAGE_US = 80.0                  # the default: far_gcopy on the card
-#                                 (CALIB.hdv, docs/results/calib.md)
+PAGE_US_CARD = 80.0             # far_gcopy on the card F1.2.1 (CALIB.hdv,
+#                                 docs/results/calib.md): the default
+#                                 until the copy engine
 CALL_US = 5.0
-# the frame slots' PRIVATE copies (gplacesim.py: a2vm's model of the
-# memory API), a page and a request
+# every load a memory-API PRIVATE request (docs/SPEED.md 10; gplacesim.py
+# amem_prices: a2vm's profile f122+nod2): a W slot's page and load, a frame
+# slot's page and request, a further descriptor of a phase's restores
+PAGE_US = GS.PAGE_US
+LOAD_US = GS.LOAD_US
 FPAGE_US = GS.FPAGE_US
 REQUEST_US = GS.REQUEST_US
+DESC_US = GS.DESC_US
 # a group's slot in the search when it is pinned: a frame slot of its own
 # (glayout.FRAME_FIRST; the model gives each pinned group its own number)
 FRAME = GL.FRAME_FIRST
@@ -644,9 +655,9 @@ def place(graph, heat: Dict[str, int], size: Dict[str, int],
                     for p, v in pair_calls.items()}
 
     def load_us(g: int) -> float:
-        # (gr_load copies the group's whole pages; the call's own cost
-        # too, the fc_call path, CALL_US)
-        return (gbytes[g] + PAGE - 1) // PAGE * PAGE_US + CALL_US
+        # (gr_load's request: its own cost and the group's pages; the
+        # call's own cost too, the fc_call path, CALL_US)
+        return LOAD_US + (gbytes[g] + PAGE - 1) // PAGE * PAGE_US + CALL_US
 
     # A_Chase's slot and its callees' groups
     forbid: Set[Tuple[int, int]] = set()
@@ -1476,13 +1487,16 @@ class Evaluator(object):
 
     def __init__(self, model, policy: int, page_us: float, call_us: float,
                  weights: Optional[Sequence[float]] = None,
-                 fpage_us: float = FPAGE_US, request_us: float = REQUEST_US):
+                 fpage_us: float = FPAGE_US, request_us: float = REQUEST_US,
+                 load_us: float = LOAD_US, desc_us: float = DESC_US):
         self.model = model
         self.policy = policy
         self.page_us = page_us
         self.call_us = call_us
         self.fpage_us = fpage_us
         self.request_us = request_us
+        self.load_us = load_us
+        self.desc_us = desc_us
         self.weights = list(weights or [1.0] * len(model.scenes))
 
     def vectors(self, place: Dict[str, int], gslot: Dict[int, int],
@@ -1509,9 +1523,10 @@ class Evaluator(object):
             r['pages_a_tic'] = r['pages'] / t
             r['cross_a_tic'] = r['cross'] / t
             r['private_pages_a_tic'] = (r['fpages'] + r['rpages']) / t
-            r['requests_a_tic'] = (r['floads'] + r['restores']) / t
+            r['requests_a_tic'] = (r['loads'] + r['rreqs']) / t
             r['ms_a_tic'] = S.cost_of(r, self.page_us, self.call_us,
-                                      self.fpage_us, self.request_us) / 1000
+                                      self.fpage_us, self.request_us,
+                                      self.load_us, self.desc_us) / 1000
         return rs
 
     def cost(self, place, gslot, gbytes) -> float:
@@ -1521,7 +1536,8 @@ class Evaluator(object):
 
 def evaluate(model, placement: Dict[str, Any], policy: int, page_us: float,
              call_us: float, fpage_us: float = FPAGE_US,
-             request_us: float = REQUEST_US) -> List[Dict[str, float]]:
+             request_us: float = REQUEST_US, load_us: float = LOAD_US,
+             desc_us: float = DESC_US) -> List[Dict[str, float]]:
     """A placement.json's figures on the model's scenes (its groups'
     bytes from the measured sizes when the builds are there, else its own
     'bytes')."""
@@ -1535,7 +1551,8 @@ def evaluate(model, placement: Dict[str, Any], policy: int, page_us: float,
         gbytes = {i: int(g.get('bytes', GROUP_ROOM)) for i, g in
                   enumerate(placement['groups'], 1)}
     return Evaluator(model, policy, page_us, call_us, None, fpage_us,
-                     request_us).scenes(place, gslot, gbytes)
+                     request_us, load_us, desc_us).scenes(place, gslot,
+                                                          gbytes)
 
 
 def unit_calls(model, prob: Problem) -> Dict[int, int]:
@@ -1892,7 +1909,8 @@ def train(placement: Optional[Dict[str, Any]] = None,
           anneal: int = ANNEAL, seed: int = SEED, do_search: bool = True,
           out: Optional[Path] = None, say=print,
           core_reserve: int = CORE_RESERVE, fpage_us: float = FPAGE_US,
-          request_us: float = REQUEST_US,
+          request_us: float = REQUEST_US, load_us: float = LOAD_US,
+          desc_us: float = DESC_US,
           frames: bool = True) -> Dict[str, Any]:
     """The trained placement (the module's header)."""
     from native import gcallgraph as CG, gplacesim as S, gplacerec as REC
@@ -1920,13 +1938,13 @@ def train(placement: Optional[Dict[str, Any]] = None,
                          'gplacerec.py %s)' % ' '.join(train_scenes))
     with S.Model(tr + ho, out) as every:
         evall = Evaluator(every, policy, page_us, call_us, None, fpage_us,
-                          request_us)
+                          request_us, load_us, desc_us)
         place = prob.place()
         before = evall.scenes(place, prob.gslot, sizer.groups(place))
         if do_search:
             with S.Model(tr, out) as model:
                 ev = Evaluator(model, policy, page_us, call_us, None,
-                               fpage_us, request_us)
+                               fpage_us, request_us, load_us, desc_us)
                 calls = unit_calls(model, prob)
                 hot = sorted((u for u in calls if calls[u] > 0),
                              key=lambda u: (-calls[u], prob.units[u]))
@@ -1978,6 +1996,7 @@ def train(placement: Optional[Dict[str, Any]] = None,
            'frame_pages': sum(hi - lo for lo, hi in fslots.values()) >> 8,
            'stored': prob.stored}
     res['model'].update({'fpage_us': fpage_us, 'request_us': request_us,
+                         'load_us': load_us, 'desc_us': desc_us,
                          'frames': frames})
     return res
 
@@ -2026,12 +2045,14 @@ def report(res: Dict[str, Any]) -> List[str]:
             GL.FRAME_REGION[0], GL.FRAME_REGION[1] - 1))
     m = res.get('model')
     if m:
-        lines.append('cost: %.1f us a page, %.1f us a call through fc_call, '
-                     'the %s restore; a frame slot\'s PRIVATE copy %.1f us '
-                     'a page, %.1f us a request' % (
-                         m['page_us'], m['call_us'], m['restore'],
-                         m.get('fpage_us', FPAGE_US),
-                         m.get('request_us', REQUEST_US)))
+        lines.append('cost: a W slot\'s load %.1f us and %.2f us a page, '
+                     '%.1f us a call through fc_call, the %s restore; a '
+                     'frame slot\'s PRIVATE copy %.2f us a page, %.1f us a '
+                     'request, %.2f us a further descriptor' % (
+                         m.get('load_us', 0.0), m['page_us'], m['call_us'],
+                         m['restore'], m.get('fpage_us', FPAGE_US),
+                         m.get('request_us', REQUEST_US),
+                         m.get('desc_us', REQUEST_US)))
         for s, v in m['scenes'].items():
             b, a = v['before'], v['after']
             lines.append('  %-7s %-5s loads a tic %7.2f -> %7.2f   pages a '
@@ -2074,6 +2095,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help='a frame slot\'s PRIVATE copy, us a page')
     parser.add_argument('--request-us', type=float, default=REQUEST_US,
                         help='a PRIVATE request\'s own cost, us')
+    parser.add_argument('--load-us', type=float, default=LOAD_US,
+                        help='a W slot\'s load\'s own cost, us')
+    parser.add_argument('--desc-us', type=float, default=DESC_US,
+                        help='a further descriptor of a request, us')
     parser.add_argument('--no-frame-slots', action='store_true',
                         help='the search moves no group to a frame slot')
     parser.add_argument('--restore', choices=('auto', 'eager', 'lazy'),
@@ -2112,6 +2137,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                   do_search=not args.no_search,
                   core_reserve=args.core_reserve, out=args.traces,
                   fpage_us=args.fpage_us, request_us=args.request_us,
+                  load_us=args.load_us, desc_us=args.desc_us,
                   frames=not args.no_frame_slots)
     except PlaceError as e:
         print('gplace: %s' % e, file=sys.stderr)

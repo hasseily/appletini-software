@@ -2,7 +2,7 @@
 
 Written 2026-10-02 from three profilers' measurements and a planner's prototypes (workflow `doom-gs-speed-profile`); the owner's rule of the same day applies to every part: test only what a change touches (`MILESTONES.md`, ground rules).
 
-Status: **waves 1 and 2 built and integrated (2026-10-02 and 2026-10-03; section 5, `PLAY.md` 14 and 16); the frame slots built (2026-10-03; section 9, `PLAY.md` 17); wave 3 planned.** The card (F1.2.2, the Disk II's acceleration off) ran wave 2's benchmark at 3.830 FPS; a2vm `f122-nod2` matches it and predicted 5.68 FPS with the frame slots; the card gave 5.648 (sections 5 and 9). The owner played `build/native/DOOM.hdv` on the card on 2026-10-02 and reported: "Everything seems to work except for the benchmark. It's indeed too slow and needs a speed optimization." This document holds the measurements behind that, three prototypes measured on a2vm, and the parts that make the game faster. Nothing in the game's output may change. The renderer's frames and the game's demo sync stay bit-exact against ref816 (NATIVE.md 15.1). Every item below changes only time: where code lives, how bytes are copied, and which pages are reloaded.
+Status: **waves 1 and 2 built and integrated (2026-10-02 and 2026-10-03; section 5, `PLAY.md` 14 and 16); the frame slots built (2026-10-03; section 9, `PLAY.md` 17); the frame's bulk copies by the copy engine (2026-10-03; section 10, `PLAY.md` 18: a2vm `f122-nod2` 5.677 → 6.519 FPS); wave 3 planned.** The card (F1.2.2, the Disk II's acceleration off) ran wave 2's benchmark at 3.830 FPS; a2vm `f122-nod2` matches it and predicted 5.68 FPS with the frame slots; the card gave 5.648 (sections 5 and 9). The owner played `build/native/DOOM.hdv` on the card on 2026-10-02 and reported: "Everything seems to work except for the benchmark. It's indeed too slow and needs a speed optimization." This document holds the measurements behind that, three prototypes measured on a2vm, and the parts that make the game faster. Nothing in the game's output may change. The renderer's frames and the game's demo sync stay bit-exact against ref816 (NATIVE.md 15.1). Every item below changes only time: where code lives, how bytes are copied, and which pages are reloaded.
 
 ## 0. The owner's two findings
 
@@ -109,6 +109,7 @@ Not worth doing now:
 | **Wave 2, measured** (integrated 2026-10-03) | **80.3 ms, 12.45 FPS** | **247.2 ms, 4.04 FPS** (median 245.8) | 647 ms (not like for like: the cut groups other tics) | M: `playtime.py`, below |
 | **Wave 2, a2vm corrected by the card** (2026-10-03; the rows above: the model before) | **96.2 ms, 10.40 FPS** | **297.0 ms, 3.37 FPS** (median 297.3); the benchmark 3.004 FPS, the card 3.015 | 737 ms | M: `playtime.py`, below ("a2vm corrected by the card") |
 | **The frame slots, measured** (2026-10-03, a2vm corrected; section 9) | **90.8 ms, 11.02 FPS** | **203.7 ms, 4.91 FPS** (median 205.8); the benchmark **4.641 FPS** | 370 ms | M: `playtime.py`, section 9 |
+| **The copy engine, measured** (2026-10-03, a2vm `f122-nod2`, the card's setting; section 10) | **58.9 ms, 16.97 FPS** (before 72.7, 13.75) | **143.7 ms, 6.96 FPS** (median 149.4; before 166.5, 6.01); the benchmark **6.519 FPS** (before 5.677) | 259 ms | M: `playtime.py`, section 10 |
 | Wave 3 (TIC_LC2, lazy `$C073`, a last re-placement) | about 80 ms, **12.5 FPS** | 180-200 ms, **5.0-5.6 FPS** | about 420 ms | estimates |
 
 **Wave 1 as integrated** (2026-10-02): parts measure, bench, paging, place (`tools/native/gplace-wave1-lazy.json`) and bucket together, `build/native/DOOM.hdv`, a2vm, card-equivalent (the exact idle):
@@ -337,8 +338,97 @@ The disk: `build/native/DOOM.hdv`, 4,029,952 bytes, SHA-1 `2b0fa3a6df5526364f7d2
 
 **Open problems.**
 
-- The placement still prices a W page at 80 µs and a PRIVATE page at 85 µs, the F1.2.1 figures; on F1.2.2 a CPU page copy is about 60 µs and a PRIVATE request about 46 µs plus 9.7 µs a page. The W slots' loads could also go by PRIVATE request (2 KB in about 125 µs against 480 by the CPU). Both are the next step.
+- The placement still prices a W page at 80 µs and a PRIVATE page at 85 µs, the F1.2.1 figures; on F1.2.2 a CPU page copy is about 60 µs and a PRIVATE request about 46 µs plus 9.7 µs a page. The W slots' loads could also go by PRIVATE request (2 KB in about 125 µs against 480 by the CPU). Both are the next step. *Done in section 10.*
 - The frame slots are full (64 of 64 pages, 12 slots of 16): more pinned code needs smaller groups or more room.
 - Every loaded slot is restored whole, so half of the PRIVATE pages are restores (about 45 of the benchmark's 89 a frame); a group pays its pages twice a frame, and pinning pays only for a group that a frame would otherwise load about twice or more.
 - Indirect stores are not checked statically: a routine that writes its own bytes through a pointer (as `recursiveSound` does) must be named in `gplace.NO_PIN`; the benchmark run's colormap check catches one that the demo reaches.
 - `GROUP_MARGIN` 96 costs the model about 0.1 ms a tic in demo3 (6.07 → 6.19).
+
+## 10. The frame's bulk copies by the copy engine (2026-10-03)
+
+**Why.** On F1.2.2 the memory API's copies run on the FPGA's copy engine: `CALIB.hdv`'s page 2 measured a PRIVATE request at about 46 µs plus 0.038 µs a byte, where the CPU's copy from RamWorks into main (`far_gcopy`, `far_pload`) costs about 7.8 µs plus 0.231 µs a byte (`docs/results/calib.md`, "The card on F1.2.2"). A request wins above about 220 B, and every bulk copy of a frame is far above that.
+
+**The inventory** (the frame slots' disk `2b0fa3a6`, rebuilt byte for byte from HEAD `7e949ff6` in a scratch clone; the benchmark, a2vm `f122-nod2`, 538 frames; each copy timed from its entry to its window's end by a PC log, `playtime.py`'s steps for the rest). PRIVATE: whether a request may write the destination (never a page the screen shows, never the card or `$C000-$CFFF`):
+
+| Copy | Source → destination | Bytes | Calls a frame | ms a frame before | PRIVATE | Now |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| `gr_load` into a W slot (the kernel's `far_gcopy`) | `GCODE0-1` (banks 72-73) → main `$9E00-$A5FF`, `$A600-$ADFF` | a group's length, 147-1,921 (1,369 on average) | 41.34 (10.4 a tic) | **13.40** (324 µs a call) | yes: W is never shown | a request (`am_one`): 38.39 a frame, **3.91 ms** (102 µs) |
+| `gr_load` into a frame slot (already a request) | `GCODE0-1` → main `$2000-$5FFF` | a group's length | 7.52 | 0.77 | yes (section 9) | the same request (`am_one`): 6.95, 0.75 ms |
+| `fs_restore` (already requests) | `LVC` → main `$2000-$5FFF` | each loaded group's length | 7.52 requests | 0.69 | yes | **one** request, a descriptor a slot: 1 (6.95 descriptors), 0.52 ms |
+| `K_TIC`: the tic image's W and core (`far_pload`) | `GCODE0` → main `$6000`/`$6600-$99FF` | 52-58 pages | 1 | **3.12** | yes | a request (`am_runs`): **0.57 ms** |
+| `K_TIC`: the walk's planes (`far_pload`) | `MOBJP` (bank 74) → main `$B400-$BFFF` | 4 runs of 1-3 pages | 1 | 0.49 | yes | a request, 4 descriptors: 0.15 ms |
+| `planes_out` (the brain's `RAMWRT` window) | main `$B400-$BFFF` → `MOBJP` | 4 runs of 1-3 pages | 1 | 0.58 | a RamWorks destination (PRIVATE accepted) | a request, 4 descriptors: 0.14 ms |
+| `K_WLOAD` (`far_wloadt`) | `WCODE` (112) → main `$6500-$A4FF`, `$AF00-$B8FF` | 74 pages, 18,944 | 1 | **4.43** | yes | the brain's `K_LOAD img_wload`, a request of 2 descriptors: **0.79 ms** |
+| `K_MLOAD` (`far_mload`) | `MCODE` (113) → main `$6800-$8EFF`, `$B200-$B3FF` | 41 pages, 10,496 | 1 | **2.46** | yes | `K_LOAD img_mload`, 2 descriptors: **0.46 ms** |
+| `K_LOAD P2DW` (`far_pload`) | bank 107 → main `$6000-$7EFF` | 31 pages, 7,936 | 1 | **1.86** | yes | a request: **0.36 ms** |
+| Every other `K_LOAD` (`OVLW` 25 pages with the automap's overlay, `PALW` 10 at a level's first frame, the menu's, the intermission's, the finale's, the load's, `DLINIT`) | their banks → W | 2-52 pages | 0 in the benchmark | | yes | the same path: a request each |
+| `nm_bkload` (the masked image, in W) | main `$8A73`, `$8D2E` → main `$0C00-$0EFF`, aux 0 `$0200-$02FF` | 4 pages (932 B used) | 1 | 0.21 | yes: neither is shown | **kept** (below) |
+| The bucket pass's `park` and `back` (`BKNEAR`, the card) | W ↔ `RECW` | about 1.8 KB | 0.13 each | 0.11 both | yes | **kept** (below) |
+| The replay's drain, `s2_frame`'s status bar and HUD | → aux 0 `$2000-$9FFF` | | | | **no**: shown (rule 4) | CPU |
+| The replay's texel gather, the bucket pass's record chunks, the object API's `far_get`/`far_put` | RamWorks, aux 0 ↔ W | under 256 B a copy, or a reordering | many | | | CPU: under a request's break-even, or no run of bytes a descriptor can carry |
+
+Before: 25.5 ms a frame of bulk copies by the CPU on the benchmark (13.40 + 3.12 + 0.49 + 0.58 + 4.43 + 2.46 + 1.86 + 0.21 + 0.11) and 1.46 ms of requests.
+
+**Kept on the CPU, and why.** `nm_bkload` (0.21 ms) is code of the masked image, milestone 8's render build, which the renderer's own drivers (`frame8.py`, `mtest`) run without the memory API and whose card has no transport (`AMEMLC` is the tic image's); a request would save about 0.1 ms a frame. The bucket pass's `park`/`back` (0.11 ms in all, one frame in eight) is the renderer's card code (`BKNEAR`) in the same build. `far_gcopy` stays in the kernel at `KERN_GCOPY` for `CALIB.hdv`'s GC lines (`calibdisk.py` times the play build's own), but no game code calls it.
+
+**What was built.**
+
+1. **The transport in the card** (`gcall.s`, segment `AMEMLC`, main card bank 1 `$DB5C-$DBFF`, after `MATHLC`: 164 of 164 B; `glayout.AMEM_LC`, `game.cfg`). The kernel's loads replace W and the core, and the code that waits for a request's result must survive the request: so the card, which `fs_send` in the core could not be. `am_req` is the request's head (the SmartPort CONTROL, the list's head) and one descriptor, a template the callers patch (the source's bank and page, the destination's page, the count; COPY, PRIVATE, from AUX to MAIN); `am_begin` (A descriptors, 1-15) streams the head through slot 7's FIFO, `am_push` a descriptor, `am_fin` executes, waits (64 K polls at most: `FS_TIMEOUT`), releases C8 and stops on a refusal (`GS_AMEM`, `GS_ARG` the result, BRK: as `fs_send` did), then `plp`: interrupts are masked from the caller's `php`, `sei` to the request's end, one request at a time. `am_runs` (the kernel's) turns a list of page runs (`far_pload`'s format) into one request, a descriptor a run. The play disk's card takes `AMEMLC` from the tic image (`playdisk.card_main`, `pldisk.area_problems` compares it), the test images from their own (`lrun.card_records`): the lockstep and test builds run with the memory API (`grun.py` passes `--amem`), so they need no fallback.
+2. **The core** keeps a request's build: `am_one` (a group's length from its directory entry, from its bank's page to a slot's page) for `gr_load`, into a W slot as into a frame slot, and `fs_restore`, now one request for every loaded frame slot (at most 15 descriptors: `glayout.AM_MAX`, which `frame_slots` enforces). `fs_send`, `fs_head`, `fs_load`, `fs_copy` and `gr_load`'s `far_gcopy` set-up left it, and `fc_ret` no longer keeps `FC_PS` around a load (only the test driver's `far_gcopy` changed it): the fixed core code is **111 B smaller** (play 9,429 → 9,318 B, game 9,582 → 9,471, gprof 9,592 → 9,481), which the placement gave to routines. `gdriver.s`'s `far_gcopy` (the test builds' page-at-a-time copy) and `game.cfg`'s weak `far_gcopy` are gone.
+3. **The kernel** (`dl_kern.s`): `K_TIC`'s two lists and every `K_LOAD` go through `am_runs`; `K_WLOAD` and `K_MLOAD` are gone (16 B: a stop if a list ever names them), the brain writes `K_LOAD img_wload` and `K_LOAD img_mload` instead (`playlink.py` takes their runs from rcard's own `wl_tic` and `wl_mask`, so they copy exactly `far_wloadt`'s and `far_mload`'s pages). `playtime.py` still names those steps `K_WLOAD` and `K_MLOAD` (by the bank).
+4. **The brain** (`dl_disp.s`, `DLG_D` 1,937 → 1,967 B): `planes_out` sends the four planes back to `MOBJP` by one request, the template's spaces turned round (from MAIN to AUX) and put back.
+5. **`playtime.py`** reports every request by kind (W slot, frame slot, restore, planes out, `K_TIC` core and planes, `K_LOAD`): requests, descriptors, pages and ms a frame, each timed from its caller to its return (the transport's own PCs are in bank 1, where bank 2's texture rows run during the replay, so they are not logged).
+
+**The placement priced for F1.2.2** (`gplacesim.amem_prices`, from a2vm's profile `f122+nod2`, `tools/a2vm/costs/appletini.json`): a byte 0.03844 µs (the copy engine's aligned 8-byte line from a PSRAM bank to the shadow: two 4-byte steps of five states, the line's read `copy_read_wait` 30 clocks and SOURCE again, 41 clocks at `fabric_mhz` 133.33; a2vm's own CALIB lines PR2 256 and PR2 2K, 56.123 and 125.046 µs on `f122+nod2`, give 0.03846), so 9.84 µs a page; a request 46.3 µs (PR2 256 less its bytes: the PS's `ps_dispatch_us` 25.9 and AXI accesses, the CPU's FIFO, the hold, the caches refilled); each further descriptor 3.5 µs (`hw_transfer`'s `amem_copy_setup_axi` 12, `amem_copy_poll_axi` 5, `amem_copy_end_axi` 1 and the request's 4 words at `axi_us` 0.135, `amem_copy_start_axi` 4 at `axi_write_us`). `gsim.c` now counts the restores' requests (one a phase that loaded a frame slot, a tenth figure); `gplacesim.cost_of` charges a W slot's load `--load-us` and its pages `--page-us`, a frame slot's load `--request-us` and its pages `--fpage-us`, a phase's restores one request and `--desc-us` each further one; `gplace.py` passes the five prices through (`--page-us 80 --load-us 0 --fpage-us 85 --request-us 10 --desc-us 10` was the model of section 9). `gplacesim.py --check` stays exact on the recordings (demo3 63,142 loads, demo3b 75,458, fight 17,642, lock3a 49,610, lock3b 22,400, still 11,068, walk 13,042) and on two new ones of this build (scratch: still 1,458, lock3b 753); `test_gplace_model`'s twin of gsim counts the restores' requests too.
+
+The search with these prices (`python3 tools/native/gplace.py`, about 45 s) keeps the frame slots: without them (`--no-frame-slots` from the same groups in W) demo3's model cost is 10.9 ms a tic against 1.5. The placement: **`tools/native/gplace-f122.json`**, 42 groups, 11 in frame slots (64 of 64 pages), the core 3,776 of 3,793 B of table routines. The model (ms a tic, the frame slots' placement → this one): still 0.643 → 0.643, walk 0.981 → 0.984, demo3 1.579 → 1.514, lock3a 1.411 → 1.341; held out fight 1.148 → 1.097, demo3b 1.713 → 1.656, lock3b 1.835 → 1.754 (the frame slots' placement under section 9's prices: demo3 6.19). On the benchmark the re-placement gave 6.494 → 6.519 FPS (the requests on the frame slots' placement, then on this one): the requests had taken most of what placement could.
+
+**Measured** (a2vm `f122-nod2`, the card's setting, both columns on the same a2vm binary, SHA-1 `89e448fc`; before: HEAD's disk `2b0fa3a6`; after: `fd3ce9fd`; `playtime.py --scene bench|still|demo3 --profile f122-nod2`):
+
+| Scene | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| The menu's BENCHMARK, all of demo3 | **5.677 FPS** (539 frames, 3,323 realtics; 176.4 ms a frame) | **6.519 FPS** (551 frames, 2,958 realtics; 153.6 ms) | −22.8 ms, +14.8% |
+| E1M1 start, standing still, 15-25 s | 72.7 ms (median 72.9, max 98.2), 13.75 FPS | **58.9 ms** (median 58.2, max 78.0), **16.97 FPS** | −13.8 ms |
+| demo3, gametics 1052-1796 | 166.5 ms (median 168.0, max 301.6), 6.01 FPS | **143.7 ms** (median 149.4, max 259.4), **6.96 FPS** | −22.8 ms |
+
+The benchmark's rows (the page, ms a frame): before `TIC 104.5  3D 21.8  MASK 13.8  DRAW 31.4  REST 4.9`; after **`TIC 89.4  3D 18.0  MASK 11.6  DRAW 31.3  REST 3.3`**. By step: `K_TIC` 104.60 → 89.47, `K_WLOAD` 4.43 → 0.79, `K_MLOAD` 2.46 → 0.46, `K_LOAD P2DW` 1.86 → 0.36; `nr_frame`, `nm_masked`, `nm_bkload`, `nb_frame`, `s2_frame` unchanged (17.38 → 17.15, 6.77 → 6.71, 0.21, 35.71 → 35.52, 2.88 → 2.82). `gr_load` calls a tic: 12.32 → 11.7 (benchmark), 4.76 → 5.39 (still), 10.67 → 9.98 (demo3).
+
+The requests a frame, after (requests, descriptors, pages, ms):
+
+| Kind | Benchmark | Still | demo3 |
+| --- | --- | --- | --- |
+| W slot | 38.39, 38.39, 212.6, 3.91 | 9.13, 9.13, 56.8, 0.99 | 30.75, 30.75, 171.3, 3.14 |
+| frame slot | 6.95, 6.95, 42.7, 0.75 | 2.00, 2.00, 14.2, 0.23 | 7.03, 7.03, 42.8, 0.77 |
+| restore | 1, 6.95, 42.7, 0.52 | 1, 2.00, 14.2, 0.20 | 1, 7.03, 42.8, 0.52 |
+| planes out | 1, 4, 8.0, 0.14 | 1, 4, 4.0, 0.11 | 1, 4, 8.0, 0.14 |
+| `K_TIC` core | 1, 1, 52.0, 0.57 | 1, 1, 52.0, 0.56 | 1, 1, 52.0, 0.57 |
+| `K_TIC` planes | 1, 4, 8.0, 0.15 | 1, 4, 4.0, 0.11 | 1, 4, 8.0, 0.15 |
+| `K_LOAD` (front end, masked image, P2DW) | 3, 5, 146.0, 1.61 | 3, 5, 146.0, 1.60 | 3, 5, 146.0, 1.61 |
+| **All** | **52.34, 66.30, 512.1, 7.65** | 18.13, 27.13, 291.1, 3.80 | 44.78, 58.80, 471.0, 6.90 |
+
+Before: 15.04 requests a frame (the frame slots' 7.52 loads and 7.52 restores), 89.1 pages, 1.46 ms on the benchmark; 4.00, 30.0, 0.45 standing still; 14.99, 88.7, 1.46 in demo3. A W slot's request costs 102 µs (5.5 pages on average) where `far_gcopy` took 324. Bulk copies by the CPU a frame on the benchmark: 25.5 ms before, 0.32 after (`nm_bkload`, `park`/`back`); requests 1.46 ms before, 7.65 after.
+
+**Interrupts.** Each request masks them from its build to its end, one request at a time; the longest are `K_WLOAD`'s (18.9 KB, 0.79 ms) and the restores' (up to 64 pages, about 0.7 ms), far under a VBL's 20 ms: an interrupt waits, none is lost (VBL interrupts a frame 8.8 → 7.7 on the benchmark: the frame is shorter).
+
+**On the card.** a2vm's `f122-nod2` gave wave 2's benchmark within 0.001 FPS of the card (3.829 against 3.830) and the frame slots' within 0.03 (5.677 against 5.648): the card should show about **6.5 FPS**, `TIC` about 89, `3D` 18, `MASK` 11.6, `REST` 3.3. The requests' cost on the card is CALIB's (46 µs plus 0.038 µs a byte, page 2's lines within 4-9 µs a request).
+
+**Checks** (the owner's rule: what changed, once each):
+
+- the game code, the placement and the paging (`gr_load`'s request, the restore's one request): `python3 tools/native/ticrun.py --run demo3 --frames front --fills a5 --jobs 2` on the final placement: 2,134 tics compared, 0 failures, the same-pair hits equal (1,009);
+- the kernel's loads and the restores: `python3 -m unittest test_play_bench` (the BENCHMARK played from the menu): the colormaps right at all 43 replays, and a new check, a snapshot at every `K_CALL` of the kernel: at each call of `nr_frame`, `nm_masked` and `s2_frame` W must hold the image the list loaded just before (`img_wload`, `img_mload`, `img_p2dw`) on each of its runs byte for byte as its bank does: 129 loads, all right;
+- two planted bugs, in a scratch copy each time: the front end's load a page short (`img_wload` 63 pages from `$65`) is caught by `test_play_bench` (the run shows no replay at all: 0 of more than 20); a group's load without its tail bytes (`am_one`'s count low byte 0) is caught by the lockstep run (a crash at the first tic, 2,134 failures);
+- the renderer's frame check (`frame8.py`) was not run: no renderer image changed (render.mk was not rebuilt, rcard is byte for byte as before) and its drivers load W with their own `far_wload`/`far_mload`, so it cannot see the kernel's requests; `test_play_bench`'s image check is the check of those loads;
+- `playdisk.py`'s link checks on every disk build (the tic image's `AMEMLC` against the card's, the frame slots);
+- then the fast full suite (`python3 tools/testpar.py --jobs 5`). Its first run failed 18 modules, each a harness that did not know the change, not a game difference: the parts' stray-write checks (16 `test_native_game_*` modules) named `am_one`'s patches of the request's template in the card (`lc1 $DBF3`...) strays: `am_req` now sits first in `AMEMLC` at `glayout.AM_REQ` (`$DB5C-$DB7F`, asserted in `gcall.s`) and the parts' write logs leave those 36 bytes out (`glayout.LC1_LOG` in `mobjstate.LOG_RANGES` and `flowcheck.WRITE_RANGES`), the rest of bank 1 still logged; `gselftest.py`'s three `fc_ret` plants named the `FC_PS` save that left `fc_ret` (the same bugs planted on the new text; `fcall-flags-lost` is now a load that writes `FC_PS`, as the test driver's `far_gcopy` did); `calibdisk.py` compared `far_gcopy` with the tic image's label, which `game.cfg` no longer defines; `test_play_cardprof` named the steps by `far_pload`'s bank (now `k_lrun`'s). The final disk (`am_req` moved) was measured and the lockstep run made again on it (2,134 tics, 0 failures, same-pair hits 1,009); the second suite run: 131 modules, 2,116 tests, 0 failures, 0 errors, 27 skipped (737 s at 5 jobs). The planted bugs were run on the build before `am_req` moved (the same code).
+
+**The disk:** `build/native/DOOM.hdv`, 4,029,952 bytes, SHA-1 `fd3ce9fd7e44c4e642dcd76101870609d2f01382`.
+
+**Commands:** `python3 tools/native/gplace.py --placement tools/native/gplace-f122.json --no-search --write` restores the placement; `python3 tools/native/gplacesim.py --eval FILE` prices a placement (the five `--*-us` options); `python3 tools/native/playtime.py --scene bench|still|demo3 --profile f122-nod2` gives the requests by kind.
+
+**Open problems.**
+
+- `K_TIC` makes two requests (the core from `GCODE0`, the planes from `MOBJP`): one request with both banks' runs would save about 46 µs a frame; `am_runs` takes one bank a list and the card has no byte left (`AMEMLC` 164 of 164 B).
+- `nm_bkload` (0.21 ms) and the bucket pass's `park`/`back` (0.11 ms) stay CPU copies: they are the renderer's build's code; converting them needs the transport at a fixed place the render images can import and a CPU fallback for the renderer's drivers, for about 0.2 ms a frame.
+- The group directory still rounds a tail to an even count and copies a tail over 224 B as a whole page (`grun.group_entry`, `far_gcopy`'s two bytes a turn): with a request that is at most 10 µs a load.
+- The placement's training scenes are still the recordings of the two-slot builds (call traffic does not depend on the placement; the model is exact on them and on this build's new still and lock3b); its `still` scene predicts no change while the measured still frame makes 5.39 loads a tic against 4.76.
+- `far_gcopy` (35 B of the kernel) is dead code kept for `CALIB.hdv`.

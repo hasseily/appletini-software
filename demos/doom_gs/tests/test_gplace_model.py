@@ -58,17 +58,19 @@ HAVE_TOOLS = tools_built()
 def twin(events, grp, slot, pages, policy):
     """gcall.s's paging in Python (the model's reference): (loads, W
     pages, fc_call calls, frame slots' pages, their restores' pages, their
-    loads, their restores). A frame slot (3 and up) is loaded like a W
-    slot and restored once a phase, its largest group's pages."""
-    loads = pg = cross = fpg = rpg = floads = restores = 0
+    loads, their restores, the restores' requests). A frame slot (3 and
+    up) is loaded like a W slot and restored once a phase, its largest
+    group's pages; a phase's restores are one request (fs_restore)."""
+    loads = pg = cross = fpg = rpg = floads = restores = rreqs = 0
     cur, need, used = {}, {}, {}
     st = []
 
     def restore():
-        nonlocal rpg, restores
+        nonlocal rpg, restores, rreqs
         for s, n in used.items():
             rpg += n
             restores += 1
+        rreqs += 1 if used else 0
         used.clear()
 
     def load(s, g):
@@ -108,7 +110,7 @@ def twin(events, grp, slot, pages, policy):
                 if old != 255 and cur.get(s, 255) != old:
                     load(s, old)
     restore()
-    return loads, pg, cross, fpg, rpg, floads, restores
+    return loads, pg, cross, fpg, rpg, floads, restores, rreqs
 
 
 def write_events(path, events):
@@ -170,13 +172,13 @@ class GsimTest(unittest.TestCase):
                     got = list(map(int, proc.stdout.readline().split()))
                     for i, (_, _, ev) in enumerate(traces):
                         want = twin(ev, grp, slot, pages, policy)
-                        f = got[9 * i:9 * i + 9]
-                        self.assertEqual(tuple(f[0:3] + f[5:9]), want)
+                        f = got[10 * i:10 * i + 10]
+                        self.assertEqual(tuple(f[0:3] + f[5:10]), want)
                         self.assertEqual(f[3], sum(
                             1 for e in ev if e[0] == 0 and e[2] == 3))
                         self.assertEqual(f[4], 20)
                     if trial >= 6:
-                        self.assertGreater(sum(got[9 * i + 7] for i in
+                        self.assertGreater(sum(got[10 * i + 7] for i in
                                                range(len(traces))), 0)
             finally:
                 proc.stdin.close()

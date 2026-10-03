@@ -137,15 +137,18 @@ def groups_of(b: RC.Build) -> List[Tuple[int, int, int, bytes]]:
 # a group's last page: copied as a whole page when the bytes it uses are
 # more than this (part ticloads' threshold for a second far_gcopy window,
 # docs/speed-parts/ticloads.md; gr_load has made one window a group since
-# wave 2's integration, where the few bytes past it save little either way)
+# wave 2's integration, where the few bytes past it save little either way;
+# since the copy engine, docs/SPEED.md 10, one request a group, where a
+# byte costs 0.038 us: the rule stays, at most 10 us a load)
 TAIL_MAX = 224
 
 
 def group_entry(bank: int, page: int, size: int) -> List[Tuple[str, int]]:
     """A group's entry of gcall.s's directory: its bank, its first page, its
     whole pages and the bytes gr_load copies of the page after them: its
-    byte length rounded up to an even count (far_gcopy copies two bytes a
-    turn), or the page whole when it uses more than TAIL_MAX bytes or the
+    byte length rounded up to an even count (far_gcopy copied two bytes a
+    turn; gr_load's request copies grp_pages pages and grp_tail bytes), or
+    the page whole when it uses more than TAIL_MAX bytes or the
     group is under a page (gr_load reads a grp_pages of 0 as a group the
     image does not hold)."""
     if not 0 < size <= 0x800:

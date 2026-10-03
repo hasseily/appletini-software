@@ -227,7 +227,13 @@ page is crossed.
 
 W is not write-expensive. It holds one phase at a time; code is loaded by
 CPU copy from bank 1 of the card (0.246 µs/B [M: `memory` §1.2]) and never
-saved back.
+saved back. *Since the copy engine* (2026-10-03, `docs/SPEED.md` 10): in
+the play build every image of W (the kernel's `K_TIC` core and planes and
+each `K_LOAD`, the front end's and the masked image's among them) and every
+group into a W slot comes by a memory-API PRIVATE request (W is never
+shown, so PRIVATE's missing capture records do not matter), about 46 µs a
+request and 0.038 µs a byte on F1.2.2; the walk's planes go back to
+`MOBJP` the same way.
 
 **F1.2.1:**
 
@@ -332,7 +338,7 @@ runs):
 | Range | Bytes | Content | Size, label |
 | --- | ---: | --- | --- |
 | `$D000-$D7FF` | 2,048 | Quarter squares: four 512 B tables, page aligned | M: `experiment` (b) |
-| `$D800-$DBFF` | 1,024 | 16 × 16 multiply (114 B [M: `experiment` (b)]), `FixedMul` family, divides written from the call sites, 16/32-bit helpers | about 600 B [A] |
+| `$D800-$DBFF` | 1,024 | 16 × 16 multiply (114 B [M: `experiment` (b)]), `FixedMul` family, divides written from the call sites, 16/32-bit helpers | about 600 B [A]; built `MATHLC` `$D800-$DB5B` (860 B); since the copy engine (2026-10-03, `docs/SPEED.md` 10) `$DB5C-$DBFF` the tic image's memory-API transport `AMEMLC` (164 of 164 B: the request's template `am_req` first, `$DB5C-$DB7F`, which the callers patch, then `am_begin`, `am_push`, `am_fin`, the kernel's `am_runs`), which the play disk's card takes from the tic image (`playdisk.card_main`) and the test images from their own (`lrun.card_records`) |
 | `$DC00-$DFFF` | 1,024 | Far layer (F1.2.1 or pair back end), the RamWorks table lookup, phase loader (CPU copy RamWorks → W with RAMRD on). The memory-API transport moved to the window of the mode that calls it (4.1 fallback 3, taken by milestone 7: section 12) | `MATHFAR` 67 B at `$DC00`, `far.s` 313 B at `$DC43-$DD7B` [M: `src/native/render.mk` sizes, stage A]; stage B adds the `FSTEP` gather, stage C the phase loader: 642 B in all [M] |
 
 **`$E000-$FFFF`** (always visible):
@@ -738,6 +744,7 @@ Sizes are the build's [M: `render_check.py --sizes`, the link maps];
 | card `$E000` part | `$FD8D-$FE4A` | Speed wave 1 (replaces the row above): `BKNEAR` 190 B (`$FD8D-$FE4A`): the chunk's window part `cwin`, the parking and bring-back, `bstop`, and in the game build `bk_cut`, `bk_kept` and `walk1`. With `RCODE`, `$F900-$FE4A`; `$FE4B-$FE7A` (48 B) free |
 | card `$E000` part | `$F900-$FD86`, `$FD87-$FE44` | Speed wave 2 (replaces the row above, `docs/speed-parts/replay.md`): `RCODE` 1,159 B (6 B shorter: `p1_image` and `jtent` moved to bank 2 `$DBD1-$DBF8`), `BKNEAR` 190 B from `$FD87`; `$FE45-$FE7A` (54 B) free before the kernel's `KVARS`. With `-D RELEASE`, `$F900-$FEF5` (10 B free) |
 | card bank 1 | `$DE4D-$DE97`, `$DE98-$DFE5` | Speed wave 2 (`docs/speed-parts/frontend.md`): `RLOAD` 75 B with `far_wloadt` (the front end's image from page `$65`, for the game's kernel); `MFAR` after it in rcard (`$DFE6` in ftest/mtest); 25 B free at the area's end |
+| card bank 1 | `$DB5C-$DBFF` | The copy engine (2026-10-03, `docs/SPEED.md` 10): `AMEMLC`, the tic image's memory-API transport (164 B), after `MATHLC`; the play build's kernel no longer calls `far_wloadt`, `far_mload` or `far_pload` (its `K_LOAD`s, the brain's `img_wload` and `img_mload` with their runs, are requests), which stay for the renderer's own drivers and `lcard` |
 | RamWorks 8 (`RENDB`) | `$1C00-$1C04`, `$2040-$2C3F` | Speed wave 2: the walk's box corner cache, `CCSTATE` (the view's map unit and the stamp) and `CCANG` (node n's two corner angles at `$2040 + 4n`) |
 | LVMAP | each node record's bytes 28-29 | Speed wave 2: the corner cache's tag (stamp, key), written by the walk; the level's load writes 0, the game never reads them (`nd_get` fetches 28 B) |
 | main | the node frames' bytes 30-31 | Speed wave 2: `ND_CCN`, the node's address while the corner cache is on |
@@ -891,7 +898,7 @@ takes the card's `$E000` part in test builds, as `ldriver.s` does).
 | main | `$1EFA` | `G_FPSSHOW` (wave 2 as integrated): idrate's frame rate flag (upstream's `_g_fps_show`, no canonical state), persistent across tics and loads |
 | main | `$1EFB` | `G_ONGROUND` (wave 5 as integrated, `player.md` R1): the player's onground (upstream's `PU_ONGROUND`, no canonical state), persistent across tics: `calcHeight` reads the last tic's while the reaction time counts |
 | W | `$6000-$65FF` | `MATHW`, `AUXW`: the render images' bytes |
-| W | `$6600-$99FF` | The core image (13,312 B since wave 2's integration, 12,800 before): the runtime, milestone 9's game core in play, the game's math (`math-g.o`: `R_PointToAngle3`, the sines, 672 B), part `damage`'s `weaponinfo`, the routines the placement puts there (the skeleton's own: 8,311 B with no part). Since the frame slots (2026-10-03) not `gspec.s` (the load image's SPECIALS step: no tic image calls it) nor part flow's `g_resume` (the play build's brain group, the test drivers' card area); `gcall.s`'s memory-API transport and restore are there |
+| W | `$6600-$99FF` | The core image (13,312 B since wave 2's integration, 12,800 before): the runtime, milestone 9's game core in play, the game's math (`math-g.o`: `R_PointToAngle3`, the sines, 672 B), part `damage`'s `weaponinfo`, the routines the placement puts there (the skeleton's own: 8,311 B with no part). Since the frame slots (2026-10-03) not `gspec.s` (the load image's SPECIALS step: no tic image calls it) nor part flow's `g_resume` (the play build's brain group, the test drivers' card area); `gcall.s`'s memory-API transport and restore are there. Since the copy engine (2026-10-03, `docs/SPEED.md` 10) the transport is in the card (`AMEMLC`, `$DB5C-$DBFF`) and the core keeps a request's build (`am_one`) and the restore: the fixed core code 111 B smaller (play 9,429 → 9,318 B), which the placement gave to routines |
 | W | `$9A00-$9DFF` | The parts' scratch blocks (`SB_<PART>`, 32 B each by default, `sight` 106 since wave 1's integration, `path` 44 since wave 4's: 1,014 of 1,024 B, `$9A00-$9DF5`) |
 | W | `$9E00-$A5FF` | Slot 1: one paged group (2,048 B since wave 2's integration, which gave the core 512 B of it: the placement cuts every group at slot 2's 2,048 B) |
 | W | `$A600-$ADFF` | Slot 2: one paged group (2,048 B) |

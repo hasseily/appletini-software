@@ -449,11 +449,7 @@ MOSAVE_PAST_CACHE = """gt_mosave:
 PLANTS = {
     # FCALL's return leaves the callee's group in the slot (S5 fcall)
     'fcall-no-reload': ('fcall', [('gcall.s', """        beq @back
-        ldy FC_PS               ; (gr_load counts its pages in FC_PS: the
-        phy                     ;   callee's P kept on the stack; wave 1
-        jsr gr_load             ;   as integrated, secfind.md request 11)
-        pla
-        sta FC_PS
+        jsr gr_load             ; (FC_PS, the callee's P, stays)
 @back:""", """        beq @back
         nop                     ; (planted: the caller's group not
         nop                     ;   reloaded)
@@ -462,11 +458,7 @@ PLANTS = {
     # FCALL's return reloads the saved group only when the caller runs in
     # that slot (S5 fcall's nested slot 1 -> slot 2 -> slot 1)
     'fcall-same-slot': ('fcall', [('gcall.s', """        beq @back
-        ldy FC_PS               ; (gr_load counts its pages in FC_PS: the
-        phy                     ;   callee's P kept on the stack; wave 1
-        jsr gr_load             ;   as integrated, secfind.md request 11)
-        pla
-        sta FC_PS
+        jsr gr_load             ; (FC_PS, the callee's P, stays)
 @back:""", """        beq @back
         stx FC_T+1              ; (planted: only a caller in that slot:
         tsx                     ;   its return's high byte)
@@ -478,21 +470,16 @@ PLANTS = {
         cpy FC_T
         bne @back
         lda FC_T+1
-        ldy FC_PS
-        phy
         jsr gr_load
-        pla
-        sta FC_PS
 @back:""")]),
     # FCALL's return through a restore loses the callee's flags (S5 fcall:
     # gt_fd's carry back in gt_fc; wave 1 as integrated, secfind.md
     # request 11)
-    'fcall-flags-lost': ('fcall', [('gcall.s', """        ldy FC_PS               ; (gr_load counts its pages in FC_PS: the
-        phy                     ;   callee's P kept on the stack; wave 1
-        jsr gr_load             ;   as integrated, secfind.md request 11)
-        pla
-        sta FC_PS
+    # (since the copy engine, docs/SPEED.md 10, no load writes FC_PS: the
+    # plant is a load that does, as the test driver's far_gcopy did)
+    'fcall-flags-lost': ('fcall', [('gcall.s', """        jsr gr_load             ; (FC_PS, the callee's P, stays)
 @back:""", """        jsr gr_load             ; (planted: P lost in FC_PS)
+        stz FC_PS
 @back:""")]),
     # the spawn's record written to the banks with g_put, past a cache
     # line that holds the slot (S5 spawn)

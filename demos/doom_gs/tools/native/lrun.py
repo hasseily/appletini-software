@@ -163,16 +163,20 @@ def store_records() -> List[Tuple[int, int, int, bytes]]:
 def card_records(b: RC.Build, fill: int) -> List[Tuple[int, int, int,
                                                          bytes]]:
     """The main card: bank 1 $D000-$DFFF (the quarter squares, the math's
-    products, the far layer, the phase loader), $C000-$FFFF (the driver
-    or the runner)."""
+    products, the memory API's transport of a tic image (gcall.s AMEMLC),
+    the far layer, the phase loader), $C000-$FFFF (the driver or the
+    runner)."""
     lc = bytearray([fill]) * 0x4000
     lc1 = bytearray([fill]) * 0x1000
     squares = (RC.TABLES / 'math' / 'squares.bin').read_bytes()
     lc1[0:len(squares)] = squares
     for seg, part, base in (('MATHLC', 'lc1', 0xD800),
+                            ('AMEMLC', 'lc1', 0xD800),
                             ('MATHFAR', 'far', 0xDC00),
                             ('RFAR', 'far', 0xDC00),
                             ('RLOAD', 'far', 0xDC00)):
+        if seg == 'AMEMLC' and seg not in b.segments:
+            continue
         start, end = b.segments[seg]
         data = (b.obj / ('%s.%s' % (b.name, part))).read_bytes()
         lc1[start - 0xD000:end + 1 - 0xD000] = data[start - base:

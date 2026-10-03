@@ -75,10 +75,10 @@ to the kernel, which runs it:
 | Step | Bytes | Does |
 | --- | --- | --- |
 | `K_END` | 0 | the list's end: `K_TIC E_FRAME` |
-| `K_LOAD` | 1, bank, runs..., 0 | `far_pload` of the bank's page runs into the same addresses of main |
+| `K_LOAD` | 1, bank, runs..., 0 | `far_pload` of the bank's page runs into the same addresses of main; since the copy engine (section 18) one memory-API PRIVATE request, a descriptor a run (`gcall.s`'s `am_runs` in the card), and the front end's window and the masked image come this way too (the brain's `img_wload`, `img_mload`: `far_wloadt`'s and `far_mload`'s runs) |
 | `K_CALL` | 2, address, A, X | `jsr` with A, X (Y 0); its A into `DL_RES` |
-| `K_WLOAD` | 3 | `far_wloadt` (the front end's code from page `$65` and the level's W tables; since speed wave 2: the tic image left the same `MATHW` bytes in `$6000-$64FF`, `playdisk.shared_w_problems` asserts it) |
-| `K_MLOAD` | 4 | `far_mload` (the masked phase's image) |
+| `K_WLOAD` | 3 | `far_wloadt` (the front end's code from page `$65` and the level's W tables; since speed wave 2: the tic image left the same `MATHW` bytes in `$6000-$64FF`, `playdisk.shared_w_problems` asserts it); since the copy engine a stop (the brain writes a `K_LOAD`, section 18) |
+| `K_MLOAD` | 4 | `far_mload` (the masked phase's image); since the copy engine a stop, as `K_WLOAD` |
 | `K_TIC` | 5, code | the tic image's core (and its W unless the list ended with P2DW, which left the same bytes in `$6000-$65FF`: then from page `$66`) from `GCODE0` and each plane's pages below `G_MOHWM` from `MOBJP` (speed wave 2), the slots empty, then `dl_brain` through `gcall.s`'s `fc_go` with `DL_CODE` = code; `planes_out` writes the planes back in one `RAMWRT` window and sets the next `K_TIC`'s two load lists (`k_core`, `k_planes` at `KLISTS`) |
 | `K_MENU` | 6 | the menu's paused frames with `MENUW` in W, until the menu closes or asks something (`M_REQ`) |
 | `K_HALT` | 7 | the quit's end |
@@ -108,7 +108,8 @@ its phase timing's `BT_*` (section 15):
 
 | Space | Range | Holds |
 | --- | --- | --- |
-| Main card | `$FF00-$FFB6`, `$FFB8-$FFC3`, `$FFC4-$FFD4`, `$FFD5-$FFF7` | the kernel's code (`$FFB7` padding), its two load lists `k_core` and `k_planes` at `KLISTS` (speed wave 2: `dl_disp.s` in the tic image rewrites them each frame), the benchmark timing's `bt_replay` at `BT_REPLAY` (17 B, section 15) and, since speed wave 1, `far_gcopy` at `KERN_GCOPY` (`glayout.py`): `gr_load`'s copy of a group in one `RAMRD` window, since wave 2 its length only (from byte 256 − its tail of the page before it). 248 of the 250 B before the vectors |
+| Main card | `$FF00-$FFB6`, `$FFB8-$FFC3`, `$FFC4-$FFD4`, `$FFD5-$FFF7` | the kernel's code (`$FFB7` padding), its two load lists `k_core` and `k_planes` at `KLISTS` (speed wave 2: `dl_disp.s` in the tic image rewrites them each frame), the benchmark timing's `bt_replay` at `BT_REPLAY` (17 B, section 15) and, since speed wave 1, `far_gcopy` at `KERN_GCOPY` (`glayout.py`): `gr_load`'s copy of a group in one `RAMRD` window, since wave 2 its length only (from byte 256 − its tail of the page before it). 248 of the 250 B before the vectors. Since the copy engine (section 18) the code is 16 B shorter (`k_wload`, `k_mload` gone: `dl_halt` at `$FFA4`, `$FFA7-$FFB7` padding) and `far_gcopy` is called by no game code (`CALIB.hdv` times it) |
+| Main card bank 1 | `$DB5C-$DBFF` | since the copy engine (section 18): the memory API's transport `AMEMLC` (`gcall.s`, 164 B), from the tic image's link |
 | Main card | `$FE80-$FEFF`, `$FE7B-$FE7F` | `DLBUF` (the step list), `KV_*` |
 | Main | `$0880-$08FF`, `$0B94-$0BFF` | the kernel's menu loop and the benchmark timing's `bt_mark` at `BT_MARK` (`$08CA`) and `BT_MARK2` (`$0BE1`) (read-only code, copied by DLINIT's PRIVATE request with the static tables: MEMORY_MAP.md 3.2's free bytes, never `$0878-$087F`; `$08F3-$08FF` free) |
 | Main | `$0844-$0867` | `bt_mark`'s middle part `bt_ext`, which the brain's `bt_start` writes there at each benchmark's start (section 15) |
@@ -150,7 +151,7 @@ uses none.
 
 | Image | Bank, pages | Load, measured or from the rate |
 | --- | --- | --- |
-| Tic image (W + core + planes) | 72 and 74: 58 + 12 pages; since speed wave 2 52 + 4-12 (the core from `$66` after P2DW, the planes below `G_MOHWM`) | 4.4 ms (from the rate); less since wave 2 |
+| Tic image (W + core + planes) | 72 and 74: 58 + 12 pages; since speed wave 2 52 + 4-12 (the core from `$66` after P2DW, the planes below `G_MOHWM`) | 4.4 ms (from the rate); less since wave 2; since the copy engine (section 18, a2vm `f122-nod2`) 0.57 + 0.15 ms, two requests |
 | A group (slot) | 72-73: up to 8 pages | 0.5 ms each switch (from the rate) |
 | `WCODE` + the level's W tables | 112 | 5.0 ms (measured) |
 | `MCODE` | 113 | 2.5 ms (measured) |
@@ -165,7 +166,9 @@ uses none.
 | `DLINIT` | 1: 2 pages from `$6600` | 0.1 ms (boot and quit only) |
 
 "From the rate": `far_pload` copies 63 µs a page on a2vm's f121 profile
-(P2DW's 31 pages in 1.96 ms). The level load itself is milestone 9's: E1M1
+(P2DW's 31 pages in 1.96 ms). Since the copy engine (section 18) every one
+is one memory-API request, about 46 µs and 9.8 µs a page on F1.2.2
+(a2vm `f122-nod2`): `WCODE` 0.79 ms, `MCODE` 0.47, `P2DW` 0.36. The level load itself is milestone 9's: E1M1
 216 ms on f121 (LEVELS.md, `--setup-timing`).
 
 ## 6. No stubs
@@ -821,3 +824,59 @@ suite (`python3 tools/testpar.py`).
 
 **The disk**: `build/native/DOOM.hdv`, 4,029,952 bytes, SHA-1
 `2b0fa3a6df5526364f7d27a9d039852e84bb8a26`.
+
+## 18. What changed: the copy engine (2026-10-03)
+
+For the owner, after the frame slots' benchmark on your card (5.648 FPS,
+`TIC 105.4`, F1.2.2, the Disk II's acceleration off): F1.2.2 copies with
+the memory API on the FPGA's copy engine, about 46 µs a request and 0.038
+µs a byte, six times faster a byte than the CPU's copy. Every big copy of
+a frame now goes that way: each group of game code loaded into W's two
+slots (about 40 a frame in the benchmark), the tic image's core and the
+walk's planes, the planes back, and the images of the 3D view, the
+sprites and the status bar. Nothing the game shows or does changed (the
+checks below). `docs/SPEED.md` 10 has the details.
+
+**What you will notice** (a2vm `f122-nod2`, which matched your card's
+frame-slot benchmark within 0.03 FPS):
+
+| | Before (your disk `2b0fa3a6`) | After |
+| --- | ---: | ---: |
+| The menu's BENCHMARK | 5.677 (your card: 5.648) | **6.519** |
+| Its rows | TIC 104.5, 3D 21.8, MASK 13.8, DRAW 31.4, REST 4.9 | TIC 89.4, 3D 18.0, MASK 11.6, DRAW 31.3, REST 3.3 |
+| E1M1's start, standing still | 13.75 FPS (72.7 ms) | **16.97 FPS** (58.9 ms) |
+| demo3 on E1M7, gametics 1052-1796 | 6.01 FPS (166.5 ms) | **6.96 FPS** (143.7 ms) |
+
+Your card should show about **6.5 FPS** with `TIC` about 89.
+
+**What was changed**
+
+1. **The transport moved to the card**: the code that sends a request to
+   the memory API and waits for it (`gcall.s`'s `AMEMLC`, 164 B in the
+   main card's bank 1 after the multiply tables) now serves every
+   request, because a load that replaces the whole of W would overwrite
+   code waiting in W.
+2. **Group loads**: `gr_load` loads a group into a W slot by one request,
+   as it already did for a frame slot; the frame slots' colormap bytes go
+   back in one request a frame instead of one a slot.
+3. **The kernel's loads**: `K_TIC`'s core and planes and every `K_LOAD`
+   are one request each, a descriptor a run; the 3D view's and the
+   sprites' images are `K_LOAD`s now (the steps `K_WLOAD` and `K_MLOAD`
+   left the kernel); the planes go back to RamWorks by one request.
+4. **The placement** was searched again with these prices (a2vm's F1.2.2
+   model): `tools/native/gplace-f122.json`, 11 frame slots.
+5. Kept as they were: the copies that draw the screen (they must be
+   seen), the masked phase's two small copies (0.3 ms a frame, in the
+   renderer's build), and the many copies under 256 B.
+
+**How it was checked** (the owner's rule: only what changed, once each):
+the lockstep demo3 run against ref816 (2,134 tics, 0 failures: the group
+loads and the placement); the menu's BENCHMARK (`test_play_bench`), with
+a new check that at every call of the 3D view, the sprites and the status
+bar W holds their image exactly as its RamWorks bank does (129 loads) and
+the colormaps right at every replay (43); a planted bug in each (a load a
+page short, a group without its last bytes), both caught; then the fast
+full suite (`python3 tools/testpar.py --jobs 5`).
+
+**The disk**: `build/native/DOOM.hdv`, 4,029,952 bytes, SHA-1
+`fd3ce9fd7e44c4e642dcd76101870609d2f01382`.

@@ -69,7 +69,6 @@
         .export dg_ra, dg_rx, dg_ry, dg_rp, dg_ticker, dg_resume
         .export dg_nlsetup, dg_frame, dg_stop, dg_rekey, dg_sched
         .export dg_core, dg_planes, dg_lcode, dg_tcount, dg_loads
-        .export far_gcopy
 .ifdef TICLEVEL
         .export dg_fwl, dg_fml, dg_fmm, dg_fbl, dg_fnb, dg_fkind, dg_strm
         .export dg_scnt, dg_nosnap, dg_wipe
@@ -986,50 +985,6 @@ planes_in:
         ldx #>dg_planes
         ldy #MOBJP
         jmp far_pload
-; far_gcopy: gr_load's copy of a group (gcall.s) in the test builds: FA_N
-; pages (1-255) of bank FA_BANK from FA_SRC + Y to main FA_DST + Y, both
-; pointers with the same low byte, the first page from byte Y (Y even; as
-; the play kernel's), through far_get a page at a time, the pages counted
-; in FC_PS (as gr_load's own loop was: the parts' write checks allow
-; far_get's stores into the slots). It overrides game.cfg's weak
-; far_gcopy, the play kernel's one read window (dl_kern.s), which a test
-; image does not link (part ticloads' request 3, speed wave 2 as
-; integrated). Changes A, Y, FA_SRC, FA_DST, FA_N, FC_PS.
-far_gcopy:
-        lda FA_N
-        sta FC_PS
-        tya
-        beq @whole
-        jsr gc_add              ; both pointers on by Y
-        tya
-        eor #$FF
-        inc a
-        sta FA_N                ; the first page's 256 - Y bytes
-        jsr far_get
-        lda FA_N
-        jsr gc_add              ; on past them
-        dec FC_PS
-        beq @done
-@whole: stz FA_N                ; (256)
-:       jsr far_get
-        inc FA_SRC+1
-        inc FA_DST+1
-        dec FC_PS
-        bne :-
-@done:  rts
-gc_add: pha                     ; FA_SRC and FA_DST on by A
-        clc
-        adc FA_SRC
-        sta FA_SRC
-        bcc :+
-        inc FA_SRC+1
-:       pla
-        clc
-        adc FA_DST
-        sta FA_DST
-        bcc :+
-        inc FA_DST+1
-:       rts
 ; planes_out: W's planes back to MOBJP (a page at a time, far_put)
 planes_out:
         lda #MOBJP

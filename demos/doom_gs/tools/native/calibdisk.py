@@ -259,7 +259,10 @@ def play_parts(play: Path = PLAY) -> Parts:
     tic = RC.load_build(play / 'tic', 'tic')
     lab = tic.labels
     for name in ('far_get', 'far_put', 'far_pload', 'far_gcopy'):
-        if name in boot.labels and boot.labels[name] != lab[name]:
+        # (since the copy engine the tic image no longer names far_gcopy:
+        # no game code calls it, docs/SPEED.md 10)
+        if name in boot.labels and name in lab and \
+                boot.labels[name] != lab[name]:
             raise CalibError('%s: the card has $%04X, the tic image $%04X'
                              % (name, boot.labels[name], lab[name]))
     far_lo = 0xDC00

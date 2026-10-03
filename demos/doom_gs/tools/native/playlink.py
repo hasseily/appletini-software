@@ -73,7 +73,7 @@ CARD_SYMS = ('pl_time', 'fx_song', 'fx_isplaying', 'fx_stopall',
              'pl_vbl')
 P2DW_SYMS = ('s2_frame', 's2_poll')
 INIT_SYMS = ('dli_main', 'dli_quit')
-TIC_SYMS = ('fc_go', 'dl_brain')
+TIC_SYMS = ('fc_go', 'dl_brain', 'am_runs')
 
 GROUP_SIZE = 0x0800
 SLOTS = {1: 0x9E00, 2: 0xA600}
@@ -170,9 +170,29 @@ def ovlw_bytes(m11: Path = M11) -> bytes:
     return (m11 / part / ('%s.ovw' % name)).read_bytes()
 
 
+def card_runs(label: str) -> Tuple[Tuple[int, int], ...]:
+    """The page runs of rcard's list at `label` in the card's bank 1 (the
+    phase loader's wl_tic, far_wloadt's, and mfar.s's wl_mask,
+    far_mload's): the brain's K_LOAD of the front end's window and of the
+    masked image (img_wload, img_mload) copies the same pages."""
+    rc = RC.load_build(RCARD, 'rcard')
+    at = rc.labels[label]
+    data = (rc.obj / 'rcard.far').read_bytes()
+    out = []
+    i = at - 0xDC00
+    while data[i]:
+        out.append((data[i], data[i + 1]))
+        i += 2
+    if not out:
+        raise LinkError('rcard\'s %s holds no run' % label)
+    return tuple(out)
+
+
 def loads(play: Path, m11: Path = M11) -> List[Load]:
     out = [Load('p2dw', S.image_banks()['P2DW'],
                 runs_of(*s2run.stored_extent(p2dw_build(play))))]
+    out.append(Load('wload', R.WCODE_BANK, card_runs('wl_tic')))
+    out.append(Load('mload', R.MCODE_BANK, card_runs('wl_mask')))
     for image in ('MENUW', 'AMAPW', 'WIW', 'FINW', 'PALW'):
         b = m11_build(image, m11)
         out.append(Load(image.lower(), S.image_banks()[image],

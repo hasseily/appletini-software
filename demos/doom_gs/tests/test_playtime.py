@@ -2,8 +2,10 @@
 and the exact idle skip of playdisk.run.
 
 Reading: frames cut at the kernel's K_END dispatches, their steps named
-by the K_CALL's target and the K_LOAD's bank, the group loads counted in
-K_TIC only, the cuts by gametic and by time (synthetic PC logs, no build).
+by the K_CALL's target and the K_LOAD's bank (the front end's and the
+masked image's K_WLOAD and K_MLOAD), the group loads counted in K_TIC
+only, the memory-API requests by kind, the cuts by gametic and by time
+(synthetic PC logs, no build).
 The idle: on the title loop, where the brain's frame wait does spin, the
 exact skip gives the frames of a run with no skip at all (two bounded
 a2vm runs of 12 s of model time; skipped when build/ lacks the play
@@ -29,27 +31,44 @@ def probe() -> T.Probe:
     names = {0x6593: ['nr_frame'], 0x6800: ['OVLW', 'nm_masked'],
              0x660B: ['s2_frame'], 0x6600: ['palw_level', 's2_poll']}
     return T.Probe({}, ['lc.FF9B', 'lc.FF9C', '1DC0', '1DC1', '1DC2',
-                        '1DC3'], names, {0x6B: 'P2DW', 0x5D: 'OVLW'}, HZ)
+                        '1DC3'], names, {0x6B: 'P2DW', 0x5D: 'OVLW',
+                                         0x70: 'WCODE', 0x71: 'MCODE'}, HZ,
+                   {5: 1000, 9: 512}, {5: 1, 9: 3},
+                   {0x6B: (1, 7936), 0x70: (2, 18944), 0x71: (2, 10496)},
+                   {'planes_out': (1, 40), 'dl_rsback': (2, 41)})
 
 
-def ln(t, name, target=0, gametic=0, y=0) -> T.Line:
-    return T.Line(t, name, 0, 0, y, target, gametic)
+def ln(t, name, target=0, gametic=0, y=0, x=0, more=()) -> T.Line:
+    return T.Line(t, name, 0, x, y, target, gametic, more)
 
 
 def frame_lines(t, g, tics=4, loads=3, irqs=2):
     """One level frame from t (ms), gametic g at its K_END."""
-    out = [ln(t, 'k_end', gametic=g)]
+    out = [ln(t, 'k_end', gametic=g),
+           ln(t, 'k_tcore', gametic=g, more=(52, 2, 0, 0, 0, 0)),
+           ln(t + 0.5, 'k_tplan', gametic=g, more=(52, 2, 0, 0, 0, 0))]
     for i in range(loads):
         out.append(ln(t + 1 + i, 'gr_load', gametic=g))
-    out += [ln(t + 10, 'k_wload', gametic=g + tics),
+    out += [ln(t + 1, 'am_one', gametic=g, x=5),        # a W slot's
+            ln(t + 1.25, 'gr_loaded', gametic=g),
+            ln(t + 2, 'am_one', gametic=g, x=9),        # a frame slot's
+            ln(t + 2.5, 'gr_loaded', gametic=g),
+            ln(t + 3, 'planes_out', gametic=g, more=(52, 2, 0, 2, 7, 41)),
+            ln(t + 4, 'planes_out', gametic=g, more=(52, 2, 0, 2, 40, 41)),
+            ln(t + 4.5, 'fs_restore', gametic=g),
+            ln(t + 5, 'dl_rsback', gametic=g, more=(52, 2, 0, 2, 40, 41)),
+            ln(t + 10, 'k_load', gametic=g + tics),
+            ln(t + 10, 'k_lrun', gametic=g + tics, y=0x70),
             ln(t + 12, 'k_call', gametic=g + tics),
             ln(t + 12, 'k_jsr', 0x6593, g + tics),
-            ln(t + 20, 'k_mload', gametic=g + tics),
+            ln(t + 20, 'k_load', gametic=g + tics),
+            ln(t + 20, 'k_lrun', gametic=g + tics, y=0x71),
             ln(t + 21, 'gr_load', gametic=g + tics),   # not a tic's
+            ln(t + 21, 'am_one', gametic=g + tics),    # not a tic's
             ln(t + 22, 'k_call', gametic=g + tics),
             ln(t + 22, 'k_jsr', 0x6800, g + tics),
             ln(t + 30, 'k_load', gametic=g + tics),
-            ln(t + 30, 'far_pload', gametic=g + tics, y=0x6B),
+            ln(t + 30, 'k_lrun', gametic=g + tics, y=0x6B),
             ln(t + 32, 'k_call', gametic=g + tics),
             ln(t + 32, 'k_jsr', 0x660B, g + tics)]
     for i in range(irqs):
@@ -78,6 +97,18 @@ class Reading(unittest.TestCase):
                                    ('s2_frame', 68)])
         self.assertEqual(f.loads, 3)        # K_TIC's only
         self.assertEqual(f.irqs, 2)
+        # the requests: a kind each (planes_out's second line, its group
+        # in slot 1, is the one), the kernel's loads by their lists
+        self.assertEqual(f.amem['W slot'], [1, 1, 1000, 0.25])
+        self.assertEqual(f.amem['frame slot'], [1, 1, 512, 0.5])
+        self.assertEqual(f.amem['planes out'], [1, 4, 4 * 512, 0.5])
+        self.assertEqual(f.amem['restore'], [1, 1, 512, 0.5])
+        self.assertEqual(f.amem['K_TIC core'], [1, 1, 52 * 256, 0.5])
+        self.assertEqual(f.amem['K_TIC planes'], [1, 4, 4 * 512, 0.5])
+        self.assertEqual(f.amem['K_LOAD'], [3, 5, 18944 + 10496 + 7936, 6])
+        r = T.report(frames, probe(), 'g', None, (4, 16))
+        self.assertEqual(r['private']['all']['requests_frame'], 9.0)
+        self.assertEqual(r['private']['W slot']['us_request'], 250.0)
 
     def test_report_by_gametic_and_by_time(self):
         frames = T.frames_of(self.lines(), probe())

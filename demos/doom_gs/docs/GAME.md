@@ -796,7 +796,15 @@ the kernel's `K_TIC` and in `gdriver.s`'s `drv_game` and `core_in`.
 build the kernel's one-RAMRD-window copy at card `$FFD5` (`KERN_GCOPY`,
 a weak symbol of `game.cfg`), in the `game.mk` images `gdriver.s`'s own
 `far_gcopy`, the old `far_get` loop a page at a time (the parts' write
-checks and `gselftest.py`'s plants see what they saw).
+checks and `gselftest.py`'s plants see what they saw). *Since the copy
+engine* (2026-10-03, `docs/SPEED.md` 10) `gr_load` copies a group, into a
+W slot as into a frame slot, by one memory-API PRIVATE request (`am_one`
+in the core, its length from the directory), in every build alike: the
+transport (`am_begin`, `am_push`, `am_fin`, the request's template
+`am_req`) is `gcall.s`'s segment `AMEMLC` in the main card's bank 1 at
+`$DB5C-$DBFF` (`glayout.AMEM_LC`), which the play disk's card and the test
+images' (`lrun.card_records`) both hold; `gdriver.s`'s `far_gcopy` is gone,
+and the kernel's stays only for `CALIB.hdv`.
 
 **The driver** (`gdriver.s`, card `$E000-$EDFF` in test builds, where
 `ldriver.s` and `lboot.s` run [R `MEMORY_MAP.md` 15-16]):
@@ -1049,7 +1057,10 @@ request (`fs_load`, `fs_send`: a CPU store there would be a video write,
 and `SLOT_NEED` treat the slot as any other, so it stays until `K_TIC`.
 `fs_restore` (the brain's last step in the play build, before a frame and a
 load in the test drivers) copies every loaded slot's colormap bytes back
-from `LVC`, one request a slot. No group that the tic code stores into is
+from `LVC`, one request a slot. (Since the copy engine, `docs/SPEED.md` 10:
+`gr_load`'s `am_one` makes the load's request, as for a W slot, and
+`fs_restore` puts every loaded slot back in one request, a descriptor a
+slot, so at most 15 frame slots: `glayout.AM_MAX`.) No group that the tic code stores into is
 pinned (`gplace.py`, `playdisk.py`). The core gave up `gspec.s` (618 B: the
 load image's SPECIALS step, which no tic image calls) and `g_resume` (163 B:
 the brain's group in the play build, the drivers' card area in the test
@@ -1166,6 +1177,21 @@ stack is written through a pointer). The integrated placement:
 `tools/native/gplace-frameslots.json` (12 frame slots, 64 pages). Its search
 raised `GROUP_MARGIN` from 64 to 96 B: it packed `P_DamageMobj`'s group to
 1,973 B, and part damage's plant `thrust-divided-first` adds 83 B there.
+
+*The copy engine* (2026-10-03, `docs/SPEED.md` 10): every load is a
+memory-API request, priced as a2vm's profile `f122+nod2` runs it
+(`gplacesim.amem_prices`): a request 46.3 µs (`--load-us` for a W slot,
+`--request-us` for a frame slot's load and a phase's restores), 9.84 µs a
+page in either kind of slot (`--page-us`, `--fpage-us`: the copy engine's
+41 clocks a line, `copy_read_wait` and `fabric_mhz` of
+`tools/a2vm/costs/appletini.json`), 3.5 µs each further descriptor of the
+restores' one request (`--desc-us`: `hw_transfer`'s AXI accesses); `gsim`
+counts the restores' requests (one a phase that loaded a frame slot), and
+`gplacesim.py --check` stays exact (the old recordings, and two new ones of
+this build: still 1,458 loads, lock3b 753). A search with these prices
+keeps the frame slots (without them, demo3's model cost is 10.9 ms a tic
+against 1.5): `tools/native/gplace-f122.json`, 42 groups, 11 of them in
+frame slots (64 pages), the core 3,776 of 3,793 B of table routines.
 
 The output is `gen/gplace.inc` and `game.cfg`; parts only write `FCALL`,
 so a placement change rebuilds every image and edits no source. The
@@ -1415,7 +1441,7 @@ test images 9 MB).
 | `tools/native/gplace.py` | The placement of 4.3 from the trace's heat, the survey's calls and the sizes; `--write` (the integrator's: `make -f game.mk place`) |
 | `src/native/game.mk`, `src/native/game/README.md` | The targets `part P=`, `wave W=`, `game`, `gprof`, `release`, `skel`, `place`, `shared`, `sizes`; the fragments; the conventions (`FCALL`, `DCALL`, the object API, `GA_*`/`GT_*`, the scratch blocks, the load protocol, the stops), `args.json`'s schema, the stream's format |
 | `src/native/gobj.s` | The object API: the mobj, sector, line and special caches with write-back and LRU, the fetches, the planes, the flush |
-| `src/native/gcall.s` | `fc_call` (5 B of stack; since speed wave 1 the lazy restore of 3.4: the slot's need `SLOT_NEED` saved, the group reloaded on return only when an active frame needs it and the slot holds another), `fc_unbuilt`, `dc_call`, `act_num`, the group loads (one `far_gcopy` a group), the stops |
+| `src/native/gcall.s` | `fc_call` (5 B of stack; since speed wave 1 the lazy restore of 3.4: the slot's need `SLOT_NEED` saved, the group reloaded on return only when an active frame needs it and the slot holds another), `fc_unbuilt`, `dc_call`, `act_num`, the group loads (one `far_gcopy` a group; since the copy engine one memory-API request, `am_one`), the frame slots' restore, the stops, and the memory API's transport in the card (`AMEMLC`: `docs/SPEED.md` 10) |
 | `src/native/ghook.s` | The hooks: the sound events and the same-pair hits logged in test builds, `I_GetTime` from the stream, the screens' stubs, the stops |
 | `src/native/gdriver.s` | The test driver in the card's `$E000` part: routine, routine-with-load, lockstep and load-test modes, the load protocol, the schedule's frames, the re-key records |
 | milestone 9's core | `gthink.s`, `gpos.s`, `gspawn.s`, `gspec.s`, `gvalid.s`, `gweap.s` on the object API; the planes, the zone's and the specials' free lists, `G_MOHWM`; `P_SpawnMobj`'s three z modes; `addIfFunc`; `gp_secnodes` with the `LR_USE` path and `MP_MODE`; `setPsprite` through `ACTTAB`; `gvalid.s` linked into the render images (`rframe.s`: `jsr gv_inc`); the setup's clear of `LR_OK`; the load's `GTABS` step (`lgeom.s`, `lstore.py`); the load image links `gobj.s` and ends with `go_flush`; the play entries `P_SpawnMobj`, `P_SetThingPosition`, `P_CreateSecNodeList` (new: `gp_secnodesmo`) |

@@ -65,10 +65,14 @@ KVAR_FIELDS = [('KV_PTR', 1), ('KV_BANK', 1), ('KV_N', 1), ('KV_T', 2)]
 STEPS = [
     ('K_END', 0),       # the step list's end: the next frame (TIC E_FRAME)
     ('K_LOAD', 1),      # bank, then page runs (first page, count; 0 ends):
-                        #   far_pload
+                        #   far_pload; since the copy engine one memory-API
+                        #   request (am_runs, docs/SPEED.md 10)
     ('K_CALL', 2),      # address (2), A, X: jsr (Y 0); A into DL_RES
-    ('K_WLOAD', 3),     # far_wload (the render front end's window)
-    ('K_MLOAD', 4),     # far_mload (the masked phase's image)
+    ('K_WLOAD', 3),     # far_wload (the render front end's window); since
+                        #   the copy engine a stop: the brain's K_LOAD
+                        #   img_wload
+    ('K_MLOAD', 4),     # far_mload (the masked phase's image); a stop, as
+                        #   K_WLOAD (img_mload)
     ('K_TIC', 5),       # code: the tic image and its planes into W, then
                         #   the brain with DL_CODE = code; the brain writes
                         #   the next step list

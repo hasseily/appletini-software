@@ -44,19 +44,28 @@ the gametic at its end is in (G0, G1].
 
 The data comes from a2vm's --pclog (tools/a2vm/README.md, "The PC log"),
 bounded by --pclog-limit: a line at each kernel dispatch (k_end, k_tic1,
-k_load, k_call and its jsr, k_wload, k_mload, k_menu), at far_pload (the
-image a K_LOAD brings), at gcall.s's gr_load (a group into its slot) and
-at the VBL handler, with the gametic and the step's call target. Reported:
+k_load, k_call and its jsr, k_menu), at k_load's call of am_runs (k_lrun:
+Y the bank of the image a K_LOAD brings; the render front end's window
+and the masked image are named K_WLOAD and K_MLOAD), at gcall.s's gr_load
+(a group into its slot) and at the VBL handler, with the gametic and the
+step's call target. Reported:
 
   frames, ms a frame (mean, median, max), FPS, tics a frame and a second;
   the kernel's steps in ms a frame: K_TIC (the tic image back, the brain,
   the tics, the next list), K_WLOAD, nr_frame, K_MLOAD, nm_masked,
   nm_bkload, nb_frame, K_LOAD P2DW, s2_frame and any other step;
   gr_load calls a tic (in K_TIC only: the tic image's), VBL interrupts a
-  frame; the frame slots' memory-API PRIVATE copies (gcall.s, docs/SPEED.md
-  9: fs_load a frame slot's load, fs_send each request with A its pages,
-  to fs_sent, its end): requests, pages and ms a frame, of them loads and
-  restores; the replay's share of nb_frame (nat_replay's entry to its return
+  frame; the memory-API PRIVATE requests (docs/SPEED.md 9, 10), each timed
+  from its caller to its return and its bytes from the build (a group's
+  copy length, grun.group_entry; the kernel's lists; the planes' pages
+  from G_MOHWM): gr_load's (am_one to gr_loaded: X the group; a W slot's
+  or a frame slot's by grp_slot), fs_restore's (to the brain's dl_rsback:
+  the frame slots loaded since K_TIC), planes_out's (to fs_restore), the
+  kernel's K_TIC core and planes (k_tcore, k_tplan, k_tbrain) and each
+  K_LOAD (the step): requests, descriptors, pages and ms a frame, by kind
+  (the transport's own PCs are in the card's bank 1, where bank 2's
+  texture rows run in the replay, so they are not logged);
+  the replay's share of nb_frame (nat_replay's entry to its return
   in nb_frame), and the benchmark's five phases as its page counts them
   (docs/PLAY.md 15): TIC (K_TIC), 3D (K_WLOAD, nr_frame), MASK (K_MLOAD,
   nm_masked, nm_bkload or OVLW, nb_frame but its replays), DRAW (the
@@ -104,8 +113,11 @@ STEP_ORDER = ['K_TIC', 'K_WLOAD', 'nr_frame', 'K_MLOAD', 'nm_masked',
 # the step a dispatch label starts
 DISPATCH = OrderedDict([('k_end', 'K_TIC'), ('k_tic1', 'K_TIC'),
                         ('k_load', 'K_LOAD'), ('k_call', 'K_CALL'),
-                        ('k_wload', 'K_WLOAD'), ('k_mload', 'K_MLOAD'),
                         ('k_menu', 'K_MENU'), ('dl_halt', 'K_HALT')])
+# a K_LOAD's step name by its image (the brain's img_wload and img_mload:
+# the render front end's window and the masked image, which had steps of
+# their own before the copy engine)
+LOAD_STEP = {'WCODE': 'K_WLOAD', 'MCODE': 'K_MLOAD'}
 # the images a K_LOAD may bring (their banks' symbols), and the prefix of
 # their entries' XS_ names
 IMAGES = [('P2DW', 's2_'), ('OVLW', 'OVLW'), ('PALW', 'palw_'),
@@ -113,8 +125,14 @@ IMAGES = [('P2DW', 's2_'), ('OVLW', 'OVLW'), ('PALW', 'palw_'),
           ('MENUW', 'm_')]
 
 
-# the frame slots' PCs (gcall.s): a load, a request (A: its pages), its end
-FRAME_SLOT_PCS = ('fs_load', 'fs_send', 'fs_sent')
+# the requests' PCs (docs/SPEED.md 10): in the tic phase (the tic image's
+# labels: their addresses hold other images' code in other steps, so they
+# count in K_TIC only) and in the kernel (the card's $FF00 page)
+TIC_REQUEST_PCS = ('am_one', 'gr_loaded', 'fs_restore', 'dl_rsback',
+                   'planes_out')
+KERNEL_REQUEST_PCS = ('k_tcore', 'k_tplan', 'k_tbrain', 'k_lrun')
+REQUEST_KINDS = ['W slot', 'frame slot', 'restore', 'planes out',
+                 'K_TIC core', 'K_TIC planes', 'K_LOAD']
 
 
 class TimeError(Exception):
@@ -146,6 +164,14 @@ class Probe(NamedTuple):
     names: Dict[int, List[str]]  # a K_CALL target: its XS_ names
     banks: Dict[int, str]        # a bank: its image
     hz: float
+    # the requests' bytes (docs/SPEED.md 10): each group's copy (its
+    # length as gr_load copies it) and slot, each image's runs by its bank
+    gbytes: Dict[int, int] = {}
+    gslot: Dict[int, int] = {}
+    ibytes: Dict[int, Tuple[int, int]] = {}  # bank: (descriptors, bytes)
+    # a glue group's PCs (planes_out in DLG_D, dl_rsback in DLG_B) count
+    # only while its slot holds it: name -> (slot, group)
+    holder: Dict[str, Tuple[int, int]] = {}
 
 
 def replay_pcs() -> Tuple[int, int]:
@@ -166,6 +192,41 @@ def replay_pcs() -> Tuple[int, int]:
     return lab['nat_replay'], lab['__BKFAR_RUN__'] + at - lo + 3
 
 
+def group_copies(play: Path, sym: Dict[str, int]
+                 ) -> Tuple[Dict[int, int], Dict[int, int]]:
+    """Each group's bytes as gr_load copies them (grun.group_entry: its
+    whole pages and its tail) and its slot (the placement's GRPn_SLOT, the
+    glue's own)."""
+    from native import grun, playlayout as PL
+    b = PK.tic_build(play)
+    groups = PK.gplace_groups(play / 'tic' / 'gen' / 'gplace.inc')
+    glue = {groups + off: slot for _, off, slot in PL.DL_GROUPS}
+    size, slot = {}, {}
+    for n in range(1, groups + len(PL.DL_GROUPS) + 1):
+        path = b.obj / ('tic.g%d' % n)
+        if not path.exists() or not path.stat().st_size:
+            continue
+        e = dict(grun.group_entry(0, 0, path.stat().st_size))
+        size[n] = e['grp_pages'] * 256 + e['grp_tail']
+        slot[n] = glue.get(n, sym.get('GRP%d_SLOT' % n, 1))
+    return size, slot
+
+
+def image_copies(play: Path, sym: Dict[str, int]
+                 ) -> Dict[int, Tuple[int, int]]:
+    """A K_LOAD's descriptors and bytes by its bank (playimg.inc's
+    lists, the brain's)."""
+    import re
+    out = {}
+    text = (play / 'gen' / 'playimg.inc').read_text()
+    for m in re.finditer(r'^img_\w+: \.byte (.*)$', text, re.M):
+        v = [int(x[1:], 16) if x.startswith('$') else int(x)
+             for x in (y.strip() for y in m.group(1).split(','))]
+        runs = [(v[i], v[i + 1]) for i in range(1, len(v) - 1, 2)]
+        out[v[0]] = (len(runs), 256 * sum(n for _, n in runs))
+    return out
+
+
 def probe(disk: P.Disk, profile: str) -> Probe:
     """The PCs to log and how to read the lines, from the play link."""
     lab = P.labels(disk)
@@ -174,24 +235,31 @@ def probe(disk: P.Disk, profile: str) -> Probe:
     for name in DISPATCH:
         pcs[lab[name]] = name
     pcs[lab['k_jsr']] = 'k_jsr'
-    pcs[sym['XS_far_pload']] = 'far_pload'
     pcs[sym['XS_pl_vbl']] = 'pl_vbl'
     tic = PK.tic_build(disk.play).labels
     pcs[tic['gr_load']] = 'gr_load'
-    n = len(DISPATCH) + 6
-    for name in FRAME_SLOT_PCS:     # (a build before the frame slots: none)
-        if name in tic:
-            pcs[tic[name]] = name
-            n += 1
+    n = len(DISPATCH) + 3
+    for name in TIC_REQUEST_PCS:
+        pcs[tic[name]] = name
+    for name in KERNEL_REQUEST_PCS:
+        pcs[lab[name]] = name
+    n += len(TIC_REQUEST_PCS) + len(KERNEL_REQUEST_PCS)
     entry, back = replay_pcs()
     pcs[entry] = 'nat_replay'
     pcs[back] = 'nb_rret'
+    n += 2
     if len(pcs) != n:
         raise TimeError('two logged labels share a PC')
-    # the jsr's operand (in the main card, the kernel's), the gametic
+    # the jsr's operand (in the main card, the kernel's), the gametic; the
+    # kernel's lists' counts (k_core's, k_planes' first: KLISTS, dl_kern.s)
+    # and G_MOHWM (planes_out's pages)
     gametic = sym['G_GAMETIC']
     log_bytes = ['lc.%X' % (lab['k_jsr'] + 1), 'lc.%X' % (lab['k_jsr'] + 2)]
     log_bytes += ['%X' % (gametic + i) for i in range(4)]
+    log_bytes += ['lc.%X' % (lab['k_core'] + 1),
+                  'lc.%X' % (lab['k_planes'] + 1),
+                  '%X' % sym['G_MOHWM'], '%X' % (sym['G_MOHWM'] + 1),
+                  '%X' % (sym['SLOT_GRP'] + 1), '%X' % (sym['SLOT_GRP'] + 2)]
     names = defaultdict(list)
     for k, v in sym.items():
         if k.startswith('XS_'):
@@ -203,7 +271,13 @@ def probe(disk: P.Disk, profile: str) -> Probe:
                                                           ('MCODE', '')]
              if '%s_BANK' % n in sym}
     hz = costs.parameters(P.PROFILES[profile])['fabric_mhz'] * 1e6
-    return Probe(pcs, log_bytes, dict(names), banks, hz)
+    gbytes, gslot = group_copies(disk.play, sym)
+    from native import playlayout as PL
+    groups = PK.gplace_groups(disk.play / 'tic' / 'gen' / 'gplace.inc')
+    glue = {name: (slot, groups + off) for name, off, slot in PL.DL_GROUPS}
+    holder = {'planes_out': glue['DLG_D'], 'dl_rsback': glue['DLG_B']}
+    return Probe(pcs, log_bytes, dict(names), banks, hz, gbytes, gslot,
+                 image_copies(disk.play, sym), holder)
 
 
 class Line(NamedTuple):
@@ -214,6 +288,7 @@ class Line(NamedTuple):
     y: int
     target: int                  # the k_jsr operand
     gametic: int
+    more: Tuple[int, ...] = ()   # the other logged bytes (probe's order)
 
 
 def read_log(path: Path, pr: Probe) -> List[Line]:
@@ -228,7 +303,8 @@ def read_log(path: Path, pr: Probe) -> List[Line]:
             b = [int(v, 16) for v in f[7:]]
             out.append(Line(int(f[0]), pr.pcs[int(f[1], 16)], int(f[2], 16),
                             int(f[3], 16), int(f[4], 16), b[0] | b[1] << 8,
-                            b[2] | b[3] << 8 | b[4] << 16 | b[5] << 24))
+                            b[2] | b[3] << 8 | b[4] << 16 | b[5] << 24,
+                            tuple(b[6:])))
     return out
 
 
@@ -254,10 +330,13 @@ class Frame(NamedTuple):
     loads: int                   # gr_load in K_TIC
     irqs: int
     replay: int = 0              # nb_frame's clocks in nat_replay
-    floads: int = 0              # the frame slots' loads (fs_load)
-    requests: int = 0            # PRIVATE requests (fs_send)
-    rpages: int = 0              # their pages
-    rclocks: int = 0             # their clocks (fs_send to fs_sent)
+    # the memory-API requests by kind (REQUEST_KINDS): [requests,
+    # descriptors, bytes, clocks]
+    amem: Dict[str, List[int]] = {}
+
+
+FS_FIRST = 3                     # glayout.FRAME_FIRST: the frame slots
+PLANES = 4                       # planes_out's and k_planes' runs
 
 
 def frames_of(lines: List[Line], pr: Probe) -> List[Frame]:
@@ -267,8 +346,26 @@ def frames_of(lines: List[Line], pr: Probe) -> List[Frame]:
     cur = None                   # the frame being read
     step = None                  # [name, start]
     image = None
+    req = None                   # the open request: [kind, start, n, bytes]
+
+    def close(t):
+        nonlocal req
+        if req is not None and cur is not None:
+            a = cur['amem'].setdefault(req[0], [0, 0, 0, 0])
+            a[0] += 1
+            a[1] += req[2]
+            a[2] += req[3]
+            a[3] += t - req[1]
+        req = None
+
+    def open_(kind, t, n, nbytes):
+        nonlocal req
+        close(t)
+        req = [kind, t, n, nbytes]
+
     for ln in lines:
         if ln.name in DISPATCH:
+            close(ln.t)
             if cur is not None and step is not None:
                 cur['steps'].append((step[0], ln.t - step[1]))
             kind = DISPATCH[ln.name]
@@ -278,45 +375,59 @@ def frames_of(lines: List[Line], pr: Probe) -> List[Frame]:
                                      ln.gametic - cur['gametic'],
                                      cur['steps'], cur['loads'],
                                      cur['irqs'], cur['replay'],
-                                     cur['floads'], cur['requests'],
-                                     cur['rpages'], cur['rclocks']))
+                                     cur['amem']))
                 cur = {'start': ln.t, 'gametic': ln.gametic, 'steps': [],
                        'loads': 0, 'irqs': 0, 'replay': 0, 'rstart': None,
-                       'floads': 0, 'requests': 0, 'rpages': 0,
-                       'rclocks': 0, 'qstart': None}
+                       'amem': {}, 'fsl': []}
+            if kind == 'K_TIC' and cur is not None:
+                cur['fsl'] = []
             step = [kind, ln.t]
-            if kind == 'K_WLOAD':
-                image = 'WCODE'
-            elif kind == 'K_MLOAD':
-                image = 'MCODE'
-            elif kind == 'K_TIC':
+            if kind == 'K_TIC':
                 image = 'TIC'
             elif kind == 'K_LOAD':
                 image = None
         elif ln.name == 'k_jsr' and step is not None and \
                 step[0] == 'K_CALL':
             step[0] = call_name(pr, ln.target, image)
-        elif ln.name == 'far_pload' and step is not None and \
+        elif ln.name == 'k_lrun' and step is not None and \
                 step[0] == 'K_LOAD' and image is None:
             image = pr.banks.get(ln.y, 'bank $%02X' % ln.y)
-            step[0] = 'K_LOAD %s' % image
+            step[0] = LOAD_STEP.get(image, 'K_LOAD %s' % image)
+            n, nbytes = pr.ibytes.get(ln.y, (0, 0))
+            open_('K_LOAD', ln.t, n, nbytes)
         elif ln.name == 'gr_load' and cur is not None and \
                 step is not None and step[0] == 'K_TIC':
             cur['loads'] += 1
         elif ln.name == 'pl_vbl' and cur is not None:
             cur['irqs'] += 1
-        elif ln.name in FRAME_SLOT_PCS and (
+        elif ln.name in TIC_REQUEST_PCS + KERNEL_REQUEST_PCS and (
                 cur is None or step is None or step[0] != 'K_TIC'):
             pass                # (another image's code at the core's PC)
-        elif ln.name == 'fs_load':
-            cur['floads'] += 1
-        elif ln.name == 'fs_send':
-            cur['requests'] += 1
-            cur['rpages'] += ln.a
-            cur['qstart'] = ln.t
-        elif ln.name == 'fs_sent' and cur['qstart'] is not None:
-            cur['rclocks'] += ln.t - cur['qstart']
-            cur['qstart'] = None
+        elif ln.name in pr.holder and \
+                ln.more[3 + pr.holder[ln.name][0]] != pr.holder[ln.name][1]:
+            pass                # (another group's code in the slot)
+        elif ln.name == 'am_one':
+            slot = pr.gslot.get(ln.x, 1)
+            if slot >= FS_FIRST:
+                cur['fsl'].append(ln.x)
+            open_('frame slot' if slot >= FS_FIRST else 'W slot', ln.t, 1,
+                  pr.gbytes.get(ln.x, 0))
+        elif ln.name == 'planes_out':
+            mohwm = ln.more[2] | ln.more[3] << 8
+            pages = min(max((mohwm + 255) >> 8, 1), 3)
+            open_('planes out', ln.t, PLANES, PLANES * 256 * pages)
+        elif ln.name == 'fs_restore':
+            close(ln.t)
+            if cur['fsl']:
+                open_('restore', ln.t, len(cur['fsl']),
+                      sum(pr.gbytes.get(g, 0) for g in cur['fsl']))
+                cur['fsl'] = []
+        elif ln.name == 'k_tcore':
+            open_('K_TIC core', ln.t, 1, 256 * ln.more[0])
+        elif ln.name == 'k_tplan':
+            open_('K_TIC planes', ln.t, PLANES, PLANES * 256 * ln.more[1])
+        elif ln.name in ('gr_loaded', 'dl_rsback', 'k_tbrain'):
+            close(ln.t)
         elif ln.name == 'nat_replay' and cur is not None:
             cur['rstart'] = ln.t
         elif ln.name == 'nb_rret' and cur is not None and \
@@ -333,6 +444,31 @@ def phases_of(f: Frame) -> Dict[str, int]:
         out[PHASE_OF.get(name, 'REST')] += clocks
     out['MASK'] -= f.replay
     out['DRAW'] += f.replay
+    return out
+
+
+def private_of(sel: List[Frame], pr: Probe) -> Dict[str, Any]:
+    """The memory-API requests a frame, by kind and in all: requests,
+    descriptors, pages (bytes / 256), ms; and us a request."""
+    out = OrderedDict()
+    total = [0, 0, 0, 0]
+    for kind in REQUEST_KINDS:
+        s = [sum(f.amem.get(kind, [0, 0, 0, 0])[i] for f in sel)
+             for i in range(4)]
+        if not s[0]:
+            continue
+        total = [a + b for a, b in zip(total, s)]
+        out[kind] = OrderedDict([
+            ('requests_frame', round(s[0] / len(sel), 2)),
+            ('descriptors_frame', round(s[1] / len(sel), 2)),
+            ('pages_frame', round(s[2] / 256 / len(sel), 2)),
+            ('ms_frame', round(s[3] / pr.hz * 1000 / len(sel), 3)),
+            ('us_request', round(s[3] / pr.hz * 1e6 / s[0], 1))])
+    out['all'] = OrderedDict([
+        ('requests_frame', round(total[0] / len(sel), 2)),
+        ('descriptors_frame', round(total[1] / len(sel), 2)),
+        ('pages_frame', round(total[2] / 256 / len(sel), 2)),
+        ('ms_frame', round(total[3] / pr.hz * 1000 / len(sel), 3))])
     return out
 
 
@@ -387,21 +523,7 @@ def report(frames: List[Frame], pr: Probe, cut: str,
         ('irqs_frame', round(sum(f.irqs for f in sel) / len(sel), 2)),
         ('replay_ms', round(sum(f.replay for f in sel) / pr.hz * 1000 /
                             len(sel), 2)),
-        ('private', OrderedDict([
-            ('requests_frame', round(sum(f.requests for f in sel) /
-                                     len(sel), 2)),
-            ('loads_frame', round(sum(f.floads for f in sel) / len(sel),
-                                  2)),
-            ('restores_frame', round(sum(f.requests - f.floads
-                                         for f in sel) / len(sel), 2)),
-            ('pages_frame', round(sum(f.rpages for f in sel) / len(sel),
-                                  2)),
-            ('ms_frame', round(sum(f.rclocks for f in sel) / pr.hz * 1000 /
-                               len(sel), 3)),
-            ('us_request', round(sum(f.rclocks for f in sel) / pr.hz * 1e6 /
-                                 max(1, sum(f.requests for f in sel)), 1)),
-            ('us_page', round(sum(f.rclocks for f in sel) / pr.hz * 1e6 /
-                              max(1, sum(f.rpages for f in sel)), 1))])),
+        ('private', private_of(sel, pr)),
         ('phases_ms', OrderedDict((s, round(phases[s] / len(sel), 2))
                                   for s in PHASES)),
     ])
@@ -532,13 +654,22 @@ def text(r: Dict[str, Any]) -> str:
                  r['loads_frame'], r['irqs_frame']),
              '  steps, ms a frame:']
     pv = r.get('private')
-    if pv and pv['requests_frame']:
-        lines.insert(-1, '  the frame slots\' PRIVATE copies: %.2f requests '
-                     'a frame (%.2f loads, %.2f restores), %.1f pages, %.2f '
-                     'ms (%.1f us a request, %.1f us a page)' % (
-                         pv['requests_frame'], pv['loads_frame'],
-                         pv['restores_frame'], pv['pages_frame'],
-                         pv['ms_frame'], pv['us_request'], pv['us_page']))
+    if pv and pv['all']['requests_frame']:
+        a = pv['all']
+        at = len(lines) - 1
+        lines.insert(at, '  the memory-API PRIVATE requests: %.2f a frame '
+                     '(%.2f descriptors), %.1f pages, %.2f ms; by kind:' % (
+                         a['requests_frame'], a['descriptors_frame'],
+                         a['pages_frame'], a['ms_frame']))
+        for kind, v in pv.items():
+            if kind == 'all':
+                continue
+            at += 1
+            lines.insert(at, '    %-14s %6.2f requests %6.2f descriptors '
+                         '%6.1f pages %7.3f ms (%.1f us a request)' % (
+                             kind, v['requests_frame'],
+                             v['descriptors_frame'], v['pages_frame'],
+                             v['ms_frame'], v['us_request']))
     for k, v in r['steps_ms'].items():
         lines.append('    %-24s %8.2f' % (k, v))
     lines.append('  the benchmark page\'s phases, ms a frame (nb_frame\'s '

@@ -374,7 +374,9 @@ def spec_of(key: str) -> Dict[str, Any]:
 
 # the write log: main but the zero page and the stack (always allowed),
 # FC_A (the call's start: call_entry's write), the cards, every aux bank
-LOG_RANGES = 'main:0069,main:0200-BFFF,lc,lc1,aux0-127'
+# (the card's bank 1 but the memory API's request template, gcall.s
+# am_req: glayout.LC1_LOG)
+LOG_RANGES = 'main:0069,main:0200-BFFF,lc,%s,aux0-127' % GL.LC1_LOG
 
 
 def allowed_main(b: RC.Build) -> List[Tuple[int, int]]:

@@ -17,6 +17,14 @@ puts the colormaps back before the tic phase ends (gcall.s fs_restore).
 A snapshot at every entry of the replay (nat_replay, the only reader of
 those pages) must find them equal to the level's copy in LVC, from which
 the load put them there.
+
+And the kernel's image loads by the memory API's copy engine (docs/
+SPEED.md 10: K_LOAD, one request a load, a descriptor a run): a snapshot
+at every K_CALL of the kernel (k_jsr, in the card); at the calls of the
+render front end (nr_frame), the masked phase (nm_masked) and the status
+bar (s2_frame) W must hold the image the list loaded just before, the
+brain's img_wload, img_mload and img_p2dw, on each of its runs byte for
+byte as its bank holds it.
 """
 
 import shutil
@@ -129,6 +137,59 @@ class Benchmark(unittest.TestCase):
             LL.LVC, LL.LVC_CMAPA, hi - 1)
         return 'pc %X@* snapshot replay\n' % rc.labels['nat_replay'], ranges
 
+    def image_runs(self):
+        """{image: (bank, [(first page, pages), ...])} of the play
+        build's playimg.inc (the brain's K_LOAD lists)."""
+        import re
+        out = {}
+        text = (P.PLAY / 'gen' / 'playimg.inc').read_text()
+        for m in re.finditer(r'^img_(\w+): \.byte (.*)$', text, re.M):
+            v = [int(x.strip()[1:], 16) if x.strip().startswith('$')
+                 else int(x) for x in m.group(2).split(',')]
+            out[m.group(1)] = (v[0], [(v[i], v[i + 1])
+                                      for i in range(1, len(v) - 1, 2)])
+        return out
+
+    CALLED = {'nr_frame': 'wload', 'nm_masked': 'mload', 's2_frame': 'p2dw'}
+
+    def loads_event(self):
+        """An a2vm event, a snapshot 'call-NNNN' at every K_CALL's jsr
+        (the kernel's k_jsr), and the snapshot ranges of the images' banks
+        (CALLED)."""
+        runs = self.image_runs()
+        ranges = []
+        for name in self.CALLED.values():
+            bank, rr = runs[name]
+            ranges += ['aux%d:%04X-%04X' % (bank, p << 8, ((p + n) << 8) - 1)
+                       for p, n in rr]
+        return ('pc %X@* snapshot call\n' % self.lab['k_jsr'],
+                ','.join(ranges))
+
+    def loads_wrong(self, run):
+        """The K_CALLs of CALLED's routines (the jsr's operand, in the
+        card) whose W differs from their image's bank on one of its runs:
+        (how many were checked, the wrong ones)."""
+        runs = self.image_runs()
+        image = {self.sym['XS_' + k]: v for k, v in self.CALLED.items()}
+        at = self.lab['k_jsr'] + 1
+        out, n = [], 0
+        for snap in sorted(k for k in run.images if k.startswith('call-')):
+            lc = run.images[snap][(2, 0)]
+            name = image.get(lc[at] | lc[at + 1] << 8)
+            if name is None:
+                continue
+            n += 1
+            bank, rr = runs[name]
+            main = run.images[snap][(0, 0)]
+            aux = run.images[snap][(1, bank)]
+            for p, k in rr:
+                lo, hi = p << 8, (p + k) << 8
+                if bytes(main[lo:hi]) != bytes(aux[lo:hi]):
+                    bad = next(a for a in range(lo, hi) if main[a] != aux[a])
+                    out.append('%s: %s at $%04X' % (snap, name, bad))
+                    break
+        return n, out
+
     def colormaps_wrong(self, run):
         """The replays (their snapshots) whose main $2000-$5FFF is not the
         level's colormaps A and B (levels 0-31) in LVC."""
@@ -174,7 +235,9 @@ class Benchmark(unittest.TestCase):
         the demo ends and the title loop goes on, timingdemo off."""
         script, go = to_benchmark(7)
         event, ranges = self.replay_event()
-        script = event + script
+        event2, ranges2 = self.loads_event()
+        script = event + event2 + script
+        ranges += ',' + ranges2
         script += '%s snapshot run\n' % at(go + 3)
         script += '%s snapshot result\n' % at(go + 40)
         script += '%s key %d\n%s snapshot after\n' % (at(go + 41), KEY_SPACE,
@@ -186,6 +249,10 @@ class Benchmark(unittest.TestCase):
         self.assertGreater(len(replays), 20)
         self.assertEqual(wrong, [], '%d of %d replays' % (len(wrong),
                                                          len(replays)))
+        # the kernel's image loads: each image at its routine's calls
+        checked, bad = self.loads_wrong(run)
+        self.assertGreater(checked, 3 * 20)
+        self.assertEqual(bad, [], '%d of %d loads' % (len(bad), checked))
         menu, mid = run.images['menu'][(0, 0)], run.images['run'][(0, 0)]
         res, after = run.images['result'][(0, 0)], run.images['after'][(0, 0)]
         # the menu path started demo3 as a timed demo, the menu closed
@@ -216,8 +283,8 @@ class Benchmark(unittest.TestCase):
         self.assertEqual(self.u8(after, 'DL_BENCH'), 0)
         self.assertEqual(self.u8(after, 'DL_DEMOSEQ'), 1)
         print('\nbenchmark: %d frames, %d realtics, FPS %s; the colormaps '
-              'right at %d replays' % (frames, realtics, self.text(res),
-                                       len(replays)))
+              'right at %d replays; the images right at %d loads' % (
+                  frames, realtics, self.text(res), len(replays), checked))
 
     def test_escape_stops_it_with_no_result(self):
         """ESC while the benchmark runs: timingdemo off, the demo ended

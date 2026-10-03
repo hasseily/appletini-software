@@ -52,6 +52,8 @@
 
         .import go_flush, mo_get, ss_get, sec_get, state_at
         .import fc_call, fc_unbuilt
+        .import am_req, am_begin, am_push, am_fin
+        .importzp AMD_SRC, AMD_DST, AMD_COUNT, AM_DESC, AM_DESC_N
         .export c_display, c_loadlist, c_bootlist, c_menulist, c_cplist
         .export c_amlist, c_quitlist, c_savelist, ri_make, planes_out
         .export bt_start, bt_stop, bt_close
@@ -179,11 +181,15 @@ c_level:
 :       jsr ri_make
         lda #PH_3D              ; (timed: the front end after the tic
         sta BT_NX               ;   phase)
-        STOP K_WLOAD            ; milestone 7's front end
+        STLOAD img_wload        ; milestone 7's front end (far_wloadt's
+                                ;   runs: from $65, the tic image left
+                                ;   MATHW in $6000-$64FF, playdisk.py
+                                ;   asserts; by the copy engine)
         STCALL XS_nr_frame, #0
         lda #PH_MASK            ; (timed: the masked phase and the
         jsr st_mark             ;   bucket pass from here)
-        STOP K_MLOAD            ; milestone 8's masked phase
+        STLOAD img_mload        ; milestone 8's masked phase (far_mload's
+                                ;   runs)
         STCALL XS_nm_masked, #0
         lda AUTOMAP
         and #AM_OVERLAY
@@ -547,15 +553,18 @@ kc_from:
 
 ; planes_out: the walk's four planes back to MOBJP, each plane's pages
 ; below G_MOHWM (1-3: one when it is 0, all three past the planes, as at the
-; boot before a level's state is set), in one RAMWRT window run from this
-; group's code in W (the fetches read main; the IRQ contract allows any
-; RAMWRT: pl_irq.s); and the next K_TIC's planes list, the same pages
-; (kpl_set). The slots past G_MOHWM in W then hold another image's bytes,
-; never read: a slot becomes used (gt_pooltake raises G_MOHWM) before its
-; planes are written (gt_mosave). Changes A, X, Y, GT_0-3.
+; boot before a level's state is set), by one memory-API request, a
+; descriptor a plane, from main to the bank (gcall.s's transport, its
+; template's spaces turned round and put back; docs/SPEED.md 10); and the
+; next K_TIC's planes list, the same pages (kpl_set). The slots past
+; G_MOHWM in W then hold another image's bytes, never read: a slot becomes
+; used (gt_pooltake raises G_MOHWM) before its planes are written
+; (gt_mosave). Changes A, X, Y, GT_0.
 PO_N = GT_0                     ; the pages of a plane
-PO_P = GT_1                     ; (2) the page
-PO_S = GT_3                     ; the plane's first page
+AMD_SSPACE = AM_DESC + 2        ; the descriptor's spaces and banks
+AMD_SBANK = AM_DESC + 3
+AMD_DSPACE = AM_DESC + 6
+AMD_DBANK = AM_DESC + 7
 planes_out:
         lda G_MOHWM             ; (G_MOHWM + 255) >> 8
         cmp #1
@@ -568,33 +577,34 @@ planes_out:
         lda #PLANE_SLOTS >> 8
 :       sta PO_N
         jsr kpl_set
+        php
+        sei
+        lda #4
+        jsr am_begin
+        stz am_req + AMD_SSPACE ; from MAIN bank 0 to AUX bank MOBJP
+        stz am_req + AMD_SBANK
+        lda #1
+        sta am_req + AMD_DSPACE
         lda #MOBJP
-        sta RWBANK
-        sta RAMWRTON
-        stz PO_P
-        ldy #0
+        sta am_req + AMD_DBANK
+        lda PO_N
+        sta am_req + AMD_COUNT + 1
         lda #>PL_TNL
-@plane: sta PO_S
-        sta PO_P+1
-        ldx PO_N
-:       lda (PO_P),y            ; main W to the bank's same address
-        sta (PO_P),y
-        iny
-        lda (PO_P),y
-        sta (PO_P),y
-        iny
-        bne :-
-        inc PO_P+1
-        dex
-        bne :-
-        lda PO_S                ; the next plane
+@plane: sta am_req + AMD_SRC    ; main W to the bank's same address
+        sta am_req + AMD_DST
+        ldx #AM_DESC
+        ldy #AM_DESC_N
+        jsr am_push
+        lda am_req + AMD_SRC    ; the next plane
         clc
         adc #>PLANE_SLOTS
         cmp #>(PL_TICS + PLANE_SLOTS)
         bne @plane
-        sta RAMWRTOFF
-        stz RWBANK
-        rts
+        lda #1                  ; the template's spaces back: from AUX to
+        sta am_req + AMD_SSPACE ;   MAIN bank 0
+        stz am_req + AMD_DSPACE
+        stz am_req + AMD_DBANK
+        jmp am_fin
 ; kpl_set: the kernel's k_planes, A pages of each plane (1-3)
 kpl_set:
         sta KPLANES+1

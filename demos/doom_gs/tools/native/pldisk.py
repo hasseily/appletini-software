@@ -520,14 +520,16 @@ def area_problems(name: str, obj: Path, stem: str, main: bytes,
                   segs: Dict[str, Tuple[int, int]], labels: Dict[str, int],
                   card_labels: Dict[str, int]) -> List[str]:
     """An image's card parts against the main card image: its bank 1 code
-    (MATHLC, MATHFAR, RFAR, and RLOAD up to far_wload's run list
+    (MATHLC, a tic image's memory-API transport AMEMLC, MATHFAR, RFAR, and
+    RLOAD up to far_wload's run list
     wl_front, which is the render image's: the others never call
     far_wload) byte for byte; its S2 and FXCODE areas when it links them;
     and every label it has in bank 1 or $E900-$F8FF at the card's address
     of that name."""
     out = []
-    parts = [('MATHLC', 'lc1', 0xD800), ('MATHFAR', 'far', 0xDC00),
-             ('RFAR', 'far', 0xDC00), ('RLOAD', 'far', 0xDC00)]
+    parts = [('MATHLC', 'lc1', 0xD800), ('AMEMLC', 'lc1', 0xD800),
+             ('MATHFAR', 'far', 0xDC00), ('RFAR', 'far', 0xDC00),
+             ('RLOAD', 'far', 0xDC00)]
     for seg, suffix, base in parts:
         if seg not in segs:
             continue

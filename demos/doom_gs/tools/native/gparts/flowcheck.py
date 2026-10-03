@@ -1068,7 +1068,7 @@ def native_value(item: Dict[str, Any], up, mf) -> bytes:
 # ---------------------------------------------------------------------------
 
 WRITE_RANGES = ','.join(['main:0000-00FF', 'main:0200-BFFF', 'aux0-127',
-                         'lc', 'lc1', 'cpu:C000-C001', 'cpu:C006-C072',
+                         'lc', GL.LC1_LOG, 'cpu:C000-C001', 'cpu:C006-C072',
                          'cpu:C074-C0FF', 'cpu:C800-CFFF'])
 
 

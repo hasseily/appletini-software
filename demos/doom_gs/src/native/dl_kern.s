@@ -12,16 +12,20 @@
 ; one page of the card), and this kernel runs it. A step:
 ;
 ;   K_END            the list's end: the next frame (K_TIC E_FRAME)
-;   K_LOAD b, runs   far_pload of bank b's page runs (first page, count;
-;                    a first page 0 ends them: in the card, near in the
-;                    phase loader's RAMRD window)
+;   K_LOAD b, runs   bank b's page runs (first page, count; a first page
+;                    0 ends them) into main at the same addresses: one
+;                    memory-API PRIVATE request, a descriptor a run
+;                    (gcall.s's am_runs in the card; docs/SPEED.md 10). The
+;                    render front end's window and the masked phase's image
+;                    come this way too (the brain's img_wload, img_mload:
+;                    far_wloadt's and far_mload's runs)
 ;   K_CALL a, A, X   jsr a with A and X (Y 0); its A into DL_RES
-;   K_WLOAD          far_wloadt (the render front end's window, from $65)
-;   K_MLOAD          far_mload (the masked phase's image)
+;   K_WLOAD, K_MLOAD (not used since the copy engine: a stop)
 ;   K_TIC code       the tic image's core (and its W unless the list
 ;                    ended with P2DW, which left the same bytes there) from
 ;                    GCODE0 and the walk's planes (each plane's pages below
-;                    G_MOHWM) from MOBJP into W, the slots empty (the frame
+;                    G_MOHWM) from MOBJP into W, a request each (am_runs),
+;                    the slots empty (the frame
 ;                    slots too: the brain restored their colormap bytes at
 ;                    the last tic phase's end, gcall.s's fs_restore), then the
 ;                    brain (dl_brain, its group through gcall.s's fc_go)
@@ -36,9 +40,10 @@
 ;                    until the menu closes or makes a request
 ;   K_HALT           interrupts off, the end (the quit)
 ;
-;   far_gcopy        gr_load's copy of a group (gcall.s): one RAMRD
-;                    window, in the card at KERN_GCOPY (game.cfg's weak
-;                    symbol: the tic image is linked before this card)
+;   far_gcopy        a group's copy in one RAMRD window, at KERN_GCOPY:
+;                    gr_load's until the copy engine took it (docs/SPEED.md
+;                    10); no game code calls it, CALIB.hdv's GC lines time
+;                    it (calibdisk.py)
 ;   bt_mark          the benchmark's phase timing (docs/PLAY.md 15): a
 ;                    phase boundary (a K_CALL of the list, or bt_replay's),
 ;                    at BT_MARK and BT_MARK2 in the menu loop's free main
@@ -83,11 +88,14 @@ k_tic:  sta DL_CODE
         lda #<k_core
         ldx #>k_core
         ldy #GCODE0
-        jsr XS_far_pload
+k_tcore:                        ; (playtime.py times the loads from here,
+        jsr XS_am_runs          ;   k_tplan and k_tbrain)
         lda #<k_planes
         ldx #>k_planes
         ldy #MOBJP
-        jsr XS_far_pload
+k_tplan:
+        jsr XS_am_runs
+k_tbrain:
         lda #XS_DLG_BRAIN
         sta FC_GRP
         lda #<XS_dl_brain
@@ -103,7 +111,7 @@ run:    lda DLBUF,y
         jmp (k_ops,x)
 k_go:   jmp XS_fc_go            ; (the caller's return on the stack)
 
-k_ops:  .addr k_end, k_load, k_call, k_wload, k_mload, k_tic1, k_menu
+k_ops:  .addr k_end, k_load, k_call, dl_halt, dl_halt, k_tic1, k_menu
         .addr dl_halt
 
 k_end:  lda #E_FRAME
@@ -119,7 +127,7 @@ k_load: lda DLBUF,y             ; the bank
         ora #<DLBUF
         ldx #>DLBUF
         ldy KV_BANK
-        jsr XS_far_pload
+k_lrun: jsr XS_am_runs          ; (playtime.py names the step by Y here)
         ldy KV_PTR
 :       lda DLBUF,y             ; past the runs
         beq :+
@@ -146,22 +154,12 @@ k_jsr:  jsr k_go                ; (the step's address)
 k_ret:  ldy KV_PTR
         bra run
 
-k_wload:
-        sty KV_PTR
-        jsr XS_far_wloadt       ; (from $65: the tic image left MATHW
-                                ;   in $6000-$64FF, playdisk.py asserts)
-        bra k_ret
-k_mload:
-        sty KV_PTR
-        jsr XS_far_mload
-        bra k_ret
-
 dl_halt:
         sei
 :       bra :-
 
 ; the page runs of the tic image's W and core (GCODE0) and of the walk's
-; four planes (MOBJP): far_pload's lists, near in its RAMRD window, at
+; four planes (MOBJP): am_runs' lists (in the card: K_TIC replaces W), at
 ; KLISTS (BT_REPLAY - 12), where the tic image's dl_disp.s rewrites them
 ; at each list's end: k_core from $66 after P2DW (kc_from; playdisk.py
 ; asserts the shared bytes), each plane's count the pages below G_MOHWM
@@ -197,9 +195,11 @@ bt_rback:
 ; ---------------------------------------------------------------------------
 ; far_gcopy: FA_N pages (1-255) of RamWorks bank FA_BANK from FA_SRC to
 ; main FA_DST, both with the same low byte, but the first Y bytes (Y even:
-; the first page from byte Y), in one RAMRD window (gcall.s's gr_load, a
-; group into its slot: its length, the first page from byte 256 - its
-; tail; docs/SPEED.md 4, items 2 and 4). In the card: with RAMRD on,
+; the first page from byte Y), in one RAMRD window (gcall.s's gr_load's
+; copy of a group from speed wave 1 to the frame slots: docs/SPEED.md 4,
+; items 2 and 4; since the copy engine a memory-API request makes it,
+; docs/SPEED.md 10, and this copy stays for CALIB.hdv's GC lines,
+; calibdisk.py, which time it on the card). In the card: with RAMRD on,
 ; the fetches of $0200-$BFFF come from the bank. Its window, as
 ; far_pload's, writes $C073 at its start and 0 at its end. Changes A, Y,
 ; FA_SRC, FA_DST (their high bytes on by FA_N), FA_N.

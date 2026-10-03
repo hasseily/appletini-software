@@ -82,6 +82,7 @@ dl_brain:
                                 ;   phase to a replay passes here, the
                                 ;   frame's, a load's, the menu's, the
                                 ;   intermission's, the benchmark's
+dl_rsback:                      ; (playtime.py: the restore's end)
         lda BT_PH               ; the benchmark timed: the tic phase ends
         beq :+                  ;   here (docs/PLAY.md 15)
         lda BT_NX
