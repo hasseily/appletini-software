@@ -2,7 +2,7 @@
 
 Written 2026-10-02 from three profilers' measurements and a planner's prototypes (workflow `doom-gs-speed-profile`); the owner's rule of the same day applies to every part: test only what a change touches (`MILESTONES.md`, ground rules).
 
-Status: **waves 1 and 2 built and integrated (2026-10-02 and 2026-10-03; section 5, `PLAY.md` 14 and 16); the frame slots built (2026-10-03; section 9, `PLAY.md` 17); wave 3 planned.** The card (F1.2.2, the Disk II's acceleration off) ran wave 2's benchmark at 3.830 FPS; a2vm `f122-nod2` matches it and predicts 5.68 FPS with the frame slots (sections 5 and 9). The owner played `build/native/DOOM.hdv` on the card on 2026-10-02 and reported: "Everything seems to work except for the benchmark. It's indeed too slow and needs a speed optimization." This document holds the measurements behind that, three prototypes measured on a2vm, and the parts that make the game faster. Nothing in the game's output may change. The renderer's frames and the game's demo sync stay bit-exact against ref816 (NATIVE.md 15.1). Every item below changes only time: where code lives, how bytes are copied, and which pages are reloaded.
+Status: **waves 1 and 2 built and integrated (2026-10-02 and 2026-10-03; section 5, `PLAY.md` 14 and 16); the frame slots built (2026-10-03; section 9, `PLAY.md` 17); wave 3 planned.** The card (F1.2.2, the Disk II's acceleration off) ran wave 2's benchmark at 3.830 FPS; a2vm `f122-nod2` matches it and predicted 5.68 FPS with the frame slots; the card gave 5.648 (sections 5 and 9). The owner played `build/native/DOOM.hdv` on the card on 2026-10-02 and reported: "Everything seems to work except for the benchmark. It's indeed too slow and needs a speed optimization." This document holds the measurements behind that, three prototypes measured on a2vm, and the parts that make the game faster. Nothing in the game's output may change. The renderer's frames and the game's demo sync stay bit-exact against ref816 (NATIVE.md 15.1). Every item below changes only time: where code lives, how bytes are copied, and which pages are reloaded.
 
 ## 0. The owner's two findings
 
@@ -310,14 +310,17 @@ The PRIVATE copies, as a2vm models them (83.3 µs a page: 0.33 µs a byte, the m
 
 On the card: the corrected model reproduced the card's wave-2 benchmark within 0.4% (section 5), so the card as it was set (F1.2.1, Disk II on) would read about 4.6 FPS. The card now runs F1.2.2 with the Disk II's acceleration off, and there `CALIB.hdv`'s page 2 measured a PRIVATE request at about 46 µs plus 0.038 µs a byte (`docs/results/calib.md`, "The card on F1.2.2"): a fifth of what f121 models. On `f122-nod2` (the same disk, `2b0fa3a6`, `playtime.py --scene bench --profile f122-nod2`):
 
-| | Wave 2, card F1.2.2 | Frame slots, `f122-nod2` |
-| --- | ---: | ---: |
-| FPS | 3.830 | **5.677** (539 frames, 3,323 realtics) |
-| TIC | 189.4 | 104.5 |
-| 3D | 21.9 | 21.8 |
-| MASK | 13.8 | 13.8 |
-| DRAW | 31.4 | 31.4 |
-| REST | 4.9 | 4.9 |
+| | Wave 2, card F1.2.2 | Frame slots, `f122-nod2` | Frame slots, card F1.2.2 (2026-10-03) |
+| --- | ---: | ---: | ---: |
+| FPS | 3.830 | **5.677** (539 frames, 3,323 realtics) | **5.648** |
+| TIC | 189.4 | 104.5 | 105.4 |
+| 3D | 21.9 | 21.8 | 21.8 |
+| MASK | 13.8 | 13.8 | 13.7 |
+| DRAW | 31.4 | 31.4 | 31.4 |
+| REST | 4.9 | 4.9 | 4.9 |
+| N | 535 | 539 | 539 |
+
+The card (the owner, PAL, Disk II acceleration off, this disk `2b0fa3a6`) is within 0.5% of the model's FPS and 0.9 ms of its TIC: +47% over wave 2.
 
 The PRIVATE copies there: 15.04 requests a frame (7.52 loads, 7.52 restores), 89.1 pages, **1.46 ms** a frame (97 µs a request); `gr_load` 12.32 calls a tic. The memory API holds the CPU for a request and invalidates its caches (appletini-one `README_TURBO.md`, "F1.2.2 extended-memory transfers"), so no stale byte of `$2000-$5FFF` survives a load or a restore.
 
