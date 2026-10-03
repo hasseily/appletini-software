@@ -25,9 +25,21 @@
  *     few dirty bytes takes about 4 Apple cycles; the next $Cxxx access
  *     waits while "active" bytes are pending, and an "exposure" access
  *     waits until every pending byte is out;
+ *   - a dummy read outside $Cxxx in TURBO: no access (the core omits
+ *     it), but with the virtual Disk II active (d2_replay, the card as
+ *     measured) the step that stands for it holds the next one: a run
+ *     of k dummy reads takes k + 1 clocks (disk2_card.sv replays the
+ *     step's cycles one a clock; docs/results/calib.md);
  *   - a change of the memory mapping: both TURBO caches are cleared;
  *   - a memory API request: the CPU hold, the mirror and line flushes,
  *     and the ARM's per-descriptor and per-byte work (memory_api_hw.c);
+ *     with amem_engine (F1.2.2) each descriptor is one command of the
+ *     FPGA copy engine (vtw_copy_engine.sv), state by state, which the
+ *     ARM starts and polls (memory_api_hw.c hw_transfer);
+ *   - with relaxed_admission and rmw_queue (F1.2.2: psram_simple.sv
+ *     admits at the driver's rate while the vTW owns the bus), a line op
+ *     waits only for the PSRAM driver and for the RMWs of captured aux
+ *     writes, each admitted when its byte lands;
  *   - with the virtual Phasor enabled (slowdown_slot4, off in f121 and
  *     fastpath), the slot-4 slowdown: after an access to $C400-$C4FF or
  *     $C0C0-$C0CF, slowdown_cycles CPU cycles at 1 MHz, each paced to an
@@ -71,15 +83,24 @@ typedef struct {
     unsigned turbo_hit, turbo_read_miss, turbo_write_miss, posted_write;
     double turbo_extra;             /* the calibratable parameter: extra
                                        clocks an access to fast memory */
+    int d2_replay;                  /* the virtual Disk II in slot 6 is
+                                       active: it replays the cycles a
+                                       TURBO step stands for, one a clock,
+                                       and holds the next step meanwhile */
     int caches_survive;             /* fastpath: no invalidation on a
                                        mapping change */
     /* extended memory */
     unsigned rw_hit, rw_request, psram_read, psram_write;
     unsigned rw_lines;              /* lines of the RamWorks cache */
     unsigned admit_offset, admit_window;
-    int relaxed_admission;          /* fastpath: no admission window */
+    int relaxed_admission;          /* fastpath, f122: no admission window */
     unsigned drain_rmw;             /* clocks a captured aux write keeps
                                        the PSRAM busy (relaxed) */
+    int rmw_queue;                  /* f122: each captured aux write's RMW
+                                       is admitted when its byte lands
+                                       (data_en), ahead of the vTW, at the
+                                       driver's rate (psram_simple.sv of
+                                       F1.2.2); 0: at the window's start */
     /* $Cxxx */
     unsigned io_capture, io_route, video_wait, bus_drive_tap,
         bus_data_tap, bus_done, status_read, sp_private, rom_read,
@@ -110,6 +131,11 @@ typedef struct {
         amem_read_word_axi, amem_read_setup_axi, amem_write_word_axi,
         amem_write_setup_axi, amem_write_byte_axi;
     int keep_lazy;                  /* fastpath: holds keep lazy bytes */
+    /* F1.2.2's copy engine (vtw_copy_engine.sv): one command a
+       descriptor, the ARM polling it */
+    int amem_engine;
+    unsigned copy_read_wait, copy_write_wait, amem_copy_setup_axi,
+        amem_copy_start_axi, amem_copy_poll_axi, amem_copy_end_axi;
     /* the slot-4 slowdown (README.md, "The slot-4 slowdown") */
     unsigned slowdown_cycles;       /* the window, in CPU cycles */
     int slowdown_slot4;             /* the virtual Phasor is enabled: slot
@@ -164,6 +190,10 @@ typedef struct a2vm_cost {
     int64_t admit_cycle;            /* the Apple cycle of the last
                                        admission */
     uint64_t psram_free;            /* relaxed: when the PSRAM is idle */
+    /* rmw_queue: the RMWs of captured aux writes not yet admitted, by
+       the clock their byte lands (increasing) */
+    uint64_t *rmw_at;
+    uint32_t rmw_head, rmw_count;
     int64_t bus_next;               /* the first Apple cycle the bus engine
                                        has free (one sync or posted cycle a
                                        cycle, vtw_bus_engine.sv:840-880) */
@@ -225,6 +255,8 @@ typedef struct a2vm_cost {
        (instruction_turbo_q of w65c02_core.sv) */
     unsigned slow_left;
     int instr_turbo;
+    /* the dummy reads dropped since the last access (d2_replay) */
+    unsigned dummy_run;
 
     /* the zero-page pair's counters (a2vm.h) at the last boundary */
     uint64_t last_zpb[6];

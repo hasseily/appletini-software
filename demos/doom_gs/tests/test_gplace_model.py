@@ -8,14 +8,18 @@ recorded scenes against the loads they recorded.
              entry, a jsr inside a unit, an interrupt's pushes, a load,
              the returns seen late, the phase's end at the kernel's jsr;
              the gametic window; a phase the run's end cuts
-  gsim       random traces and placements, both restores: loads, pages
-             and fc_call calls equal to the twin's; the check mode
+  gsim       random traces and placements, both restores, W slots and
+             frame slots (docs/SPEED.md 9): loads, pages, fc_call calls,
+             the frame slots' loads, pages and restores equal to the
+             twin's; the check mode
   sizes      an FCALL site's 3 B when the placement makes it fc_call, in
              a routine's group and in a build's fixed core code; the
              sources' sites with a macro's FCALLs; the labels where a
              part's code goes to the core whatever the placement; the
              pages' packing
-  rules      A_Chase's callees, the APART pairs; the sources' asserts
+  rules      A_Chase's callees, the APART pairs (a frame slot is its own
+             slot); no frame slot for a routine the tic code stores into;
+             the frame slots' room (glayout.frame_slots)
   scenes     (build/native/game/gplace) each recorded scene replayed
              under its own build's placement gives the loads it recorded
 
@@ -52,28 +56,47 @@ HAVE_TOOLS = tools_built()
 
 
 def twin(events, grp, slot, pages, policy):
-    """gcall.s's paging in Python (the model's reference)."""
-    loads = pg = cross = 0
-    cur = {1: 255, 2: 255}
-    need = dict(cur)
+    """gcall.s's paging in Python (the model's reference): (loads, W
+    pages, fc_call calls, frame slots' pages, their restores' pages, their
+    loads, their restores). A frame slot (3 and up) is loaded like a W
+    slot and restored once a phase, its largest group's pages."""
+    loads = pg = cross = fpg = rpg = floads = restores = 0
+    cur, need, used = {}, {}, {}
     st = []
+
+    def restore():
+        nonlocal rpg, restores
+        for s, n in used.items():
+            rpg += n
+            restores += 1
+        used.clear()
+
+    def load(s, g):
+        nonlocal loads, pg, fpg, floads
+        cur[s] = g
+        loads += 1
+        if s >= GL.FRAME_FIRST:
+            floads += 1
+            fpg += pages[g]
+            used[s] = max(used.get(s, 0), pages[g])
+        else:
+            pg += pages[g]
     for op, a, b in events:
         if op == 2:
-            cur = {1: 255, 2: 255}
-            need = dict(cur)
+            restore()
+            cur, need = {}, {}
             st = []
         elif op == 0:
             ga, gb = grp[a], grp[b]
             if gb not in (0, 254) and gb != ga:
                 s = slot[gb]
                 cross += 1
-                st.append((s, need[s] if policy else cur[s]))
+                st.append((s, need.get(s, 255) if policy
+                           else cur.get(s, 255)))
                 if policy:
                     need[s] = gb
-                if cur[s] != gb:
-                    cur[s] = gb
-                    loads += 1
-                    pg += pages[gb]
+                if cur.get(s, 255) != gb:
+                    load(s, gb)
             else:
                 st.append(None)
         elif op == 1 and st:
@@ -82,11 +105,10 @@ def twin(events, grp, slot, pages, policy):
                 s, old = f
                 if policy:
                     need[s] = old
-                if old != 255 and cur[s] != old:
-                    cur[s] = old
-                    loads += 1
-                    pg += pages[old]
-    return loads, pg, cross
+                if old != 255 and cur.get(s, 255) != old:
+                    load(s, old)
+    restore()
+    return loads, pg, cross, fpg, rpg, floads, restores
 
 
 def write_events(path, events):
@@ -135,7 +157,9 @@ class GsimTest(unittest.TestCase):
                     slot = [0] * 256
                     pages = [0] * 256
                     for g in range(1, 6):
-                        slot[g] = rng.choice([1, 2])
+                        # (half the trials with frame slots 3 and 4)
+                        slot[g] = rng.choice([1, 2] if trial < 6 else
+                                             [1, 2, 3, 4])
                         pages[g] = rng.randrange(1, 9)
                     policy = trial % 2
                     proc.stdin.write('P %d %s %s %s\n' % (
@@ -146,10 +170,14 @@ class GsimTest(unittest.TestCase):
                     got = list(map(int, proc.stdout.readline().split()))
                     for i, (_, _, ev) in enumerate(traces):
                         want = twin(ev, grp, slot, pages, policy)
-                        self.assertEqual(tuple(got[5 * i:5 * i + 3]), want)
-                        self.assertEqual(got[5 * i + 3], sum(
+                        f = got[9 * i:9 * i + 9]
+                        self.assertEqual(tuple(f[0:3] + f[5:9]), want)
+                        self.assertEqual(f[3], sum(
                             1 for e in ev if e[0] == 0 and e[2] == 3))
-                        self.assertEqual(got[5 * i + 4], 20)
+                        self.assertEqual(f[4], 20)
+                    if trial >= 6:
+                        self.assertGreater(sum(got[9 * i + 7] for i in
+                                               range(len(traces))), 0)
             finally:
                 proc.stdin.close()
                 proc.wait(timeout=30)
@@ -250,6 +278,22 @@ class GtraceTest(unittest.TestCase):
         'FF40 01FA main 0 01FA 00 FF',      # the kernel's next step
         'FF40 01F9 main 0 01F9 00 42',
     ]
+
+    def test_a_frame_slots_load_and_restore(self):
+        """A frame slot (fslot: slot 3 at $2000): a write of SLOT_GRP + 3
+        is a load (its unit's calls are named by its group's bytes), and
+        fs_restore's $FF there empties it, no load."""
+        with tempfile.TemporaryDirectory() as d:
+            g5 = Path(d) / 'g5'
+            g5.write_bytes(bytes(0x40))
+            extra = ('fslot 3 2000 2400\ngrp 5 2000 40 %s 0\npages 5 1\n'
+                     'unit 5 5 2000 2040\n' % g5)
+            ev, summary = self.run_log(self.PHASE[:12] + [
+                '8118 19EF main 0 19EF FF 05',  # gr_load: group 5, slot 3
+                '8118 19EF main 0 19EF 05 FF',  # fs_restore
+            ] + self.PHASE[-2:], extra)
+        self.assertIn((3, 5, 3), ev)
+        self.assertEqual(sum(1 for e in ev if e[0] == 3), 1)
 
     def test_calls_loads_returns(self):
         ev, summary = self.run_log(self.PHASE)
@@ -358,6 +402,41 @@ class RulesTest(unittest.TestCase):
         sz = GP.Sizer([build], {})
         sites = {GP.CHASE: {'p_enemy65.s:lookForPlayers': 1}}
         return GP.Problem(sz, None, sites, place, slots, {})
+
+    def test_frame_slots(self):
+        """Two groups in frame slots never share one (A_Chase's rule, the
+        APART pairs); a routine the tic code stores into is never in a
+        frame slot; the frame slots' room."""
+        place = {GP.CHASE: 1, 'p_enemy65.s:lookForPlayers': 2,
+                 'p_path65.s:traverseTo': 3,
+                 'p_attack65.s:PTR_AimTraverse': 4, 'z.s:other': 0}
+        ok = self.problem(place, {1: GP.FRAME, 2: GP.FRAME, 3: GP.FRAME,
+                                  4: GP.FRAME})
+        self.assertEqual(ok.rule_problems(ok.place()), [])
+        flood, w = 'p_pspr65.s:recursiveSound', 'w.s:W'
+        build = FakeBuild(label='play', place={flood: 1, w: 2},
+                          sizes={flood: 10, w: 10}, fixed=0,
+                          core_modules=set(), fc_sites={}, exact=True,
+                          stored={w})
+        sz = GP.Sizer([build], {})
+        for slots, bad in (({1: 1, 2: 2}, []), ({1: GP.FRAME, 2: 2}, [flood]),
+                           ({1: 1, 2: GP.FRAME}, [w])):
+            prob = GP.Problem(sz, None, {}, {flood: 1, w: 2}, slots, {})
+            got = prob.rule_problems(prob.place())
+            self.assertEqual(len(got), len(bad), got)
+            for k in bad:
+                self.assertTrue(any(k in x for x in got), got)
+        gb = {g: 1900 for g in range(1, 9)}
+        self.assertEqual(GP.frame_problems({g: GP.FRAME for g in gb}, gb),
+                         [])
+        gb[9] = 1900
+        self.assertTrue(GP.frame_problems({g: GP.FRAME for g in gb}, gb))
+        fs = GL.frame_slots([{'slot': 3 + i, 'bytes': n} for i, n in
+                             enumerate((100, 1900, 700, 1500))])
+        self.assertEqual(sorted(fs), [3, 4, 5, 6])
+        for lo, hi in fs.values():
+            self.assertTrue(lo >= 0x2000 and hi <= 0x6000 and
+                            (hi <= 0x4000 or lo >= 0x4000))
 
     def test_chase_and_apart(self):
         place = {GP.CHASE: 1, 'p_enemy65.s:lookForPlayers': 2,

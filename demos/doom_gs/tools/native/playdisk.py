@@ -77,7 +77,18 @@ SOURCE = ROOT / 'src' / 'native'
 A2VM = lrun.A2VM
 PLAY = NATIVE / 'play'
 PROFILES = {'f121': 'f121+phasor+window32',
-            'fastpath': 'fastpath+phasor+window32'}
+            'fastpath': 'fastpath+phasor+window32',
+            # for comparison (tools/a2vm/costs/appletini.json's variants):
+            # the cost model before the card's CALIB.hdv of 2026-10-03
+            # (docs/results/calib.md), and the card with its virtual
+            # Disk II inactive
+            'f121-precal': 'f121+phasor+window32+precal',
+            'f121-nod2': 'f121+phasor+window32+nod2',
+            # F1.2.2 (tools/a2vm/README.md, "F1.2.2: the profile f122"):
+            # as the owner's card ran it, the virtual Disk II's acceleration
+            # off, and with it on
+            'f122-nod2': 'f122+phasor+window32+nod2',
+            'f122': 'f122+phasor+window32'}
 IRQ_BOUNDS = pldisk.IRQ_BOUNDS
 MAX_BYTES = 512 << 20
 GROUP_FIRST = 0x0200
@@ -139,6 +150,9 @@ def group_problems(play: Path) -> List[str]:
     cfg = (play / 'tic' / 'play.cfg').read_text()
     areas = {m.group(1): int(m.group(2), 16) for m in re.finditer(
         r'^\s*(G\d+):\s+start = \$([0-9A-F]+),', cfg, re.M)}
+    sizes = {m.group(1): int(m.group(2), 16) for m in re.finditer(
+        r'^\s*(G\d+):\s+start = \$[0-9A-F]+, size = \$([0-9A-F]+),',
+        cfg, re.M)}
     out = []
     spans: List[Tuple[int, int]] = []
     for m in re.finditer(r'^\s*(\w+):\s+load = (G\d+), type = (\w+)',
@@ -159,9 +173,11 @@ def group_problems(play: Path) -> List[str]:
             out.append('group %s: its segments end at $%04X, its file at '
                        '$%04X' % (area, max(ends, default=start),
                                   start + size))
-    slots = sorted(set(areas.values()))
+    # (each area's own size: a W slot's 2,048 B, a frame slot's pages)
+    slots = sorted(set((areas[n], sizes.get(n, PK.GROUP_SIZE))
+                       for n in areas))
     for name, a in b.labels.items():
-        if any(s <= a < s + PK.GROUP_SIZE for s in slots) and \
+        if any(s <= a < s + n for s, n in slots) and \
                 not any(lo <= a <= hi for lo, hi in spans):
             out.append('label %s $%04X is in a slot past every group' % (
                 name, a))
@@ -510,6 +526,91 @@ def abs_writes(code: bytes, base: int, lo: int, hi: int) -> List[Tuple[int,
     return out
 
 
+STORE_MNEMONICS = frozenset(('sta', 'stx', 'sty', 'stz', 'inc', 'dec', 'asl',
+                             'lsr', 'rol', 'ror', 'tsb', 'trb'))
+
+
+def dbg_stores(dbg: Path, src: Path = SOURCE
+               ) -> List[Tuple[str, int, int, str]]:
+    """(segment, pc, target, 'file:line') of every absolute-mode store of
+    a link, from ld65's debug file (--dbgfile): each source line whose
+    instruction is a store (STORE_MNEMONICS) and whose bytes are an
+    absolute-mode one (ABS_WRITES), with its operand (the base of an
+    indexed one). Only the lines that are instructions are read, so a
+    table's bytes are never taken for code, as a linear sweep would.
+    Sources named relative to the assembly's directory are found in
+    `src`."""
+    files: Dict[int, str] = {}
+    segs: Dict[int, Tuple[str, int, str, int]] = {}
+    spans: Dict[int, Tuple[int, int, int]] = {}
+    lines: List[Tuple[int, int, List[int]]] = []
+
+    def fields(rest: str) -> Dict[str, str]:
+        out, key, cur, quoted = {}, None, '', False
+        for ch in rest + ',':
+            if ch == '"':
+                quoted = not quoted
+            elif ch == ',' and not quoted:
+                k, _, v = cur.partition('=')
+                out[k] = v
+                cur = ''
+                continue
+            cur += ch
+        return out
+    with open(str(dbg)) as handle:
+        for text in handle:
+            kind, _, rest = text.rstrip('\n').partition('\t')
+            if kind not in ('file', 'seg', 'span', 'line'):
+                continue
+            f = fields(rest)
+            if kind == 'file':
+                files[int(f['id'])] = f['name'].strip('"')
+            elif kind == 'seg' and 'oname' in f:
+                segs[int(f['id'])] = (f['name'].strip('"'),
+                                      int(f['start'], 16),
+                                      f['oname'].strip('"'),
+                                      int(f['ooffs']))
+            elif kind == 'span':
+                spans[int(f['id'])] = (int(f['seg']), int(f['start']),
+                                       int(f['size']))
+            elif kind == 'line' and 'span' in f:
+                lines.append((int(f['file']), int(f['line']),
+                              [int(x) for x in f['span'].split('+')]))
+    texts: Dict[int, Optional[List[str]]] = {}
+    images: Dict[str, bytes] = {}
+    out = []
+    for fid, n, sids in lines:
+        if fid not in texts:
+            path = Path(files[fid])
+            if not path.is_absolute():
+                path = src / path
+            texts[fid] = (path.read_text(errors='replace').splitlines()
+                          if path.exists() else None)
+        text = texts[fid]
+        if text is None or not 0 < n <= len(text):
+            continue
+        # (the line's label, if any: a name, a cheap local @name or an
+        # unnamed ':', which ca65 writes as a bare colon)
+        code = re.sub(r'^\s*(?:[@\w]*:)?\s*', '', text[n - 1].split(';')[0])
+        if code.split()[:1] and code.split()[0].lower() not in \
+                STORE_MNEMONICS:
+            continue
+        if not code.split():
+            continue
+        for sid in sids:
+            if sid not in spans or spans[sid][0] not in segs:
+                continue
+            seg, start, size = spans[sid]
+            name, base, oname, ooffs = segs[seg]
+            if oname not in images:
+                images[oname] = Path(oname).read_bytes()
+            b = images[oname][ooffs + start:ooffs + start + size]
+            if size == 3 and len(b) == 3 and b[0] in ABS_WRITES:
+                out.append((name, base + start, b[1] | b[2] << 8,
+                            '%s:%d' % (files[fid], n)))
+    return out
+
+
 def shared_w_problems(play: Path, main: bytes) -> List[str]:
     """SHARED_W's rule: the tic image, P2DW and WCODE link MATHW and AUXW
     at the same places with the same bytes and nothing else below $6600 but
@@ -575,10 +676,44 @@ def shared_w_problems(play: Path, main: bytes) -> List[str]:
     return out
 
 
+def frame_slot_problems(play: Path) -> List[str]:
+    """The frame slots' rule (docs/SPEED.md 9, MEMORY_MAP.md rule 3): no
+    absolute store of the tic image's code (the core, every group, the
+    glue's: the link's debug file, dbg_stores) into main $2000-$5FFF, where
+    the pinned groups run over the colormaps (a CPU store there is a video
+    write, and a pinned group's store into its own bytes would be one);
+    each pinned group's segments within its frame slot. (Indirect stores
+    are not seen here: the placement keeps gplace.NO_PIN's out of the frame
+    slots, and test_play_bench's benchmark finds the colormaps whole at
+    every replay.)"""
+    from native import gplacerec as REC
+    b = PK.tic_build(play)
+    lo, hi = GL.FRAME_REGION
+    out = []
+    cfg = (play / 'tic' / 'play.cfg').read_text()
+    areas = {int(m.group(1)): (int(m.group(2), 16), int(m.group(3), 16))
+             for m in re.finditer(r'^\s*G(\d+):\s+start = \$([0-9A-F]+), '
+                                  r'size = \$([0-9A-F]+),', cfg, re.M)}
+    for g, (path, at, n) in sorted(REC.group_files(b).items()):
+        a0, size = areas.get(g, (at, 0))
+        if lo <= a0 < hi and a0 + n > min(a0 + size, hi):
+            out.append('group %d passes its frame slot $%04X-$%04X' % (
+                g, a0, a0 + size - 1))
+    dbg = play / 'tic' / 'tic.dbg'
+    if not dbg.exists():
+        return out + ['no %s (play.mk links it)' % dbg]
+    for seg, pc, a, where in dbg_stores(dbg):
+        if lo <= a < hi:
+            out.append('%s writes $%04X at $%04X (%s): a frame slot\'s '
+                       'place' % (where, a, pc, seg))
+    return out
+
+
 def problems(play: Path, main: bytes) -> List[str]:
     """The links against each other: the card's symbols, the images'
     card parts (pldisk.image_problems), the tic image's card part, the
-    tic image's shared W (shared_w_problems)."""
+    tic image's shared W (shared_w_problems), the frame slots
+    (frame_slot_problems)."""
     out = PK.card_problems(play)
     out += pldisk.image_problems(main)
     p2 = PK.p2dw_build(play)
@@ -593,6 +728,7 @@ def problems(play: Path, main: bytes) -> List[str]:
     out += pldisk.area_problems('the tic image', tb.obj, 'tic', main,
                                 tb.segments, tb.labels, card)
     out += shared_w_problems(play, main)
+    out += frame_slot_problems(play)
     return out
 
 
@@ -734,7 +870,6 @@ def run(disk: Disk, script: str, work: Path, profile: str = 'f121',
             '--reg', 'pc=2000', '--reg', 's=FF',
             '--cost', str(work / 'cost.txt'), '--cost-timed',
             '--irq-bounds', IRQ_BOUNDS,
-            '--stop-pc', '%X' % lab['bt_halt'],
             '--stop-pc', '%X' % lab['pl_crash'],
             '--stop-pc', '%X' % lab['dl_halt'],
             '--cycles', str(int(seconds * fabric_hz)),
@@ -765,12 +900,38 @@ def run(disk: Disk, script: str, work: Path, profile: str = 'f121',
         if p.name == 'poison.img':
             continue
         images[p.stem] = pldisk.read_snapshot(p)
+    halted = boot_halted(state, images, lab)
+    if halted:
+        raise PlayError(halted)
     shots = {p.stem: p.read_bytes() for p in sorted(work.glob('*.shr'))}
     writes = 0
     if (work / 'ay.log').exists():
         with open(str(work / 'ay.log')) as handle:
             writes = sum(1 for line in handle if line.startswith('w '))
     return Run(state, images, shots, writes, result.stdout[-4000:])
+
+
+def boot_halted(state: Dict[str, Any], images: Dict[str, Any],
+                lab: Dict[str, int]) -> str:
+    """Why the run ended in the boot's stop (pl_boot.s bt_halt: a message
+    on the screen, PL_STATUS its code, interrupts masked), or ''. The run
+    does not stop there (a2vm's --stop-pc names an address, and the tic
+    phase's frame slots run code in main $2000-$5FFF, where DOOM.SYSTEM's
+    bt_halt lies: docs/SPEED.md 9); a boot that stopped loops there to the
+    run's end, with the I flag set and its `bra` in the final snapshot."""
+    pc = lab.get('bt_halt')
+    if pc is None or state.get('pc') != pc:
+        return ''
+    p = state.get('p', state.get('P'))
+    if isinstance(p, str):
+        p = int(p, 16)
+    if isinstance(p, int) and not p & 0x04:
+        return ''
+    main = images.get('final', {}).get((0, 0))
+    if main is not None and bytes(main[pc:pc + 2]) != b'\x80\xfe':
+        return ''
+    status = main[0x03AE] if main is not None else -1
+    return 'the boot stopped at bt_halt (PL_STATUS $%02X)' % (status & 0xFF)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

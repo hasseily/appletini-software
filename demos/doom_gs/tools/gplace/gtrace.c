@@ -16,7 +16,9 @@
      JSR wrote at an address <= a has returned (the stack's discipline), so
      the returns come out in their order, before the next call;
    - gr_load's writes of SLOT_GRP are the loads that happened (the check
-     of the model: gsim replays the calls and must find them).
+     of the model: gsim replays the calls and must find them); a frame
+     slot's (slot 3 and up, main $2000-$5FFF: docs/SPEED.md 9) too, and
+     fs_restore's $FF there empties it.
 
    A phase starts at a $FF written to SLOT_GRP + 1 by an "on" PC (the
    kernel's k_tic, the lockstep driver's core_in) and ends at a JSR from an
@@ -27,6 +29,7 @@
    Usage: gtrace MAP EVENTS SUMMARY < write-log
    MAP (text, one item a line):
      slots LO1 LO2 END            the two slots' addresses (hex)
+     fslot S LO END               frame slot S's addresses (hex)
      grp G LO LEN FILE OFF        G's bytes (0: always there) at LO
      unit ID G LO HI              [LO, HI) of group G is unit ID
      pages G N                    a load of G copies N pages
@@ -52,6 +55,8 @@
 
 #define MAXG 128
 #define SLOTLEN 0x800
+#define MAXS (3 + 16)           /* the W slots 1, 2, the frame slots 3 ..
+                                   (glayout.py FRAME_FIRST, FS_MAX) */
 #define NONE 0xFFFF
 #define MAXF 512
 #define MAXR 16
@@ -65,7 +70,7 @@ static uint16_t core_unit[65536];
 static uint8_t *slot_mem[MAXG];
 static uint16_t *slot_unit[MAXG];
 static int pages[MAXG];
-static int slot_lo[3], slot_end;
+static int slot_lo[MAXS], slot_hi[MAXS], slot_end;
 static long a_slotgrp = -1, a_fct = -1, a_fcgrp = -1, a_gametic = -1;
 static long a_fc_call = -1, a_dc_call = -1, a_dc_end = -1, a_fc_go = -1,
             a_fc_ret = -1, a_rt_lo = -1, a_rt_hi = -1;
@@ -79,7 +84,7 @@ static uint64_t clk_from = 0, clk_to = UINT64_MAX;
 static frame stack[MAXF];
 static int depth;
 static int on, rec;
-static int cur[3] = {0xFF, 0xFF, 0xFF};
+static int cur[MAXS];
 static int fct, fcgrp;
 static uint8_t gt[4];
 static FILE *ev;
@@ -133,6 +138,9 @@ static int slot_of(int a)
         return 1;
     if (a >= slot_lo[2] && a < slot_end)
         return 2;
+    for (int s = 3; s < MAXS; s++)
+        if (a >= slot_lo[s] && a < slot_hi[s])
+            return s;
     return 0;
 }
 
@@ -210,7 +218,8 @@ static void start_phase(uint64_t clock)
     end_phase(clock);
     on = 1;
     depth = 0;
-    cur[1] = cur[2] = 0xFF;
+    for (int s = 0; s < MAXS; s++)
+        cur[s] = 0xFF;
     ph_gametic = gametic();
     rec = ph_gametic >= win_from && ph_gametic < win_to &&
           clock >= clk_from && clock < clk_to;
@@ -342,8 +351,17 @@ static void read_map(const char *path)
             slot_lo[1] = (int)a;
             slot_lo[2] = (int)b;
             slot_end = (int)c;
+            slot_hi[1] = (int)b;
+            slot_hi[2] = (int)c;
             if (b - a != SLOTLEN || c - b != SLOTLEN)
                 fail("slots of another size");
+        } else if (!strcmp(k, "fslot")) {
+            unsigned sl, a, c;
+            if (sscanf(line, "%*s %u %x %x", &sl, &a, &c) != 3 || sl < 3 ||
+                    sl >= MAXS || c <= a || c - a > SLOTLEN)
+                fail("bad fslot");
+            slot_lo[sl] = (int)a;
+            slot_hi[sl] = (int)c;
         } else if (!strcmp(k, "grp")) {
             if (sscanf(line, "%*s %u %x %x %799s %x", &g, &lo, &len, file,
                        &off) != 5 || g >= MAXG)
@@ -363,7 +381,7 @@ static void read_map(const char *path)
                 }
             } else {
                 int s = slot_of((int)lo);
-                if (!s || lo + len > (unsigned)slot_lo[s] + SLOTLEN)
+                if (!s || lo + len > (unsigned)slot_hi[s])
                     fail("a group outside its slot");
                 if (!slot_mem[g])
                     slot_mem[g] = calloc(SLOTLEN, 1);
@@ -452,6 +470,8 @@ int main(int argc, char **argv)
         fprintf(stderr, "usage: gtrace MAP EVENTS SUMMARY < write-log\n");
         return 2;
     }
+    for (int s = 0; s < MAXS; s++)
+        cur[s] = 0xFF;
     read_map(argv[1]);
     ev = fopen(argv[2], "wb");
     sum = fopen(argv[3], "w");
@@ -476,7 +496,7 @@ int main(int argc, char **argv)
         if (a >= 0x100 && a < 0x200) {
             if (on)
                 stack_write(pc, a, v, clock);
-        } else if (a == a_slotgrp + 1 || a == a_slotgrp + 2) {
+        } else if (a > a_slotgrp && a < a_slotgrp + MAXS) {
             int s = (int)(a - a_slotgrp);
             if (v == 0xFF) {
                 if (s == 1 && in(on_lo, on_hi, n_on, pc))

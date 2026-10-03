@@ -28,10 +28,12 @@
 ;                      there, sign extended to 32 bits
 ;   div1000            GA_0-3 = n: GA_4-7 = n / 1000, GA_0-3 = n % 1000
 ;                      (unsigned, udiv32)
-;   g_resume           the continuation of G_LOADACT's action (core); A = 0.
-;                      The driver calls it in its routine-with-load mode;
-;                      part tic's G_Ticker calls it after a load and goes
-;                      on at its action loop's test of gameaction
+;   g_resume           the continuation of G_LOADACT's action; A = 0. The
+;                      driver calls it in its routine-with-load mode; part
+;                      tic's G_Ticker calls it after a load and goes on at
+;                      its action loop's test of gameaction (the play
+;                      build's brain group, the test builds' driver area:
+;                      not the core, below)
 ;
 ; What is not here, by design (GAME.md 0.1, 3.4): the keys' state
 ; (gamekeydown), wipegamestate and automapmode are milestone 11's (input,
@@ -787,12 +789,24 @@ pars:   .byte 0, 30, 75, 120, 90, 165, 180, 180, 30, 165
         rts
 
 ; ===========================================================================
-; g_resume: the load protocol's continuation (GAME.md 3.4), in the core
-; (the driver calls it): doLoadLevel's tail, then the tail of G_LOADACT's
-; action. A = 0.
+; g_resume: the load protocol's continuation (GAME.md 3.4): doLoadLevel's
+; tail, then the tail of G_LOADACT's action. A = 0. Not in the core (the
+; frame slots, docs/SPEED.md 9: it runs once a load, so its 163 B went to
+; the placeable code): in the play build the brain's group (dl_brain.s's
+; E_RESUME calls it there, play.mk's PLAY_TIC), in the test builds the
+; driver's area in the card (gdriver.s's dg_resume, part tic's g_tresume
+; and the harness's fl_tresume call it there). Its calls are the hooks',
+; in the core.
 ; ===========================================================================
-        .segment "GCORE"
+.ifdef PLAY_TIC
+        .segment "DLGB"
+FC_HERE .set $FF                ; (a glue group's: an FCALL from here goes
+                                ;   through fc_call, the brain's group
+                                ;   restored on its return)
+.else
+        .segment "DRIVER"
 FC_HERE .set 0
+.endif
 g_resume:
         ; the load's textures (wave 1 as integrated; docs/game-parts/
         ; flow.md request 6): upstream's R_GetTexture set

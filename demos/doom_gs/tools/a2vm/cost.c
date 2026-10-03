@@ -1,7 +1,8 @@
 /*
  * The cost model of a2vm: see cost.h for what it charges, and
  * tools/a2vm/costs/appletini.json for every parameter and its source in
- * the Appletini firmware (appletini-one, F1.2.1). Line numbers in the
+ * the Appletini firmware (appletini-one, F1.2.1; the profile f122's
+ * additions, F1.2.2, cite commit 3101934). Line numbers in the
  * comments below refer to hdl/apple/vtw_core_top.sv unless another file
  * is named.
  */
@@ -28,10 +29,11 @@ typedef struct {
 static const param_spec specs[] = {
     P_D(fabric_mhz), P_D(line_us), P_U(lines), P_U(vbl_line),
     P_U(turbo_hit), P_U(turbo_read_miss), P_U(turbo_write_miss),
-    P_U(posted_write), P_D(turbo_extra), P_I(caches_survive),
+    P_U(posted_write), P_D(turbo_extra), P_I(d2_replay),
+    P_I(caches_survive),
     P_U(rw_hit), P_U(rw_request), P_U(psram_read), P_U(psram_write),
     P_U(rw_lines), P_U(admit_offset), P_U(admit_window),
-    P_I(relaxed_admission), P_U(drain_rmw),
+    P_I(relaxed_admission), P_U(drain_rmw), P_I(rmw_queue),
     P_U(io_capture), P_U(io_route), P_U(video_wait), P_U(bus_drive_tap),
     P_U(bus_data_tap), P_U(bus_done), P_U(status_read), P_U(sp_private),
     P_U(rom_read), P_U(quiet_switch), P_I(quiet_switches), P_I(read_bank),
@@ -44,6 +46,9 @@ static const param_spec specs[] = {
     P_U(amem_read_word_axi), P_U(amem_read_setup_axi),
     P_U(amem_write_word_axi), P_U(amem_write_setup_axi),
     P_U(amem_write_byte_axi), P_I(keep_lazy),
+    P_I(amem_engine), P_U(copy_read_wait), P_U(copy_write_wait),
+    P_U(amem_copy_setup_axi), P_U(amem_copy_start_axi),
+    P_U(amem_copy_poll_axi), P_U(amem_copy_end_axi),
     P_U(slowdown_cycles), P_I(slowdown_slot4), P_I(slowdown_via_exempt),
     P_U(slow_done)
 };
@@ -114,7 +119,10 @@ int a2vm_cost_load(a2vm_cost_params *p, const char *path, char *error,
         p->rw_lines > COST_RW_LINES_MAX || !p->amem_chunk ||
         (p->coalescer && (!p->scan_byte || !p->post_depth ||
                           p->post_depth > 4096)) ||
-        (p->zp_pair && p->read_bank)) {
+        (p->zp_pair && p->read_bank) ||
+        (p->rmw_queue && !p->relaxed_admission) ||
+        (p->amem_engine && (!p->copy_read_wait || !p->copy_write_wait ||
+                            !p->amem_copy_poll_axi))) {
         snprintf(error, error_size, "%s: a parameter is out of range", path);
         return 0;
     }
@@ -123,7 +131,7 @@ int a2vm_cost_load(a2vm_cost_params *p, const char *path, char *error,
 
 /* ---- construction ---- */
 
-enum { MIRROR_BYTES = 0x20000 };
+enum { MIRROR_BYTES = 0x20000, RMW_RING = 8192 };
 
 a2vm_cost *a2vm_cost_new(const a2vm_cost_params *p)
 {
@@ -135,8 +143,9 @@ a2vm_cost *a2vm_cost_new(const a2vm_cost_params *p)
     c->deferred_list = calloc(MIRROR_BYTES, sizeof *c->deferred_list);
     c->cz_dirty = calloc(MIRROR_BYTES, 1);
     c->cz_fifo = calloc(4096, sizeof *c->cz_fifo);
+    c->rmw_at = calloc(RMW_RING, sizeof *c->rmw_at);
     if (!c->drain_at || !c->deferred || !c->deferred_list || !c->cz_dirty ||
-        !c->cz_fifo) {
+        !c->cz_fifo || !c->rmw_at) {
         a2vm_cost_free(c);
         return NULL;
     }
@@ -162,6 +171,7 @@ void a2vm_cost_free(a2vm_cost *c)
     free(c->deferred_list);
     free(c->cz_dirty);
     free(c->cz_fifo);
+    free(c->rmw_at);
     free(c);
 }
 
@@ -205,6 +215,44 @@ static int64_t drive_cycle(const a2vm_cost *c, uint64_t t, int64_t after)
     return k < after ? after : k;
 }
 
+
+/* ---- the PSRAM's RMWs of captured aux writes (rmw_queue, F1.2.2) ----
+
+   A posted byte to aux memory is also captured by psram_simple: the
+   serve decision marks the cycle (serve_write_start, psram_simple.sv:
+   137, :395-398) and data_en pushes the byte into the write queue
+   (:400-417). While the vTW owns the bus, background_admit is always
+   true (:256-257), so S_IDLE admits the RMW on the next clock, ahead of
+   a vTW line op and of the PS DMA (:453-478, priority parked write >
+   RMW > vTW > PS DMA), and its read and write legs keep the driver
+   drain_rmw clocks (:526-554). The byte lands at the data snap plus one
+   clock (data_en registered, apple_bus_wrapper.sv:657-659). */
+
+static void psram_drain_rmw(a2vm_cost *c, uint64_t until);
+
+static void rmw_push(a2vm_cost *c, uint64_t data_snap)
+{
+    if (!c->p.rmw_queue)
+        return;
+    if (c->rmw_count == RMW_RING)   /* the oldest is long due */
+        psram_drain_rmw(c, c->rmw_at[c->rmw_head]);
+    c->rmw_at[(c->rmw_head + c->rmw_count) % RMW_RING] = data_snap + 1;
+    c->rmw_count++;
+}
+
+/* Admit every queued RMW whose byte has landed by `until` (each when
+   its byte lands or when the driver is free, in order). */
+static void psram_drain_rmw(a2vm_cost *c, uint64_t until)
+{
+    while (c->rmw_count && c->rmw_at[c->rmw_head] <= until) {
+        uint64_t at = c->rmw_at[c->rmw_head];
+        if (at < c->psram_free)
+            at = c->psram_free;
+        c->psram_free = at + c->p.drain_rmw;
+        c->rmw_head = (c->rmw_head + 1) % RMW_RING;
+        c->rmw_count--;
+    }
+}
 
 /* ---- the video mirror ---- */
 
@@ -279,6 +327,8 @@ static uint64_t cz_send(a2vm_cost *c, uint64_t t, unsigned a17)
         c->active_end = done;
     if ((a17 & 0x10000) && done > c->aux_drain_end)
         c->aux_drain_end = done;
+    if (a17 & 0x10000)
+        rmw_push(c, done);
     c->c.posted++;
     return t;
 }
@@ -396,6 +446,8 @@ static void drain_byte(a2vm_cost *c, unsigned a17)
         c->active_end = done;
     if ((a17 & 0x10000) && done > c->aux_drain_end)
         c->aux_drain_end = done;
+    if (a17 & 0x10000)
+        rmw_push(c, done);
     c->c.posted++;
 }
 
@@ -444,7 +496,7 @@ static void post(a2vm_cost *c, const a2vm *m, unsigned a17)
    (:1408-1413, vtw_video_bank_sync.sv). Returns the clocks waited. */
 static uint64_t flush(a2vm_cost *c, int lazy, int aux_only)
 {
-    uint32_t bytes = 0, kept = 0;
+    uint32_t bytes = 0, kept = 0, aux_bytes = 0;
     int banks[2] = { 0, 0 };
     uint64_t start = c->t;
     for (uint32_t i = 0; i < c->list_used; i++) {
@@ -460,6 +512,7 @@ static uint64_t flush(a2vm_cost *c, int lazy, int aux_only)
         c->deferred[a17] = 0;
         banks[(a17 >> 16) & 1] = 1;
         bytes++;
+        aux_bytes += (a17 >> 16) & 1;
         if (kind == 1) {
             c->deferred_count--;
             if (a17 & 0x10000)
@@ -480,6 +533,9 @@ static uint64_t flush(a2vm_cost *c, int lazy, int aux_only)
     c->bus_next = k;
     if (banks[1] && done > c->aux_drain_end)
         c->aux_drain_end = done;
+    /* the aux bytes' RMWs (taken as the flush's last cycles) */
+    for (uint32_t i = aux_bytes; i > 0; i--)
+        rmw_push(c, cycle_start(c, k - (int64_t)i) + data_tap(c));
     c->c.posted += bytes;
     c->c.flushes++;
     c->c.bus_cycles += steer;
@@ -625,6 +681,20 @@ static int fast_write(a2vm_cost *c, uint16_t a, uint32_t phys, int posted,
 /* When the PSRAM admits an operation requested at `r`. */
 static uint64_t admit(a2vm_cost *c, uint64_t r, unsigned busy)
 {
+    if (c->p.relaxed_admission && c->p.rmw_queue) {
+        /* F1.2.2 (psram_simple.sv:256-257, :453-505): the RMWs whose
+           bytes have landed go first, then this op as soon as the driver
+           is free */
+        uint64_t s;
+        for (;;) {
+            s = r > c->psram_free ? r : c->psram_free;
+            if (!c->rmw_count || c->rmw_at[c->rmw_head] > s)
+                break;
+            psram_drain_rmw(c, s);
+        }
+        c->psram_free = s + busy;
+        return s;
+    }
     if (c->p.relaxed_admission) {
         uint64_t s = r > c->psram_free ? r : c->psram_free;
         /* a captured aux write (a mirror byte) takes an RMW at the start
@@ -915,6 +985,7 @@ static void access_read(a2vm_cost *c, a2vm *m, uint16_t address,
                         const uint8_t *page)
 {
     c->c.accesses++;
+    c->dummy_run = 0;
     if (!page) {
         io_access(c, m, address, 0, 0);
         return;
@@ -931,6 +1002,7 @@ static void access_write(a2vm_cost *c, a2vm *m, uint16_t address,
                          uint8_t value, const uint8_t *page)
 {
     c->c.accesses++;
+    c->dummy_run = 0;
     if (!page) {
         /* $Cxxx, or $D000-$FFFF with the card write-protected, which is
            a bus cycle too (globals.sv:320-334) */
@@ -959,6 +1031,27 @@ static void access_write(a2vm_cost *c, a2vm *m, uint16_t address,
         reconcile(c, m, 1);         /* rule O2: the steer must match */
     if (fast_write(c, address, phys, posted, aux0))
         post(c, m, (unsigned)(aux0 ? 0x10000 : 0) | address);
+}
+
+/* A dummy read that the TURBO core omits (an instruction that began in
+   TURBO, outside $C000-$CFFF: w65c02_core.sv:903-967): no bus access, no
+   cache lookup, no side effect; counted in `dropped`. The core still
+   counts the cycles it skipped: the step before them reports them in its
+   cycle_ticks (2 or 3, :921-967), and with the virtual Disk II active in
+   slot 6 (vtw_disk2_active, apple_top.sv:2065-2068) disk2_card replays
+   them through its sequencers one a clock and holds d2_time_ready low
+   until it is done (disk2_card.sv:376-412), which holds the core's next
+   X_CAPTURE (vtw_core_top.sv:1524, :1590-1591, :1907): a step of n > 1
+   cycles delays the next one n clocks. So with d2_replay a run of k
+   dummy reads (one step's) costs k + 1 clocks: 2 for the first, 1 for
+   each one after it. The card (CALIB.hdv, docs/results/calib.md): REG's
+   dey / bne, two such steps, takes 10.3 clocks, 6.3 without; every line
+   within 0.6%. */
+static void dummy(a2vm_cost *c)
+{
+    c->c.dropped++;
+    if (c->p.d2_replay)
+        charge(c, c->dummy_run++ ? 1 : 2, &c->c.fast_clocks);
 }
 
 /* ---- the slot-4 slowdown ----
@@ -1023,6 +1116,7 @@ static void slow_access(a2vm_cost *c, a2vm *m, uint16_t address,
 {
     uint64_t start = c->t;
     c->c.accesses++;
+    c->dummy_run = 0;
     if (!page) {
         if (write && address >= 0xd000) {
             c->c.io_accesses++;
@@ -1086,10 +1180,11 @@ static void slowdown_read(a2vm *m, uint16_t address, const uint8_t *page,
     else if (CPU65C02_BASE_KIND(kind) == CPU65C02_DUMMY && !io &&
              c->instr_turbo) {
         if (m->core == A2VM_CORE_W65C02S &&
-            m->cpu.state != CPU65C02_RUNNING)
+            m->cpu.state != CPU65C02_RUNNING) {
             charge(c, c->p.turbo_hit, &c->c.fast_clocks);
-        else
-            c->c.dropped++;
+            c->dummy_run = 0;
+        } else
+            dummy(c);
         return;
     } else
         access_read(c, m, address, page);
@@ -1108,10 +1203,11 @@ void a2vm_cost_read(a2vm *m, uint16_t address, const uint8_t *page, int kind)
         /* TURBO omits dummy reads outside I/O (w65c02_core.sv:903-967),
            but a waiting or stopped core still takes time */
         if (m->core == A2VM_CORE_W65C02S &&
-            m->cpu.state != CPU65C02_RUNNING)
+            m->cpu.state != CPU65C02_RUNNING) {
             charge(c, c->p.turbo_hit, &c->c.fast_clocks);
-        else
-            c->c.dropped++;
+            c->dummy_run = 0;
+        } else
+            dummy(c);
         return;
     }
     access_read(c, m, address, page);
@@ -1239,6 +1335,112 @@ static uint64_t amem_write(a2vm_cost *c, uint32_t phys, uint32_t n)
     return t + dma(c, total, 1);
 }
 
+/* ---- F1.2.2's copy engine (amem_engine) ----
+
+   vtw_copy_engine.sv runs a whole descriptor, one state a clock: CHECK
+   (:126-139), then for each step (4 bytes when both ends are word aligned
+   and 4 or more are left, else 1: :151-153) NEXT, SOURCE, DEST, SH_WRITE
+   or PATCH, ADVANCE (:140-214), plus SH_READ and SH_CAPTURE for a shadow
+   source (:161-175). A PSRAM end keeps one 8-byte line each way: a source
+   line is read when SOURCE misses it (:163-169) and the state comes back
+   to SOURCE (:218-223); a destination line is read only when the step
+   does not start a whole line (:179-192), and written back from NEXT
+   when the next byte leaves it or the copy ends (:143-146). A PSRAM op
+   waits in PS_REQ for psram_simple's registered dma_ready, which S_IDLE
+   gives at once while the vTW owns the bus (psram_simple.sv:256-257,
+   :487-505; the CPU is held, the mirror drained, the vTW port idle), and
+   in PS_WAIT for the registered dma_rvalid (:557-561): copy_read_wait
+   and copy_write_wait clocks from PS_REQ when the driver can take the
+   command at once, its acceptance otherwise put off until the driver is
+   ready again (psram_read + 1 clocks after a read, psram_write after a
+   write: psram_driver.sv's tapes and CE rest). The shadow port takes a
+   word or a byte in the one SH_WRITE clock (apple_top.sv's port B mux). */
+
+static uint64_t copy_ps(const a2vm_cost *c, uint64_t t, uint64_t *ready,
+                        int write)
+{
+    uint64_t accept = t + 1;            /* dma_ready is registered */
+    if (*ready > accept)
+        accept = *ready;
+    *ready = accept + (write ? c->p.psram_write : c->p.psram_read + 1u);
+    return accept - 1 + (write ? c->p.copy_write_wait : c->p.copy_read_wait);
+}
+
+/* The engine from the clock START reaches it to the clock BUSY drops; `t`
+   is always the clock the next state starts. */
+static uint64_t copy_engine(a2vm_cost *c, uint64_t start, uint32_t src,
+                            uint32_t dst, uint32_t left, int fill)
+{
+    psram_drain_rmw(c, start);
+    uint64_t ready = c->psram_free > start ? c->psram_free : start;
+    uint64_t t = start + 2;             /* IDLE takes START; CHECK */
+    int sv = 0, dv = 0;
+    uint32_t sl = 0, dl = 0, dirty = 0, writes = 0;
+    for (;;) {
+        t++;                            /* NEXT */
+        if (dirty && (!left || (dst >> 3) != dl)) {
+            t = copy_ps(c, t, &ready, 1);   /* STORE_DEST, back to NEXT */
+            dirty = 0;
+            dv = 0;
+            continue;
+        }
+        if (!left)
+            break;                      /* DONE; BUSY drops next clock */
+        unsigned step = (!(dst & 3) && (fill || !(src & 3)) && left >= 4)
+                        ? 4 : 1;
+        t++;                            /* SOURCE */
+        if (!fill) {
+            if (src < 0x20000)
+                t += 2;                 /* SH_READ, SH_CAPTURE */
+            else if (!sv || sl != src >> 3) {
+                t = copy_ps(c, t, &ready, 0);   /* LOAD_SOURCE */
+                sv = 1;
+                sl = src >> 3;
+                t++;                    /* SOURCE again: the hit */
+            }
+        }
+        t++;                            /* DEST */
+        if (dst < 0x20000) {
+            t++;                        /* SH_WRITE */
+            writes++;
+        } else {
+            if (!dv || dl != dst >> 3) {
+                dl = dst >> 3;
+                dv = 1;
+                if ((dst & 7) || left < 8)
+                    t = copy_ps(c, t, &ready, 0);   /* LOAD_DEST */
+            }
+            t++;                        /* PATCH */
+            dirty += step;
+        }
+        t++;                            /* ADVANCE */
+        src += step;
+        dst += step;
+        left -= step;
+    }
+    c->psram_free = ready;
+    c->c.invalidations += writes;       /* each sh_we pulses (:1206-1207) */
+    return t;
+}
+
+/* One descriptor through hw_transfer (memory_api_hw.c:331-414, F1.2.2): the
+   checks before START (the signature, hw_held, the PSDMA owner's status,
+   the engine's status, READ4 ready, hw_held again), the four register
+   writes, then polls of hw_held and the status until the engine is done,
+   then the COMPLETED read. */
+static void amem_transfer(a2vm_cost *c, uint32_t source, uint32_t target,
+                          uint32_t size, int fill)
+{
+    uint64_t start = c->t + axi(c, c->p.amem_copy_setup_axi,
+                                c->p.amem_copy_start_axi);
+    uint64_t done = copy_engine(c, start, source, target, size, fill);
+    uint64_t poll = axi(c, c->p.amem_copy_poll_axi, 0);
+    uint64_t polls = poll ? (done - start + poll - 1) / poll : 1;
+    if (!polls)
+        polls = 1;
+    c->t = start + polls * poll + axi(c, c->p.amem_copy_end_axi, 0);
+}
+
 void a2vm_cost_amem(a2vm *m, const uint8_t *request, size_t length)
 {
     a2vm_cost *c = m->cost;
@@ -1283,6 +1485,11 @@ void a2vm_cost_amem(a2vm *m, const uint8_t *request, size_t length)
         uint32_t target = (d[6] == 0 ? 0u : (uint32_t)d[7] + 1) << 16 |
                           (uint32_t)(d[8] | d[9] << 8);
         uint32_t size = d[10] | d[11] << 8;
+        if (c->p.amem_engine) {
+            amem_transfer(c, op == 1 ? source : 0, target, size, op != 1);
+            bytes += size;
+            continue;
+        }
         for (uint32_t offset = 0; offset < size; offset += c->p.amem_chunk) {
             uint32_t n = size - offset;
             if (n > c->p.amem_chunk)

@@ -74,8 +74,10 @@ $(foreach f,$(FRAGMENTS),$(eval include $(f))$(eval $(call add_part)))
 # the runtime and milestone 9's game core, in every tic image; the math:
 # the render build (math-r: MATHW's subset, the card's products) and the
 # game's (math-g: R_PointToAngle3, finesine, finecosine in the core; wave 2
-# as integrated, docs/game-parts/damage.md R1)
-RUNTIME := gobj gcall ghook gthink gpos gspawn gweap gspec
+# as integrated, docs/game-parts/damage.md R1). Not gspec.s: the load's
+# SPECIALS step runs in the load image (level.mk's LCODE, which the
+# drivers' load protocol runs); no tic image calls it (docs/SPEED.md 9)
+RUNTIME := gobj gcall ghook gthink gpos gspawn gweap
 COMMON := far math-r math-g auxlc
 
 .PHONY: all shared place part wave game gprof release skel sizes clean

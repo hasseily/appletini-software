@@ -25,8 +25,8 @@ options every run is what it was, byte for byte.
 | `a2vm.h`, `a2vm.c` | The machine: memory map, soft switches, keyboard, game port, mouse card, Phasor, memory API, `a2sim.py`'s timing, interrupt delivery and idle skipping |
 | `prodos.h`, `prodos.c` | The MLI stand-in, `a2sim.py`'s `FakeProDOS` |
 | `cost.h`, `cost.c` | The cost model: every bus access charged in fabric clocks of the Appletini, with its TURBO caches, RamWorks line cache, PSRAM admission, bus cycles, video mirror and memory API |
-| `costs/appletini.json` | The cost parameters, each with its source in the firmware or `docs/firmware/`, and the profiles `f121` and `fastpath`, and `f121zp` and `fastzp` with the zero-page pair |
-| `costs.py` | A profile as the "name value" lines `--cost` reads; `PROFILE+VARIANT` adds the variants (the slot-4 slowdown, NTSC) |
+| `costs/appletini.json` | The cost parameters, each with its source in the firmware or `docs/firmware/`, and the profiles `f121`, `f122` (F1.2.2) and `fastpath`, and `f121zp` and `fastzp` with the zero-page pair |
+| `costs.py` | A profile as the "name value" lines `--cost` reads; `PROFILE+VARIANT` adds the variants (the slot-4 slowdown, NTSC, the virtual Disk II inactive, the model before the card's calibration) |
 | `cost_report.py` | The report on the existing port: frame and phase times under both profiles, against the hardware measurement |
 | `main.c` | The command line: start-up, runs, input events, snapshots, screen dumps, bus scripts |
 | `shot.py` | A screen dump or snapshot to a PNG (standard SHR and PAL256), with zlib only |
@@ -762,16 +762,17 @@ on the Appletini in TURBO mode, in fabric clocks (133.333 MHz), as the
 vTW core routes it (`hdl/apple/vtw_core_top.sv` of appletini-one,
 `origin/main`, F1.2.1). The parameters come from
 `costs/appletini.json`; each cites the RTL line or the document in
-`docs/firmware/` it comes from. **None has been measured on the card:**
-they are derived from the RTL and the firmware documents, until
-milestone 0 measures them.
+`docs/firmware/` it comes from. They are derived from the RTL and the
+firmware documents; on 2026-10-03 the card's CALIB.hdv corrected six of
+them (below, "Calibration on the card"), and each of those cites the
+card's figures too.
 
 | Access | What the model does | Clocks (F1.2.1) |
 | --- | --- | --- |
 | Fast memory (main, base aux, ROM) | The TURBO caches of `vtw_turbo_cache.sv`: a 32-word read cache indexed as the RTL folds the address, a 32-entry write page table; a video write never takes a fast entry | read hit 2, read miss 4, write hit 2, write miss 5, video write 6 |
-| A dummy read | Omitted outside `$C000-$CFFF` (the TURBO core's shortcuts, `w65c02_core.sv:903-967`); kept, as a real access, in I/O | 0 |
-| Extended memory (RamWorks banks 1-127) | The 8-byte write-allocate line (or 16 lines, fastpath), write-back; a miss is a PSRAM operation admitted once an Apple cycle inside a 40-clock window (`psram_simple.sv`), a dirty victim two | hit 5, clean miss 35 with the window open, about 131 sustained, dirty about 260 |
-| `$Cxxx` | A real bus cycle launched at the next `drive_en`, answered at `data_en`; or a private shortcut: `$C011-$C01F` reads, the slot-7 SmartPort window, internal ROM | 122-253; private 3 to 6 |
+| A dummy read | Omitted outside `$C000-$CFFF` (the TURBO core's shortcuts, `w65c02_core.sv:903-967`): no access; kept, as a real access, in I/O. With the virtual Disk II active (`d2_replay`, the card as measured), the step that stands for it waits while `disk2_card.sv` replays its cycles | 2, 1 for the second of a pair; 0 with the variant `nod2` |
+| Extended memory (RamWorks banks 1-127) | The 8-byte write-allocate line (or 16 lines, fastpath), write-back; a miss is a PSRAM operation admitted once an Apple cycle inside a 37-clock window from tap 30 (`psram_simple.sv`), a dirty victim two | hit 5, clean miss 35 with the window open, about 131 sustained, dirty about 260 |
+| `$Cxxx` | A real bus cycle launched at the next `drive_en` (tap 9), answered 4 clocks after the data snap; or a private shortcut: `$C011-$C01F` reads, the slot-7 SmartPort window, internal ROM | 123-254; private 3 to 6 |
 | The video mirror | Each video write leaves a byte for the motherboard, "active" or deferred as `vtw_video_policy.sv` decides, coalesced while it waits. Active bytes go through the coalescer (`vtw_video_coalescer.sv`, every firmware since F1.1.0; `coalescer` 1): its scanner selects the dirty pages in address order, one page a clock, takes every byte of a selected page, dirty or not, in two clocks, and queues the dirty ones for the bus (508 entries before it reports full), which takes one an Apple cycle; the next `$Cxxx` access waits until the scan is done and the queue empty. An exposure access flushes every pending byte | 131.3 a byte when a page has 4 or more dirty bytes; at least 513 a page scanned below that, so a column of the 3D view (one byte a 160-byte row, 1.6 a page) drains at about 4 Apple cycles a byte |
 | A mapping change | Clears both TURBO caches (and every ARM write to the shadow counts as one, as the card's counter does) | the misses that follow |
 | A memory API request | The hold (the mirror and the line flushed first), then the ARM's work as `memory_api_hw.c` does it: AXI register accesses per 4 bytes of fast memory, one PSRAM line an Apple cycle by DMA, in 504-byte chunks | 0.135 us an AXI access, fitted to the hardware (below) |
@@ -829,10 +830,90 @@ from the corrected summaries of the reviews in `docs/firmware/`:
 6. the private read bank `$C069` (the existing port never writes it);
 7. `$C071/$C073` in `vtw_is_bank_steer` (no cost in TURBO).
 
+### Calibration on the card (2026-10-03)
+
+`CALIB.hdv` (`tools/native/calibdisk.py`, `docs/results/calib.md`)
+timed 44 operations on the owner's card (PAL //e, the DOOM profile):
+the CPU in fast memory and in RamWorks banks, line misses, the switches,
+the game's far windows and copies, the SHR drain. Against it the model
+was right wherever the bus set the time and 7-39% fast wherever code ran
+between accesses. Six parameters changed; every line is now within 0.6%
+of the card, and the menu's BENCHMARK of both speed waves' DOOM.hdv within
+0.4% of the card's FPS (`docs/SPEED.md` 5):
+
+| Parameter | Before | Now | What it is |
+| --- | --: | --: | --- |
+| `d2_replay` | (new) 0 | 1 | The virtual Disk II in slot 6 is active on the owner's card (`disk2.slot6.enabled`; off by default) and replays, one a clock, the 65C02 cycles each TURBO step stands for, holding the next step until it has (`disk2_card.sv:374-412`, `vtw_core_top.sv:1524`, `:1907`). A step that omitted k dummy reads delays the next one k + 1 clocks: REG's `dey / bne` takes 10.3 clocks on the card, 6.3 without |
+| `bus_drive_tap` | 8 | 9 | drive_en is registered (`apple_bus_wrapper.sv:622`) |
+| `bus_done` | 2 | 4 | data_en and resp_valid_q are registered, then X_BUS and X_BUS_DONE (`apple_bus_wrapper.sv:657-659`, `vtw_bus_engine.sv:726`, `vtw_core_top.sv:2125-2159`): two switch writes in a row take one Apple cycle more, as on the card |
+| `admit_offset` | 6 | 30 | addr_en is tap 25 (`apple_bus_wrapper.sv:101`, `:625-639`), not tap 3 |
+| `admit_window` | 40 | 37 | the window's 40 count from addr_en, not from the arming (`psram_simple.sv:239`, `:318-328`) |
+| `slow_done` | 1 | 3 | a cycle paced at 1 MHz ends on the third clock after the data snap: data_en and `pace_tick_pending_q` are registered (`vtw_core_top.sv:1850-1856`, `:1514`), as for `bus_done`; no CALIB line can tell it (WIN moves 0.011 us) |
+
+Two variants keep the comparison: `precal`, the model before the card
+(`playtime.py --profile f121-precal`; the A2VM column of the card's first
+CALIB.hdv), and `nod2`, the card with its virtual Disk II inactive
+(`disk2.slot6.enabled=off` or `vtw.disk2.acceleration.disabled=on`;
+`--profile f121-nod2`): wave 2's benchmark 3.609 FPS there against 3.004
+as the card is set, a prediction not yet checked on the card. The tap
+corrections move the existing port's frame (below) by under 0.1 ms:
+it is 248.6 ms with `f121+nod2` and with `precal`, and 261.6 ms with
+`f121`. Its v12 capture matches `nod2`, as if that card had no active
+Disk II; `cost_report.py` still compares it with `f121` (within the 25%
+of MILESTONES.md 3.1 and the counters within 10%).
+
+### F1.2.2: the profile `f122` (2026-10-03)
+
+Firmware F1.2.2 (appletini-one `3101934`, "Speed up TURBO paging and bump
+firmware to F1.2.2") changes two things on the TURBO path, and nothing in
+`vtw_core_top.sv`, the bus engine or the PSRAM driver:
+
+1. `psram_simple.sv:256-257`: while the vTW owns the bus (S_RUN), every
+   background op is admitted as soon as the driver is free, not once an
+   Apple cycle in the window. A RamWorks line miss is then `rw_request`
+   + `psram_read` clocks (35), back-to-back reads 32 apart (the driver's
+   CE rest); a dirty victim's write 24 more. `relaxed_admission` 1, the
+   fast-path design's change 1. A captured aux write's RMW is admitted on
+   the clock after its byte lands (`:400-417`, `:453-478`), ahead of the
+   vTW port: `rmw_queue` 1 (it moves nothing in the wave 2 benchmark);
+2. the memory API's descriptors run on `vtw_copy_engine.sv`, one command
+   each (`memory_api.c:169-191`, `memory_api_hw.c:331-414`): `amem_engine`
+   1. The model runs the engine state by state (`copy_engine` in
+   `cost.c`): an aligned copy from a RamWorks bank to main takes 41 clocks
+   a line (NEXT, SOURCE, the line read's PS_REQ and PS_WAIT, 30 clocks
+   with `copy_read_wait`, SOURCE again, DEST, SH_WRITE, ADVANCE, then the
+   second word's five states), 0.0384 us a byte; the ARM's 12 reads and 4
+   writes before START and its polls of 5 reads (`amem_copy_*`).
+
+One value is fitted: `ps_dispatch_us` (f122), the ARM's own time a
+request beyond the AXI accesses the model counts, 25.9 us from the
+card's PRIVATE lines (below). The card ran with the virtual Disk II's
+acceleration off: compare `f122+nod2` (`playtime.py --profile f122-nod2`
+once `playdisk.py` names it).
+
+On the card (CALIB.hdv `ceb663d6` and wave 2's DOOM.hdv `f92c81ae`, both
+on F1.2.2, PAL, Disk II acceleration off): page 1's 44 lines within 0.6%
+but SW C073 (2.954 against 2.909 us, +1.5%) and PUT RW24 (15.754 against
+15.567, +1.2%), both whole-Apple-cycle phase cases that `f121+nod2`
+gives the same (the bus path did not change); the BENCHMARK 3.829 FPS
+against 3.830, its rows TIC 189.5, 3D 21.9, MASK 13.8, DRAW 31.4, REST
+4.9 against 189.4, 21.9, 13.8, 31.4, 4.9. Page 2's PRIVATE copies:
+256 B 56.1 us against 62.2 (to `$2000`) and 57.0 (to `$6000`), 2 KB
+125.0 against 119.9 and 128.7, eight 2 KB requests 124.4 against 124.4
+and 120.2 a request, 16 KB 676.4 against 786.1 and 1135.4. The card's
+two columns are the same work (the engine and the ARM take the same
+path to either page); the 16K lines time 10 requests a measurement,
+about 8-11 ms, under one HDMI frame, so the ARM's frame-periodic work
+(the compositor's 16-row slices, `compositor.c:668-700`, the main loop's
+USB and sensor polls, all between two `smartport_service_poll` calls)
+falls whole into one span or the other.
+
 ### Results: the existing port, E1M1 standing still
 
-The build `hardware-20260926-textured-pal` (`e2676d7e`, the v12 build
-measured on hardware), fast install, memory API on, no input, the exact
+(Measured before the calibration above; the same figures with
+`f121+nod2` and `fastpath+nod2`.) The build `hardware-20260926-textured-pal`
+(`e2676d7e`, the v12 build measured on hardware), fast install, memory
+API on, no input, the exact
 W65C02S core, on the model's clock (`--cost-timed`). The first frame loads
 the level; the 20 frames after it are reported. Each run takes 1.6 s on an
 Apple M3 Pro.
@@ -1009,8 +1090,10 @@ write the SSI-263.
 - the TURBO path against the firmware's benchmark
   (`hdl/sim/tb_vtw_turbo.sv:717-747`, `README_TURBO.md:32-35`): the
   16-byte copy loop, 218 accesses a pass, takes **436 clocks a warm pass,
-  as the RTL simulation measured**; its cold pass, 462 clocks, is
-  explained miss by miss (the RTL's 474 also counts the core's reset);
+  as the RTL simulation measured** (with `nod2`: the simulation has no
+  Disk II; 532 with `f121`, its 48 omitted dummy reads at 2 clocks); its
+  cold pass, 462 clocks, is explained miss by miss (the RTL's 474 also
+  counts the core's reset);
 - micro-cases through bus scripts: cache hits and misses and their
   invalidation; a `$C073` write at every phase, 122 to 253 clocks; a
   RamWorks miss, a sustained miss, a dirty victim, under both profiles;
@@ -1054,5 +1137,10 @@ write the SSI-263.
   f121, fastpath, f121zp and fastzp.
 - The first access after a mapping change (`turbo_invalidate` still high
   at X_CAPTURE) is charged as a normal miss.
+- The Disk II's replay assumes the drive stopped: with it spinning, its
+  sequencer can hold the core longer (`vtw_sequencer_ready`,
+  `disk2_card.sv:593-599`). The decimal cycle of ADC and SBC
+  (`ST_DECIMAL_EXTRA`, a real step on the card) is taken as an omitted
+  dummy read.
 - Refresh, PHI0 stretching and the long Apple cycle are not modelled: an
   Apple cycle is 131.28 fabric clocks (PAL, 64 us a line of 65 cycles).

@@ -1,12 +1,14 @@
 ; calib.s: CALIB.SYSTEM, the calibration disk's program (docs/SPEED.md 5,
 ; docs/results/calib.md). GPL-2, the port's own.
 ;
-; A fixed list of 44 microbenchmarks, each timed on the card in TURBO by
+; A fixed list of 52 microbenchmarks, each timed on the card in TURBO by
 ; the Phasor's timers, then shown on the 80-column text screen with
 ; a2vm's f121 prediction beside each (gen/calibpred.inc, written by
-; tools/native/calibdisk.py from an a2vm run of this same program). Key R
-; runs the list again; CTRL-RESET reboots (the program leaves ProDOS's
-; card overwritten and its reset vector invalid, so the //e boots cold).
+; tools/native/calibdisk.py from an a2vm run of this same program): the
+; first 44 on text page 1, the memory API's 8 on text page 2 (both are
+; written after a run; SPACE shows the other one). Key R runs the list
+; again; CTRL-RESET reboots (the program leaves ProDOS's card overwritten
+; and its reset vector invalid, so the //e boots cold).
 ;
 ; The time base. Timer 1 of the Phasor's VIA-B, free-running with the
 ; latch $FFFE, counts Apple bus cycles (1,015,625 a second on PAL,
@@ -33,7 +35,10 @@
 ; 16) with the line cache's hits and misses apart, far_gcopy, far_pload,
 ; far_get and far_put, the object API's page-1 window copy, the soft
 ; switches each followed by code run from main, an SHR write burst and its
-; drain, and the slot-4 window. The game's own routines are not
+; drain, the slot-4 window, and the memory API's PRIVATE copy from a
+; RamWorks bank into main (appletini-one README_MEMORY_API.md: one request
+; through slot 7's FIFO, as lload.s's am_send sends one) at $2000, the
+; colormaps' place in the game, and at $6000. The game's own routines are not
 ; reassembled: calibdisk.py copies their bytes from the play build (far.s's
 ; far area of the card, the kernel's far_gcopy, gobj.s's page-1 window)
 ; into gen/*.bin, and this program puts them back at the addresses the
@@ -53,6 +58,7 @@
 ; the timer reads.
 
         .setcpu "65C02"
+        .macpack longbranch
         .include "calibplay.inc"        ; the play build's addresses (gen)
 
 ; ---------------------------------------------------------------------------
@@ -106,6 +112,30 @@ BUF         = $A000             ; 16 pages: the streams, the copies
 STRIDE      = $8000             ; the scattered reads and writes
 RWB         = 16                ; the RamWorks bank
 SHR         = $2000             ; aux bank 0: the SHR pixels
+RWS         = 17                ; the memory API's source bank: a copy of
+                                ;   main's bytes made before each timing,
+                                ;   so the copies rewrite main's bytes
+                                ;   with the same bytes
+
+; the memory API's raw FIFO transport in slot 7 (appletini-one
+; README_MEMORY_API.md section 7)
+SP_DATA     = $CFF0
+SP_CTRL     = $CFF1
+SP_POP      = $CFF2
+SP_RELEASE  = $CFFF
+SP_ROM      = $C700
+INTCXROMOFF = $C006
+STORE80OFF  = $C000             ; (a write)
+AMEM_TIMEOUT = $6F              ; (ours: no reply came)
+REQ_LEN     = 36                ; a request of one descriptor: 10 + 2 + 24
+RQ_FLAGS    = 21                ; the descriptor's flags, source (space,
+RQ_SRCSP    = 22                ;   bank, address), destination (space,
+RQ_SRCB     = 23                ;   bank, address), byte count
+RQ_SRC      = 24
+RQ_DSTSP    = 26
+RQ_DSTB     = 27
+RQ_DST      = 28
+RQ_SIZE     = 30
 
 ; the counts of nominal 65C02 cycles of one unit of REG and SPIN, the
 ; driver's loop included (calibdisk.py checks them on a2vm's core)
@@ -116,6 +146,7 @@ UC_SPIN     = 837
 OP_REG      = 0
 OP_SPIN     = 20
 OP_WIN      = 21
+OP_PR       = 44                ; the first of the memory API's (page 2)
 
 ; ---------------------------------------------------------------------------
 ; Zero page (FA_* at $00-$05 are the far layer's, calibplay.inc)
@@ -151,13 +182,16 @@ dig:    .res 10
 wid:    .res 1
 video:  .res 1          ; 0 PAL, $80 NTSC
 tptr:   .res 2
+am_err: .res 1          ; the memory API's lines: a request's result
+am_w:   .res 1          ; the transport's wait
 
-        .exportzp opx, cnt
+        .exportzp opx, cnt, am_err
 
 ; ---------------------------------------------------------------------------
 ; The results (main $1000: the host reads them)
 ; ---------------------------------------------------------------------------
-NOPS    = 44
+NOPS    = 52
+NOPS1   = 44            ; the lines of page 1 (the rest: page 2)
 R_E1    = 0             ; E(n), bus cycles (4 bytes)
 R_E2    = 4             ; E(2n)
 R_D     = 8             ; E(2n) - E(n)
@@ -189,9 +223,19 @@ strb:   .res 16
 try:    .res 8
 w_ds:   .res 8          ; SPIN's D, WIN's D
 w_dw:   .res 8
+g_amem: .res 1          ; the memory API's probe: 0 there, else why not
+g_page: .res 1          ; the text page shown (0: 1, 1: 2)
+pr_d:   .res 1          ; a PRIVATE line's setup: the destination's page,
+pr_sz:  .res 2          ;   a request's bytes, the requests, the next
+pr_cnt: .res 1          ;   request's address
+pr_lo:  .res 1
+pr_hi:  .res 1
+q_req:  .res 8 * REQ_LEN        ; the requests
+q_snap: .res REQ_LEN            ; the setup's copy of main into RWS
+q_caps: .res 32                 ; the probe's answer
         .export res, g_bps, g_vbl, g_verr, g_w10, g_wbad, g_mhz, g_runs
         .export g_tts, g_time, g_terr, g_tms
-        .export g_done
+        .export g_done, g_amem, q_req, q_snap
 
 ; ---------------------------------------------------------------------------
 ; Macros
@@ -324,11 +368,11 @@ start:  sei
         jmp stop_msg
 :       jsr timers_on
         stz g_runs
-        jsr detect_video
+        jsr detect_all          ; the video standard, the memory API
 run_all:
         stz g_done
         inc g_runs
-        jsr cls
+        jsr cls_p1
         lda #<s_measuring
         ldx #>s_measuring
         jsr put_str_at0
@@ -341,7 +385,7 @@ run_all:
         bpl :-
         ldx #0
 @op:    phx
-        jsr run_op
+        jsr run_opx
         plx
         inx
         cpx #NOPS
@@ -364,16 +408,15 @@ run_all:
         lda eerr
         sta g_terr
         jsr calc_globals
-        jsr show
+        jsr show_all
         lda #1
         sta g_done
 done:   lda KBD                 ; (a2vm's run stops here)
         bpl done
         sta KBDSTRB
-        and #$DF                ; R or r
-        cmp #'R' | $80
-        bne done
-        jmp run_all
+        jmp on_key              ; R: again; SPACE: the other page
+        .res 6, $EA             ; (unused: the units keep the addresses
+                                ;   of the disk the card measured)
 
 ; cp_setup: m_u = A:X (source), m_u+2 = Y:00 (destination); cp_pages: A
 ; pages from the one to the other
@@ -693,7 +736,7 @@ store_r4:
 ; ---------------------------------------------------------------------------
 ; The globals: the CPU's speed (REG) and the slot-4 window (SPIN, WIN)
 ; ---------------------------------------------------------------------------
-; rec_of: rec = the record of operation A (0-43: 64 A, carry from 8 A on)
+; rec_of: rec = the record of operation A (0-63: 64 A, carry from 8 A on)
 rec_of:
         stz rec + 1
         asl a
@@ -900,7 +943,8 @@ divr64: COPY8 m_t, m_b          ; m_a += m_b / 2
 ; ---------------------------------------------------------------------------
 ; The screen: 80 columns, row 0 the machine, row 1 the heads, rows 2-23
 ; the operations (0-21 left, 22-43 right): a name, the card's us an
-; operation, us a byte, a2vm f121's us an operation
+; operation, us a byte, a2vm f121's us an operation. Text page 2 holds
+; operations 44-51 (show2, below)
 ; ---------------------------------------------------------------------------
 cls:    ldy #23
 @row:   sty row
@@ -1164,7 +1208,7 @@ show:   jsr cls
         jsr show_op
         plx
         inx
-        cpx #NOPS
+        cpx #NOPS1
         bne @op
         rts
 
@@ -1262,6 +1306,7 @@ show_op:
         adc #2
         sta row
         sty col
+show_at:                        ; (page 2's lines: opx, row, col set)
         lda opx
         jsr rec_of
         lda opx                 ; the name: op_names + 8 X
@@ -1356,7 +1401,7 @@ s_time: .byte "  TIME ", 0
 s_secs: .byte " S", 0
 s_run:  .byte "  RUN ", 0
 s_again:
-        .byte "  R: RUN AGAIN", 0
+        .byte "  SPACE: MORE", 0
 s_cols: .byte "OP          US/OP   US/B A2VM F121", 0
 s_err:  .byte "      ERR       ", 0
 s_wbad: .byte "?", 0
@@ -1421,7 +1466,21 @@ M_WR    = 2
         OP "SW ALTZP", nothing,  u_swzp,   M_NONE, 0,   6346, 2,    0
         OP "SHR SEQ ", nothing,  u_shr,    M_NONE, 0,   209,  1,    256
         OP "SHR COL ", nothing,  u_shrc,   M_NONE, 0,   227,  1,    96
+        OP "PR2 256 ", set_pr0,  u_pr1,    M_NONE, 0,   N_P256, 1,  256
+        OP "PR2 2K  ", set_pr1,  u_pr1,    M_NONE, 0,   N_P2K,  1,  2048
+        OP "PR2 16K ", set_pr2,  u_pr1,    M_NONE, 0,   N_P16K, 1,  16384
+        OP "PR2 8X2K", set_pr3,  u_pr8,    M_NONE, 0,   N_P8X,  8,  2048
+        OP "PR6 256 ", set_pr4,  u_pr1,    M_NONE, 0,   N_P256, 1,  256
+        OP "PR6 2K  ", set_pr5,  u_pr1,    M_NONE, 0,   N_P2K,  1,  2048
+        OP "PR6 16K ", set_pr6,  u_pr1,    M_NONE, 0,   N_P16K, 1,  16384
+        OP "PR6 8X2K", set_pr7,  u_pr8,    M_NONE, 0,   N_P8X,  8,  2048
 .endmacro
+
+; the memory API's lines' n (E(n) about 55,000 bus cycles on a2vm f121)
+N_P256  = 505
+N_P2K   = 76
+N_P16K  = 10
+N_P8X   = 10
 
 
 ; OP: one field of the table, the one OPLIST selects
@@ -1460,7 +1519,7 @@ op_names:
 OPLIST .set 0
         OPS
 op_end:
-        .assert op_end - op_names = 8 * NOPS, error, "44 names of 8"
+        .assert op_end - op_names = 8 * NOPS, error, "NOPS names of 8"
 op_setup_lo:
 OPLIST .set 1
         OPS
@@ -1968,6 +2027,82 @@ crash_brk:
         ldx #$FF
         txs
         jmp crash_main
+
+; the memory API's units (after the others, which keep their addresses):
+; one request, eight requests
+u_pr1:  lda #<q_req
+        ldx #>q_req
+        jmp am_go
+u_pr8:  .repeat 8, I
+        lda #<(q_req + REQ_LEN * I)
+        ldx #>(q_req + REQ_LEN * I)
+        jsr am_go
+        .endrep
+        rts
+
+; am_go: the request at A:X (REQ_LEN bytes) through slot 7's FIFO
+; (README_MEMORY_API.md section 7), as lload.s's am_send sends one: C8
+; released, slot 7's ROM read, the bytes pushed, executed, the reply's
+; first byte (its result) popped, C8 released. The result goes to am_err;
+; once it is not 0, no more requests (a missing reply waits about a
+; second, and the whole line would wait n of them)
+am_go:  ldy am_err
+        bne @skip
+        sta @src + 1
+        stx @src + 2
+        php
+        sei
+        bit SP_RELEASE
+        bit SP_ROM
+        ldy #0
+@src:   lda $FFFF,y             ; (patched: the request)
+        sta SP_DATA
+        iny
+        cpy #REQ_LEN
+        bne @src
+        lda #2                  ; execute
+        sta SP_CTRL
+        ldx #0
+        ldy #0
+        stz am_w
+@wait:  lda SP_CTRL
+        bmi @ready
+        dex
+        bne @wait
+        dey
+        bne @wait
+        dec am_w
+        bne @wait
+        lda #AMEM_TIMEOUT
+        bra @done
+@ready: lda SP_DATA
+        sta SP_POP
+@done:  bit SP_RELEASE
+        plp
+        sta am_err
+@skip:  rts
+
+; pg_copy: text page 1's memory to page 2's, main then aux (80STORE off
+; for the aux half, so that RAMRD and RAMWRT reach $0400-$0BFF; this
+; code is in the card, which they do not switch)
+pg_copy:
+        jsr @four
+        sta STORE80OFF
+        sta RAMRDON
+        sta RAMWRTON
+        jsr @four
+        sta RAMRDOFF
+        sta RAMWRTOFF
+        sta STORE80ON
+        rts
+@four:  ldx #0
+:       .repeat 4, P
+        lda $0400 + P * $100,x
+        sta $0800 + P * $100,x
+        .endrep
+        inx
+        bne :-
+        rts
         .assert * <= $F000, error, "the card part passes $EFFF"
 
         .segment "CODE"
@@ -1987,6 +2122,373 @@ s_crash:
         .byte "CALIB: CRASH (BRK OR INTERRUPT)", 0
 s_notimer:
         .byte "CALIB: NO 6522 TIMERS IN SLOT 4: TURN THE PHASOR ON", 0
+
+; ---------------------------------------------------------------------------
+; The memory API's lines and page 2 (after everything above, so that the
+; other lines' code keeps its addresses)
+; ---------------------------------------------------------------------------
+detect_all:
+        jsr detect_video
+        ; (on to am_probe)
+
+; am_probe: g_amem = 0 when slot 7 has the memory API with COPY, FILL and
+; PRIVATE, available (appletini-one README_MEMORY_API.md sections 2 and 7;
+; as pl_boot.s's probe_amem asks): $FF none, $FE a capability missing,
+; AMEM_TIMEOUT no reply, else the STATUS's error
+am_probe:
+        lda #$FF
+        sta g_amem
+        sta INTCXROMOFF
+        bit SP_RELEASE
+        lda SP_ROM + 1          ; a SmartPort ROM
+        cmp #$20
+        jne @out
+        lda SP_ROM + 3
+        ora SP_ROM + 7
+        jne @out
+        lda SP_ROM + 5
+        cmp #3
+        jne @out
+        lda SP_CTRL             ; the Appletini's FIFO
+        and #$3F
+        cmp #$20
+        jne @out
+        bit SP_RELEASE
+        bit SP_ROM
+        ldy #0
+:       lda status_rq,y
+        sta SP_DATA
+        iny
+        cpy #10
+        bne :-
+        lda #2                  ; execute
+        sta SP_CTRL
+        ldx #0
+        ldy #0
+        stz am_w
+@wait:  lda SP_CTRL
+        bmi @ready
+        dex
+        bne @wait
+        dey
+        bne @wait
+        dec am_w
+        bne @wait
+        lda #AMEM_TIMEOUT
+        bra @set
+@ready: lda SP_DATA
+        sta SP_POP
+        cmp #0
+        bne @set
+        lda SP_DATA             ; the length: 32
+        sta SP_POP
+        cmp #32
+        bne @bad
+        lda SP_DATA
+        sta SP_POP
+        bne @bad
+        ldx #0
+:       lda SP_DATA
+        sta SP_POP
+        sta q_caps,x
+        inx
+        cpx #32
+        bcc :-
+        ldx #4                  ; "AMEM", version 1
+:       lda q_caps,x
+        cmp amem_magic,x
+        bne @bad
+        dex
+        bpl :-
+        lda q_caps + 6          ; descriptors of 16 bytes
+        cmp #16
+        bne @bad
+        lda q_caps + 8          ; COPY, FILL, PRIVATE
+        and #7
+        cmp #7
+        bne @bad
+        lda q_caps + 15         ; available
+        and #1
+        beq @bad
+        lda #0
+        bra @set
+@bad:   lda #$FE
+@set:   sta g_amem
+@out:   bit SP_RELEASE
+        rts
+status_rq:
+        .byte 0, 3, 0, 0, 0, $80, 0, 0, 0, 0  ; STATUS, unit 0, selector $80
+amem_magic:
+        .byte "AMEM", 1
+
+; run_opx: operation X; the memory API's lines only when the probe found
+; it (else ERR: the record's error flags 8), and ERR (16) when a request
+; was refused or got no reply
+run_opx:
+        cpx #OP_PR
+        bcs :+
+        jmp run_op
+:       stz am_err
+        lda g_amem
+        bne @none
+        jsr run_op
+        lda am_err
+        beq @done
+        lda #16
+        bra @flag
+@none:  stx opx
+        txa
+        jsr rec_of
+        ldy #R_SIZE - 1
+        lda #0
+:       sta (rec),y
+        dey
+        bpl :-
+        lda #8
+@flag:  ldy #R_ERR
+        ora (rec),y
+        sta (rec),y
+@done:  rts
+
+; the setups of the PRIVATE lines: X = the line (0-7) in the prt_* tables;
+; the requests into q_req (pr_cnt of pr_sz bytes each, RWS:a to main a,
+; from page pr_d on), then main's 16 KB from page pr_d copied into RWS
+; (untimed: the timed requests rewrite main with the bytes it holds)
+set_pr0:
+        ldx #0
+        bra set_pr
+set_pr1:
+        ldx #1
+        bra set_pr
+set_pr2:
+        ldx #2
+        bra set_pr
+set_pr3:
+        ldx #3
+        bra set_pr
+set_pr4:
+        ldx #4
+        bra set_pr
+set_pr5:
+        ldx #5
+        bra set_pr
+set_pr6:
+        ldx #6
+        bra set_pr
+set_pr7:
+        ldx #7
+set_pr: lda prt_page,x
+        sta pr_d
+        sta pr_hi
+        stz pr_lo
+        lda prt_szl,x
+        sta pr_sz
+        lda prt_szh,x
+        sta pr_sz + 1
+        lda prt_cnt,x
+        sta pr_cnt
+        lda #<q_req
+        sta m_u
+        lda #>q_req
+        sta m_u + 1
+@req:   ldy #REQ_LEN - 1        ; the template, then its addresses
+:       lda rq_tmpl,y
+        sta (m_u),y
+        dey
+        bpl :-
+        ldy #RQ_SRC
+        lda pr_lo
+        sta (m_u),y
+        ldy #RQ_DST
+        sta (m_u),y
+        lda pr_hi
+        ldy #RQ_SRC + 1
+        sta (m_u),y
+        ldy #RQ_DST + 1
+        sta (m_u),y
+        ldy #RQ_SIZE
+        lda pr_sz
+        sta (m_u),y
+        iny
+        lda pr_sz + 1
+        sta (m_u),y
+        clc                     ; the next request's address
+        lda pr_lo
+        adc pr_sz
+        sta pr_lo
+        lda pr_hi
+        adc pr_sz + 1
+        sta pr_hi
+        clc
+        lda m_u
+        adc #REQ_LEN
+        sta m_u
+        bcc :+
+        inc m_u + 1
+:       dec pr_cnt
+        bne @req
+        ldy #REQ_LEN - 1        ; the copy of main into RWS: the template
+:       lda rq_tmpl,y           ;   turned round, not PRIVATE (an extended
+        sta q_snap,y            ;   bank needs none)
+        dey
+        bpl :-
+        stz q_snap + RQ_FLAGS
+        stz q_snap + RQ_SRCSP
+        stz q_snap + RQ_SRCB
+        lda #1
+        sta q_snap + RQ_DSTSP
+        lda #RWS
+        sta q_snap + RQ_DSTB
+        stz q_snap + RQ_SRC
+        stz q_snap + RQ_DST
+        lda pr_d
+        sta q_snap + RQ_SRC + 1
+        sta q_snap + RQ_DST + 1
+        stz q_snap + RQ_SIZE
+        lda #>$4000
+        sta q_snap + RQ_SIZE + 1
+        lda #<q_snap
+        ldx #>q_snap
+        jmp am_go
+
+; the lines' destinations, bytes a request and requests a unit (the OPS
+; table's PR2 and PR6 lines, in order)
+prt_page:
+        .byte $20, $20, $20, $20, $60, $60, $60, $60
+prt_szl:
+        .byte <256, <2048, <16384, <2048, <256, <2048, <16384, <2048
+prt_szh:
+        .byte >256, >2048, >16384, >2048, >256, >2048, >16384, >2048
+prt_cnt:
+        .byte 1, 1, 1, 8, 1, 1, 1, 8
+
+; a request of one PRIVATE copy (README_MEMORY_API.md sections 1, 3 and
+; 7): the SmartPort CONTROL with its nine parameter bytes (unit 0, the
+; pointer the FIFO does not use, selector $80, padding), the list's
+; length, its header, the descriptor: COPY, PRIVATE, AUX RWS:0 to MAIN
+; 0:0, 0 bytes (set_pr's fields)
+rq_tmpl:
+        .byte 4, 3, 0, 0, 0, $80, 0, 0, 0, 0
+        .word 8 + 16
+        .byte "AMEM", 1, 1, 0, 0
+        .byte 1, 1, 1, RWS
+        .word 0
+        .byte 0, 0
+        .word 0
+        .word 0
+        .byte 0, 0, 0, 0
+        .assert * - rq_tmpl = REQ_LEN, error, "a request of 36 bytes"
+
+; page 2: the memory API's lines, written on page 1's memory first and
+; moved to page 2's (pg_copy, in the card), then page 1 as before
+show_all:
+        jsr cls
+        jsr show2
+        jsr pg_copy
+        jmp show
+
+show2:  stz col
+        stz row
+        lda #<s_head2
+        ldx #>s_head2
+        jsr put_str
+        stz col
+        lda #1
+        sta row
+        lda #<s_cols
+        ldx #>s_cols
+        jsr put_str
+        lda #40
+        sta col
+        lda #<s_cols
+        ldx #>s_cols
+        jsr put_str
+        ldx #OP_PR              ; PR2 left, PR6 right, rows 2-5
+@op:    phx
+        stx opx
+        txa
+        sec
+        sbc #OP_PR
+        ldy #0
+        cmp #4
+        bcc :+
+        sbc #4
+        ldy #40
+:       clc
+        adc #2
+        sta row
+        sty col
+        jsr show_at
+        plx
+        inx
+        cpx #NOPS
+        bne @op
+        ldx #0                  ; the legend, rows 7-10
+@leg:   phx
+        txa
+        clc
+        adc #7
+        sta row
+        stz col
+        lda s_legl,x
+        pha
+        lda s_legh,x
+        tax
+        pla
+        jsr put_str
+        plx
+        inx
+        cpx #4
+        bne @leg
+        lda g_amem
+        beq :+
+        lda #12
+        sta row
+        stz col
+        lda #<s_noamem
+        ldx #>s_noamem
+        jmp put_str
+:       rts
+
+; cls_p1: page 1 shown, then cls
+cls_p1: stz g_page
+        sta TXTPAGE1
+        sta STORE80ON
+        jmp cls
+
+; on_key: the key in A (its strobe cleared): R runs again, SPACE shows
+; the other page; then back to the loop
+on_key: and #$DF                ; R or r
+        cmp #'R' | $80
+        bne :+
+        jmp run_all
+:       cmp #' ' & $DF | $80    ; SPACE
+        bne @back
+        lda g_page
+        eor #1
+        sta g_page
+        beq @p1
+        sta STORE80OFF          ; page 2: 80STORE off, then PAGE2
+        sta TXTPAGE2
+        bra @back
+@p1:    sta TXTPAGE1            ; page 1: PAGE1, then 80STORE
+        sta STORE80ON
+@back:  jmp done
+
+s_head2:
+        .byte "CALIB PAGE 2: THE MEMORY API  SPACE: PAGE 1  R: RUN AGAIN", 0
+s_leg0: .byte "PR2: ONE PRIVATE COPY FROM RAMWORKS BANK 17 TO MAIN $2000 (THE "
+        .byte "COLORMAPS)", 0
+s_leg1: .byte "PR6: THE SAME TO MAIN $6000. EACH LINE A MEMORY-API REQUEST, "
+        .byte "FIFO INCLUDED", 0
+s_leg2: .byte "256, 2K, 16K: ONE REQUEST OF THAT SIZE; 8X2K: EIGHT REQUESTS OF "
+        .byte "2K IN A ROW", 0
+s_leg3: .byte "US/OP: A REQUEST; US/B: A BYTE; A2VM F121: THE MODEL'S US/OP", 0
+s_legl: .byte <s_leg0, <s_leg1, <s_leg2, <s_leg3
+s_legh: .byte >s_leg0, >s_leg1, >s_leg2, >s_leg3
+s_noamem:
+        .byte "NO MEMORY API IN SLOT 7 (APPLETINI F1.1.4 OR LATER, VTW ON): "
+        .byte "NOT MEASURED", 0
 
 ; ---------------------------------------------------------------------------
 ; The play build's bytes (gen: calibdisk.py), copied into place at start

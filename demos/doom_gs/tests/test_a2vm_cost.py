@@ -4,7 +4,9 @@
     source, both profiles are complete, and a2vm rejects a missing,
     unknown or malformed parameter;
   - the TURBO path against the firmware's own benchmark (README_TURBO.md:
-    436 clocks a warm pass of a 16-byte copy);
+    436 clocks a warm pass of a 16-byte copy, with the virtual Disk II
+    inactive, the variant nod2; on the card as measured, f121, the Disk
+    II's replay adds 2 clocks for each omitted dummy read: 532);
   - micro-cases through bus scripts, with the expected clocks derived
     from the RTL: the TURBO caches and their invalidation, the RamWorks
     line cache and the PSRAM admission, a $Cxxx bus cycle, the video
@@ -71,7 +73,7 @@ class ParameterFile(unittest.TestCase):
             self.assertIn('value', entry, name)
             self.assertTrue(entry.get('source', '').strip(), name)
         self.assertEqual(costs.profiles(),
-                         ['f121', 'f121zp', 'fastpath', 'fastzp'])
+                         ['f121', 'f121zp', 'f122', 'fastpath', 'fastzp'])
         extra = data['common']['turbo_extra']
         self.assertTrue(extra['calibratable'])
         self.assertFalse(extra['calibrated'])
@@ -85,10 +87,17 @@ class ParameterFile(unittest.TestCase):
         f121, fast = costs.parameters('f121'), costs.parameters('fastpath')
         self.assertEqual(set(f121), set(fast))
         differ = {key for key in f121 if f121[key] != fast[key]}
-        # fastpath changes every profile parameter but the pair's
-        # (tests/test_a2vm_zpbank.py checks f121zp and fastzp)
+        # fastpath changes every profile parameter but the pair's and
+        # F1.2.2's (tests/test_a2vm_zpbank.py checks f121zp and fastzp)
         self.assertEqual(differ, set(profiles['fastpath']['params']) -
-                         {'zp_pair'})
+                         {'zp_pair', 'rmw_queue', 'amem_engine',
+                          'ps_dispatch_us'})
+        # f122 is f121 with F1.2.2's admission and copy engine, and the
+        # one value fitted to the card
+        f122 = costs.parameters('f122')
+        self.assertEqual({key for key in f121 if f121[key] != f122[key]},
+                         {'relaxed_admission', 'rmw_queue', 'amem_engine',
+                          'ps_dispatch_us'})
 
 
 class AxiDependency(unittest.TestCase):
@@ -162,9 +171,13 @@ class Loading(CostWorkspace):
 
 @have_tools
 class TurboPath(CostWorkspace):
-    def benchmark(self, core):
+    def benchmark(self, core, profile='f121'):
         """README_TURBO.md's program (hdl/sim/tb_vtw_turbo.sv:717-747) at
-        $F000 in the language card: the clocks of each pass."""
+        $F000 in the language card: the clocks, the accesses and the
+        omitted dummy reads of each pass."""
+        if profile not in self.files:
+            self.files[profile] = costs.write(
+                profile, self.directory / ('%s.txt' % profile))
         program = bytes([0xA2, 0x00, 0xBD, 0x00, 0x90, 0x9D, 0x00, 0xA0,
                          0xE8, 0xE0, 0x10, 0xD0, 0xF5, 0xEE, 0x00, 0xA1,
                          0x4C, 0x00, 0xF0])
@@ -177,7 +190,7 @@ class TurboPath(CostWorkspace):
             [str(self.out / 'a2vm'), '--rom', str(self.rom), '--core', core,
              '--no-mouse', '--image', str(image), '--switch', 'lc_read=1',
              '--switch', 'lc_write=1', '--reg', 'pc=F000', '--cost',
-             str(self.files['f121']), '--cost-report', str(report),
+             str(self.files[profile]), '--cost-report', str(report),
              '--boundary', 'F000', '--boundaries', '10', '--cycles',
              '1000000', '--state', str(self.directory / 'state.json')],
             timeout=120, max_bytes=16 << 20, check=True,
@@ -187,10 +200,13 @@ class TurboPath(CostWorkspace):
                          ('boundaries', 10))
         rows = [json.loads(line) for line in report.read_text().splitlines()
                 if line.startswith('{"boundary')]
-        return [row['clocks'] for row in rows], [row['accesses'] for row in rows]
+        return ([row['clocks'] for row in rows],
+                [row['accesses'] for row in rows],
+                [row['dropped'] for row in rows])
 
     def test_warm_pass_takes_436_clocks(self):
-        clocks, accesses = self.benchmark('w65c02s')
+        # the RTL simulation's setup: no virtual Disk II (the variant nod2)
+        clocks, accesses, dropped = self.benchmark('w65c02s', 'f121+nod2')
         # 218 accesses a pass with TURBO's dummy cycles omitted
         self.assertEqual(accesses[1:], [218] * 9)
         self.assertEqual(clocks[1:], [436] * 9)
@@ -199,9 +215,18 @@ class TurboPath(CostWorkspace):
         # README_TURBO.md measures 474 from the core's start, with its
         # reset sequence, where this starts at the program
         self.assertEqual(clocks[0], 436 + 2 * (5 + 4 + 1) + 3 * 2)
+        # the card as measured (f121: the virtual Disk II replays each
+        # step's cycles, docs/results/calib.md): the 48 omitted dummy
+        # reads a pass (sta abs,x, inx and the taken bne 16 times but the
+        # last bne, inc's modify), each alone in its step, take 2 clocks
+        # each (436 before 2026-10-03, when f121 took them as free)
+        clocks, accesses, dropped = self.benchmark('w65c02s')
+        self.assertEqual(accesses[1:], [218] * 9)
+        self.assertEqual(dropped[1:], [48] * 9)
+        self.assertEqual(clocks[1:], [436 + 2 * 48] * 9)
 
     def test_the_compatibility_core_makes_no_dummy_reads(self):
-        clocks, accesses = self.benchmark('py65')
+        clocks, accesses, _ = self.benchmark('py65')
         # py65 does not read the offset of a branch not taken
         self.assertEqual(accesses[1:], [217] * 9)
         self.assertEqual(clocks[1:], [434] * 9)

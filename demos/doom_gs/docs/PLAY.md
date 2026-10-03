@@ -118,6 +118,7 @@ its phase timing's `BT_*` (section 15):
 | RamWorks 1 (`DLBANK`) | `$0200` request, `$1000` sources, `$6600` DLINIT | the boot's PRIVATE request and what it copies |
 | RamWorks 48 (`SPRT`) | `$5400-$54DB` | `SPRBOUND`, written at the disk's build (section 9 item 6) |
 | RamWorks 72-73 (`GCODE0-1`) | `$0200-`, `$6000-$99FF` | the tic image: its W and core at W's addresses, its groups packed (GCODE0 then GCODE1) |
+| Main | `$2000-$5FFF` | since the frame slots (section 17): during the tic phase the pinned groups, over colormaps A and B, which the brain's last step puts back |
 | RamWorks 91 (`DEMOB`) | | demo3 (DOOM1.WAD's `DEMO3`) for the title loop |
 | RamWorks 104 (`S2STATE`) | `$0200-` | the 2D state's first values (the palette state, the automap's, the HUD's, the menu's save slots' text, the settings' defaults) |
 
@@ -130,6 +131,14 @@ milestone 10's, 43 since speed wave 1: `DLG_B` 1,097, `DLG_C` 1,603,
 play.mk sizes`). Since wave 2 the group directory holds each group's whole pages and the bytes of its last page (`grp_tail`), and `gr_load` copies only the group's length. `gcall.s`'s slot cache tags (`SLOT_GRP`) and, since
 speed wave 1, the lazy restore's `SLOT_NEED` are reset at each `K_TIC`
 because every other image overwrites the slots.
+
+Since the frame slots (2026-10-03, section 17; `docs/SPEED.md` 9) 12
+groups are pinned to places of their own in main `$2000-$5FFF` (64 pages),
+loaded by one memory-API PRIVATE request at their first call in a frame,
+their colormap bytes put back by the brain's last step (`fs_restore`);
+`SLOT_GRP` holds 19 slots, `SLOT_NEED` 18, then `FS_DIRTY`, all reset at
+`K_TIC`. The core `$6600-$9939` (13,114 B) no longer holds `gspec.s` or
+`g_resume` (`DLG_B` 1,263 B holds `g_resume` now).
 
 **Zero page.** Each image uses its own (MEMORY_MAP.md 13, SCREENS.md 4.3).
 The glue in the tic image uses the game's temporaries `GT_0-6`
@@ -381,7 +390,12 @@ failures, each a check that assumed the old speed or layout (`SPEED.md`
    `tools/sound/README.md` ("The Doom configuration profile":
    `vtw.slowdown.cycles=32`, `phasor.slot4.enabled=ON`,
    `phasor.mockingboard.only=OFF`, `slot2.card=MOUSE`,
-   `vtw.turbo.enabled=ON`) loaded.
+   `vtw.turbo.enabled=ON`) loaded. For speed, add
+   `vtw.disk2.acceleration.disabled=on` (only `on` reads as true; the
+   menu shows "DISK II ACCELERATION DISABLED"): with the virtual Disk II
+   active, every TURBO cycle is replayed to it and the CPU runs at about
+   67 MHz instead of 110 (`docs/SPEED.md` 5, `docs/results/calib.md`).
+   The card's figures since 2026-10-03 are firmware F1.2.2 with this key.
 4. Boot `DOOM.hdv` from the menu's file browser as the boot volume.
    `DOOM.SYSTEM` loads the 4 MB into RamWorks and the card, checks every
    CRC (milestone 11's boot, SCREENS.md), and starts
@@ -749,3 +763,61 @@ core, the object API's 2-byte blockmap reads and stamp-only line
 write-backs (outside that part's files), the replay's stage plan in the
 bucket pass (no spare record byte), the patched copy loops (no gain on
 F1.2.1), the planes' dirty flag (measured slower).
+
+## 17. What changed: the frame slots (2026-10-03)
+
+For the owner, after the card's wave-2 benchmark (`TIC 250.4  3D 25.8` /
+`MASK 16.3  DRAW 33.2` / `REST 6.3`, 3.015 FPS): the tic phase spent about
+half its time copying code into W's two 2 KB slots, because W has no room
+for the code a fight runs. Main `$2000-$5FFF` holds the colormaps, which
+only the drawing (the replay) reads; now, while the tics run, 12 groups of
+game code live there, each in a place of its own, copied in by the memory
+API the first time a frame needs them, and the colormaps are copied back
+before anything draws. Nothing the game shows or does changed: demo3's sync
+stays exact against ref816 and every replay finds its colormaps (checked
+below). `docs/SPEED.md` 9 has the details.
+
+**What you will notice** (a2vm f121, the model corrected by your card's
+CALIB figures, which matched your wave-2 benchmark within 0.4%):
+
+| | Before (wave 2, your disk `f92c81ae`) | After the frame slots |
+| --- | ---: | ---: |
+| E1M1's start, standing still | 10.40 FPS (96.2 ms) | **11.02 FPS** (90.8 ms) |
+| demo3 on E1M7, gametics 1052-1796 | 3.37 FPS (297.0 ms) | **4.91 FPS** (203.7 ms) |
+| The menu's BENCHMARK | 3.004 (your card: 3.015) | **4.641** |
+| Its rows | TIC 251.7, 3D 25.8, MASK 16.3, DRAW 33.2, REST 6.2 | TIC 134.0, 3D 25.8, MASK 16.3, DRAW 33.4, REST 6.2 |
+
+Your card should show about **4.6 FPS** with `TIC` about 134, if the memory
+API's copies into main cost on the card what a2vm models (83 µs a 256-byte
+page; the benchmark makes about 15 such copies a frame, 89 pages, 7.4 ms).
+That cost has not been measured on the card yet: if it is slower, `TIC`
+shows it.
+
+**What was changed**
+
+1. **Frame slots**: the placement pins 12 groups (P_RunThinkers and
+   P_SetMobjState with G_Ticker and the sector thinkers, the position check
+   with its block walk, A_Chase with its moves, A_Look and the attacks'
+   range checks, the line opening and the puffs, the unlinking, the
+   thrust and friction of P_XYMovement, and more) to their own places in
+   main `$2000-$5FFF` (64 pages). The first call in a frame copies one in
+   (one PRIVATE request, at most 2 KB); the brain's last step copies the
+   colormap bytes back from the level's copy in RamWorks.
+2. **The core made room for it**: the level's specials (`gspec.s`, only
+   the load runs them) left the tic image, and the load's continuation
+   (`g_resume`) moved to the brain's group.
+3. **The placement** was searched again with the frame slots and the
+   card's copy cost (80 µs a page into W, 85 µs a page by PRIVATE).
+
+**How it was checked** (the owner's rule: only what changed, once each):
+the lockstep demo3 run against ref816 (`ticrun.py --run demo3 --frames
+front --fills a5`: 2,134 tics, 0 failures; the game code, the placement
+and the paging); the menu's BENCHMARK played from the menu
+(`test_play_bench`), now with a snapshot at every replay that must find
+the colormaps exactly as the level loaded them (43 replays, all equal; a
+planted bug that skips the copy-back once is caught); the disk builder's
+new check that no tic code stores into `$2000-$5FFF`; then the fast full
+suite (`python3 tools/testpar.py`).
+
+**The disk**: `build/native/DOOM.hdv`, 4,029,952 bytes, SHA-1
+`2b0fa3a6df5526364f7d27a9d039852e84bb8a26`.

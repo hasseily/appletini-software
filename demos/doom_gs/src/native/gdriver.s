@@ -61,6 +61,7 @@
         .include "gplace.inc"
 
         .import far_pload, far_wload, far_get, far_put, go_flush, go_reset
+        .import fs_restore
         .import fc_go, fc_call, fc_unbuilt, state_at, g_stop
         .export drv_game, drv_done, drv_tic, drv_loaded, drv_frame
         .export drv_halt, drv_crash, drv_irq, drv_end, planes_out
@@ -101,14 +102,8 @@ drv_game:
         lda #MODE_VBL
         sta MOUSE_MODE
         cli
-        jsr core_in
+        jsr core_in             ; (the slots empty: core_in's)
         jsr go_reset
-        lda #$FF
-        sta SLOT_GRP
-        sta SLOT_GRP+1
-        sta SLOT_GRP+2
-        sta SLOT_NEED           ; (no active frame needs a slot)
-        sta SLOT_NEED+1
         ldx #0
         stx GO_HITS             ; the API's and the paging's counters
         stx GO_HITS+1
@@ -360,6 +355,9 @@ frame_one:
         lda #VIEW_STRIPTOP
 :       sta VIEWTOP
 .endif
+        jsr fs_restore          ; the frame slots' colormap bytes back (the
+                                ;   replay reads them; the play brain's
+                                ;   tic phase ends the same way)
         jsr go_flush
         jsr planes_out
         jsr ri_make
@@ -655,6 +653,8 @@ load:
         sta PHASE
 .endif
 .endif
+        jsr fs_restore          ; (the load puts every colormap back too;
+                                ;   this keeps FS_DIRTY's rule)
         jsr go_flush
         jsr planes_out
         lda #<dg_lcode
@@ -967,14 +967,16 @@ st_skip:
 ; integration: after a load G_Ticker's action loop (g_tresume, fc_call)
 ; ran the load image's bytes in slot 2 when SLOT_GRP still named its group.
 ; SLOT_NEED too (gcall.s's lazy restore): no FCALL frame is active here, and
-; the renderer's scratch overlays the runtime's state
+; the renderer's scratch overlays the runtime's state; FS_DIRTY: the frame
+; slots' colormap bytes were put back (fs_restore) before W went to the
+; renderer or the load image
 core_in:
-        lda #$FF
-        sta SLOT_GRP
-        sta SLOT_GRP+1
-        sta SLOT_GRP+2
-        sta SLOT_NEED
-        sta SLOT_NEED+1
+        lda #$FF                ; SLOT_GRP, SLOT_NEED, FS_DIRTY: as the
+        ldx #SLOT_CLR - 1       ;   play kernel's K_TIC (the frame slots
+:       sta SLOT_GRP,x          ;   were restored before the frame or the
+        dex                     ;   load: fs_restore)
+        bpl :-
+        .assert FS_DIRTY + 1 - SLOT_GRP = SLOT_CLR, error, "SLOT_GRP .. FS_DIRTY"
         lda #<dg_core
         ldx #>dg_core
         ldy #GCODE0
@@ -1068,7 +1070,10 @@ drv_irq:
 ; the page runs (far_pload's lists: near in the window, in the card; a
 ; list must not cross a page, as far_pload steps its low byte only: first
 ; in the descriptor, and asserted, since speed wave 2's integration grew
-; the driver and put dg_planes at $EAFF in part xymove's image)
+; the driver and put dg_planes at $EAFF in part xymove's image; aligned on
+; 32 bytes since the frame slots, 2026-10-03, which grew the driver again
+; and put dg_core across a page in part damage's image)
+        .align 32
 dg_core:   .res 8               ; the tic image from GCODE0
 dg_planes: .res 4               ; the planes from MOBJP
 dg_lcode:  .res 8               ; the load image from LCODE
@@ -1084,6 +1089,13 @@ dg_ra:     .res 1               ; at its return
 dg_rx:     .res 1
 dg_ry:     .res 1
 dg_rp:     .res 1
+        .assert dg_rp + 1 - dg_core = 32, error, "the descriptor's first 32 B"
+.ifdef TICLEVEL
+; the stream's buffers in the descriptor's second 32 bytes (DESC is aligned
+; on 32: neither crosses a page, which st_get needs)
+dg_sbuf:   .res 11              ; a record's head
+dg_ebuf:   .res 10              ; an event
+.endif
 dg_ticker: .res 2               ; G_Ticker's entry (lockstep)
 dg_resume: .res 2               ; g_resume's entry (the load protocol)
 dg_nlsetup: .res 2              ; the load image's nl_setup
@@ -1102,8 +1114,6 @@ dg_nosnap: .res 1               ; no flush and snapshot a tic (timing)
 dg_strm:   .res 2               ; the stream's next record
 dg_scnt:   .res 2               ; its records left (0: none, a demo's)
 dg_sev:    .res 1               ; its events left
-dg_sbuf:   .res 11              ; a record's head
-dg_ebuf:   .res 10              ; an event
 .else
 dg_frame:  .res 2               ; the frame's entry (0: none linked)
 .endif

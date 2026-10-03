@@ -2,7 +2,7 @@
 
 Written 2026-10-02 from three profilers' measurements and a planner's prototypes (workflow `doom-gs-speed-profile`); the owner's rule of the same day applies to every part: test only what a change touches (`MILESTONES.md`, ground rules).
 
-Status: **waves 1 and 2 built and integrated (2026-10-02 and 2026-10-03; section 5, `PLAY.md` 14 and 16); wave 3 planned.** The owner played `build/native/DOOM.hdv` on the card on 2026-10-02 and reported: "Everything seems to work except for the benchmark. It's indeed too slow and needs a speed optimization." This document holds the measurements behind that, three prototypes measured on a2vm, and the parts that make the game faster. Nothing in the game's output may change. The renderer's frames and the game's demo sync stay bit-exact against ref816 (NATIVE.md 15.1). Every item below changes only time: where code lives, how bytes are copied, and which pages are reloaded.
+Status: **waves 1 and 2 built and integrated (2026-10-02 and 2026-10-03; section 5, `PLAY.md` 14 and 16); the frame slots built (2026-10-03; section 9, `PLAY.md` 17); wave 3 planned.** The card (F1.2.2, the Disk II's acceleration off) ran wave 2's benchmark at 3.830 FPS; a2vm `f122-nod2` matches it and predicts 5.68 FPS with the frame slots (sections 5 and 9). The owner played `build/native/DOOM.hdv` on the card on 2026-10-02 and reported: "Everything seems to work except for the benchmark. It's indeed too slow and needs a speed optimization." This document holds the measurements behind that, three prototypes measured on a2vm, and the parts that make the game faster. Nothing in the game's output may change. The renderer's frames and the game's demo sync stay bit-exact against ref816 (NATIVE.md 15.1). Every item below changes only time: where code lives, how bytes are copied, and which pages are reloaded.
 
 ## 0. The owner's two findings
 
@@ -107,6 +107,8 @@ Not worth doing now:
 | **Wave 1, measured** (integrated 2026-10-02) | **87.9 ms, 11.37 FPS**, 34.9 tics/s | **271.6 ms, 3.68 FPS** (median 271.5) | 635 ms | M: `playtime.py`, below |
 | Wave 2 (object API, glue, last page, planes, image loads, replay, front end) | about 85 ms, **11.8 FPS** | 230-250 ms, **4.0-4.4 FPS** | about 520 ms | estimates of section 4 |
 | **Wave 2, measured** (integrated 2026-10-03) | **80.3 ms, 12.45 FPS** | **247.2 ms, 4.04 FPS** (median 245.8) | 647 ms (not like for like: the cut groups other tics) | M: `playtime.py`, below |
+| **Wave 2, a2vm corrected by the card** (2026-10-03; the rows above: the model before) | **96.2 ms, 10.40 FPS** | **297.0 ms, 3.37 FPS** (median 297.3); the benchmark 3.004 FPS, the card 3.015 | 737 ms | M: `playtime.py`, below ("a2vm corrected by the card") |
+| **The frame slots, measured** (2026-10-03, a2vm corrected; section 9) | **90.8 ms, 11.02 FPS** | **203.7 ms, 4.91 FPS** (median 205.8); the benchmark **4.641 FPS** | 370 ms | M: `playtime.py`, section 9 |
 | Wave 3 (TIC_LC2, lazy `$C073`, a last re-placement) | about 80 ms, **12.5 FPS** | 180-200 ms, **5.0-5.6 FPS** | about 420 ms | estimates |
 
 **Wave 1 as integrated** (2026-10-02): parts measure, bench, paging, place (`tools/native/gplace-wave1-lazy.json`) and bucket together, `build/native/DOOM.hdv`, a2vm, card-equivalent (the exact idle):
@@ -168,6 +170,36 @@ Reading: no single phase is wrong; every phase that computes and reaches RamWork
 | Frame | 346.4 (2.897 FPS) | 331.9 (3.015 FPS) | -14.5 | -28.3 |
 
 The renderer's and the replay's gains held on the card; the tic phase's did not (40% of the predicted gain). The card's TIC is now 25% above a2vm's (15% after wave 1): a2vm underestimates the tic phase's RamWorks work (far windows, small fetches, group copies). Next: `CALIB.hdv` measures those operations on the card to correct a2vm's cost model (`docs/results/calib.md`) before wave 3.
+
+**a2vm corrected by the card** (2026-10-03, `docs/results/calib.md`; `tools/a2vm/README.md`, "Calibration on the card"). `CALIB.hdv`'s 44 lines showed the cause: not the RamWorks work as such, but the CPU. The owner's card has its virtual Disk II active in slot 6, and the Disk II replays, one a fabric clock, the 65C02 cycles each TURBO step stands for, holding the next step until it has (`disk2_card.sv:374-412`): every dummy read the TURBO core omits still costs 2 clocks, so code runs at 66.7 MHz of 65C02 cycles where a2vm had 110. Bus-bound work (line misses, the SHR drain, single switches) was already right. One new parameter (`d2_replay`) and five corrected readings of the RTL's bus, pacing and PSRAM taps bring every CALIB line within 0.6% of the card. The benchmark on the corrected model (`playtime.py --scene bench`, ms a frame), both waves' disks (wave 1's rebuilt byte for byte from `b894fb5c` in a scratch tree, with its own placement `gplace-wave1-lazy.json`):
+
+| Row | Card, wave 1 | a2vm, wave 1 | Card, wave 2 | a2vm, wave 2 | a2vm before, wave 2 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| FPS | 2.897 | **2.887** (-0.3%) | 3.015 | **3.004** (-0.4%) | 3.631 |
+| TIC | 260.0 | 260.2 (+0.1%) | 250.4 | 251.7 (+0.5%) | 201.1 |
+| 3D | 26.1 | 26.1 | 25.8 | 25.8 | 22.9 |
+| MASK | 16.4 | 16.4 | 16.3 | 16.3 | 14.2 |
+| DRAW | 37.7 | 37.7 | 33.2 | 33.2 | 31.9 |
+| REST | 6.2 | 6.2 | 6.3 | 6.2 (-1.6%) | 5.6 |
+| N, OVF | 534, 1 | 534, 2 | 534 | 534, 0 | 534 |
+
+Wave 2's change on the corrected model: TIC -8.5 ms (the card -9.6, the model before -24.1), DRAW -4.5 (-4.5), the frame -13.4 (-14.5): the corrected model reproduces the card's smaller gain of the tic phase. Wave 2 on the corrected model, the other scenes: still 96.2 ms (median 93.9, max 118.2), **10.40 FPS**, K_TIC 26.99; demo3 (gametics 1052-1796) 297.0 ms (median 297.3, max 736.8), **3.37 FPS**, K_TIC 210.30; fastpath's benchmark 3.489 FPS. The figures of sections 2-4 and 6 and the rows above this one are the model before the correction (`playtime.py --profile f121-precal` gives them again), about the card with no active Disk II.
+
+**The setting it suggests.** With the virtual Disk II inactive (`disk2.slot6.enabled=off`, the firmware's default, or `vtw.disk2.acceleration.disabled=on`, in the DOOM profile; the cost variant `nod2`, `playtime.py --profile f121-nod2`), the omitted dummy reads take no time: wave 2's benchmark 3.609 FPS on a2vm (`TIC 202.7  3D 23.0  MASK 14.2  DRAW 32.0  REST 5.6`), **+20%** over 3.004 as the card is set, with no code change. A prediction, from the RTL: a run of the benchmark (and of `CALIB.hdv`, whose header should then read about 110 MHz) with that profile key checks it. Wave 3's estimates (the table above) are to be remade on the corrected model.
+
+**The card with that setting, then on F1.2.2** (the owner, 2026-10-03, PAL, the same wave 2 disk `f92c81ae…`, `vtw.disk2.acceleration.disabled=on`). Firmware F1.2.2 (appletini-one `3101934`) admits PSRAM requests as soon as the service can while vTW owns the bus and runs the memory API's copies on an FPGA engine; a2vm's profile `f122` models both (`tools/a2vm/README.md`, "F1.2.2: the profile `f122`"; `CALIB.hdv` on F1.2.2: `docs/results/calib.md`, "The card on F1.2.2"):
+
+| | Card F1.2.1, Disk II on | Card F1.2.1, Disk II off | a2vm `f121-nod2` | Card F1.2.2, Disk II off | a2vm `f122-nod2` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| FPS | 3.015 | 3.610 | 3.609 | 3.830 | 3.829 |
+| TIC | 250.4 | 202.6 | 202.7 | 189.4 | 189.5 |
+| 3D | 25.8 | 23.0 | 23.0 | 21.9 | 21.9 |
+| MASK | 16.3 | 14.2 | 14.2 | 13.8 | 13.8 |
+| DRAW | 33.2 | 31.9 | 32.0 | 31.4 | 31.4 |
+| REST | 6.3 | 5.6 | 5.6 | 4.9 | 4.9 |
+| N | 534 | 534 | 534 | 535 | 535 |
+
+The owner's card runs this way from now on: `playtime.py --profile f122-nod2` is the card-equivalent figure.
 
 **Integration** (2026-10-02). What the integrator changed beyond the parts' own files, and why:
 
@@ -243,3 +275,67 @@ The owner's rule (2026-10-02, `MILESTONES.md` ground rules): test only what chan
 - **TIC_LC2.** Tic code in card bank 2 cannot call the bank-1 math products or the far layer without a bank switch. Each switch is a `$C08x` bus access that clears the TURBO caches. Measure before committing.
 - **Lazy `$C073`.** Every image, handler and SHR writer that assumes `$C073` = 0 must write it first. A miss writes the screen or the staging into the wrong bank: frame8, the disk CRCs and the DOOM.hdv shots catch it.
 - **The lazy restore.** As safe as today's rule: it keeps every active frame's group. The `$80`+slot encoding keeps 1 B a call on the stack, and SLOT_NEED must be reset with SLOT_GRP at K_TIC and in gdriver's go_reset path.
+
+## 9. The frame slots (2026-10-03)
+
+**Why.** A hot-set analysis (2026-10-03, the workflow `doom-gs-frame-slots`) found the tic phase's code paging about 138 ms of the card's 332 ms benchmark frame, and its cause: the core's 13,312 B are mostly fixed code (the play build's 9,980 B, the profiling build's 10,143), so 3.1 KB are left for the 51 KB of placeable routines, W cannot grow, and every other fast byte is taken. Main `$2000-$5FFF`, colormaps A and B of light levels 0-31, is read by the replay alone. It became 64 pages of code room for the tic phase: the **frame slots**.
+
+**What was built.**
+
+1. **The region and its slots** (`glayout.py`: `FRAME_REGION`, `frame_slots`, `FS_MAX` 16; `gen/gplace.inc`: `FSLOTS` and each slot's `FSLOTn_PAGE`, `FSLOTn_SRC`, `FSLOTn_GRP`). A group of the placement in slot 3 or up is pinned: one group a frame slot, its bytes and 96 B rounded up to pages, packed largest first into `$2000-$3FFF` and `$4000-$5FFF` (none across `$4000`, so that each slot restores from one of `LVC`'s two colormaps), 64 pages at most. `game.cfg` links the group to run there; `playdisk.py` and `grun.py` store it in `GCODE0-1` with the others.
+2. **The load** (`gcall.s` `gr_load` → `fs_load`, `fs_copy`, `fs_send`): a frame slot's group comes by one memory-API COPY with PRIVATE (a CPU store there would be a video write: `MEMORY_MAP.md` rule 3), its length (at most 2,048 B) from its bank to main, the 36-byte request streamed through slot 7's FIFO from a 23-byte head in the core and the far layer's zero page, interrupts masked for that request only. A refused request stops (`GS_AMEM`, the result in `GS_ARG`). `SLOT_GRP`, `SLOT_NEED` and FCALL treat the slot as any other: the group stays until `K_TIC`, so a frame loads it at its first call.
+3. **The restore** (`gcall.s` `fs_restore`): every frame slot that holds a group gets its colormap bytes back from the level's copy in `LVC` (`LVC_CMAPA` `$0200`, `LVC_CMAPB` `$2400`: what `lg_cmaps` made and the load's PRIVATE request put in main), one request a slot (at most 2,048 B, interrupts masked for one), then the slot empty and `FS_DIRTY` set (`FS_DIRTY` bit 7 clear means a frame slot was loaded). In the play build it is the brain's last step (`dl_brain.s`, before `bt_close`): every way from the tic phase to a replay passes there, the frame's, a load's, the menu's, the intermission's, the benchmark's, as the kernel runs a list only after the brain returns and no list calls into the tic image. The test drivers restore before a frame and before a load (`gdriver.s`).
+4. **The state**: `SLOT_GRP` 19 B (slots 0-2 and 16 frame slots), `SLOT_NEED` 18 B, `FS_DIRTY`: the runtime's state 163 of 256 B. The kernel's `K_TIC` and the drivers' `core_in` set the `SLOT_CLR` = 38 bytes to `$FF` (the renderer overwrites the runtime's state each frame).
+5. **The core's room**: `gspec.s` (618 B, the load's SPECIALS step: no tic image calls it; the load image keeps it) left every tic image, and part flow's `g_resume` (163 B, run once a load) left the core: the play build's brain group `DLG_B` (1,263 of 2,048 B), the test builds' driver area in the card. The transport and the restore took about 260 B. Fixed core code: play 9,980 → 9,429 B, gprof 10,143 → 9,592.
+6. **The placement** (`gplace.py`, `tools/gplace/gsim.c`, `gplacesim.py`): the cost is the W slots' pages × 80 µs (the card's `far_gcopy`), the frame slots' PRIVATE pages in and back × 85 µs and 10 µs a request (a2vm's model of the memory API, `--fpage-us`, `--request-us`), and 5 µs a call through `fc_call`. `gsim` replays a frame slot as a slot of its own, loaded at its first call in a phase and restored at the phase's end; the search moves groups into frame slots as into W slots. New rules: the frame slots fit (`glayout.frame_slots`), the core's 2 B a frame slot, and no frame slot for a routine the tic code stores into (the play link's debug file, `playdisk.dbg_stores`: every source line that is a store instruction, so a table's bytes are not taken for code; and `NO_PIN`'s `recursiveSound`, whose work stack is written through a pointer). `GROUP_MARGIN` rose from 64 to 96 B: the search packed `P_DamageMobj`'s group to 1,973 B, and part damage's plant `thrust-divided-first` adds 83 B there. `gplacesim.py --check` stays exact on the old recordings (2 slots) and on new ones of this build (`gtrace.c` and `gplacerec.py` map the frame slots: still 1,468 loads, lock3b 861, recorded and modelled alike). The integrated placement is `tools/native/gplace-frameslots.json`: 43 groups, 12 of them in frame slots (64 pages), among them P_RunThinkers with P_SetMobjState and G_Ticker, the position check with lineBlocks, A_Chase with pMove, A_Look, the line opening and the puffs. The model (ms a tic, its scenes): demo3 26.71 → 6.19, demo3b 29.27 → 6.62, still 4.11 → 2.89, walk 8.98 → 4.35, fight 10.47 → 4.94, lock3a 43.89 → 4.70, lock3b 48.70 → 6.33.
+7. **The harness.** a2vm's `--stop-pc` names an address, and DOOM.SYSTEM's `bt_halt` (`$267D`) lies in the frame slots, where pinned code now runs: `playdisk.run` and `gplacerec.py` no longer stop there, and `playdisk.boot_halted` names a boot that stopped (the PC at `bt_halt`, interrupts masked, its `bra` in the final snapshot) after the run. `playdisk.py` checks the tic link's absolute stores (`frame_slot_problems`: none into `$2000-$5FFF`) and that each pinned group stays in its slot. `playtime.py` reports the PRIVATE requests, pages and time a frame (`fs_load`, `fs_send` with A the pages, to `fs_sent`, counted in `K_TIC` only).
+
+**Measured** (a2vm f121 card-equivalent, the model corrected by the card, both columns on the same a2vm binary and cost profile, copied at the work's start while `tools/a2vm` changed; `playtime.py`):
+
+| Scene | Before (wave 2, `f92c81ae`) | After the frame slots | Change |
+| --- | ---: | ---: | ---: |
+| E1M1 start, standing still, 15-25 s | 96.2 ms (median 93.9, max 118.2), 10.40 FPS; K_TIC 26.99; 11.69 loads a tic | **90.8 ms** (median 89.7, max 108.8), **11.02 FPS**; K_TIC 21.62; 4.21 loads a tic | −5.4 ms |
+| demo3, gametics 1052-1796, 186 frames | 297.0 ms (median 297.3, max 736.8), 3.37 FPS; K_TIC 210.30; 62.75 loads a tic | **203.7 ms** (median 205.8, max 370.0), **4.91 FPS**; K_TIC 117.04; 10.64 loads a tic | −93.3 ms |
+| The menu's BENCHMARK, all of demo3 (534 frames) | **3.004 FPS** (6,221 realtics, 333.5 ms a frame); `TIC 251.7  3D 25.8  MASK 16.3  DRAW 33.2  REST 6.2` | **4.641 FPS** (4,027 realtics, 215.7 ms a frame); `TIC 134.0  3D 25.8  MASK 16.3  DRAW 33.4  REST 6.2` | −117.8 ms |
+
+The PRIVATE copies, as a2vm models them (83.3 µs a page: 0.33 µs a byte, the memory API's DMA read of RamWorks and its shadow write of main, plus a few µs a request):
+
+| Scene | Requests a frame (loads + restores) | Pages a frame | ms a frame |
+| --- | ---: | ---: | ---: |
+| standing still | 4.00 (2.00 + 2.00) | 30.0 | 2.50 |
+| demo3 1052-1796 | 15.10 (7.55 + 7.55) | 89.3 | 7.43 |
+| the benchmark | 15.08 (7.54 + 7.54) | 89.3 | 7.44 |
+
+(The loads a tic above count `gr_load`'s calls, the frame slots' among them: the benchmark's W slots load 10.4 groups a tic, against 77.7 before.)
+
+On the card: the corrected model reproduced the card's wave-2 benchmark within 0.4% (section 5), so the card as it was set (F1.2.1, Disk II on) would read about 4.6 FPS. The card now runs F1.2.2 with the Disk II's acceleration off, and there `CALIB.hdv`'s page 2 measured a PRIVATE request at about 46 µs plus 0.038 µs a byte (`docs/results/calib.md`, "The card on F1.2.2"): a fifth of what f121 models. On `f122-nod2` (the same disk, `2b0fa3a6`, `playtime.py --scene bench --profile f122-nod2`):
+
+| | Wave 2, card F1.2.2 | Frame slots, `f122-nod2` |
+| --- | ---: | ---: |
+| FPS | 3.830 | **5.677** (539 frames, 3,323 realtics) |
+| TIC | 189.4 | 104.5 |
+| 3D | 21.9 | 21.8 |
+| MASK | 13.8 | 13.8 |
+| DRAW | 31.4 | 31.4 |
+| REST | 4.9 | 4.9 |
+
+The PRIVATE copies there: 15.04 requests a frame (7.52 loads, 7.52 restores), 89.1 pages, **1.46 ms** a frame (97 µs a request); `gr_load` 12.32 calls a tic. The memory API holds the CPU for a request and invalidates its caches (appletini-one `README_TURBO.md`, "F1.2.2 extended-memory transfers"), so no stale byte of `$2000-$5FFF` survives a load or a restore.
+
+**Checks** (the owner's rule: what changed, once each):
+
+- the game code, the placement and the paging: `python3 tools/native/ticrun.py --run demo3 --frames front --fills a5 --jobs 2` on the final placement: 2,134 tics compared, 0 failures, the same-pair hits equal (1,009);
+- the restore: `python3 -m unittest test_play_bench` (the BENCHMARK played from the menu): its run now takes a snapshot at every entry of the replay (`nat_replay`, a2vm's `pc …@*` event) and requires main `$2000-$5FFF` equal to `LVC`'s colormaps at each: 43 replays, all equal. A planted bug, the restore skipped once (`fs_restore` returning at the timed demo's gametic 60-63, built in a scratch copy of `play.mk`), is caught: 1 of 43 replays wrong (5 of 42 on an earlier placement);
+- `playdisk.py`'s link checks (no absolute store into `$2000-$5FFF`, each pinned group in its slot) on every disk build;
+- then the fast full suite once (`python3 tools/testpar.py --jobs 4`, 131 modules, 829 s): 130 passed; `test_gplace_model` failed on `gsim`'s new answer (9 figures a scene, not 5) and on its fake builds, which have no frame slots. Its twin of `gsim` now models the frame slots (half its random placements use them), and new cases check the frame slots' rules, room and `gtrace`'s frame-slot loads; the module passes.
+
+The disk: `build/native/DOOM.hdv`, 4,029,952 bytes, SHA-1 `2b0fa3a6df5526364f7d27a9d039852e84bb8a26`.
+
+**Commands:** `python3 tools/native/gplace.py --placement tools/native/gplace-frameslots.json --no-search --write` restores the placement; `python3 tools/native/gplace.py` searches again (about a minute; `--no-frame-slots` keeps every group in W); `python3 tools/native/glayout.py --report` lists the frame slots; `python3 tools/native/playtime.py --scene still|demo3|bench`.
+
+**Open problems.**
+
+- The placement still prices a W page at 80 µs and a PRIVATE page at 85 µs, the F1.2.1 figures; on F1.2.2 a CPU page copy is about 60 µs and a PRIVATE request about 46 µs plus 9.7 µs a page. The W slots' loads could also go by PRIVATE request (2 KB in about 125 µs against 480 by the CPU). Both are the next step.
+- The frame slots are full (64 of 64 pages, 12 slots of 16): more pinned code needs smaller groups or more room.
+- Every loaded slot is restored whole, so half of the PRIVATE pages are restores (about 45 of the benchmark's 89 a frame); a group pays its pages twice a frame, and pinning pays only for a group that a frame would otherwise load about twice or more.
+- Indirect stores are not checked statically: a routine that writes its own bytes through a pointer (as `recursiveSound` does) must be named in `gplace.NO_PIN`; the benchmark run's colormap check catches one that the demo reaches.
+- `GROUP_MARGIN` 96 costs the model about 0.1 ms a tic in demo3 (6.07 → 6.19).

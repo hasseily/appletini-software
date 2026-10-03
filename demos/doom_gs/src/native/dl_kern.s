@@ -21,7 +21,9 @@
 ;   K_TIC code       the tic image's core (and its W unless the list
 ;                    ended with P2DW, which left the same bytes there) from
 ;                    GCODE0 and the walk's planes (each plane's pages below
-;                    G_MOHWM) from MOBJP into W, the slots empty, then the
+;                    G_MOHWM) from MOBJP into W, the slots empty (the frame
+;                    slots too: the brain restored their colormap bytes at
+;                    the last tic phase's end, gcall.s's fs_restore), then the
 ;                    brain (dl_brain, its group through gcall.s's fc_go)
 ;                    with DL_CODE = code; the brain writes the next list
 ;                    and, at its end, the two load lists k_core and k_planes
@@ -71,12 +73,13 @@ dl_kernel:
         txs
         lda #E_BOOT
 k_tic:  sta DL_CODE
-        lda #$FF                ; the slots hold nothing (W was another's),
-        ldx #SLOT_NEED + 1 - SLOT_GRP   ; and no active frame needs one
-:       sta SLOT_GRP,x          ;   (gcall.s's lazy restore): SLOT_GRP 0-2,
-        dex                     ;   SLOT_NEED 1-2
-        bpl :-
-        .assert SLOT_NEED = SLOT_GRP + 3, error, "SLOT_GRP, SLOT_NEED"
+        lda #$FF                ; the slots hold nothing (W was another's;
+        ldx #SLOT_CLR - 1       ;   the frame slots were restored at the
+:       sta SLOT_GRP,x          ;   tic phase's end), no active frame needs
+        dex                     ;   one (gcall.s's lazy restore), no frame
+        bpl :-                  ;   slot to restore: SLOT_GRP, SLOT_NEED,
+                                ;   FS_DIRTY
+        .assert FS_DIRTY + 1 - SLOT_GRP = SLOT_CLR, error, "SLOT_GRP .. FS_DIRTY"
         lda #<k_core
         ldx #>k_core
         ldy #GCODE0

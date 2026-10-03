@@ -53,7 +53,10 @@ at the VBL handler, with the gametic and the step's call target. Reported:
   the tics, the next list), K_WLOAD, nr_frame, K_MLOAD, nm_masked,
   nm_bkload, nb_frame, K_LOAD P2DW, s2_frame and any other step;
   gr_load calls a tic (in K_TIC only: the tic image's), VBL interrupts a
-  frame; the replay's share of nb_frame (nat_replay's entry to its return
+  frame; the frame slots' memory-API PRIVATE copies (gcall.s, docs/SPEED.md
+  9: fs_load a frame slot's load, fs_send each request with A its pages,
+  to fs_sent, its end): requests, pages and ms a frame, of them loads and
+  restores; the replay's share of nb_frame (nat_replay's entry to its return
   in nb_frame), and the benchmark's five phases as its page counts them
   (docs/PLAY.md 15): TIC (K_TIC), 3D (K_WLOAD, nr_frame), MASK (K_MLOAD,
   nm_masked, nm_bkload or OVLW, nb_frame but its replays), DRAW (the
@@ -108,6 +111,10 @@ DISPATCH = OrderedDict([('k_end', 'K_TIC'), ('k_tic1', 'K_TIC'),
 IMAGES = [('P2DW', 's2_'), ('OVLW', 'OVLW'), ('PALW', 'palw_'),
           ('AMAPW', 'am_'), ('FINW', 'fin_'), ('WIW', 'wi_'),
           ('MENUW', 'm_')]
+
+
+# the frame slots' PCs (gcall.s): a load, a request (A: its pages), its end
+FRAME_SLOT_PCS = ('fs_load', 'fs_send', 'fs_sent')
 
 
 class TimeError(Exception):
@@ -171,10 +178,15 @@ def probe(disk: P.Disk, profile: str) -> Probe:
     pcs[sym['XS_pl_vbl']] = 'pl_vbl'
     tic = PK.tic_build(disk.play).labels
     pcs[tic['gr_load']] = 'gr_load'
+    n = len(DISPATCH) + 6
+    for name in FRAME_SLOT_PCS:     # (a build before the frame slots: none)
+        if name in tic:
+            pcs[tic[name]] = name
+            n += 1
     entry, back = replay_pcs()
     pcs[entry] = 'nat_replay'
     pcs[back] = 'nb_rret'
-    if len(pcs) != len(DISPATCH) + 6:
+    if len(pcs) != n:
         raise TimeError('two logged labels share a PC')
     # the jsr's operand (in the main card, the kernel's), the gametic
     gametic = sym['G_GAMETIC']
@@ -242,6 +254,10 @@ class Frame(NamedTuple):
     loads: int                   # gr_load in K_TIC
     irqs: int
     replay: int = 0              # nb_frame's clocks in nat_replay
+    floads: int = 0              # the frame slots' loads (fs_load)
+    requests: int = 0            # PRIVATE requests (fs_send)
+    rpages: int = 0              # their pages
+    rclocks: int = 0             # their clocks (fs_send to fs_sent)
 
 
 def frames_of(lines: List[Line], pr: Probe) -> List[Frame]:
@@ -261,9 +277,13 @@ def frames_of(lines: List[Line], pr: Probe) -> List[Frame]:
                     out.append(Frame(cur['start'], ln.t, ln.gametic,
                                      ln.gametic - cur['gametic'],
                                      cur['steps'], cur['loads'],
-                                     cur['irqs'], cur['replay']))
+                                     cur['irqs'], cur['replay'],
+                                     cur['floads'], cur['requests'],
+                                     cur['rpages'], cur['rclocks']))
                 cur = {'start': ln.t, 'gametic': ln.gametic, 'steps': [],
-                       'loads': 0, 'irqs': 0, 'replay': 0, 'rstart': None}
+                       'loads': 0, 'irqs': 0, 'replay': 0, 'rstart': None,
+                       'floads': 0, 'requests': 0, 'rpages': 0,
+                       'rclocks': 0, 'qstart': None}
             step = [kind, ln.t]
             if kind == 'K_WLOAD':
                 image = 'WCODE'
@@ -285,6 +305,18 @@ def frames_of(lines: List[Line], pr: Probe) -> List[Frame]:
             cur['loads'] += 1
         elif ln.name == 'pl_vbl' and cur is not None:
             cur['irqs'] += 1
+        elif ln.name in FRAME_SLOT_PCS and (
+                cur is None or step is None or step[0] != 'K_TIC'):
+            pass                # (another image's code at the core's PC)
+        elif ln.name == 'fs_load':
+            cur['floads'] += 1
+        elif ln.name == 'fs_send':
+            cur['requests'] += 1
+            cur['rpages'] += ln.a
+            cur['qstart'] = ln.t
+        elif ln.name == 'fs_sent' and cur['qstart'] is not None:
+            cur['rclocks'] += ln.t - cur['qstart']
+            cur['qstart'] = None
         elif ln.name == 'nat_replay' and cur is not None:
             cur['rstart'] = ln.t
         elif ln.name == 'nb_rret' and cur is not None and \
@@ -355,6 +387,21 @@ def report(frames: List[Frame], pr: Probe, cut: str,
         ('irqs_frame', round(sum(f.irqs for f in sel) / len(sel), 2)),
         ('replay_ms', round(sum(f.replay for f in sel) / pr.hz * 1000 /
                             len(sel), 2)),
+        ('private', OrderedDict([
+            ('requests_frame', round(sum(f.requests for f in sel) /
+                                     len(sel), 2)),
+            ('loads_frame', round(sum(f.floads for f in sel) / len(sel),
+                                  2)),
+            ('restores_frame', round(sum(f.requests - f.floads
+                                         for f in sel) / len(sel), 2)),
+            ('pages_frame', round(sum(f.rpages for f in sel) / len(sel),
+                                  2)),
+            ('ms_frame', round(sum(f.rclocks for f in sel) / pr.hz * 1000 /
+                               len(sel), 3)),
+            ('us_request', round(sum(f.rclocks for f in sel) / pr.hz * 1e6 /
+                                 max(1, sum(f.requests for f in sel)), 1)),
+            ('us_page', round(sum(f.rclocks for f in sel) / pr.hz * 1e6 /
+                              max(1, sum(f.rpages for f in sel)), 1))])),
         ('phases_ms', OrderedDict((s, round(phases[s] / len(sel), 2))
                                   for s in PHASES)),
     ])
@@ -484,6 +531,14 @@ def text(r: Dict[str, Any]) -> str:
                  r['tics_frame'], r['tics_second'], r['loads_tic'],
                  r['loads_frame'], r['irqs_frame']),
              '  steps, ms a frame:']
+    pv = r.get('private')
+    if pv and pv['requests_frame']:
+        lines.insert(-1, '  the frame slots\' PRIVATE copies: %.2f requests '
+                     'a frame (%.2f loads, %.2f restores), %.1f pages, %.2f '
+                     'ms (%.1f us a request, %.1f us a page)' % (
+                         pv['requests_frame'], pv['loads_frame'],
+                         pv['restores_frame'], pv['pages_frame'],
+                         pv['ms_frame'], pv['us_request'], pv['us_page']))
     for k, v in r['steps_ms'].items():
         lines.append('    %-24s %8.2f' % (k, v))
     lines.append('  the benchmark page\'s phases, ms a frame (nb_frame\'s '

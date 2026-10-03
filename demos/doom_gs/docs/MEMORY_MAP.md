@@ -49,7 +49,7 @@ Banks 1-126 are RamWorks PSRAM; 127 is never used [R `NATIVE.md` §4.4].
 | --: | --- | --- |
 | 1 | The language card is always RAM for reading and writing. Bank 1 of `$D000` is selected in every phase except the replay; the replay selects bank 2 on entry and bank 1 on exit (`bit $C083` twice, `bit $C08B` twice). | Two 4 KB banks at `$D000` serve two sets of phases [R `tools/a2vm/README.md:195`: two reads of an odd address enable writes]. |
 | 2 | The IRQ handler touches only zero page `$D8-$FF`, the stack page, `$E000-$FFFF` and I/O (`$C0A0-$C0AF`, `$C400-$C4FF`). Never `$D000-$DFFF` (its bank depends on the phase), never `$0200-$BFFF` (RAMRD, RAMWRT, `$C073` and the pair may be set). | The IRQ contract of S2 [R `src/sound/README.md`, "The IRQ contract"], tightened from `$D000-$FFFF` to `$E000-$FFFF`. |
-| 3 | Main `$0400-$0BFF` and `$2000-$5FFF`, and aux 0 `$0400-$0BFF`, hold only read-only data written by memory-API PRIVATE copies. No CPU store ever targets them after boot. | A CPU store there is a video write that leaves a mirror byte [R `tools/a2vm/a2vm.c:651-656`; `memory` §1.1]. |
+| 3 | Main `$0400-$0BFF` and `$2000-$5FFF`, and aux 0 `$0400-$0BFF`, hold only read-only data written by memory-API PRIVATE copies. No CPU store ever targets them after boot. (Since the frame slots, 2026-10-03: during the tic phase `$2000-$5FFF` also holds the placement's pinned groups, code that PRIVATE copies in and that runs there but never stores there; PRIVATE puts the colormap bytes back before the tic phase ends: 3.4, section 17, `SPEED.md` 9.) | A CPU store there is a video write that leaves a mirror byte [R `tools/a2vm/a2vm.c:651-656`; `memory` §1.1]. |
 | 4 | Aux 0 `$2000-$9FFF` is written only by CPU stores with RAMWRT on. PRIVATE never targets it. | PRIVATE writes are never shown [R `appletini-one/README_MEMORY_API.md` §4]. |
 | 5 | Inside a far window only zero page, the stack page and the language card are near; code in a read window runs from the card or zero page. | `NATIVE.md` §4.5 rules 1-2. |
 | 6 | During the replay's draw pass (RAMWRT on, `$C073` = 0), the replay writes only zero page `$48-$6F`, the stack, the row-block patch bytes in card bank 2, and aux 0 `$2000-$88FF`. | With RAMWRT on, every store to `$0200-$BFFF` goes to aux 0 [R `a2vm.c:643-648`]. Upstream writes back into records (`texStart`, `fillStart`) and resets `COLW` and `CV_ROW` during the replay [R `r_list65.s:601-605`, `:636-638`, `:1102`, `:1123`]; the native replay keeps those values in zero page and clears the covered ranges of a strip's columns after that strip's draw pass (RAMWRT off). |
@@ -197,6 +197,24 @@ state at `$1980-$1A7F`; this line said "never overlay" until then,
 | --- | ---: | --- | --- |
 | `$2000-$3FFF` | 8,192 | Colormap A, light levels 0-31: level L at page `$20+L` | per level, one PRIVATE COPY of 17,408 B with the pages of `$0400-$07FF`: about 6 ms [M: 0.343 µs/B, `memory` §1.2] |
 | `$4000-$5FFF` | 8,192 | Colormap B, levels 0-31: level L at page `$40+L`. Page `$40` covers `$4078-$407F` (rule 8) | same |
+
+**The frame slots** (2026-10-03, `docs/SPEED.md` 9; `glayout.py`
+`frame_slots`). Only the replay reads these pages, so during the tic phase
+they are the placement's frame slots: each pinned group (slot 3 and up of
+`placement.json`, one group a slot, at most 16, 64 pages in all, none across
+`$4000`) has a place of its own here, packed largest first. `gcall.s`'s
+`gr_load` copies a pinned group in by one PRIVATE request (`fs_load`, at most
+2,048 B) at its first call in a frame; `fs_restore` copies each loaded
+slot's colormap bytes back from the level's copy in `LVC` (`LVC_CMAPA`
+`$0200` for `$2000-$3FFF`, `LVC_CMAPB` `$2400` for `$4000-$5FFF`: the same
+bytes the load's PRIVATE request put here) before the tic phase ends: in
+the play build at the brain's end (`dl_brain.s`), in the test drivers
+before a frame and a load (`gdriver.s`). Rule 3 holds: nothing stores into
+these pages but PRIVATE (`playdisk.py` checks the tic link's absolute
+stores, `gplace.py` keeps every routine the tic code stores into out of the
+frame slots), and rule 8's `$4078-$407F` gets only PRIVATE's writes, which
+never reach the firmware's shadow. `test_play_bench`'s benchmark run
+checks at every replay's entry that the pages equal `LVC`'s colormaps.
 
 The dispatcher reads `CMPA` and `CMPB` indexed by upstream's own `R_CMP`
 byte, which is the page of colormap A in bank `$0D`, `$46` + L [R
@@ -866,13 +884,14 @@ takes the card's `$E000` part in test builds, as `ldriver.s` does).
 | main | `$03B0-$03B1` | `GS_STATUS`, `GS_ARG`: the tic phase's stop code and its argument |
 | main | `$0C00-$0EFF` | `MOC`: the mobj cache, 8 lines of 96 (the clip arrays' and the bucket pass's place, dead after the replay) |
 | main | `$1680-$17FF` | `SCC`: the sector cache, 8 lines of 48 (`COLLO`, `COLHI`, `UPOFS`, `FRORD`: dead after the replay) |
-| main | `$1980-$1A7F` | The runtime's state (128 of 256 B used): the caches' tags, dirty bits and recency orders, the slots' groups, the walk's thinker and its next, `MP_MODE`, the API's and the paging's counters (`DSX1`, `DSX2`: dead after the replay) |
+| main | `$1980-$1A7F` | The runtime's state (163 of 256 B used since the frame slots, 128 before): the caches' tags, dirty bits and recency orders, the slots' groups (`SLOT_GRP` 19 B: slots 0-2 and 16 frame slots; `SLOT_NEED` 18 B; `FS_DIRTY`, set to `$FF` with them at each `K_TIC`: `SLOT_CLR` bytes), the walk's thinker and its next, `MP_MODE`, the API's and the paging's counters (`DSX1`, `DSX2`: dead after the replay) |
+| main | `$2000-$5FFF` | Since the frame slots (2026-10-03): the pinned groups' places during the tic phase, over colormaps A and B, which `fs_restore` puts back before it ends (3.4; `docs/SPEED.md` 9) |
 | main | `$1C80-$1EF8` | The game globals block grown by `GAME.md` 1.5 (633 B): the specials' and the zone's free lists, `G_MOHWM`, `CS_PREV1`, `CS_PREV2`, `CS_PREVR`, the line record (`G_LROK`, `G_LRUSE`, `G_LRN`, `G_LRLINES`), `G_LOADACT`, `G_SHOWMSG`, `G_MSGKEEP`, the level tables' places (`G_LTABAT` .. `G_REJECTAT`), the intermission's counters (`WI_*`), the test globals (`GT_*`); `validcount` left it for `$0332` |
 | main | `$1EF9` | `G_WSET` (wave 1 as integrated, `glayout.TIC_MAIN_FIELDS`): the map the level window holds (upstream's `W_SET`), which `g_resume` reads for the textures a load made; after the globals block, so milestone 9's pre-state records keep their size |
 | main | `$1EFA` | `G_FPSSHOW` (wave 2 as integrated): idrate's frame rate flag (upstream's `_g_fps_show`, no canonical state), persistent across tics and loads |
 | main | `$1EFB` | `G_ONGROUND` (wave 5 as integrated, `player.md` R1): the player's onground (upstream's `PU_ONGROUND`, no canonical state), persistent across tics: `calcHeight` reads the last tic's while the reaction time counts |
 | W | `$6000-$65FF` | `MATHW`, `AUXW`: the render images' bytes |
-| W | `$6600-$99FF` | The core image (13,312 B since wave 2's integration, 12,800 before): the runtime, milestone 9's game core in play, the game's math (`math-g.o`: `R_PointToAngle3`, the sines, 672 B), part `damage`'s `weaponinfo`, the routines the placement puts there (the skeleton's own: 8,311 B with no part) |
+| W | `$6600-$99FF` | The core image (13,312 B since wave 2's integration, 12,800 before): the runtime, milestone 9's game core in play, the game's math (`math-g.o`: `R_PointToAngle3`, the sines, 672 B), part `damage`'s `weaponinfo`, the routines the placement puts there (the skeleton's own: 8,311 B with no part). Since the frame slots (2026-10-03) not `gspec.s` (the load image's SPECIALS step: no tic image calls it) nor part flow's `g_resume` (the play build's brain group, the test drivers' card area); `gcall.s`'s memory-API transport and restore are there |
 | W | `$9A00-$9DFF` | The parts' scratch blocks (`SB_<PART>`, 32 B each by default, `sight` 106 since wave 1's integration, `path` 44 since wave 4's: 1,014 of 1,024 B, `$9A00-$9DF5`) |
 | W | `$9E00-$A5FF` | Slot 1: one paged group (2,048 B since wave 2's integration, which gave the core 512 B of it: the placement cuts every group at slot 2's 2,048 B) |
 | W | `$A600-$ADFF` | Slot 2: one paged group (2,048 B) |

@@ -11,12 +11,20 @@
      P POLICY G_0..G_{UNITS-1} S_0..S_255 N_0..N_255
        a placement: unit u in group G_u (0 the core, 254 outside: a caller
        the tic image does not hold), group g in slot S_g with N_g pages.
-       POLICY 0: gcall.s's restore (the slot's group at the call is loaded
-       again at the return when another is there); 1: the lazy restore
-       (only the group the slot's innermost active call needs).
-       Answer: for each trace "loads pages cross tics phases", where cross
-       counts the calls that go through fc_call's path (the target in a
-       group, not the caller's).
+       Slots 1 and 2 are W's; slots FIRST_FRAME and up are frame slots
+       (main $2000-$5FFF: glayout.py frame_slots), one group each, loaded
+       by a PRIVATE copy at its first call in a phase and its colormap
+       pages restored once at the phase's end (gcall.s fs_load,
+       fs_restore). POLICY 0: gcall.s's restore (the slot's group at the
+       call is loaded again at the return when another is there); 1: the
+       lazy restore (only the group the slot's innermost active call
+       needs).
+       Answer: for each trace "loads pages cross tics phases fpages
+       rpages floads restores", where loads counts every load, pages a W
+       slot's loads' pages, cross the calls that go through fc_call's path
+       (the target in a group, not the caller's), fpages the frame slots'
+       loads' pages, rpages the pages their restores copy back, floads the
+       frame slots' loads and restores their restores (a request each).
      V ... (as P): the check against the loads the trace recorded (gr_load's
        writes of SLOT_GRP): for each trace "bad_phases rec_loads sim_loads
        rec_groups_sum sim_groups_sum" (a phase is bad when its loads'
@@ -38,6 +46,8 @@
 #define NG 256
 #define OUT 254
 #define EMPTY 255
+#define FIRST_FRAME 3           /* glayout.py FRAME_FIRST */
+#define MAXS (FIRST_FRAME + 16) /* and FS_MAX */
 
 typedef struct { uint8_t op; uint16_t a, b; } event;
 
@@ -142,16 +152,25 @@ static void note(int kind, int caller, int callee, int pg)
 static void run(int t, int policy, char mode)
 {
     long loads = 0, pg = 0, cross = 0, phases = 0;
+    long fpg = 0, rpg = 0, floads = 0, restores = 0;
     long bad = 0, rec_loads = 0, sim_loads = 0, rec_sum = 0, sim_sum = 0;
     long ph_rec = 0, ph_sim = 0, ph_rsum = 0, ph_ssum = 0;
-    int cur[3] = {EMPTY, EMPTY, EMPTY}, need[3] = {EMPTY, EMPTY, EMPTY};
+    int cur[MAXS], need[MAXS], used[MAXS];
     int depth = 0, overflow = 0;
+    for (int k = 0; k < MAXS; k++)
+        cur[k] = need[k] = EMPTY, used[k] = 0;
     ncauses = 0;
     const event *e = tr[t];
     for (size_t i = 0; i < trn[t]; i++, e++) {
         switch (e->op) {
         case 2:
-            cur[1] = cur[2] = need[1] = need[2] = EMPTY;
+            /* (a phase's start: the last one's frame slots restored) */
+            for (int k = 0; k < MAXS; k++) {
+                if (used[k])
+                    rpg += used[k], restores++;
+                cur[k] = need[k] = EMPTY;
+                used[k] = 0;
+            }
             depth = 0;
             phases++;
             ph_rec = ph_sim = ph_rsum = ph_ssum = 0;
@@ -186,7 +205,13 @@ static void run(int t, int policy, char mode)
                 if (cur[s] != gb) {
                     cur[s] = gb;
                     loads++;
-                    pg += pages[gb];
+                    if (s >= FIRST_FRAME) {
+                        floads++;
+                        fpg += pages[gb];
+                        if (pages[gb] > used[s])
+                            used[s] = pages[gb];
+                    } else
+                        pg += pages[gb];
                     sim_loads++;
                     sim_sum += gb;
                     ph_sim++;
@@ -209,7 +234,13 @@ static void run(int t, int policy, char mode)
             if (old != EMPTY && cur[s] != old) {
                 cur[s] = old;
                 loads++;
-                pg += pages[old];
+                if (s >= FIRST_FRAME) {
+                    floads++;
+                    fpg += pages[old];
+                    if (pages[old] > used[s])
+                        used[s] = pages[old];
+                } else
+                    pg += pages[old];
                 sim_loads++;
                 sim_sum += old;
                 ph_sim++;
@@ -225,6 +256,9 @@ static void run(int t, int policy, char mode)
     }
     if (overflow)
         fail("a trace deeper than the model's stack");
+    for (int k = 0; k < MAXS; k++)     /* (the last phase's restores) */
+        if (used[k])
+            rpg += used[k], restores++;
     if (mode == 'V')
         printf("%ld %ld %ld %ld %ld ", bad, rec_loads, sim_loads, rec_sum,
                sim_sum);
@@ -234,7 +268,8 @@ static void run(int t, int policy, char mode)
                    causes[i].caller, causes[i].callee, causes[i].loads,
                    causes[i].pages);
     } else
-        printf("%ld %ld %ld %ld %ld ", loads, pg, cross, tics[t], phases);
+        printf("%ld %ld %ld %ld %ld %ld %ld %ld %ld ", loads, pg, cross,
+               tics[t], phases, fpg, rpg, floads, restores);
 }
 
 int main(int argc, char **argv)
@@ -260,7 +295,8 @@ int main(int argc, char **argv)
             if (scanf("%d", &grp[u]) != 1 || grp[u] < 0 || grp[u] >= NG)
                 fail("bad placement");
         for (int g = 0; g < NG; g++)
-            if (scanf("%d", &slot[g]) != 1 || slot[g] < 0 || slot[g] > 2)
+            if (scanf("%d", &slot[g]) != 1 || slot[g] < 0 ||
+                    slot[g] >= MAXS)
                 fail("bad slots");
         for (int g = 0; g < NG; g++)
             if (scanf("%d", &pages[g]) != 1 || pages[g] < 0)

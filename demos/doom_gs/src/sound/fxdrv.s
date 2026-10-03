@@ -82,7 +82,7 @@ drv_found:      .byte $FF       ; snd_probe's answer
 drv_music:      .byte 1         ; 0: no music (snd_probe said so)
 drv_gate:       .byte 3
 drv_frame:      .byte 1
-drv_cal:        .word 0
+drv_cal:        .byte 0, 0, 0   ; (24 bits)
 drv_nq:         .byte 0
 drv_qlog:       .res QLOG
 drv_actions:    .res MAX_ACTIONS * ACT_SIZE + 1
@@ -138,9 +138,12 @@ drv_start:
         sta drv_t
         stz drv_dl
         stz drv_dl + 1
-@cal:   inc drv_dl
+        stz drv_cal + 2
+@cal:   inc drv_dl              ; (24 bits: in TURBO a VBL holds more
+        bne :+                  ;   than 65,535 turns, 78,209 on a2vm f121
+        inc drv_dl + 1          ;   since 2026-10-03, 94,951 before)
         bne :+
-        inc drv_dl + 1
+        inc drv_cal + 2
 :       lda vbl_count
         cmp drv_t
         beq @cal

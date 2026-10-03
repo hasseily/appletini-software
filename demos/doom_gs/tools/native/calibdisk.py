@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """build/native/CALIB.hdv, the calibration disk (docs/SPEED.md 5,
-docs/results/calib.md): CALIB.SYSTEM (src/native/calib.s) times 44
+docs/results/calib.md): CALIB.SYSTEM (src/native/calib.s) times 52
 microbenchmarks on the card with the Phasor's timers and shows each
-beside a2vm's f121 prediction, on the 80-column text screen.
+beside a2vm's f121 prediction, on the 80-column text screen: 44 on text
+page 1, the memory API's PRIVATE copies on page 2 (SPACE on the card).
 
 Usage:  python3 tools/native/calibdisk.py [--play DIR] [--out FILE]
             [--doc] [--keep DIR]
@@ -18,13 +19,15 @@ The steps:
      figures, zero at first); checked against each other and, when it is
      there, against build/native/DOOM.hdv's LC.BIN and CODE.2;
   2. make -f src/native/calib.mk;
-  3. a2vm f121 (playdisk's f121: f121+phasor+window32), --via-timers, the
-     exact core, --cost-timed: the run ends when the screen shows the
-     results; check() reads them back;
+  3. a2vm f121 (playdisk's f121: f121+phasor+window32), --via-timers,
+     --amem, the exact core, --cost-timed: the run ends when the screen
+     shows the results; check() reads them back;
   4. the figures into calibpred.inc, make again, the disk; the same run
      again (its figures must equal the first's, and its screen shows
-     them in the A2VM column), fastpath, and f121 with the default window
-     of 512 (f121+phasor), each checked.
+     them in the A2VM column), fastpath, f121 with the default window
+     of 512 (f121+phasor), and f121 before the card corrected it (the
+     cost variant precal), each checked. --doc compares them with the
+     card's figures (CARD: the owner's photo of 2026-10-03).
 
 check() (the checks of tests/test_calib.py too): the run ended on the
 screen; every operation measured with both timers agreeing and D > 0;
@@ -35,7 +38,11 @@ the PC log's unit calls in each measurement equal the count the program
 used for its arithmetic (n, then 2n); the
 figures equal the host's computation from the E's; the screen equals the
 host's rendering of them; the game's bytes are in place in the card and
-page 1. --doc writes docs/results/calib.md. Every a2vm run is bounded
+page 1; the memory API ran every request the lines and their setups
+send (a2vm's count) and none was refused, and main $2000-$9FFF, which
+the PRIVATE lines rewrite from bank 17, still holds the program, as bank
+17 does (the setups' copy). --doc writes docs/results/calib.md. Every
+a2vm run is bounded
 (bounded.run) in a directory deleted after it (--keep keeps them).
 """
 
@@ -81,16 +88,22 @@ SYSTEM = 'CALIB.SYSTEM'
 # default window of 512
 PROFILES = {'f121': playdisk.PROFILES['f121'],
             'fastpath': playdisk.PROFILES['fastpath'],
-            'f121w512': 'f121+phasor'}
+            'f121w512': 'f121+phasor',
+            # the model before the card's figures corrected it (the cost
+            # variant precal), for the comparison of docs/results/calib.md
+            'f121pre': playdisk.PROFILES['f121-precal']}
 SECONDS = 40.0                  # model time a run may take (it takes ~9 s)
 TIMEOUT = 600.0
 MAX_BYTES = 256 << 20
 PCLOG_LIMIT = 900000            # lines (about 40 MB): a run logs ~570,000
-SNAP_RANGES = 'main:0000-BFFF,lc,lc1,aux0:0400-07FF'
+SNAP_RANGES = 'main:0000-BFFF,lc,lc1,aux0:0400-0BFF,aux17:2000-9FFF'
 
-NOPS = 44
+NOPS = 52
+NOPS1 = 44                      # page 1's lines; the rest are page 2's
 R_SIZE = 64
 OP_REG, OP_SPIN, OP_WIN = 0, 20, 21
+OP_PR = 44                      # the memory API's PRIVATE lines
+RWS = 17                        # their source bank
 UC_REG, UC_SPIN = 1313, 837     # calib.s's
 BPS = {'PAL': 984615, 'NTSC': 979927}
 PAL_CUT = 18655
@@ -165,6 +178,58 @@ WHAT = {
     'SHR SEQ': 'RAMWRT on, 256 contiguous bytes to aux `$2000` (SHR), '
                'RAMWRT off, `lda $C000`: the burst and its drain',
     'SHR COL': 'the same with a column: 96 bytes 160 apart',
+    'PR2 256': 'the memory API (slot 7): one request of one PRIVATE COPY of '
+               '256 bytes from RamWorks bank 17 to main `$2000` (the '
+               'colormaps\' place in the game), sent through the '
+               '`$CFF0-$CFF2` FIFO as lload.s\'s am_send sends one: the '
+               'request\'s 36 bytes pushed, executed, its result popped',
+    'PR2 2K': 'the same, 2 KB',
+    'PR2 16K': 'the same, 16 KB (`$2000-$5FFF`)',
+    'PR2 8X2K': 'the same 16 KB as eight requests of 2 KB, one after the '
+                'other (us/op: a request)',
+    'PR6 256': 'PR2 256 to main `$6000`',
+    'PR6 2K': 'PR2 2K to main `$6000`',
+    'PR6 16K': 'PR2 16K to main `$6000-$9FFF`',
+    'PR6 8X2K': 'PR2 8X2K to main `$6000-$9FFF`',
+}
+
+# the PRIVATE lines: the requests a unit (k), its bytes a request (b)
+PR_LINES = ('PR2 256', 'PR2 2K', 'PR2 16K', 'PR2 8X2K',
+            'PR6 256', 'PR6 2K', 'PR6 16K', 'PR6 8X2K')
+PAGE2_HEAD = 'CALIB PAGE 2: THE MEMORY API  SPACE: PAGE 1  R: RUN AGAIN'
+PAGE2_LEGEND = (
+    'PR2: ONE PRIVATE COPY FROM RAMWORKS BANK 17 TO MAIN $2000 (THE '
+    'COLORMAPS)',
+    'PR6: THE SAME TO MAIN $6000. EACH LINE A MEMORY-API REQUEST, FIFO '
+    'INCLUDED',
+    '256, 2K, 16K: ONE REQUEST OF THAT SIZE; 8X2K: EIGHT REQUESTS OF 2K IN '
+    'A ROW',
+    'US/OP: A REQUEST; US/B: A BYTE; A2VM F121: THE MODEL\'S US/OP')
+PAGE2_NOAMEM = ('NO MEMORY API IN SLOT 7 (APPLETINI F1.1.4 OR LATER, VTW '
+                'ON): NOT MEASURED')
+
+
+# The card's figures: the owner's photo of the screen (PAL //e, the DOOM
+# profile's window of 32), 2026-10-03, CALIB.hdv SHA-1 e692b6e4: us an
+# operation, by line, in thousandths (the screen's digits). The header read
+# CPU 66.690 MHZ, TIME 8.417 S.
+CARD_DATE = '2026-10-03'
+CARD_DISK = 'e692b6e441367274cec3c4513bc4bfd2a9b7c4bb'
+CARD_MHZ, CARD_TIME = '66.690', '8.417'
+CARD = {
+    'REG': 77, 'MAIN RD': 141, 'MAIN WR': 150, 'AUX RD': 141, 'AUX WR': 150,
+    'RW HIT': 158, 'RW SEQ': 246, 'RW UHIT': 100, 'RW S64': 985,
+    'RW S256': 985, 'RW WHIT': 173, 'RW WSEQ': 369, 'RW WS64': 1969,
+    'GC RW 1': 85339, 'GC RW 4': 321688, 'GC RW 8': 636442,
+    'GC AX 1': 64000, 'GC AX 4': 237271, 'GC AX 8': 468422,
+    'PLOAD 4': 322480, 'SPIN': 12595, 'WIN': 45292,
+    'GET RW 4': 6892, 'GET RW24': 13785, 'GET RW96': 40369,
+    'GET AX 4': 6890, 'GET AX24': 12800, 'GET AX96': 33477,
+    'PUT RW 4': 8828, 'PUT RW24': 18667, 'PUT RW96': 54152,
+    'PUT AX 4': 7860, 'PUT AX24': 13711, 'PUT AX96': 34462,
+    'MO GET': 45038, 'MO PUT': 54155, 'LN GET': 23579,
+    'SW NONE': 1429, 'SW RAMRD': 4923, 'SW RAMWR': 4922, 'SW C073': 2954,
+    'SW ALTZP': 4923, 'SHR SEQ': 259152, 'SHR COL': 238771,
 }
 
 
@@ -365,9 +430,10 @@ class Run(NamedTuple):
 
 def run(prog: Program, profile: str, work: Path, *, timed: bool = True,
         pclog: bool = True, seconds: float = SECONDS,
-        a2vm: Path = A2VM) -> Run:
+        a2vm: Path = A2VM, amem: bool = True) -> Run:
     """CALIB.SYSTEM at $2000 as ProDOS starts it, until the screen shows
-    the results (`done`) or a crash."""
+    the results (`done`) or a crash; with the memory API in slot 7 (as
+    the card has it) unless `amem` is false."""
     work = Path(work).resolve()
     work.mkdir(parents=True, exist_ok=True)
     (work / 'rom.bin').write_bytes(bytes(0x4000))
@@ -377,7 +443,7 @@ def run(prog: Program, profile: str, work: Path, *, timed: bool = True,
     params = costs.parameters(prof)
     fabric_hz = params['fabric_mhz'] * 1e6
     args = [str(a2vm), '--rom', str(work / 'rom.bin'), '--core', 'w65c02s',
-            '--via-ora-nh', '--via-timers',
+            '--via-ora-nh', '--via-timers'] + (['--amem'] if amem else []) + [
             '--load', '2000:%s' % (work / SYSTEM),
             '--reg', 'pc=2000', '--reg', 's=FF',
             '--stop-pc', '%X' % lab['done'],
@@ -511,6 +577,7 @@ class Results(NamedTuple):
     time: int
     terr: int
     tms: int
+    amem: int                   # the probe: 0 the API is there
 
 
 def ops_of(prog: Program) -> List[Op]:
@@ -549,7 +616,7 @@ def results(prog: Program, r: Run) -> Results:
                    main[lab['g_done']], pred,
                    bytes(main[lab['g_tts']:lab['g_tts'] + 8]),
                    u32(main, lab['g_time']), main[lab['g_terr']],
-                   u32(main, lab['g_tms']))
+                   u32(main, lab['g_tms']), main[lab['g_amem']])
 
 
 def figures(op: Op, d: int, bps: int) -> Tuple[int, int]:
@@ -612,49 +679,87 @@ def window_text(w10: int, wbad: int) -> str:
     return integer(((w10 + 5) & 0xFFFFFFFF) // 10)
 
 
-def screen_expected(res: Results) -> List[str]:
-    """calib.s show, rendered by the host from the results."""
-    grid = [[' '] * 80 for _ in range(24)]
-    over = []
+class Grid:
+    """The 80-column text screen as calib.s's put_char writes it."""
 
-    def put(row: int, col: int, text: str) -> int:
+    def __init__(self) -> None:
+        self.grid = [[' '] * 80 for _ in range(24)]
+        self.over: List[Tuple[int, int]] = []
+
+    def put(self, row: int, col: int, text: str) -> int:
         for ch in text:
             if col >= 80:
-                over.append((row, col))
+                self.over.append((row, col))
             else:
-                grid[row][col] = ch
+                self.grid[row][col] = ch
             col += 1
         return col
+
+    def op(self, res: 'Results', i: int, row: int, col: int) -> None:
+        """show_op's line of operation i at row, col."""
+        op, rec = res.ops[i], res.recs[i]
+        col = self.put(row, col, '%-8s' % op.name)
+        if rec.err:
+            col = self.put(row, col, '      ERR       ')
+        else:
+            col = self.put(row, col, fix(rec.v, 9))
+            col = self.put(row, col, fix(rec.vb, 7) if rec.vb else ' ' * 7)
+        p = res.pred[i]
+        self.put(row, col, fix(p, 10) if p else ' ' * 9 + '-')
+
+    def rows(self) -> List[str]:
+        if self.over:
+            raise CalibError('the screen passes column 79 at %s'
+                             % self.over[:3])
+        return [''.join(r) for r in self.grid]
+
+
+COLS = 'OP          US/OP   US/B A2VM F121'
+
+
+def screen_expected(res: Results) -> List[str]:
+    """calib.s show (text page 1), rendered by the host from the
+    results."""
+    g = Grid()
+    put = g.put
     video = 'PAL' if res.bps == BPS['PAL'] else 'NTSC'
     head = ('CALIB ' + video + ' ' + integer(res.vbl) + '  WIN ' +
             window_text(res.w10, res.wbad) + '  CPU ' +
             fix((res.mhz * 10) & 0xFFFFFFFF, 0) + ' MHZ  TIME ' +
             ('?' if res.terr else fix(res.tms, 0)) + ' S  RUN ' +
-            integer(res.runs) + '  R: RUN AGAIN')
+            integer(res.runs) + '  SPACE: MORE')
     put(0, 0, head)
-    cols = 'OP          US/OP   US/B A2VM F121'
-    put(1, 0, cols)
-    put(1, 40, cols)
-    for i, (op, rec) in enumerate(zip(res.ops, res.recs)):
-        row, col = (i + 2, 0) if i < 22 else (i - 20, 40)
-        col = put(row, col, '%-8s' % op.name)
-        if rec.err:
-            col = put(row, col, '      ERR       ')
-        else:
-            col = put(row, col, fix(rec.v, 9))
-            col = put(row, col, fix(rec.vb, 7) if rec.vb else ' ' * 7)
-        p = res.pred[i]
-        put(row, col, fix(p, 10) if p else ' ' * 9 + '-')
-    if over:
-        raise CalibError('the screen passes column 79 at %s' % over[:3])
-    return [''.join(r) for r in grid]
+    put(1, 0, COLS)
+    put(1, 40, COLS)
+    for i in range(NOPS1):
+        g.op(res, i, *((i + 2, 0) if i < 22 else (i - 20, 40)))
+    return g.rows()
 
 
-def screen_of(r: Run) -> List[str]:
+def screen2_expected(res: Results) -> List[str]:
+    """calib.s show2 (text page 2): the PRIVATE lines, PR2 left and PR6
+    right on rows 2-5, the legend on rows 7-10, row 12 when the probe found
+    no memory API."""
+    g = Grid()
+    g.put(0, 0, PAGE2_HEAD)
+    g.put(1, 0, COLS)
+    g.put(1, 40, COLS)
+    for i in range(OP_PR, NOPS):
+        j = i - OP_PR
+        g.op(res, i, 2 + j % 4, 0 if j < 4 else 40)
+    for j, text in enumerate(PAGE2_LEGEND):
+        g.put(7 + j, 0, text)
+    if res.amem:
+        g.put(12, 0, PAGE2_NOAMEM)
+    return g.rows()
+
+
+def screen_of(r: Run, page: int = 1) -> List[str]:
+    """Text page 1 or 2 (80 columns: the even ones in aux)."""
     main, aux = r.image[(0, 0)], r.image[(1, 0)]
     rows = []
     for row in range(24):
-        base = 0x400 + (row % 8) * 0x80 + (row // 8) * 0x28
+        base = 0x400 * page + (row % 8) * 0x80 + (row // 8) * 0x28
         line = []
         for c in range(80):
             b = (aux if c % 2 == 0 else main)[base + c // 2] & 0x7F
@@ -695,6 +800,18 @@ def measurements(prog: Program, r: Run) -> List[Dict[str, Any]]:
                 raise CalibError('m_end outside a measurement')
             ending, cur = cur, None
     return out
+
+
+def amem_expected(ops: Sequence[Op]) -> Tuple[int, int]:
+    """The memory API's requests and completed descriptors in one run of
+    the list: the probe's STATUS; for each PRIVATE line two setups' copies
+    (E(n), E(2n)) and 3n units of k requests of one descriptor."""
+    requests = 1
+    done = 0
+    for op in ops[OP_PR:]:
+        requests += 2 + 3 * op.n * op.k
+        done += 2 + 3 * op.n * op.k
+    return requests, done
 
 
 def check(prog: Program, r: Run, parts: Optional[Parts] = None,
@@ -772,15 +889,32 @@ def check(prog: Program, r: Run, parts: Optional[Parts] = None,
                                     wbad))
     if pred is not None and list(res.pred) != list(pred):
         out.append('the program\'s predictions are not the given ones')
-    try:
-        want = screen_expected(res)
-        have = screen_of(r)
-        for row, (a, b) in enumerate(zip(have, want)):
-            if a != b:
-                out.append('screen row %d: %r, expected %r'
-                           % (row, a.rstrip(), b.rstrip()))
-    except CalibError as e:
-        out.append(str(e))
+    for page, render in ((1, screen_expected), (2, screen2_expected)):
+        try:
+            want = render(res)
+            have = screen_of(r, page)
+            for row, (a, b) in enumerate(zip(have, want)):
+                if a != b:
+                    out.append('screen %d row %d: %r, expected %r'
+                               % (page, row, a.rstrip(), b.rstrip()))
+        except CalibError as e:
+            out.append(str(e))
+    if res.amem:
+        out.append('the program found no memory API (probe %d)' % res.amem)
+    amem = r.state.get('amem') or {}
+    want_rq, want_done = amem_expected(res.ops)
+    if (amem.get('requests'), amem.get('completed')) != (want_rq, want_done):
+        out.append('the memory API ran %s requests, %s descriptors; the '
+                   'list sends %d, %d' % (amem.get('requests'),
+                                          amem.get('completed'), want_rq,
+                                          want_done))
+    main = r.image[(0, 0)]
+    if bytes(main[0x2000:0x2000 + len(prog.system)]) != prog.system:
+        out.append('main $2000 no longer holds the program after the '
+                   'PRIVATE copies')
+    rws = r.image.get((1, RWS))
+    if rws is None or bytes(rws[0x2000:0xA000]) != bytes(main[0x2000:0xA000]):
+        out.append('bank %d $2000-$9FFF differs from main\'s' % RWS)
     if parts is not None:
         lc1, lc = r.image[(3, 0)], r.image[(2, 0)]
         c = parts.consts
@@ -829,18 +963,50 @@ def us(ns: int) -> str:
     return '%.3f' % (ns / 1000.0)
 
 
+def pct(model: int, card: int) -> str:
+    return '%+.1f%%' % (100.0 * (model / card - 1))
+
+
 def table_rows(runs: Dict[str, Results]) -> List[str]:
     f121 = runs['f121']
-    rows = ['| # | Line | What it measures | n | a2vm f121 us/op | us/byte | '
-            'fastpath us/op | Card us/op | Card us/byte |',
-            '| --: | --- | --- | --: | --: | --: | --: | --: | --: |']
+    rows = ['| # | Line | What it measures | n | Card us/op | Card us/byte | '
+            'a2vm f121 us/op | against the card | before %s us/op | '
+            'against the card | fastpath us/op |' % CARD_DATE,
+            '| --: | --- | --- | --: | --: | --: | --: | --: | --: | --: '
+            '| --: |']
     for i, op in enumerate(f121.ops):
         a = f121.recs[i]
         fp = runs['fastpath'].recs[i] if 'fastpath' in runs else None
-        rows.append('| %d | `%s` | %s | %d | %s | %s | %s | | |' % (
-            i + 1, op.name, WHAT.get(op.name, ''), op.n, us(a.v),
-            us(a.vb) if op.b else '', us(fp.v) if fp else ''))
+        pre = runs['f121pre'].recs[i] if 'f121pre' in runs else None
+        card = CARD.get(op.name)
+        rows.append('| %d | `%s` | %s | %d | %s | %s | %s | %s | %s | %s '
+                    '| %s |' % (
+                        i + 1, op.name, WHAT.get(op.name, ''), op.n,
+                        us(card) if card else '',
+                        '%.3f' % (card / 1000.0 / op.b)
+                        if card and op.b else '',
+                        us(a.v), pct(a.v, card) if card else '',
+                        us(pre.v) if pre else '',
+                        pct(pre.v, card) if pre and card else '',
+                        us(fp.v) if fp else ''))
     return rows
+
+
+def card_fit(runs: Dict[str, Results]) -> Tuple[float, str, int, float,
+                                                 str]:
+    """f121's largest difference from the card (%, the line), its lines
+    within 1%, and the largest difference of the model before the
+    correction (%, the line)."""
+    f121 = runs['f121']
+    devs = [(abs(r.v / CARD[op.name] - 1) * 100, op.name)
+            for op, r in zip(f121.ops, f121.recs) if op.name in CARD]
+    worst = max(devs)
+    pre = (max((abs(r.v / CARD[op.name] - 1) * 100, op.name)
+               for op, r in zip(f121.ops, runs['f121pre'].recs)
+               if op.name in CARD)
+           if 'f121pre' in runs else (0.0, '?'))
+    return (worst[0], worst[1], sum(1 for d, _ in devs if d <= 1.0),
+            pre[0], pre[1])
 
 
 def w512_moves(runs: Dict[str, Results]) -> Tuple[int, float, int]:
@@ -866,27 +1032,47 @@ def report(runs: Dict[str, Results], disk: Path, image: bytes,
         'speed wave 2, so a2vm\'s costs of the tic phase\'s RamWorks work '
         'are checked against the card before wave 3).',
         '',
-        '**The disk:** `build/native/CALIB.hdv`, %d bytes, SHA-1 `%s`. '
+        '**The card** (the owner\'s photo, %s, PAL //e, WIN 32, the disk '
+        'of SHA-1 `%s`, whose A2VM column held the model before the '
+        'correction): CPU %s MHz, TIME %s s. Its figures are the Card '
+        'columns below. They corrected a2vm\'s cost model the same day '
+        '(**The fit**, below): a2vm f121 now comes within %.1f%% of the '
+        'card on every line it measured (%s the farthest), %d of the %d '
+        'within 1%%; before, up to %.1f%% (%s). The memory API\'s PRIVATE '
+        'lines (45-52, page 2) came after that photo: they have no card '
+        'figures yet.' % ((CARD_DATE, CARD_DISK[:8], CARD_MHZ, CARD_TIME) +
+                          card_fit(runs)[:3] + (len(CARD),) +
+                          card_fit(runs)[3:]),
+        '',
+        '**The disk:** `build/native/CALIB.hdv`, %d bytes, SHA-1 `%s`, '
+        'with the corrected model\'s figures in its A2VM column. '
         'Boot it on the Appletini (PAL //e, TURBO, the Phasor in slot 4 '
         'and RamWorks on, as for DOOM.hdv); it shows "CALIB: MEASURING", '
-        'runs the 44 lines once, then shows them; R runs them again, '
-        'CTRL-RESET reboots (the program overwrites ProDOS\'s card). The '
-        'run takes %s s on a2vm f121 with the DOOM profile\'s window of '
-        '32 and %s s with the default window of 512 (TIME in the header, '
-        'measured by the program itself): on the card about 10 s, more '
-        'where the card is slower than a2vm. A photo of the screen gives '
-        'the card\'s columns.' % (
-            len(image), sha, fix(runs['f121'].tms, 0),
-            fix(runs['f121w512'].tms, 0) if 'f121w512' in runs else '?'),
+        'runs the %d lines once, then shows the first 44 (text page 1); '
+        'SPACE shows the memory API\'s 8 (text page 2) and SPACE again page '
+        '1; R runs them all again, CTRL-RESET reboots (the program '
+        'overwrites ProDOS\'s card). The run takes %s s on a2vm f121 with '
+        'the DOOM profile\'s window of 32 and %s s with the default window '
+        'of 512 (TIME in the header, measured by the program itself; the '
+        'card took %s s for the 44 lines of the earlier disk). A photo of '
+        'each page gives the card\'s columns.' % (
+            len(image), sha, NOPS, fix(runs['f121'].tms, 0),
+            fix(runs['f121w512'].tms, 0) if 'f121w512' in runs else '?',
+            CARD_TIME),
         '',
         '**The screen** (80 columns): row 0 `%s` (the video '
         'standard and its frame in bus cycles, the slot-4 window, REG\'s '
         'nominal 65C02 cycles a second, the run\'s time, the runs since the '
-        'boot); row 1 the heads; rows 2-23 the 44 lines, 22 a side: the '
-        'name, the card\'s us an operation, its us a byte (where an '
-        'operation moves bytes), a2vm f121\'s us an operation. ERR in place '
-        'of the figures: the two timers disagreed or D was not positive.'
-        % screen_expected(f121)[0].rstrip(),
+        'boot, the key to page 2); row 1 the heads; rows 2-23 the first '
+        '44 lines, 22 a side: the name, the card\'s us an operation, its us '
+        'a byte (where an operation moves bytes), a2vm f121\'s us an '
+        'operation. Page 2 (SPACE): row 0 `%s`, row 1 the heads, rows 2-5 '
+        'the PRIVATE lines (PR2 left, PR6 right), rows 7-10 a legend, row '
+        '12 `%s` when the program found no memory API in slot 7. ERR in '
+        'place of the figures: the two timers disagreed or D was not '
+        'positive, or (a PRIVATE line) there is no memory API or a request '
+        'was refused or got no reply.'
+        % (screen_expected(f121)[0].rstrip(), PAGE2_HEAD, PAGE2_NOAMEM),
         '',
         '## How it measures',
         '',
@@ -936,6 +1122,28 @@ def report(runs: Dict[str, Results], disk: Path, image: bytes,
         '(480-540), 32 (24-44), NONE (below 5) or the whole cycles; CPU: '
         'REG\'s nominal 65C02 cycles a second (1313 a unit, checked on '
         'a2vm\'s core; TURBO shows tens of MHz, a //e at 1 MHz about 1).',
+        '- **The memory API.** The PRIVATE lines time what the frame '
+        'slots will do (docs/MEMORY_MAP.md rule 3: CPU stores into main '
+        '`$2000-$5FFF` are video writes, so a group of code is put there by '
+        'one memory-API request): each unit sends one request (eight for '
+        '8X2K) of one descriptor, COPY with the PRIVATE flag from RamWorks '
+        'bank 17 to main, through slot 7\'s raw FIFO as '
+        'appletini-one\'s README_MEMORY_API.md section 7 specifies and as '
+        'lload.s\'s am_send sends one: `$CFFF` and `$C700` read, the '
+        'request\'s 36 bytes (the CONTROL command, its nine parameter '
+        'bytes, the list\'s length, its header, the descriptor) written to '
+        '`$CFF0`, `$02` to `$CFF1`, `$CFF1` polled, the result read from '
+        '`$CFF0` and popped at `$CFF2`, `$CFFF` read; the requests are '
+        'built before the timing (the game\'s are built once too). The '
+        'units and the transport run in the card. Main `$2000-$9FFF` holds '
+        'the program itself, so each setup first copies main\'s 16 KB at '
+        'the destination into bank 17 (one untimed request): the timed '
+        'copies rewrite main with the bytes it holds, and `calibdisk.py` '
+        'checks after the run that main still holds the program and bank '
+        '17 the same bytes, and that a2vm\'s memory API ran every request '
+        'the list sends (%d in a run). At the start a STATUS request finds '
+        'the API (as pl_boot.s does); without it the PRIVATE lines show '
+        'ERR and page 2 says why.' % amem_expected(f121.ops)[0],
         '- **Noise and steps.** A timer read whose low bytes wrapped is '
         'retaken about 15 bus cycles later, which moves that E by as much '
         '(0.03%); a2vm\'s run shows its E equal to its own clock between '
@@ -949,14 +1157,15 @@ def report(runs: Dict[str, Results], disk: Path, image: bytes,
         '## The lines',
         '',
         'a2vm: `%s` (`f121`, the game\'s profile in `playdisk.py`: the '
-        'DOOM profile\'s window of 32) and `%s`, `--via-timers`, the exact '
+        'DOOM profile\'s window of 32; "before": `%s`, the model before '
+        'the card corrected it) and `%s`, `--via-timers`, the exact '
         'core, `--cost-timed`. Header on a2vm f121: %s, frame %d bus '
         'cycles, WIN %s (%.1f cycles), CPU %.2f MHz; with the default '
         'window of 512 (`%s`) WIN %s (%.1f) and the WIN line %s us; the '
         'other lines\' D move by %d bus cycles at most (%.3f%%: a timer '
         'read retaken, or where the code falls against the bus), which '
         'changes the third decimal of %d of them.' % ((
-            PROFILES['f121'], PROFILES['fastpath'],
+            PROFILES['f121'], PROFILES['f121pre'], PROFILES['fastpath'],
             'PAL' if f121.bps == BPS['PAL'] else 'NTSC', f121.vbl,
             window_text(f121.w10, f121.wbad), f121.w10 / 10.0, mhz,
             PROFILES['f121w512'],
@@ -968,13 +1177,91 @@ def report(runs: Dict[str, Results], disk: Path, image: bytes,
     lines += table_rows(runs)
     lines += [
         '',
-        'The card\'s columns are empty until the owner\'s photo fills '
-        'them. The screen shows the card\'s us/op, us/byte and a2vm f121\'s '
-        'us/op side by side; on a2vm f121 it reads:',
+        'The card\'s us/byte is its us/op over the bytes (the screen\'s '
+        'quotient). The screen shows the card\'s us/op, us/byte and a2vm '
+        'f121\'s us/op side by side; on a2vm f121 it reads:',
         '',
         '```',
     ] + [row.rstrip() for row in screen_expected(f121)] + [
         '```',
+        '',
+    ] + private_section(runs) + [
+        '## The fit (%s)' % CARD_DATE,
+        '',
+        'Before the card\'s figures, every line that runs code between '
+        'its memory accesses was 7-39% faster on a2vm than on the card '
+        '(REG -39%, MAIN WR -30%, RW WSEQ -33%, GC -17 to -20%), and the '
+        'lines bound to the bus matched exactly (RW S64, RW WS64, GET RW, '
+        'SW C073, SHR), except four families: the RAMRD, RAMWRT and ALTZP '
+        'switches (-13%), far_put\'s short calls (PUT RW 4 -13%, PUT AX 4 '
+        '-11%) and the object API\'s mobj fetch (MO GET -18%, of which -8% '
+        'remained once the CPU was right). One new parameter and four '
+        'corrected readings of the RTL account for all of it (a fifth, '
+        '`slow_done`, follows from the same registers; no line can tell '
+        'it); each '
+        'parameter\'s source in `tools/a2vm/costs/appletini.json` names the '
+        'lines and the card\'s figures. The variant `precal` keeps the model '
+        'before them ("before" above; `playtime.py --profile f121-precal`).',
+        '',
+        '| Parameter | Before | Now | Why (the RTL; the card) | Lines it '
+        'moves |',
+        '| --- | --: | --: | --- | --- |',
+        '| `d2_replay` (new) | 0 | 1 | The virtual Disk II in slot 6 is '
+        'active on the card (`disk2.slot6.enabled` on; the firmware\'s '
+        'default is off) and replays, one a clock, the 65C02 cycles each '
+        'TURBO step stands for; until it has, `d2_time_ready` holds the '
+        'core\'s next step (`disk2_card.sv:374-412`, `apple_top.sv:2065-2068`, '
+        '`vtw_core_top.sv:1524`, `:1907`). A step that omitted k dummy reads '
+        'delays the next one k + 1 clocks: the TURBO core\'s free dummy reads '
+        'cost 2 clocks each (1 for the second of a pair, as in `rts`). REG\'s '
+        '`dey / bne`, 3 accesses and 2 such steps: 10.3 clocks on the card, '
+        '6.3 before | every line with dummy reads: REG, MAIN, AUX, RW HIT, '
+        'RW SEQ, RW WHIT, RW WSEQ, GC, PLOAD, SPIN, WIN, GET AX, PUT, MO, LN, '
+        'SW NONE |',
+        '| `bus_drive_tap` | 8 | 9 | drive_en is `addr_pipe[8]` registered '
+        '(`apple_bus_wrapper.sv:622`): the engine launches a sync cycle at '
+        'tap 9 (`vtw_bus_engine.sv:810`, `:848-858`) | SW RAMRD, SW RAMWR, '
+        'SW ALTZP, PUT RW 4, PUT RW24, PUT AX 4 |',
+        '| `bus_done` | 2 | 4 | data_en is registered from the data snap '
+        '(`apple_bus_wrapper.sv:657-659`), resp_valid_q from data_en '
+        '(`vtw_bus_engine.sv:726`, `:764-767`), then X_BUS and X_BUS_DONE '
+        '(`vtw_core_top.sv:2125-2159`). With `bus_drive_tap` 9 a switch write '
+        'right after another\'s response misses the next Apple cycle: the '
+        'switch lines take 5.0 Apple cycles on the card, 4.33 before; one '
+        'write (SW C073) had slack and was already right | as above |',
+        '| `admit_offset` | 6 | 30 | addr_en is `TAP_ADDR_SNAP` 25 '
+        '(`apple_bus_wrapper.sv:101`, `:625-639`), not tap 3; the PSRAM\'s '
+        'background window opens three edges later (`psram_simple.sv:313-325`) '
+        '| GC RW 1 (+1.5% with 6, +0.4% with 30) |',
+        '| `admit_window` | 40 | 37 | `ADMIT_WINDOW_TAPS` 40 counts from '
+        'addr_en, not from the arming (`psram_simple.sv:239`, `:318-328`): '
+        'the last admission is at tap 66 | MO GET: the third line miss of '
+        'each descriptor comes 43 clocks into the window and waits a cycle '
+        '(41.353 us with 40, 45.292 with 37, the card 45.038) |',
+        '| `slow_done` | 1 | 3 | A cycle paced at 1 MHz ends on the third '
+        'clock after the data snap: data_en and `pace_tick_pending_q` are '
+        'registered (`apple_bus_wrapper.sv:657-659`, `vtw_core_top.sv:1850-1856`, '
+        '`:1514`), as for `bus_done` | WIN by 0.011 us; the slot-4 window\'s '
+        'tests (`test_sound_player65`) |',
+        '',
+        'The other families followed from these, with no parameter of '
+        'their own: main and aux writes (`sta abs,y` has a dummy read, and '
+        'so `iny` and the taken `bne`: 3 a byte); RamWorks sequential reads '
+        'and writes, whose line misses fall one admission window later once '
+        'the loop takes its real time (RW SEQ 2 Apple cycles a line, RW WSEQ '
+        '3, as on the card, with every PSRAM parameter unchanged); far_gcopy '
+        'and far_pload (their loops\' dummy reads, and the same windows). '
+        'The SHR drain lines were right and stay right (the coalescer\'s '
+        'scan, modelled from the RTL on 2026-09-30).',
+        '',
+        'The benchmark checks the fit on the game: on the corrected model '
+        'the menu\'s BENCHMARK of both waves\' DOOM.hdv comes within 0.4% '
+        'of the card\'s FPS and each of its five rows within 1.6% '
+        '(docs/SPEED.md 5). With the virtual Disk II inactive (the variant '
+        '`nod2`: `disk2.slot6.enabled=off`, or '
+        '`vtw.disk2.acceleration.disabled=on`, in the DOOM profile), a2vm '
+        'predicts wave 2\'s benchmark at 3.609 FPS against 3.004 as the card '
+        'is set (+20%; docs/SPEED.md 5); not yet measured on the card.',
         '',
         '## Reading the card against a2vm',
         '',
@@ -995,6 +1282,15 @@ def report(runs: Dict[str, Results], disk: Path, image: bytes,
         '- SHR SEQ against the known card figure (0.985 us a byte, one '
         'Apple cycle) checks the drain of contiguous bytes; SHR COL the '
         'coalescer\'s page scan on a column (about 4 Apple cycles a byte).',
+        '- PR2 and PR6 (page 2): the card\'s us/op is one request\'s '
+        'whole cost as the game will pay it (the FIFO, the ARM\'s hold, '
+        'the copy, the CPU\'s caches refilled after it). 2K and 16K give '
+        'the fixed cost of a request and the cost of a byte (**The memory '
+        'API\'s PRIVATE copy**, above); 256 checks the fixed cost; 8X2K '
+        'against 2K checks that requests in a row cost no more than one '
+        'alone, and 8X2K against 16K what splitting 16 KB into eight '
+        'requests costs. PR2 against PR6: whether the colormap area costs '
+        'more than other main memory (a2vm charges them alike).',
         '',
         '## Commands',
         '',
@@ -1011,8 +1307,82 @@ def report(runs: Dict[str, Results], disk: Path, image: bytes,
 
 # ---------------------------------------------------------------------------
 
+def pr_fit(res: Results, dest: str) -> Tuple[float, float]:
+    """A request's fixed cost and a byte's cost (us) from the 2K and 16K
+    lines to `dest` ('2' or '6')."""
+    by = {op.name: rec.v for op, rec in zip(res.ops, res.recs)}
+    small, big = by['PR%s 2K' % dest], by['PR%s 16K' % dest]
+    byte = (big - small) / (16384 - 2048) / 1000.0
+    return small / 1000.0 - 2048 * byte, byte
+
+
+def private_section(runs: Dict[str, Results]) -> List[str]:
+    """docs/results/calib.md's section on the PRIVATE lines."""
+    f121 = runs['f121']
+    by = {op.name: (op, rec) for op, rec in zip(f121.ops, f121.recs)}
+    fixed, byte = pr_fit(f121, '2')
+    fixed6, byte6 = pr_fit(f121, '6')
+    out = [
+        '## The memory API\'s PRIVATE copy (page 2)',
+        '',
+        'Lines 45-52 time the frame slots\' load before they are built: '
+        'the tic phase\'s code paging cost about 138 ms of the card\'s '
+        '332 ms benchmark frame, and putting pinned groups in main '
+        '`$2000-$5FFF` (colormaps A and B, which only the replay reads) '
+        'with one PRIVATE request at a group\'s first call in a frame, the '
+        'colormaps\' pages restored after the tic phase, was simulated at '
+        'about 28 ms. That estimate rests on a2vm\'s model of a request, '
+        'which no card figure has checked yet; these lines are that check. '
+        'On a2vm f121:',
+        '',
+        '| Line | Requests a unit | Bytes a request | n | a2vm f121 us a '
+        'request | us a byte | fastpath us a request |',
+        '| --- | --: | --: | --: | --: | --: | --: |',
+    ]
+    for name in PR_LINES:
+        op, rec = by[name]
+        fp = runs['fastpath'].recs[f121.ops.index(op)] \
+            if 'fastpath' in runs else None
+        out.append('| `%s` | %d | %d | %d | %s | %s | %s |' % (
+            name, op.k, op.b, op.n, us(rec.v), us(rec.vb),
+            us(fp.v) if fp else ''))
+    eight = by['PR2 8X2K'][1].v
+    whole = by['PR2 16K'][1].v
+    out += [
+        '',
+        'a2vm\'s model of a request (`a2vm_cost_amem` in '
+        '`tools/a2vm/cost.c`, the parameters `amem_*` and `axi_us` of '
+        '`costs/appletini.json`): the request\'s bytes popped by the ARM, '
+        'the hold (the mirror and the caches flushed), the copy in chunks '
+        'of 504 bytes (a DMA read of the RamWorks bank, then AXI writes of '
+        'main\'s shadow word by word), the release; the FIFO\'s own writes '
+        'are served inside the fabric. From the 2K and 16K lines a request '
+        'costs %.1f us plus %.4f us a byte into `$2000` (%.1f plus %.4f '
+        'into `$6000`: a2vm charges main alike everywhere), so 16 KB is '
+        '%.3f ms in one request and %.3f ms in eight (%+.1f%%). Read the '
+        'card\'s photo of page 2 against these: its 2K and 16K give its '
+        'own fixed cost and cost a byte, and the frame slots\' estimate '
+        'scales with them.' % (fixed, byte, fixed6, byte6, whole / 1e6,
+                               8 * eight / 1e6,
+                               100.0 * (8 * eight / whole - 1)),
+        '',
+        'Page 2 on a2vm f121:',
+        '',
+        '```',
+    ]
+    rows = [row.rstrip() for row in screen2_expected(f121)]
+    while rows and not rows[-1]:
+        rows.pop()
+    out += rows + [
+        '```',
+        '',
+    ]
+    return out
+
+
 def build(play: Path = PLAY, out: Path = OUT, keep: Optional[Path] = None,
-          profiles: Sequence[str] = ('fastpath', 'f121w512'), jobs: int = 3,
+          profiles: Sequence[str] = ('fastpath', 'f121w512', 'f121pre'),
+          jobs: int = 3,
           log=print) -> Tuple[bytes, Dict[str, Results], Dict[str, float]]:
     """The whole pipeline (the module docstring); raises CalibError with
     every problem found."""
@@ -1070,13 +1440,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument('--out', type=Path, default=OUT)
     parser.add_argument('--doc', action='store_true')
     parser.add_argument('--keep', type=Path)
+    parser.add_argument('--jobs', type=int, default=3,
+                        help='a2vm runs at once (default 3)')
     args = parser.parse_args(argv)
     if not (args.play / 'tic' / 'tic.core').exists() or not A2VM.exists():
         print('calibdisk: build/ lacks the play build or a2vm',
               file=sys.stderr)
         return 2
     try:
-        image, runs, timed = build(args.play, args.out, args.keep)
+        image, runs, timed = build(args.play, args.out, args.keep,
+                                   jobs=args.jobs)
     except CalibError as e:
         print('calibdisk: %s' % e, file=sys.stderr)
         return 1

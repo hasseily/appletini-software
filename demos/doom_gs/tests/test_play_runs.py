@@ -196,11 +196,13 @@ class Boot(PlayRun):
 
     def test_menu_opens_and_closes(self):
         """ESC on the title page opens the main menu (M_StartControlPanel),
-        ESC again closes it; the title loop goes on."""
+        ESC again closes it; the title loop goes on. (The title page comes
+        at 7.0-7.5 s on a2vm f121 since the card's calibration of
+        2026-10-03, at 6.0-6.5 s before: the first ESC at 8 s, not 7.)"""
         script = '%s key %d\n%s snapshot open\n%s shot open\n' \
             '%s key %d\n%s snapshot closed\n' % (
-                at(7), KEY_ESCAPE, at(8), at(8), at(9), KEY_ESCAPE, at(10))
-        run = self.play(script, 10.5)
+                at(8), KEY_ESCAPE, at(9), at(9), at(10), KEY_ESCAPE, at(11))
+        run = self.play(script, 11.5)
         self.assertEqual(run.state['end'], 'cycles', run.out)
         self.assertEqual(self.u8(self.main(run, 'open'), 'G_MENUACTIVE'), 1)
         mem = self.main(run, 'closed')

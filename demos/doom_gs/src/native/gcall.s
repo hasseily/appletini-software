@@ -29,7 +29,16 @@
 ;               bank, then the used bytes of its last page: far_gcopy, one
 ;               read window each in the play build's kernel, dl_kern.s;
 ;               far_get a page at a time in the test builds' driver,
-;               gdriver.s); SLOT_GRP updated
+;               gdriver.s); SLOT_GRP updated. A frame slot's group (slot
+;               FS_FIRST and up, main $2000-$5FFF: docs/GAME.md 4.1, 4.3)
+;               comes by one memory-API PRIVATE request instead (fs_load)
+;   fs_restore  the colormap bytes of every frame slot loaded since the
+;               tic phase began, back from the level's copy in LVC: one
+;               PRIVATE request a slot (at most 2,048 B each, interrupts
+;               masked for one request at a time), the slots emptied,
+;               FS_DIRTY set. The play build's brain calls it at the tic
+;               phase's end (dl_brain.s), the test drivers before a frame
+;               (gdriver.s): every replay reads the colormaps
 ;   g_stop      A = a stop code: GS_STATUS = A, then BRK
 ;   ld_stop     the game core's stops in the tic image (LV_STATUS, BRK),
 ;               as lload.s's in the load image
@@ -53,7 +62,7 @@
 
         .export fc_call, fc_unbuilt, dc_call, act_num, gr_load, g_stop
         .export ld_stop, fc_go, grp_bank, grp_src, grp_pages, grp_slot
-        .export grp_tail
+        .export grp_tail, fs_restore, fs_load, fs_send, fs_sent
         .export ACTTAB, THTAB, ITTAB, TRVTAB, LSTAB
         .import far_gcopy       ; (game.cfg: the kernel's, KERN_GCOPY,
                                 ;   unless the test driver links its own)
@@ -278,12 +287,16 @@ gr_load:
         bne :+
         lda #GS_GROUP           ; (a group the image does not hold)
         jmp g_stop
-:       sta FA_N
+:       ldy grp_slot,x
+        cpy #FS_FIRST           ; a frame slot: one PRIVATE request
+        bcc @w
+        jsr fs_load
+        bra @loaded
+@w:     sta FA_N
         lda grp_bank,x
         sta FA_BANK
         lda grp_src,x
         sta FA_SRC+1
-        ldy grp_slot,x
         txa
         sta SLOT_GRP,y
         lda slot_page-1,y
@@ -300,6 +313,7 @@ gr_load:
         inc a
         tay
 :       jsr far_gcopy
+@loaded:
         inc FC_LOADS
         bne :+
         inc FC_LOADS+1
@@ -314,6 +328,161 @@ gr_load:
 slot_page:
         .byte >TW_SLOT1, >TW_SLOT2
         .assert <TW_SLOT1 = 0 && <TW_SLOT2 = 0, error, "slots on pages"
+
+; ---------------------------------------------------------------------------
+; The frame slots (docs/GAME.md 4.1, 4.3; docs/SPEED.md 9). A pinned group
+; (slot FS_FIRST and up: glayout.py frame_slots) has its own place in main
+; $2000-$5FFF, colormaps A and B of light levels 0-31, which only the
+; replay reads (MEMORY_MAP.md 3.4). A CPU store there is a video write
+; (rule 3): the group comes in by the memory API's PRIVATE copy, which
+; writes no capture record, and no group that stores into its own bytes
+; is pinned (gplace.py; playdisk.py checks the links). Before the tic
+; phase ends fs_restore copies the colormap bytes each loaded slot covered
+; back from the level's copy in LVC (lg_cmaps's, the same bytes the load's
+; PRIVATE request put there), so every replay finds its colormaps.
+;
+; fs_load: group X into its frame slot Y, its length (grp_pages pages and
+; grp_tail bytes) from its image in bank grp_bank, page grp_src; the slot
+; then holds it until K_TIC (or fs_restore) empties it
+; ---------------------------------------------------------------------------
+fs_load:
+        txa
+        sta SLOT_GRP,y
+        stz FS_DIRTY            ; (bit 7 clear: fs_restore has work)
+        lda grp_bank,x
+        sta FA_BANK
+        lda grp_src,x
+        sta FA_SRC+1
+        lda fs_page-FS_FIRST,y
+        sta FA_DST+1
+        ; (on into fs_copy)
+
+; fs_copy: group X's length from page FA_SRC+1 of bank FA_BANK to main page
+; FA_DST+1: one request
+fs_copy:
+        lda grp_tail,x          ; the count: grp_pages pages, grp_tail bytes
+        sta FA_SRC
+        cmp #1                  ; (C: a tail)
+        lda grp_pages,x
+        sta FA_N
+        adc #0                  ; A = the pages the copy touches (playtime.py
+                                ;   logs it at fs_send)
+        ; (on into fs_send)
+
+; fs_send: one COPY with PRIVATE through slot 7's FIFO (lload.s's am_send,
+; the request streamed from fs_head and the far layer's zero page): FA_N
+; pages and FA_SRC bytes from page FA_SRC+1 of RamWorks bank FA_BANK to main
+; page FA_DST+1 (both on pages). Interrupts masked meanwhile; a refusal
+; stops (GS_AMEM, GS_ARG the result). Changes A, X, Y.
+SP_DATA    = $CFF0              ; the memory API's raw FIFO transport in slot
+SP_CTRL    = $CFF1              ;   7 (appletini-one README_MEMORY_API.md
+SP_POP     = $CFF2              ;   section 7)
+SP_RELEASE = $CFFF
+SP_ROM     = $C700
+FS_TIMEOUT = $6F                ; (ours: no reply came)
+fs_send:
+        php
+        sei
+        bit SP_RELEASE
+        bit SP_ROM
+        ldx #0
+@head:  lda fs_head,x
+        sta SP_DATA
+        inx
+        cpx #FS_HEAD_N
+        bne @head
+        lda FA_BANK             ; the source: AUX, the bank, its page
+        sta SP_DATA
+        stz SP_DATA
+        lda FA_SRC+1
+        sta SP_DATA
+        stz SP_DATA             ; the destination: MAIN, bank 0, its page
+        stz SP_DATA
+        stz SP_DATA
+        lda FA_DST+1
+        sta SP_DATA
+        lda FA_SRC              ; the count
+        sta SP_DATA
+        lda FA_N
+        sta SP_DATA
+        ldx #4                  ; no fill value, the reserved bytes
+@zero:  stz SP_DATA
+        dex
+        bne @zero
+        lda #2                  ; execute
+        sta SP_CTRL
+        ldx #0
+        ldy #0
+@wait:  lda SP_CTRL
+        bmi @ready
+        dex
+        bne @wait
+        dey
+        bne @wait
+        lda #FS_TIMEOUT
+        bra fs_sent
+@ready: lda SP_DATA             ; the result
+        sta SP_POP
+fs_sent:                        ; (the request done: playtime.py times
+        bit SP_RELEASE          ;   fs_send to here)
+        plp
+        cmp #0
+        bne :+
+        rts
+:       sta GS_ARG
+        lda #GS_AMEM
+        jmp g_stop
+fs_head:
+        .byte 4, 3, 0, 0, 0, $80, 0, 0, 0, 0   ; CONTROL, unit 0, selector $80
+        .word 8 + 16                           ; the list: one descriptor
+        .byte "AMEM", 1, 1, 0, 0
+        .byte 1, 1, 1                          ; COPY, PRIVATE, from AUX
+FS_HEAD_N = * - fs_head
+        .assert FS_HEAD_N = 23, error, "fs_head is not the descriptor's head"
+
+; ---------------------------------------------------------------------------
+; fs_restore: every frame slot that holds a group: its group's length back
+; from LVC (the slot's colormap bytes there, fs_src), then the slot empty;
+; FS_DIRTY set. Changes A, X, Y and the far layer's zero page.
+; ---------------------------------------------------------------------------
+fs_restore:
+        bit FS_DIRTY            ; (with no frame slot fs_load never runs and
+        bmi @done               ;   FS_DIRTY stays $FF: the loop is the same
+        ldy #FS_FIRST + FSLOTS - 1      ;   bytes in every placement, as
+                                ;   gplace.py measures the core)
+@slot:  ldx SLOT_GRP,y
+        cpx #$FF
+        beq @next
+        lda #$FF
+        sta SLOT_GRP,y
+        lda #LVC
+        sta FA_BANK
+        lda fs_src-FS_FIRST,y
+        sta FA_SRC+1
+        lda fs_page-FS_FIRST,y
+        sta FA_DST+1
+        phy
+        jsr fs_copy
+        ply
+@next:  dey
+        cpy #FS_FIRST
+        bcs @slot
+        lda #$FF
+        sta FS_DIRTY
+@done:  rts
+
+; each frame slot's first page in main and its colormap bytes' first page
+; in LVC (glayout.py's, in gplace.inc)
+fs_page:
+        .repeat FSLOTS, I
+        .byte .ident(.sprintf("FSLOT%d_PAGE", I + FS_FIRST))
+        .assert .ident(.sprintf("GRP%d_SLOT", .ident(.sprintf("FSLOT%d_GRP", I + FS_FIRST)))) = I + FS_FIRST, error, "a frame slot's group"
+        .endrepeat
+fs_src:
+        .repeat FSLOTS, I
+        .byte .ident(.sprintf("FSLOT%d_SRC", I + FS_FIRST))
+        .endrepeat
+        .assert FS_FIRST + FSLOTS <= FS_FIRST + FS_MAX, error, "frame slots"
 
 ; ---------------------------------------------------------------------------
 ; The stops

@@ -190,8 +190,10 @@ BUILT := $(foreach q,$(PARTS),$(if $(filter $(WAVE_$(q)),$(IWAVES)),$(q)))
 PART_SRC := $(foreach q,$(BUILT),$($(q)_SRC))
 GLUE := dl_brain dl_cmd dl_disp dl_hook dl_snd dl_sym
 M11T := s2t_st s2t_hu s2t_fin fx_chan
+# (gspec.s, the load's SPECIALS step, is the load image's alone: nothing in
+# the tic image calls it; docs/SPEED.md 9)
 TIC_OBJS := $(addprefix $(TIC)/,gobj.o gcall.o gthink.o gpos.o gspawn.o \
-            gweap.o gspec.o gvalid.o far.o math-r.o math-g.o auxlc.o \
+            gweap.o gvalid.o far.o math-r.o math-g.o auxlc.o \
             $(GLUE:%=%.o) $(M11T:%=%.o) $(PART_SRC:%.s=%.o))
 TIC_INCS := $(TIC)/gen/ggame.inc $(TIC)/gen/gplace.inc $(TIC)/gen/gdisp.inc
 
@@ -220,9 +222,11 @@ $(TIC)/s2t_%.o: s2t_%.s $(INCS) $(S2INCS)
 $(TIC)/%.o: %.s $(INCS) $(TIC_INCS) $(S2INCS) $(GEN)/playsym.inc dl.inc
 	@mkdir -p $(dir $@)
 	$(CA65) $(TICFLAGS) -o $@ -l $(@:.o=.lst) $<
+# (tic.dbg, ld65's debug file: each source line's bytes, for playdisk.py's
+# check of the frame slots' stores)
 $(TIC)/tic.map: $(TIC_OBJS) $(TIC)/play.cfg
 	$(LD65) -C $(TIC)/play.cfg -o $(TIC)/tic -Ln $(TIC)/tic.lbl -m $@ \
-	    $(TIC_OBJS)
+	    --dbgfile $(TIC)/tic.dbg $(TIC_OBJS)
 tic: $(TIC)/tic.map
 
 $(GEN)/playk.inc: $(LINK) $(TIC)/tic.map

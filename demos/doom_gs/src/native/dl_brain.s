@@ -53,6 +53,7 @@
         .include "dl.inc"
 
         .import go_reset, g_resume, fc_call, fc_unbuilt, pl_time
+        .import fs_restore
         .import far_get, far_put
         .import c_build
         .import c_display, c_loadlist, c_bootlist, c_menulist, c_cplist
@@ -76,6 +77,11 @@ dl_brain:
         asl a
         tax
         jsr b_go
+        jsr fs_restore          ; the frame slots' colormap bytes back
+                                ;   (gcall.s): every way out of the tic
+                                ;   phase to a replay passes here, the
+                                ;   frame's, a load's, the menu's, the
+                                ;   intermission's, the benchmark's
         lda BT_PH               ; the benchmark timed: the tic phase ends
         beq :+                  ;   here (docs/PLAY.md 15)
         lda BT_NX

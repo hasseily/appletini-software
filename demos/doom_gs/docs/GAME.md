@@ -1036,6 +1036,24 @@ initial allocation [A], checked by `glayout.py`:
 | main | `$0200-$02FF` | 256 | `bl_get`'s block list buffer (256 [R `llayout.py` `LW_BL`]) (the bounce buffer and `BKFAR2`, dead after the replay [R `MEMORY_MAP.md` 3.1, 13]) |
 | main | `$1980-$1A7F` | 256 | The runtime's state: the walk's, the object API's tags and LRU, `gcall.s`'s slots (`DSX1`, `DSX2`, `CVDONE`, the batch sizes: dead after the replay [R `MEMORY_MAP.md` 13]) |
 | main | `$1C80-$1FFF` | 896 | Persistent: milestone 9's globals block, then 1.5's new globals [R `MEMORY_MAP.md` 16] |
+| main | `$2000-$5FFF` | 16,384 | Since the frame slots (2026-10-03, below and `docs/SPEED.md` 9): the placement's pinned groups, over colormaps A and B, which only the replay reads; each loaded slot's colormap bytes are put back before the tic phase ends |
+
+**The frame slots** (2026-10-03, `docs/SPEED.md` 9). A group of the
+placement in slot 3 or up is pinned: it has a place of its own in main
+`$2000-$5FFF` (`glayout.py` `frame_slots`: its bytes and 96 rounded up to
+pages, packed largest first, none across `$4000`, 64 pages and 16 slots at
+most), it is linked to run there and stored with the other groups in
+`GCODE0-1`. `gcall.s`'s `gr_load` copies it in by one memory-API PRIVATE
+request (`fs_load`, `fs_send`: a CPU store there would be a video write,
+`MEMORY_MAP.md` rule 3) the first time a frame calls it; FCALL, `SLOT_GRP`
+and `SLOT_NEED` treat the slot as any other, so it stays until `K_TIC`.
+`fs_restore` (the brain's last step in the play build, before a frame and a
+load in the test drivers) copies every loaded slot's colormap bytes back
+from `LVC`, one request a slot. No group that the tic code stores into is
+pinned (`gplace.py`, `playdisk.py`). The core gave up `gspec.s` (618 B: the
+load image's SPECIALS step, which no tic image calls) and `g_resume` (163 B:
+the brain's group in the play build, the drivers' card area in the test
+builds) and took the transport and the restore (about 260 B).
 
 **The language cards** are unchanged: the main card's bank 1 keeps the
 math's products, the far layer and the phase loader (35 B free [M: M8]),
@@ -1085,6 +1103,14 @@ and the planes' sizes**, traded against code room. On the pair build
 (milestone 13) the tics move to the aux card [R `MEMORY_MAP.md` 4.4] and
 the placement is redone with the same tool.
 
+*The frame slots* (2026-10-03, `docs/SPEED.md` 9) became the lever on
+F1.2.1: main `$2000-$5FFF`, the colormaps, which only the replay reads,
+holds pinned groups during the tic phase (64 pages more code room), at the
+cost of a PRIVATE copy in and a PRIVATE copy back a frame for each pinned
+group the frame calls. The hot-set analysis that chose it found the core's
+13,312 B mostly fixed code (3.1 KB left for the placeable routines) and the
+frame slots worth more than lever (b) or `TIC_LC2` once they are in.
+
 ### 4.3 The placement
 
 `gplace.py` puts each routine of 2.4 and of milestone 9's game core in
@@ -1124,6 +1150,22 @@ P2). Rules 1-3 and "`A_Chase` … go to the core first" below are now the
 search's choice (repair, sweeps, annealing). The integrated placement is
 `tools/native/gplace-wave1-lazy.json` (43 groups; `A_Chase` and
 `P_CheckSight` in the core); `--heuristic` keeps waves 1-6's placement.
+
+*The frame slots* (2026-10-03, `docs/SPEED.md` 9): the cost is now the W
+slots' pages × 80 µs (`far_gcopy` on the card, `--page-us`), plus each frame
+slot's PRIVATE pages, in and back, × 85 µs (`--fpage-us`, a2vm's model of the
+memory API) and 10 µs a request (`--request-us`), plus 5 µs a call through
+`fc_call`; `gsim` replays a frame slot as a slot of its own, loaded at its
+first call in a phase and restored at the phase's end, and `gplacesim.py
+--check` stays exact. The search moves groups to a frame slot as to a W slot
+(`--no-frame-slots` keeps them out); the rules add the frame slots' room
+(`glayout.frame_slots`), the core's 2 B a frame slot (`fs_page`, `fs_src`),
+and no frame slot for a routine the tic code stores into (the links' debug
+files, `playdisk.dbg_stores`, and `NO_PIN`'s `recursiveSound`, whose work
+stack is written through a pointer). The integrated placement:
+`tools/native/gplace-frameslots.json` (12 frame slots, 64 pages). Its search
+raised `GROUP_MARGIN` from 64 to 96 B: it packed `P_DamageMobj`'s group to
+1,973 B, and part damage's plant `thrust-divided-first` adds 83 B there.
 
 The output is `gen/gplace.inc` and `game.cfg`; parts only write `FCALL`,
 so a placement change rebuilds every image and edits no source. The

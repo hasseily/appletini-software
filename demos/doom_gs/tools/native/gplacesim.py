@@ -9,8 +9,13 @@ Usage:  python3 tools/native/gplacesim.py --check [SCENE ...]
             (each scene replayed under its own build's placement: the
              loads the model finds must be the loads the run recorded)
         python3 tools/native/gplacesim.py --eval FILE [SCENE ...]
-                [--page-us 63.8] [--call-us 5] [--restore lazy|eager]
+                [--page-us 80] [--call-us 5] [--restore lazy|eager]
+                [--fpage-us F] [--request-us R]
             (a placement.json's loads and ms a tic in each scene)
+
+The frame slots (slots 3 and up, main $2000-$5FFF: docs/SPEED.md 9) cost
+their PRIVATE copies: each load's and each restore's pages at --fpage-us
+and a request's own cost, --request-us (a2vm's model of the memory API).
 """
 
 import argparse
@@ -29,7 +34,17 @@ from native import gplacerec as REC  # noqa: E402
 PAGE_US_NOW = 100.3         # gr_load today, f121 (SPEED.md 2: far_get and
 #                             a RAMRD window a page)
 PAGE_US_GCOPY = 63.8        # with part paging's far_gcopy (one window)
+PAGE_US_CARD = 80.0         # far_gcopy on the card (CALIB.hdv's GC RW
+#                             lines, docs/results/calib.md: 79.6-85.3 us a
+#                             page; a2vm corrected by them, 2026-10-03)
 CALL_US = 5.0               # a call through fc_call / fc_go and fc_ret
+# a frame slot's PRIVATE copy (gcall.s fs_send) as a2vm models the memory
+# API (tools/a2vm/cost.c a2vm_cost_amem, f121): a page of a RamWorks bank
+# into main, and a request's own cost (the FIFO's 40 accesses, the PS's
+# dispatch, the hold); measured on the frame-slot build's benchmark run
+# (docs/SPEED.md 9)
+FPAGE_US = 85.0
+REQUEST_US = 10.0
 OUT_GROUP, EMPTY = 254, 255
 NG = 256
 POLICIES = {'eager': 0, 'lazy': 1}
@@ -172,9 +187,12 @@ class Model:
         f = list(map(int, self._ask('P', policy, *vec)))
         out = []
         for i in range(len(self.scenes)):
-            loads, pages, cross, tics, phases = f[5 * i:5 * i + 5]
+            (loads, pages, cross, tics, phases, fpages, rpages, floads,
+             restores) = f[9 * i:9 * i + 9]
             out.append({'loads': loads, 'pages': pages, 'cross': cross,
-                        'tics': tics, 'phases': phases})
+                        'tics': tics, 'phases': phases, 'fpages': fpages,
+                        'rpages': rpages, 'floads': floads,
+                        'restores': restores})
         return out
 
     def check(self, vec, policy: int = 0) -> List[Dict[str, int]]:
@@ -192,9 +210,16 @@ class Model:
         return out
 
 
-def cost_of(r: Dict[str, float], page_us: float, call_us: float) -> float:
-    """us a tic: the pages copied and the calls through fc_call."""
-    return (r['pages'] * page_us + r['cross'] * call_us) / max(r['tics'], 1)
+def cost_of(r: Dict[str, float], page_us: float, call_us: float,
+            fpage_us: float = FPAGE_US, request_us: float = REQUEST_US
+            ) -> float:
+    """us a tic: the W slots' pages copied, the calls through fc_call,
+    the frame slots' PRIVATE copies (their loads' and restores' pages and
+    requests)."""
+    return (r['pages'] * page_us + r['cross'] * call_us +
+            (r.get('fpages', 0) + r.get('rpages', 0)) * fpage_us +
+            (r.get('floads', 0) + r.get('restores', 0)) * request_us) / \
+        max(r['tics'], 1)
 
 
 def build_vectors(model: Model, scene_index: int):
@@ -239,8 +264,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument('--out', type=Path, default=REC.OUT)
     parser.add_argument('--check', action='store_true')
     parser.add_argument('--eval', type=Path)
-    parser.add_argument('--page-us', type=float, default=PAGE_US_GCOPY)
+    parser.add_argument('--page-us', type=float, default=PAGE_US_CARD)
     parser.add_argument('--call-us', type=float, default=CALL_US)
+    parser.add_argument('--fpage-us', type=float, default=FPAGE_US)
+    parser.add_argument('--request-us', type=float, default=REQUEST_US)
     parser.add_argument('--restore', choices=sorted(POLICIES),
                         default='lazy')
     args = parser.parse_args(argv)
@@ -256,11 +283,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             for s, r in zip(scenes, GP.evaluate(model, place,
                                                 POLICIES[args.restore],
                                                 args.page_us,
-                                                args.call_us)):
+                                                args.call_us, args.fpage_us,
+                                                args.request_us)):
                 print('%-7s %7.2f loads a tic %8.1f pages a tic %7.1f cross '
-                      'calls a tic  %8.2f ms a tic' % (
+                      'calls a tic %6.1f PRIVATE pages, %4.1f requests a '
+                      'tic  %8.2f ms a tic' % (
                           s, r['loads_a_tic'], r['pages_a_tic'],
-                          r['cross_a_tic'], r['ms_a_tic']))
+                          r['cross_a_tic'], r['private_pages_a_tic'],
+                          r['requests_a_tic'], r['ms_a_tic']))
         return 0
     parser.print_help()
     return 2

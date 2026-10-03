@@ -990,8 +990,10 @@ class Slowdown(unittest.TestCase):
 
     def test_every_variant_value_has_a_source(self):
         data = costs.load()
+        # (nod2 and precal since the card's calibration, 2026-10-03)
         self.assertEqual(costs.variants(),
-                         ['fws1', 'ntsc', 'phasor', 'window32'])
+                         ['fws1', 'nod2', 'ntsc', 'phasor', 'precal',
+                          'window32'])
         for name in costs.variants():
             for key, entry in data['variants'][name]['params'].items():
                 self.assertIn(key, data['common'])

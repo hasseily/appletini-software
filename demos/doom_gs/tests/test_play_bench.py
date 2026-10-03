@@ -10,6 +10,13 @@ a run reaches the demo's end in seconds. a2vm's input events cannot poke
 memory, so the demo is shortened in the disk rather than by moving the
 demo pointer. Every run is bounded (playdisk.run) in a directory under
 build/ deleted after it.
+
+The benchmark's run also checks the frame slots (docs/SPEED.md 9): the
+tic phase runs pinned groups in main $2000-$5FFF, colormaps A and B, and
+puts the colormaps back before the tic phase ends (gcall.s fs_restore).
+A snapshot at every entry of the replay (nat_replay, the only reader of
+those pages) must find them equal to the level's copy in LVC, from which
+the load put them there.
 """
 
 import shutil
@@ -23,7 +30,7 @@ from support import BUILD, ROOT
 
 sys.path.insert(0, str(ROOT / 'tools'))
 
-from native import playdisk as P  # noqa: E402
+from native import glayout as GL, llayout as LL, playdisk as P  # noqa
 
 GONE = P.missing()
 WHY = 'build/ lacks: %s' % '; '.join(GONE) if GONE else ''
@@ -101,13 +108,42 @@ class Benchmark(unittest.TestCase):
     def tearDownClass(cls):
         shutil.rmtree(str(cls.tmp), ignore_errors=True)
 
-    def play(self, script, seconds):
+    def play(self, script, seconds, ranges=None):
         work = Path(tempfile.mkdtemp(prefix='run-', dir=str(self.tmp)))
+        kw = {'snap_ranges': ranges} if ranges else {}
         try:
             return P.run(self.disk, script, work, 'f121', seconds,
-                         timeout=900)
+                         timeout=900, **kw)
         finally:
             shutil.rmtree(str(work), ignore_errors=True)
+
+    def replay_event(self):
+        """An a2vm event: a snapshot 'replay-NNNN' at every entry of the
+        replay (nat_replay, the card's: rcard's label, as playtime.py
+        finds it), and the snapshot ranges with the level's colormaps in
+        LVC besides playdisk.run's."""
+        from native import render_check as RC
+        rc = RC.load_build(RC.OBJ, 'rcard')
+        hi = LL.LVC_CMAPB + LL.CMAP_LOW
+        ranges = 'main:0000-BFFF,lc,lc1,aux0:2000-9FFF,aux%d:%04X-%04X' % (
+            LL.LVC, LL.LVC_CMAPA, hi - 1)
+        return 'pc %X@* snapshot replay\n' % rc.labels['nat_replay'], ranges
+
+    def colormaps_wrong(self, run):
+        """The replays (their snapshots) whose main $2000-$5FFF is not the
+        level's colormaps A and B (levels 0-31) in LVC."""
+        out = []
+        names = sorted(n for n in run.images if n.startswith('replay-'))
+        for n in names:
+            main = run.images[n][(0, 0)]
+            lvc = run.images[n][(1, LL.LVC)]
+            for lo, hi, src in GL.FRAME_HALVES:
+                if bytes(main[lo:hi]) != bytes(lvc[src:src + hi - lo]):
+                    bad = next(a for a in range(lo, hi)
+                               if main[a] != lvc[src + a - lo])
+                    out.append('%s: $%04X' % (n, bad))
+                    break
+        return names, out
 
     def addr(self, name):
         """A symbol of the play build (play.inc: the benchmark's DLM bytes
@@ -137,12 +173,19 @@ class Benchmark(unittest.TestCase):
         since the menu: DL_VIEWS) / the realtics, x.xxx; a key closes it,
         the demo ends and the title loop goes on, timingdemo off."""
         script, go = to_benchmark(7)
+        event, ranges = self.replay_event()
+        script = event + script
         script += '%s snapshot run\n' % at(go + 3)
         script += '%s snapshot result\n' % at(go + 40)
         script += '%s key %d\n%s snapshot after\n' % (at(go + 41), KEY_SPACE,
                                                       at(go + 43))
-        run = self.play(script, go + 43.5)
+        run = self.play(script, go + 43.5, ranges)
         self.assertEqual(run.state['end'], 'cycles', run.out)
+        # the frame slots: every replay found the level's colormaps
+        replays, wrong = self.colormaps_wrong(run)
+        self.assertGreater(len(replays), 20)
+        self.assertEqual(wrong, [], '%d of %d replays' % (len(wrong),
+                                                         len(replays)))
         menu, mid = run.images['menu'][(0, 0)], run.images['run'][(0, 0)]
         res, after = run.images['result'][(0, 0)], run.images['after'][(0, 0)]
         # the menu path started demo3 as a timed demo, the menu closed
@@ -172,8 +215,9 @@ class Benchmark(unittest.TestCase):
         self.assertEqual(self.u16(after, 'G_TIMINGDEMO'), 0)
         self.assertEqual(self.u8(after, 'DL_BENCH'), 0)
         self.assertEqual(self.u8(after, 'DL_DEMOSEQ'), 1)
-        print('\nbenchmark: %d frames, %d realtics, FPS %s'
-              % (frames, realtics, self.text(res)))
+        print('\nbenchmark: %d frames, %d realtics, FPS %s; the colormaps '
+              'right at %d replays' % (frames, realtics, self.text(res),
+                                       len(replays)))
 
     def test_escape_stops_it_with_no_result(self):
         """ESC while the benchmark runs: timingdemo off, the demo ended

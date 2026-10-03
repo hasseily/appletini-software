@@ -8,18 +8,24 @@ window's names.
 
 The program (skipped without the play build, cc65 or a2vm), built with
 zero predictions into a private directory and run on a2vm f121 (the
-game's profile: the Phasor's window of 32, --via-timers, the exact core,
-the model's clock): it ends on its screen and calibdisk.check finds
-nothing (every line measured, the timers agreeing; each E the host's from
-the timer reads and a2vm's clock between the reads; the PC log's unit
-calls equal to the n and 2n the arithmetic used; the figures and the
-screen the host's computation; the game's bytes in the card and page 1).
-REG's and SPIN's cycle constants equal a2vm's core. One planted bug, the
-second measurement running 4n units while the arithmetic assumes 2n, is
-caught. The disk (skipped when build/native/CALIB.hdv is missing): its
-CALIB.SYSTEM is this build's but for the predictions, boots on a2vm f121,
-passes the same checks, and shows in its A2VM column the figures it
-measures there. Every run is bounded; about 30 s in all.
+game's profile: the Phasor's window of 32, --via-timers, the memory API,
+the exact core, the model's clock): it ends on its screen and
+calibdisk.check finds nothing (every line measured, the timers agreeing;
+each E the host's from the timer reads and a2vm's clock between the
+reads; the PC log's unit calls equal to the n and 2n the arithmetic used;
+the figures and both text pages the host's computation; the game's bytes
+in the card and page 1; the memory API ran each request the PRIVATE lines
+send, and main $2000-$9FFF still holds the program). The PRIVATE lines:
+their sizes and requests, eight requests of 2 KB costing what one does,
+the cost a byte falling with the size, $2000 and $6000 alike on a2vm.
+Without the memory API those lines show ERR and page 2 says why, the
+others unchanged. REG's and SPIN's cycle constants equal a2vm's core. Two
+planted bugs are caught: the second measurement running 4n units while
+the arithmetic assumes 2n, and the eight-request unit sending seven. The
+disk (skipped when build/native/CALIB.hdv is missing): its CALIB.SYSTEM is
+this build's but for the predictions, boots on a2vm f121, passes the same
+checks, and shows in its A2VM column the figures it measures there. Every
+run is bounded; about 40 s in all.
 """
 
 import random
@@ -42,6 +48,10 @@ PLANT = '''        asl cnt                 ; (planted: 4n units, not 2n)
         rol cnt + 1
         jsr measure
         ldy #R_TS2
+'''
+PLANT8_ANCHOR = '''u_pr8:  .repeat 8, I
+'''
+PLANT8 = '''u_pr8:  .repeat 7, I              ; (planted: seven requests)
 '''
 
 
@@ -163,6 +173,53 @@ class Program(unittest.TestCase):
         good = C.results(self.prog, self.run_).recs[C.OP_REG].v
         self.assertAlmostEqual(C.results(prog, r).recs[C.OP_REG].v / good,
                                3.0, delta=0.05)
+
+    def test_private_lines(self):
+        res = C.results(self.prog, self.run_)
+        ops, recs = res.ops[C.OP_PR:], res.recs[C.OP_PR:]
+        self.assertEqual([op.name for op in ops], list(C.PR_LINES))
+        self.assertEqual([(op.k, op.b) for op in ops],
+                         [(1, 256), (1, 2048), (1, 16384), (8, 2048)] * 2)
+        self.assertEqual(res.amem, 0)
+        by = {op.name: rec for op, rec in zip(ops, recs)}
+        for d in ('2', '6'):
+            one, eight = by['PR%s 2K' % d].v, by['PR%s 8X2K' % d].v
+            self.assertAlmostEqual(eight / one, 1.0, delta=0.01)
+            small, mid, big = (by['PR%s %s' % (d, size)].vb
+                               for size in ('256', '2K', '16K'))
+            self.assertGreater(small, mid)
+            self.assertGreater(mid, big)
+        for size in ('256', '2K', '16K', '8X2K'):
+            self.assertAlmostEqual(by['PR6 ' + size].v / by['PR2 ' + size].v,
+                                   1.0, delta=0.01)
+        page2 = C.screen_of(self.run_, 2)
+        self.assertEqual(page2[0].rstrip(), C.PAGE2_HEAD)
+        self.assertTrue(page2[2].startswith('PR2 256 ') and
+                        page2[2][40:].startswith('PR6 256 '), page2[2])
+        self.assertEqual(page2[12].strip(), '')
+
+    def test_without_the_memory_api(self):
+        r = C.run(self.prog, 'f121', self.tmp / 'noamem', amem=False,
+                  pclog=False)
+        self.assertEqual(r.state.get('end'), 'stop-pc')
+        res = C.results(self.prog, r)
+        self.assertEqual(res.amem, 0xFF)
+        self.assertEqual([x.err for x in res.recs],
+                         [0] * C.OP_PR + [8] * (C.NOPS - C.OP_PR))
+        self.assertEqual(C.screen_of(r), C.screen_expected(res))
+        self.assertEqual(C.screen_of(r, 2), C.screen2_expected(res))
+        self.assertEqual(C.screen_of(r, 2)[12].rstrip(), C.PAGE2_NOAMEM)
+
+    def test_planted_request_count_is_caught(self):
+        text = (C.SOURCE / 'calib.s').read_text()
+        self.assertEqual(text.count(PLANT8_ANCHOR), 1)
+        src = self.tmp / 'plant8' / 'calib.s'
+        src.parent.mkdir(parents=True, exist_ok=True)
+        src.write_text(text.replace(PLANT8_ANCHOR, PLANT8))
+        prog = C.make(self.tmp / 'plant8' / 'obj', self.gen, src)
+        r = C.run(prog, 'f121', self.tmp / 'plant8' / 'run', pclog=False)
+        bad = C.check(prog, r, self.parts)
+        self.assertTrue(any('the memory API ran' in b for b in bad), bad)
 
     @unittest.skipUnless(C.OUT.exists(), 'build/native/CALIB.hdv is '
                          'missing: python3 tools/native/calibdisk.py')

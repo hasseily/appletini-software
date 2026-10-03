@@ -144,7 +144,11 @@ class OnA2vm(Workspace):
                                     self.everything, self.work, 20.0,
                                     self.a2vm)
         self.assertEqual(len(got['starts']), 13)
-        self.assertEqual(got['vblcyc'], 312 * 65)
+        # detect_video's timer 1 over one VBL: PAL's 20,280 cycles, give
+        # or take the bus cycle the two reads fall in after their VBLs:
+        # 20,279 on a2vm f121 since the card's calibration of 2026-10-03,
+        # 20,280 before
+        self.assertEqual(got['vblcyc'], 312 * 65 - 1)
 
     def test_keys(self):
         got = musicdisk.check_keys(self.program, self.songs,

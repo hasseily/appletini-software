@@ -265,6 +265,26 @@ def build_map(b, kind: str, window: Tuple[str, float, float], hz: float,
     lines = ['# gtrace map (tools/native/gplacerec.py)',
              'slots %X %X %X' % (GL.WR['SLOT1'][0], GL.WR['SLOT2'][0],
                                  GL.WR['SLOT2'][1])]
+    # the frame slots (docs/SPEED.md 9): each group's slot (gplace.inc's
+    # GRPn_SLOT), a frame slot's addresses its group's memory area's (the
+    # link's map)
+    gslot = {int(k[3:-5]): v for k, v in sym.items()
+             if k.startswith('GRP') and k.endswith('_SLOT')}
+    cfgs = [q for q in (b.obj / 'play.cfg', b.obj / 'game.cfg')
+            if q.exists()]
+    areas = {}
+    if cfgs:
+        import re
+        areas = {int(m.group(1)): (int(m.group(2), 16),
+                                   int(m.group(3), 16))
+                 for m in re.finditer(r'^\s*G(\d+):\s+start = \$([0-9A-F]+)'
+                                      r', size = \$([0-9A-F]+),',
+                                      cfgs[0].read_text(), re.M)}
+    for n, sl in sorted(gslot.items()):
+        if sl >= GL.FRAME_FIRST and n in areas:
+            lo, size = areas[n]
+            lines.append('fslot %d %X %X' % (sl, lo, lo + size))
+            slots[n] = sl
     w = b.obj / ('%s.w' % b.name)
     core = b.obj / ('%s.core' % b.name)
     lines.append('grp 0 6000 %X %s 0' % (w.stat().st_size, w))
@@ -279,7 +299,7 @@ def build_map(b, kind: str, window: Tuple[str, float, float], hz: float,
         pages[n] = (size + 0xFF) >> 8
         lines.append('pages %d %d' % (n, pages[n]))
         if n not in slots:
-            slots[n] = 1 if lo < GL.WR['SLOT2'][0] else 2
+            slots[n] = gslot.get(n, 1 if lo < GL.WR['SLOT2'][0] else 2)
     if kind == 'lock' and 'DRIVER' in b.segments:
         lce = b.obj / ('%s.lce' % b.name)
         lines.append('grp 0 E000 %X %s 0' % (lce.stat().st_size, lce))
@@ -344,7 +364,9 @@ def build_map(b, kind: str, window: Tuple[str, float, float], hz: float,
              # tic image's)
              'write_log': 'cpu:0100-01FF,main:%04X-%04X,main:%04X-%04X,'
                           'main:%04X,main:%04X-%04X' % (
-                              sym['SLOT_GRP'], sym['SLOT_GRP'] + 2,
+                              sym['SLOT_GRP'], sym['SLOT_GRP'] +
+                              sym.get('FS_FIRST', 3) + sym.get('FS_MAX', 0) -
+                              1,
                               sym['FC_T'], sym['FC_T'] + 1, sym['FC_GRP'],
                               sym['G_GAMETIC'], sym['G_GAMETIC'] + 3)}
     return '\n'.join(lines) + '\n', units, facts
@@ -441,7 +463,8 @@ def play_run(scene: str, play: Path, work: Path, profile: str,
             '--cost', str(work / 'cost.txt'), '--cost-timed',
             '--irq-bounds', P.IRQ_BOUNDS,
             '--idle', '%X:vbl' % lab['dl_mwait'],
-            '--stop-pc', '%X' % lab['bt_halt'],
+            # (no stop at the boot's bt_halt: frame slots run code at its
+            # address, main $2000-$5FFF; playdisk.boot_halted)
             '--stop-pc', '%X' % lab['pl_crash'],
             '--stop-pc', '%X' % lab['dl_halt'],
             '--cycles', str(int(sc['seconds'] * hz)),

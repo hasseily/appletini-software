@@ -288,8 +288,15 @@ class Masked(unittest.TestCase):
         for profile in ('f121', 'fastpath'):
             for phase in ('mwindow', 'dscopy', 'project', 'sort', 'walk'):
                 self.assertGreater(t[profile][phase]['ms'], 0, phase)
-        self.assertEqual(t['f121']['project']['cycles'],
-                         t['fastpath']['project']['cycles'])
+        # the same code under both profiles: the same cycles in all, but
+        # the VBL handler comes at a time, not a cycle, so it can fall in
+        # project under one profile only (f121 on demo3-371 since the
+        # card's calibration of 2026-10-03: its 51 cycles)
+        phases = list(t['f121'])
+        self.assertEqual(sum(t['f121'][p]['cycles'] for p in phases),
+                         sum(t['fastpath'][p]['cycles'] for p in phases))
+        self.assertLessEqual(abs(t['f121']['project']['cycles'] -
+                                 t['fastpath']['project']['cycles']), 100)
 
 
 @needs_build

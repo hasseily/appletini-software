@@ -75,6 +75,84 @@ W_MAP = [
 ]
 WR = {name: (lo, hi) for name, lo, hi, _ in W_MAP}
 SLOTS = {1: WR['SLOT1'], 2: WR['SLOT2']}
+# The frame slots (docs/GAME.md 4.1, 4.3; docs/SPEED.md 9): main
+# $2000-$5FFF holds the replay's colormaps A and B, light levels 0-31
+# (MEMORY_MAP.md 3.4), which only the replay reads. During the tic phase
+# the placement's pinned groups (slots FRAME_FIRST and up, one group a
+# slot) run there, each in a place of its own: gcall.s's gr_load copies a
+# pinned group in by one memory-API PRIVATE request at its first call in
+# a frame (a CPU store there would be a video write: MEMORY_MAP.md rule
+# 3), and fs_restore copies the colormap bytes it covered back from the
+# level's copy in LVC (lg_cmaps's) before the tic phase ends. A slot
+# never crosses $4000, so its restore is one copy from one of LVC's two
+# colormaps: (main range, its source in LVC)
+FRAME_REGION = (LL.MAIN_CMAPA, LL.MAIN_CMAPB + LL.CMAP_LOW)
+FRAME_HALVES = ((LL.MAIN_CMAPA, LL.MAIN_CMAPA + LL.CMAP_LOW, LL.LVC_CMAPA),
+                (LL.MAIN_CMAPB, LL.MAIN_CMAPB + LL.CMAP_LOW, LL.LVC_CMAPB))
+FRAME_FIRST = 3                 # the first frame slot's number
+FS_MAX = 16                     # frame slots at most (the runtime's state)
+FRAME_MARGIN = 96               # a frame slot's room past its group's bytes
+#                                 (gplace.py's GROUP_MARGIN: the planted
+#                                 bugs' copies link the same placement)
+
+
+def frame_pages(group: Dict[str, Any]) -> int:
+    """A frame slot's pages: its group's bytes (the placement's measure;
+    a W slot's when it has none) and FRAME_MARGIN, at most a W slot's."""
+    room = SLOTS[1][1] - SLOTS[1][0]
+    n = min(room, int(group.get('bytes', room)) + FRAME_MARGIN)
+    return (n + 0xFF) >> 8
+
+
+def frame_slots(groups: Sequence[Dict[str, Any]]
+                ) -> Dict[int, Tuple[int, int]]:
+    """slot -> (lo, hi) of a placement's frame slots: slots FRAME_FIRST and
+    up, one group each, numbered with no gap; none across $4000 (each half
+    of FRAME_HALVES restores from one colormap of LVC), packed first fit
+    in the order of their pages, the largest first (then their numbers),
+    so whether they fit depends on their sizes alone. ValueError when they
+    break a rule or do not fit."""
+    pinned = sorted((int(g['slot']), i) for i, g in enumerate(groups)
+                    if int(g['slot']) >= FRAME_FIRST)
+    slots = [s for s, _ in pinned]
+    if slots != list(range(FRAME_FIRST, FRAME_FIRST + len(slots))):
+        raise ValueError('the frame slots %s: one group each, from %d' % (
+            slots, FRAME_FIRST))
+    if len(slots) > FS_MAX:
+        raise ValueError('%d frame slots (at most %d)' % (len(slots),
+                                                          FS_MAX))
+    at = [lo for lo, _, _ in FRAME_HALVES]
+    out = {}
+    for n, s in sorted(((frame_pages(groups[i]) << 8, s) for s, i in pinned),
+                       key=lambda x: (-x[0], x[1])):
+        for h, (_, hi, _) in enumerate(FRAME_HALVES):
+            if at[h] + n <= hi:
+                out[s] = (at[h], at[h] + n)
+                at[h] += n
+                break
+        else:
+            raise ValueError('the frame slots pass main $%04X-$%04X (slot '
+                             '%d, %d pages)' % (FRAME_REGION[0],
+                                                FRAME_REGION[1] - 1, s,
+                                                n >> 8))
+    return dict(sorted(out.items()))
+
+
+def frame_source(lo: int) -> int:
+    """The address in LVC of main `lo`'s colormap byte (the restore's
+    source)."""
+    for a, b, src in FRAME_HALVES:
+        if a <= lo < b:
+            return src + lo - a
+    raise ValueError('$%04X is not in the frame slots\' region' % lo)
+
+
+def slot_range(groups: Sequence[Dict[str, Any]], slot: int
+               ) -> Tuple[int, int]:
+    """A slot's addresses: a W slot's, or a frame slot's (frame_slots)."""
+    if slot in SLOTS:
+        return SLOTS[slot]
+    return frame_slots(groups)[slot]
 # main, the tic phase (4.1): in rows MEMORY_MAP.md 3.3 marks not
 # persistent across frames, dead between the replay's end and the next
 # front end
@@ -216,11 +294,19 @@ RT_FIELDS = [
     ('LNC_DT', LL.LNC_LINES), ('LNC_ORD', LL.LNC_LINES),
     ('SPC_TL', LL.SPC_LINES), ('SPC_TH', LL.SPC_LINES),
     ('SPC_DT', LL.SPC_LINES), ('SPC_ORD', LL.SPC_LINES),
-    ('SLOT_GRP', 3),            # the group each slot holds (1, 2), $FF none
-    ('SLOT_NEED', 2),           # the group each slot's innermost active
-                                #   FCALL frame needs (slots 1, 2 at
-                                #   SLOT_NEED - 1 + the slot), $FF none:
-                                #   gcall.s's lazy restore
+    ('SLOT_GRP', FRAME_FIRST + FS_MAX),     # the group each slot holds
+                                #   (1, 2, the frame slots 3 and up), $FF
+                                #   none; a frame slot's group is also the
+                                #   colormap bytes fs_restore puts back
+    ('SLOT_NEED', FRAME_FIRST - 1 + FS_MAX),    # the group each slot's
+                                #   innermost active FCALL frame needs
+                                #   (slot s at SLOT_NEED - 1 + s), $FF
+                                #   none: gcall.s's lazy restore
+    ('FS_DIRTY', 1),            # bit 7 clear: a frame slot was loaded in
+                                #   this tic phase (fs_restore has work);
+                                #   K_TIC sets SLOT_GRP .. FS_DIRTY to $FF
+                                #   (SLOT_CLR bytes), as the test drivers'
+                                #   core_in
     ('RT_TH', 2), ('RT_NEXT', 2),   # the walk's thinker and its next
     ('MP_MODE', 1),             # P_CreateSecNodeList's walk mode (1)
     ('GO_HITS', 2), ('GO_MISS', 2), ('GO_WBACK', 2), ('FC_LOADS', 2),
@@ -229,6 +315,7 @@ RT_FIELDS = [
 ]
 RT = R.allocate(RT_FIELDS, LL.RT_STATE, LL.RT_END)
 RT_USED = max(RT[n] + k for n, k in RT_FIELDS) - LL.RT_STATE
+SLOT_CLR = RT['FS_DIRTY'] + 1 - RT['SLOT_GRP']   # K_TIC's $FF bytes
 
 # ---------------------------------------------------------------------------
 # The stops (3.4): GS_STATUS (main, after the level's LV_STATUS and
@@ -241,7 +328,10 @@ GS = {'OK': 0, 'UNBUILT': 1, 'PLANES': 2, 'SPECIALS': 3, 'FINALE': 4,
       'ACTION': 14, 'DEMOEND': 15,
       # recursiveSound's flood deeper than its work stack (512 levels),
       # GS_ARG the sector (wave 3: docs/game-parts/pspr.md R4)
-      'FLOOD': 16}
+      'FLOOD': 16,
+      # the memory API refused a frame slot's PRIVATE copy (gcall.s
+      # fs_send), GS_ARG its result
+      'AMEM': 17}
 # far_gcopy, gr_load's copy of a group (gcall.s): the play kernel's, in
 # the card's free bytes before the vectors (dl_kern.s, at this address);
 # game_cfg names it with a weak symbol, which the test driver's far_gcopy
@@ -1161,6 +1251,19 @@ def check() -> None:
         raise ValueError('the API\'s page-1 window under the tic stack')
     if RT_USED > LL.RT_END - LL.RT_STATE:
         raise ValueError('the runtime\'s state passes $%04X' % LL.RT_END)
+    # the slots' bytes in a row (K_TIC and core_in set SLOT_CLR of them)
+    if RT['SLOT_NEED'] != RT['SLOT_GRP'] + FRAME_FIRST + FS_MAX or \
+            RT['FS_DIRTY'] != RT['SLOT_NEED'] + FRAME_FIRST - 1 + FS_MAX \
+            or SLOT_CLR > 0x80:
+        raise ValueError('SLOT_GRP, SLOT_NEED, FS_DIRTY')
+    # the frame slots' region: colormaps A and B of levels 0-31, two
+    # halves of one main range, their copies in LVC
+    if FRAME_HALVES[0][1] != FRAME_HALVES[1][0] or \
+            (FRAME_HALVES[0][0], FRAME_HALVES[1][1]) != FRAME_REGION or \
+            any(lo & 0xFF or src & 0xFF or src + hi - lo > LL.LVC_GSVIEW
+                for lo, hi, src in FRAME_HALVES) or \
+            FRAME_REGION[1] > WR['MATHW'][0]:
+        raise ValueError('the frame slots\' region')
     if GS_ARG + 2 > LL.PRND or GS_STATUS <= LL.LV_AMEM:
         raise ValueError('the stop codes')
     scratch_blocks()
@@ -1394,6 +1497,9 @@ def constants() -> List[Tuple[str, int]]:
         ('GTEST', LL.GTEST), ('GS_STATUS', GS_STATUS), ('GS_ARG', GS_ARG),
         ('TIC_STACK', TIC_STACK), ('FCALL_STACK', FCALL_STACK),
         ('KERN_GCOPY', KERN_GCOPY),
+        ('FS_FIRST', FRAME_FIRST), ('FS_MAX', FS_MAX),
+        ('SLOT_CLR', SLOT_CLR),
+        ('FS_LO', FRAME_REGION[0]), ('FS_HI', FRAME_REGION[1]),
         ('PW_AT', TIC_PAGE1[0]), ('PW_END', TIC_PAGE1[1]),
         ('GT_LOAD', GT_LOAD), ('FRAME_NONE', FRAME_NONE),
         ('FRAME_FRONT', FRAME_FRONT), ('FRAME_FULL', FRAME_FULL),
@@ -1509,6 +1615,16 @@ def gplace_text(built: Sequence[str], place: Optional[Dict[str, Any]] = None,
     lines.append('GROUPS = %d' % len(groups))
     for i, g in enumerate(groups, 1):
         lines.append('GRP%d_SLOT = %d' % (i, g['slot']))
+    # the frame slots (FRAME_FIRST ..): each one's first page in main, its
+    # colormap bytes' first page in LVC (the restore's source), its group
+    fs = frame_slots(groups)
+    owner = {int(g['slot']): i for i, g in enumerate(groups, 1)
+             if int(g['slot']) >= FRAME_FIRST}
+    lines.append('FSLOTS = %d' % len(fs))
+    for s, (lo, hi) in sorted(fs.items()):
+        lines += ['FSLOT%d_PAGE = $%02X' % (s, lo >> 8),
+                  'FSLOT%d_SRC = $%02X' % (s, frame_source(lo) >> 8),
+                  'FSLOT%d_GRP = %d' % (s, owner[s])]
     lines.append('')
     routines = [k for p in PARTS for k in p['routines'] + p['helpers']]
     for number, key in enumerate(routines + CORE, 1):
@@ -1664,7 +1780,7 @@ def game_cfg(place: Optional[Dict[str, Any]] = None,
              '    CORE: start = $%04X, size = $%04X, file = "%%O.core";' % (
                  WR['CORE'][0], WR['CORE'][1] - WR['CORE'][0])]
     for i, g in enumerate(groups, 1):
-        lo, hi = SLOTS[g['slot']]
+        lo, hi = slot_range(groups, int(g['slot']))
         lines.append('    G%d:   start = $%04X, size = $%04X, file = '
                      '"%%O.g%d";' % (i, lo, hi - lo, i))
     lines += ['    LC1:  start = $D800, size = $0400, file = "%O.lc1";',
@@ -1685,7 +1801,9 @@ def game_cfg(place: Optional[Dict[str, Any]] = None,
         lines.append('    GGRP%d:   load = G%d, type = rw, define = yes, '
                      'optional = yes;' % (i, i))
     lines += ['    DRIVER:  load = LCE, type = rw;',
-              '    DESC:    load = LCE, type = bss, define = yes;',
+              # (aligned: gdriver.s's page lists may not cross a page)
+              '    DESC:    load = LCE, type = bss, align = $20, '
+              'define = yes;',
               '    VECTORS: load = VEC, type = ro, optional = yes;', '}',
               'SYMBOLS {',
               '    __RENDERW_RUN__:  type = export, value = $6600;',
@@ -1765,6 +1883,17 @@ def report() -> List[str]:
                                                     hi - lo, what))
     out.append('  the API\'s W: %d of %d B used' % (LL.GW_USED - LL.GW,
                                                   LL.GW_END - LL.GW))
+    groups = placement_of()['groups']
+    fs = frame_slots(groups)
+    out.append('main $%04X-$%04X, the frame slots (the colormaps\' place '
+               'in the tic phase): %d of %d pages' % (
+                   FRAME_REGION[0], FRAME_REGION[1] - 1,
+                   sum(hi - lo for lo, hi in fs.values()) >> 8,
+                   (FRAME_REGION[1] - FRAME_REGION[0]) >> 8))
+    for s, (lo, hi) in sorted(fs.items()):
+        g = next(i for i, x in enumerate(groups, 1) if x['slot'] == s)
+        out.append('  slot %-3d $%04X-$%04X  group %d (%s B)' % (
+            s, lo, hi - 1, g, groups[g - 1].get('bytes', '?')))
     out.append('main:')
     for name, lo, hi, what in MAIN_TIC:
         out.append('  %-8s $%04X-$%04X %6d B  %s' % (name, lo, hi - 1,

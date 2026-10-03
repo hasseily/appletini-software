@@ -6,10 +6,14 @@ Usage:  python3 tools/a2vm/costs.py PROFILE[+VARIANT...] [OUT]
 Writes the parameters of PROFILE (the "common" values, then the
 profile's own, then those of each VARIANT in order) as the "name value"
 lines a2vm's --cost option reads, to OUT or to standard output.
-`profile(name)` does the same for other tools. The variants (the
-"variants" section: phasor, window32, fws1, ntsc) are settings of the
-firmware or the machine on top of a profile, for instance
-f121+phasor+window32. Standard library only.
+`profile(name)` does the same for other tools. The profiles: f121,
+f122 (F1.2.2: the PSRAM admitted at the driver's rate while the vTW owns
+the bus, the memory API's copy engine), fastpath, f121zp, fastzp. The
+variants (the "variants" section: phasor, window32, fws1, ntsc, nod2,
+precal) are settings of the firmware or the machine on top of a profile,
+for instance f121+phasor+window32 (precal: the model before the card's
+calibration of 2026-10-03, for comparison; f122+nod2: the card as it ran
+F1.2.2, its virtual Disk II's acceleration off). Standard library only.
 """
 
 import json

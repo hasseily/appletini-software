@@ -1488,7 +1488,9 @@ demo3's start rate, worst interrupt 2,048 µs (SCREENS.md 8.14). Sizes:
 `build/native/CALIB.hdv` times 44 microbenchmarks on the card with the
 Phasor's timers and shows each beside a2vm f121's figure, so that a photo
 of its screen corrects a2vm's cost model ([`docs/SPEED.md`](../../docs/SPEED.md)
-5, [`docs/results/calib.md`](../../docs/results/calib.md)). Not part of
+5, [`docs/results/calib.md`](../../docs/results/calib.md)); the owner's
+photo of 2026-10-03 did (`calibdisk.py`'s `CARD` holds its figures, and
+the page compares them with a2vm before and after). Not part of
 the game: it runs the game's far_get, far_put, far_pload, far_gcopy and
 gobj.s's page-1 window from the play build's bytes, at the game's
 addresses.
@@ -1499,6 +1501,6 @@ addresses.
 | `calib.cfg`, `calib.mk` | ld65's map and the build into `build/native/calib/obj`, from `calibdisk.py`'s `build/native/calib/gen` (the game's bytes, their addresses, a2vm's figures) |
 
 ```
-python3 tools/native/calibdisk.py --doc     # gen, make, a2vm (f121 twice, fastpath, f121 window 512), the disk, docs/results/calib.md
+python3 tools/native/calibdisk.py --doc     # gen, make, a2vm (f121 twice, fastpath, f121 window 512, f121 before the card), the disk, docs/results/calib.md
 cd tests && python3 -m unittest test_calib  # about 20 s
 ```

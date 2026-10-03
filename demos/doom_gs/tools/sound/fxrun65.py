@@ -824,8 +824,13 @@ def hold_setup(songs: Sequence[bytes], tries: int = 40) -> Setup:
                  calibrate=True)
 
 
-HOLD_SWEEP = 2.5       # the delay loop's turn is about half the
-                       # calibration loop's [M: 45 and 90 fabric clocks]
+HOLD_SWEEP = 0.85      # the delay loop's turn is about 1.5 times the
+                       # calibration loop's [M: 51 and 34 fabric clocks on
+                       # a2vm f121+phasor+window32, 44 and 28 before
+                       # 2026-10-03]: 0.85 x cal delay turns are about 1.2
+                       # frames. (2.5 until the calibration counted in 24
+                       # bits: its 16 bits had wrapped, 94,951 turns read
+                       # as 29,415, 2026-10-03)
 
 
 def hold_delays(setup: Setup, cal: int, tries: int) -> Setup:
@@ -1225,7 +1230,8 @@ def hold_run(songs: Sequence[bytes], jobs: int = JOBS,
     work = tmpdir('cal')
     try:
         res = run(setup._replace(actions=(), seconds=0.3), work)
-        cal = res.byte('drv_cal') | res.byte('drv_cal', 1) << 8
+        cal = res.byte('drv_cal') | res.byte('drv_cal', 1) << 8 | \
+            res.byte('drv_cal', 2) << 16
     except RunError as e:
         return 'calibration: %s' % e, ''
     finally:
@@ -1556,7 +1562,8 @@ def hold_check(songs, part, tries=40) -> List[str]:
     work = tmpdir('cal')
     try:
         res = run(setup._replace(actions=(), seconds=0.3), work, part)
-        cal = res.byte('drv_cal') | res.byte('drv_cal', 1) << 8
+        cal = res.byte('drv_cal') | res.byte('drv_cal', 1) << 8 | \
+            res.byte('drv_cal', 2) << 16
     finally:
         shutil.rmtree(str(work), ignore_errors=True)
     p, res, ex = checked(hold_delays(setup, cal, tries), 'hold', part)
