@@ -327,7 +327,7 @@ class Setups(unittest.TestCase):
             lo, hi = b.segments['LOADW']
             self.assertEqual(lo, LL.LW_CODE)
             self.assertLess(hi, LL.LW_CODE_END)
-            self.assertEqual(b.segments['RLOAD'][1], 0xDE8E)
+            self.assertEqual(b.segments['RLOAD'][1], 0xDE97)  # (wave 2)
             sizes = lrun.module_sizes(b)
             for name in ('lsetup', 'gthink', 'gpos', 'gspawn', 'gweap',
                          'gspec', 'gvalid'):

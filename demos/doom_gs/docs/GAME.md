@@ -222,6 +222,10 @@ bit 7 `CLEAN`), `TICS` (a byte, `$FF` for -1). During the tic phase the
 used part (slots 0 to the high-water `G_MOHWM`) is copied into W at the
 phase's start and back at its end by the phase loader's routine (`far_pload`
 [R `far.s:329-343`]): 4 × 768 = 3,072 B of W for up to 768 slots [A].
+*Speed wave 2 (`docs/speed-parts/ticloads.md`):* in the play build
+`K_TIC` copies only each plane's pages below `G_MOHWM` (1-3 a plane), and
+`dl_disp.s`'s `planes_out` writes them back in one `RAMWRT` window (the
+test driver keeps its `far_put` pages).
 A clean mobj's visit then costs no far access: next, kind and tics are in
 W, as upstream's walk keeps them in registers and `abs,X` [R
 `p_tick65.s:120-140`]. A mobj above slot 767 is a stop `GS_PLANES`
@@ -742,6 +746,18 @@ part's test image has the earlier waves and itself.
 | `go_flush` | Every dirty line back, then every line empty (the render phases overwrite the caches' main memory, 4.1); called at the tic phase's end, before a load, before a frame and at a routine-mode call's end | |
 | `pl_*` macros | The walk's planes in W (1.3) | none needed |
 
+*Speed wave 2 (`docs/speed-parts/objapi.md`):* a miss copies all of its
+records in one `RAMRD` window (a mobj's four groups, a line and its two
+sector bytes, a sector's two records) and the victim's dirty records in
+one `RAMWRT` window, through `pw_go` in page 1 (`$0100-$014F`, 4.5),
+which `go_reset` copies there; `bl_get`'s 256 B go through it as two
+descriptors, the other uncached fetches stay with `far_get`. A get
+searches the recency order from its front (the LRU is unchanged). The
+counters `GO_HITS`, `GO_MISS`, `GO_WBACK` (now counting write-back
+windows) and `mo_tagged` exist in the test builds only, in the driver's
+card part; `mo_store` gets its line through `mo_get` (a miss reads the
+slot's old record once, then overwrites it with every group dirty).
+
 A line's pointer stays valid until the next `*_get` of the same kind
 that misses (the LRU never evicts the four most recently got of each
 kind); a routine that needs a record across calls keeps
@@ -1158,7 +1174,10 @@ state (the thinker, its next) is the runtime's (main `$1980`).
 ### 4.5 The stack
 
 The tic phase's budget is 160 B, plus 24 B for the IRQ [R
-`MEMORY_MAP.md` 2]. Upstream's tic stack reached 228 B with 3-byte
+`MEMORY_MAP.md` 2]. Since speed wave 2 page 1's `$0100-$014F` holds the
+object API's window (3.4) in the tic phase and the load image;
+`glayout.py --check` keeps it below the budget (`PW_END` at most `$0100 +
+$EF + 1 - 160`), and demo3's lowest S was `$A7`, 88 B above it. Upstream's tic stack reached 228 B with 3-byte
 returns and stack arguments [M: `PROFILE.md:680`]; natively the returns
 are 2 bytes, the arguments are in `GA_*`, and an `FCALL` across images
 adds 5 B (its return, its own return into the target, and the saved

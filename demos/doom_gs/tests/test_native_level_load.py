@@ -278,8 +278,9 @@ class Loader(unittest.TestCase):
         self.assertEqual(lo, LL.LW_CODE)
         self.assertLess(hi, LL.LW_CODE_END)
         # the card is unchanged: the far layer and the phase loader end
-        # where milestone 8's do (MEMORY_MAP.md 13: $DE8E)
-        self.assertEqual(b.segments['RLOAD'][1], 0xDE8E)
+        # where milestone 8's do (MEMORY_MAP.md 13: $DE8E, $DE97 since
+        # speed wave 2's far_wloadt)
+        self.assertEqual(b.segments['RLOAD'][1], 0xDE97)
         sizes = lrun.module_sizes(b)
         self.assertLessEqual(sizes['lload'], lrun.BUDGETS['lload'])
         self.assertLessEqual(sizes['lload'] + sizes['lgeom'],

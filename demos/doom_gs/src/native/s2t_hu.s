@@ -12,6 +12,12 @@
 ;              player.message is set, the line's message id, message_on,
 ;              message_new and the counter HU_MSGTIMEOUT. Request R5:
 ;              flow's hu_tick calls it first, then makes its clears.
+;              It runs on every tic: assembled with PLAY_TIC (play.mk's
+;              tic image) the module's code is in the core's segment
+;              LOADW, where dl_hook.s's HU_TickerHook jumps to it
+;              without a group load (speed wave 2, docs/speed-parts/
+;              glue.md); milestone 11's test images assemble it in
+;              S2CODE.
 ;   hu_start   HU_Start's state [R hu_stuff65.s:94-118]: message_on 0, the
 ;              line empty (HU_MSGID $FFFF: upstream's strcpy of ""), the
 ;              title's map. The HU_Start hook calls it and clears
@@ -34,7 +40,11 @@
 
 HU_MSGTIMEOUT = 4 * 35          ; 4 * TICRATE [R hu_stuff65.s:24]
 
+.ifdef PLAY_TIC
+        .segment "LOADW"        ; (the play build's tic image: the core)
+.else
         .segment "S2CODE"
+.endif
 
 hu_ticker:
         lda HU_COUNTER          ; the counter, before a new message: at its

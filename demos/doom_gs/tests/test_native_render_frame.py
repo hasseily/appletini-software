@@ -288,8 +288,10 @@ BUGS = (
          '__RENDERW_SIZE__ + $FF) >> 8) - WL_FIRST - 1)'),),
      ('still-1',), ('records', 'stopped', 'ended', 'differ')),
     ('the phase loader without the per-level tables', (
-        ('far.s', '        .byte WTABLES_PAGE, WTABLES_PAGES, 0\n',
-         '        .byte 0, 0, 0\n'),),
+        # (far_wload's list, wl_front: since speed wave 2 far_wloadt's
+        # list after it names the same tables)
+        ('far.s', '- WL_FIRST)\n        .byte WTABLES_PAGE, WTABLES_PAGES, 0\n',
+         '- WL_FIRST)\n        .byte 0, 0, 0\n'),),
      ('still-1',), ('records', 'stopped', 'ended', 'no slot', 'differ')),
     ('a store into the hot game globals', (
         ('rsky.s', 'sky_col:\n        clc ', 'sky_col:\n        stz $1A80\n'

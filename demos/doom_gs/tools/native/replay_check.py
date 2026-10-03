@@ -4,12 +4,14 @@ frames, and time it.
 
 Usage:  python3 tools/native/replay_check.py [DIR ...] [--jobs N]
                 [--out DIR] [--json FILE] [--keep] [--quiet] [--breakdown]
+                [--obj DIR]
 
 With no DIR, every frame of build/captures/ (tools/ref816/capture.py).
 A DIR may also be a synthetic stream of tools/native/synth.py.
 
 For each frame, three a2vm runs of the native replay (src/native, built
-by make -C src/native; the image from tools/native/loader.py):
+by make -C src/native, or the build in --obj DIR: make -C src/native
+OUT=DIR; the image from tools/native/loader.py):
 
   captured   from the captured screen; the truth is screen-after.bin
              (upstream's R_DrawLists on the reference)
@@ -57,7 +59,8 @@ built with -D PROFILE: it marks its parts as cost phases) also gives the
 time of the gather's walk, its texel copies, the copies' soft-switch
 writes (RAMRD on and off, one $C073 write a bank a group of descriptors)
 and the draw (with the drain it waits for at the end) under both
-profiles.
+profiles, with the texel bytes the copies move (tools/native/loader.py
+texel_copies: a wrap copies its two runs only, speed wave 2).
 
 Exit status 0 when every frame passes.
 """
@@ -328,6 +331,8 @@ def main(argv=None) -> int:
     parser.add_argument('--quiet', action='store_true')
     parser.add_argument('--breakdown', action='store_true',
                         help='also time the walk, copies and draw')
+    parser.add_argument('--obj', type=Path, default=loader.OBJ,
+                        help='the build (make -C src/native OUT=DIR)')
     args = parser.parse_args(argv)
     if not a2run.A2VM.exists():
         print('%s is missing: make -C tools/a2vm' % a2run.A2VM,
@@ -346,7 +351,7 @@ def main(argv=None) -> int:
         os.nice(10)
     except OSError:
         pass
-    build = loader.read_build()
+    build = loader.read_build(args.obj)
     units = loader.load_units()
     jobs = max(1, min(args.jobs, 4))
     with ThreadPoolExecutor(jobs) as pool:
@@ -354,7 +359,7 @@ def main(argv=None) -> int:
             lambda d: check_frame(d, args.out, build, args.keep, units),
             dirs))
     if args.breakdown:
-        prof = loader.read_build(name='prof')
+        prof = loader.read_build(args.obj, name='prof')
         with ThreadPoolExecutor(jobs) as pool:
             parts = list(pool.map(
                 lambda d: breakdown(d, args.out, prof, units, args.keep),
@@ -370,8 +375,9 @@ def main(argv=None) -> int:
                     'ms' % (profile, p['walk'], p['copy'], p['switch'],
                             p['draw'])
                     for profile, p in r['breakdown'].items()) +
-                    '   (%d switch writes)' % r['breakdown']['f121'][
-                        'switch_writes'])
+                    '   (%d switch writes, %d texel bytes copied)' % (
+                        r['breakdown']['f121']['switch_writes'],
+                        r['records']['copy_bytes']))
             for run in ('captured', 'poisoned'):
                 for text in (r.get(run, {}).get('first', []) +
                              r.get(run, {}).get('stray_first', []) +

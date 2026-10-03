@@ -15,7 +15,9 @@ driver: the tic image's, which must equal the load image's byte for byte
 in the products, the far layer and the phase loader); the tic image in
 GCODE0 at W's addresses (MATHW, AUXW from $6000, the core from $6600) and
 its groups packed after it and in GCODE1, the group directory written into
-the core's grp_bank, grp_src, grp_pages; the load image (level.mk's ltest)
+the core's grp_bank, grp_src, grp_pages, grp_tail (group_entry: each
+group's whole pages and the bytes gcall.s's gr_load copies of its last
+page, not the page's padding); the load image (level.mk's ltest)
 in LCODE at its addresses; the driver's descriptor (DESC: the mode, the
 entry, the page runs); then the test's own records (a game state through
 the bridge's port writer, GTEST, the planes, hand-made data).
@@ -132,6 +134,30 @@ def groups_of(b: RC.Build) -> List[Tuple[int, int, int, bytes]]:
     return out
 
 
+# a group's last page: copied as a whole page when the bytes it uses are
+# more than this (part ticloads' threshold for a second far_gcopy window,
+# docs/speed-parts/ticloads.md; gr_load has made one window a group since
+# wave 2's integration, where the few bytes past it save little either way)
+TAIL_MAX = 224
+
+
+def group_entry(bank: int, page: int, size: int) -> List[Tuple[str, int]]:
+    """A group's entry of gcall.s's directory: its bank, its first page, its
+    whole pages and the bytes gr_load copies of the page after them: its
+    byte length rounded up to an even count (far_gcopy copies two bytes a
+    turn), or the page whole when it uses more than TAIL_MAX bytes or the
+    group is under a page (gr_load reads a grp_pages of 0 as a group the
+    image does not hold)."""
+    if not 0 < size <= 0x800:
+        raise RunError('a group of %d B' % size)
+    pages, tail = size >> 8, size & 0xFF
+    tail += tail & 1
+    if tail > TAIL_MAX or (tail and not pages):
+        pages, tail = pages + 1, 0
+    return [('grp_bank', bank), ('grp_src', page), ('grp_pages', pages),
+            ('grp_tail', tail)]
+
+
 def card_bytes(b: RC.Build) -> Dict[str, bytes]:
     """The card's segments of a build (to check two builds share them)."""
     out = {}
@@ -190,11 +216,10 @@ class Image:
                                            GCODE0_GROUP_END):
                 raise RunError('the groups pass GCODE1')
             self.recs.append((1, bank, at[bank], data))
-            directory[n] = (bank, at[bank] >> 8, pages)
+            directory[n] = (bank, at[bank] >> 8, len(data))
             at[bank] += pages << 8
-        for n, (bank, page, pages) in directory.items():
-            for name, v in (('grp_bank', bank), ('grp_src', page),
-                            ('grp_pages', pages)):
+        for n, (bank, page, size) in directory.items():
+            for name, v in group_entry(bank, page, size):
                 a = lab[name] + n - core_lo
                 core[a] = v
         self.recs.append((1, GL.LL.GCODE0, 0x6000, w))

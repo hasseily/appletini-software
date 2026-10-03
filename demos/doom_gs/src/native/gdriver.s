@@ -985,22 +985,49 @@ planes_in:
         ldy #MOBJP
         jmp far_pload
 ; far_gcopy: gr_load's copy of a group (gcall.s) in the test builds: FA_N
-; pages (1-255) of bank FA_BANK from FA_SRC to main FA_DST, both page
-; aligned, through far_get a page at a time, the pages counted in FC_PS (as
-; gr_load's own loop was: the parts' write checks allow far_get's stores
-; into the slots). It overrides game.cfg's weak far_gcopy, the play
-; kernel's one read window (dl_kern.s), which a test image does not link.
-; Changes A, Y, FA_SRC, FA_DST, FA_N, FC_PS.
+; pages (1-255) of bank FA_BANK from FA_SRC + Y to main FA_DST + Y, both
+; pointers with the same low byte, the first page from byte Y (Y even; as
+; the play kernel's), through far_get a page at a time, the pages counted
+; in FC_PS (as gr_load's own loop was: the parts' write checks allow
+; far_get's stores into the slots). It overrides game.cfg's weak
+; far_gcopy, the play kernel's one read window (dl_kern.s), which a test
+; image does not link (part ticloads' request 3, speed wave 2 as
+; integrated). Changes A, Y, FA_SRC, FA_DST, FA_N, FC_PS.
 far_gcopy:
         lda FA_N
         sta FC_PS
-        stz FA_N                ; (256)
+        tya
+        beq @whole
+        jsr gc_add              ; both pointers on by Y
+        tya
+        eor #$FF
+        inc a
+        sta FA_N                ; the first page's 256 - Y bytes
+        jsr far_get
+        lda FA_N
+        jsr gc_add              ; on past them
+        dec FC_PS
+        beq @done
+@whole: stz FA_N                ; (256)
 :       jsr far_get
         inc FA_SRC+1
         inc FA_DST+1
         dec FC_PS
         bne :-
-        rts
+@done:  rts
+gc_add: pha                     ; FA_SRC and FA_DST on by A
+        clc
+        adc FA_SRC
+        sta FA_SRC
+        bcc :+
+        inc FA_SRC+1
+:       pla
+        clc
+        adc FA_DST
+        sta FA_DST
+        bcc :+
+        inc FA_DST+1
+:       rts
 ; planes_out: W's planes back to MOBJP (a page at a time, far_put)
 planes_out:
         lda #MOBJP
@@ -1038,6 +1065,14 @@ drv_irq:
 @brk:   jmp drv_crash
 
         .segment "DESC"
+; the page runs (far_pload's lists: near in the window, in the card; a
+; list must not cross a page, as far_pload steps its low byte only: first
+; in the descriptor, and asserted, since speed wave 2's integration grew
+; the driver and put dg_planes at $EAFF in part xymove's image)
+dg_core:   .res 8               ; the tic image from GCODE0
+dg_planes: .res 4               ; the planes from MOBJP
+dg_lcode:  .res 8               ; the load image from LCODE
+        .assert >dg_core = >(dg_core + 7) && >dg_planes = >(dg_planes + 3) && >dg_lcode = >(dg_lcode + 7), lderror, "a far_pload list crosses a page"
 dg_mode:   .res 1               ; DM_*
 dg_entry:  .res 2               ; the routine (DM_ROUTINE*)
 dg_grp:    .res 1               ; its group (0: the core)
@@ -1080,7 +1115,3 @@ dg_loads:  .res 1               ; the loads made
 dg_fr:     .res 8               ; a frame's record, a re-key's head
 dg_spr:    .res 1
 dg_frm:    .res 2
-; the page runs (far_pload's lists: near in the window, in the card)
-dg_core:   .res 8               ; the tic image from GCODE0
-dg_planes: .res 4               ; the planes from MOBJP
-dg_lcode:  .res 8               ; the load image from LCODE

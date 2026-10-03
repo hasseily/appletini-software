@@ -426,7 +426,7 @@ class Loader(unittest.TestCase):
             ram[at:at + len(data)] = data
         for offset in (0x1A80, 0x0878, 0x087F, 0x09A9, 0x0AF3,
                        a2run.LC + 0xE480 - 0xC000,
-                       a2run.LC + 0xDBD1 - 0xC000,
+                       a2run.LC + 0xDBF9 - 0xC000,
                        a2run.LC1 + 0x0000, a2run.aux_offset(0, 0xA000),
                        a2run.aux_offset(0, 0x0C00),
                        a2run.aux_offset(90, 0x4000)):

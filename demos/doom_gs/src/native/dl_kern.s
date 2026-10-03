@@ -16,12 +16,17 @@
 ;                    a first page 0 ends them: in the card, near in the
 ;                    phase loader's RAMRD window)
 ;   K_CALL a, A, X   jsr a with A and X (Y 0); its A into DL_RES
-;   K_WLOAD          far_wload (the render front end's window)
+;   K_WLOAD          far_wloadt (the render front end's window, from $65)
 ;   K_MLOAD          far_mload (the masked phase's image)
-;   K_TIC code       the tic image's W and core from GCODE0 and the walk's
-;                    planes from MOBJP into W, the slots empty, then the
+;   K_TIC code       the tic image's core (and its W unless the list
+;                    ended with P2DW, which left the same bytes there) from
+;                    GCODE0 and the walk's planes (each plane's pages below
+;                    G_MOHWM) from MOBJP into W, the slots empty, then the
 ;                    brain (dl_brain, its group through gcall.s's fc_go)
 ;                    with DL_CODE = code; the brain writes the next list
+;                    and, at its end, the two load lists k_core and k_planes
+;                    (dl_disp.s kc_from, planes_out: at KLISTS, a fixed
+;                    place, as the tic image is linked before this card)
 ;   K_MENU           the menu's paused frames, with MENUW in W (R7 item
 ;                    9): each queued event to m_responder (a key the menu
 ;                    does not eat goes to gamekeydown, G_Responder's keys),
@@ -66,12 +71,12 @@ dl_kernel:
         txs
         lda #E_BOOT
 k_tic:  sta DL_CODE
-        lda #$FF                ; the slots hold nothing (W was another's)
-        sta SLOT_GRP
-        sta SLOT_GRP+1
-        sta SLOT_GRP+2
-        sta SLOT_NEED           ; (and no active frame needs one: gcall.s's
-        sta SLOT_NEED+1         ;   lazy restore)
+        lda #$FF                ; the slots hold nothing (W was another's),
+        ldx #SLOT_NEED + 1 - SLOT_GRP   ; and no active frame needs one
+:       sta SLOT_GRP,x          ;   (gcall.s's lazy restore): SLOT_GRP 0-2,
+        dex                     ;   SLOT_NEED 1-2
+        bpl :-
+        .assert SLOT_NEED = SLOT_GRP + 3, error, "SLOT_GRP, SLOT_NEED"
         lda #<k_core
         ldx #>k_core
         ldy #GCODE0
@@ -140,7 +145,8 @@ k_ret:  ldy KV_PTR
 
 k_wload:
         sty KV_PTR
-        jsr XS_far_wload
+        jsr XS_far_wloadt       ; (from $65: the tic image left MATHW
+                                ;   in $6000-$64FF, playdisk.py asserts)
         bra k_ret
 k_mload:
         sty KV_PTR
@@ -152,9 +158,18 @@ dl_halt:
 :       bra :-
 
 ; the page runs of the tic image's W and core (GCODE0) and of the walk's
-; planes (MOBJP): far_pload's lists, near in its RAMRD window
+; four planes (MOBJP): far_pload's lists, near in its RAMRD window, at
+; KLISTS (BT_REPLAY - 12), where the tic image's dl_disp.s rewrites them
+; at each list's end: k_core from $66 after P2DW (kc_from; playdisk.py
+; asserts the shared bytes), each plane's count the pages below G_MOHWM
+; (planes_out, 1-3). These are the boot's: everything.
+KLISTS = BT_REPLAY - 12
+        .res KLISTS - KERNEL - (* - dl_kernel)
 k_core:   .byte $60, XS_CORE_PAGES, 0
-k_planes: .byte >PL_TNL, (PL_TICS + PLANE_SLOTS - PL_TNL) >> 8, 0
+k_planes: .byte >PL_TNL, PLANE_SLOTS >> 8, >PL_TNH, PLANE_SLOTS >> 8
+          .byte >PL_KIND, PLANE_SLOTS >> 8, >PL_TICS, PLANE_SLOTS >> 8, 0
+        .assert k_core = KLISTS && k_planes = KLISTS + 3, lderror, "the kernel's lists are not at KLISTS"
+        .assert PL_TNH = PL_TNL + PLANE_SLOTS && PL_TICS + PLANE_SLOTS = $C000, error, "the planes"
 
 ; ---------------------------------------------------------------------------
 ; bt_replay: nat_replay's entry while the benchmark is timed (docs/PLAY.md
@@ -178,11 +193,13 @@ bt_rback:
 
 ; ---------------------------------------------------------------------------
 ; far_gcopy: FA_N pages (1-255) of RamWorks bank FA_BANK from FA_SRC to
-; main FA_DST, both page aligned, in one RAMRD window (gcall.s's gr_load,
-; a group into its slot; docs/SPEED.md 4, item 2). In the card: with RAMRD
-; on, the fetches of $0200-$BFFF come from the bank. Its window, as
+; main FA_DST, both with the same low byte, but the first Y bytes (Y even:
+; the first page from byte Y), in one RAMRD window (gcall.s's gr_load, a
+; group into its slot: its length, the first page from byte 256 - its
+; tail; docs/SPEED.md 4, items 2 and 4). In the card: with RAMRD on,
+; the fetches of $0200-$BFFF come from the bank. Its window, as
 ; far_pload's, writes $C073 at its start and 0 at its end. Changes A, Y,
-; FA_SRC, FA_DST, FA_N.
+; FA_SRC, FA_DST (their high bytes on by FA_N), FA_N.
 ; ---------------------------------------------------------------------------
 GC_RAMRDOFF = $C002
 GC_RAMRDON  = $C003
@@ -194,7 +211,6 @@ far_gcopy:
         lda FA_BANK
         sta GC_RWBANK
         sta GC_RAMRDON
-        ldy #0
 @page:  lda (FA_SRC),y          ; read from the bank (RAMRD), written to
         sta (FA_DST),y          ;   main
         iny

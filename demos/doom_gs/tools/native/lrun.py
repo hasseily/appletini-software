@@ -250,9 +250,16 @@ class Run(NamedTuple):
 
 
 def code_ranges(b: RC.Build) -> List[Tuple[int, int]]:
-    """The load's code (W and the far layer it calls)."""
-    return [b.segments[s] for s in ('LOADW', 'RFAR', 'MATHW', 'AUXW')
-            if s in b.segments]
+    """The load's code (W and the far layer it calls), and since speed
+    wave 2 the object API's window in page 1 (gobj.s's pw_go, which
+    go_reset copies to PW_AT from its image in LOADW: the API's far reads
+    and write-backs, docs/speed-parts/objapi.md)."""
+    out = [b.segments[s] for s in ('LOADW', 'RFAR', 'MATHW', 'AUXW')
+           if s in b.segments]
+    lab = b.labels
+    if 'pw_go' in lab and 'pw_code_end' in lab:
+        out.append((lab['pw_go'], lab['pw_code_end'] - 1))
+    return out
 
 
 def complement(spans: Sequence[Tuple[int, int]], lo: int = 0,

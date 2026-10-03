@@ -170,7 +170,8 @@ PREBUILD: Tuple[Step, ...] = (
          ('test_native_frame8', 'test_native_masked',
           'test_native_masked_b', 'test_native_render',
           'test_native_render_frame', 'test_native_render_walls'),
-         ('test_native_level_load', 'test_native_game_skeleton')),
+         ('test_native_level_load', 'test_native_game_skeleton',
+          'test_ticloads')),
     # lrun.make(): level.mk into build/native/levels/obj (play.mk runs the
     # same make first, for the load image it links: playdisk.make() in
     # test_play_runs and test_play_bench)
@@ -185,11 +186,13 @@ PREBUILD: Tuple[Step, ...] = (
     # skel). The parts' tests only read them (src/native/game/README.md)
     # (the final integration: test_native_game_lockstep's ticrun.run makes
     # the lockstep image `game` the same way, and ref816's machine and
-    # image for its start captures)
+    # image for its start captures; test_objapi assembles gobj.s against
+    # the skeleton's gen, speed wave 2)
     Step('game.mk',
          ['make', '-s', '-C', str(SRC), '-f', 'game.mk', 'shared', 'skel',
           'ROOT=%s' % ROOT], CC65, ('test_native_game_skeleton',
-                                    'test_native_game_lockstep')),
+                                    'test_native_game_lockstep'),
+         ('test_objapi',)),
 )
 
 SHARED: Tuple[Shared, ...] = (
@@ -204,10 +207,12 @@ SHARED: Tuple[Shared, ...] = (
            REF816_USERS + ('test_bridge_dumps', 'test_interpreter')),
     # playdisk.make() rebuilds build/native/play (play.mk) in its
     # setUpClass; test_playtime.ExactIdle copies that directory and runs
-    # its disk, so it must not see a rebuild half done (speed wave 1)
+    # its disk, so it must not see a rebuild half done (speed wave 1);
+    # test_ticloads and test_play_glue's Tickers read its links (speed
+    # wave 2)
     Shared('build/native/play', ('test_play_runs', 'test_play_bench',
                                  'test_play_cardprof'),
-           ('test_playtime',)),
+           ('test_playtime', 'test_ticloads', 'test_play_glue')),
 )
 
 

@@ -1,7 +1,8 @@
 """The playable game's glue without a machine run (docs/PLAY.md 10): the
-layout, the hooks' parity with ghook.s, the boot's copies of the render
-tables, SPRBOUND by upstream's rule, and play.mk's rebuild of milestone
-9's load image (LCODE).
+layout, the hooks' parity with ghook.s, the HUD's ticker in the tic
+image's core (speed wave 2), the boot's copies of the render tables,
+SPRBOUND by upstream's rule, and play.mk's rebuild of milestone 9's load
+image (LCODE).
 """
 
 import os
@@ -62,6 +63,32 @@ class Hooks(unittest.TestCase):
         for p in sorted(SRC.glob('dl_*.s')):
             text = p.read_text()
             self.assertIn('GPL-2', text[:2000], p.name)
+
+
+class Tickers(unittest.TestCase):
+    """Speed wave 2, part glue (docs/speed-parts/glue.md): the HUD's
+    ticker, which runs on every tic, is in the tic image's core (s2t_hu.s
+    assembled with play.mk's PLAY_TIC), and HU_TickerHook jumps to it, so
+    no tic loads DLG_HOOK for it; fx_chan's scratch block is in the core
+    too, so DLG_HOOK, which the brain loads at each frame for
+    S_UpdateSounds, is 7 pages."""
+
+    def setUp(self):
+        from native import playdisk as P
+        if not (P.PLAY / 'tic' / 'tic.map').exists():
+            self.skipTest('needs the play link (make -f play.mk)')
+
+    def test_hud_ticker_in_the_core(self):
+        from native import glayout as GL, playdisk as P, playlink as PK
+        b = PK.tic_build(P.PLAY)
+        lo, hi = GL.WR['CORE']
+        for name in ('hu_ticker', 'hu_start', 'HU_TickerHook', 'fxc_scr'):
+            self.assertTrue(lo <= b.labels[name] < hi,
+                            '%s $%04X' % (name, b.labels[name]))
+        core = (b.obj / 'tic.core').read_bytes()
+        at = b.labels['HU_TickerHook'] - lo
+        hu = b.labels['hu_ticker']
+        self.assertEqual(core[at:at + 3], bytes([0x4C, hu & 0xFF, hu >> 8]))
 
 
 def _static_missing():

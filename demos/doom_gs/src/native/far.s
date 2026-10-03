@@ -28,14 +28,16 @@
 ; to main W. It is its own segment, RLOAD, so that the harness can tell
 ; its writes (W only) from the render code's. Milestone 8 (RENDER-MASKED.md
 ; 3.2): the loader takes a bank and a list of page runs (far_pload), and
-; mfar.s's far_mload loads the masked phase's image from MCODE_BANK.
+; mfar.s's far_mload loads the masked phase's image from MCODE_BANK. Speed
+; wave 2: far_wloadt loads the same image from $6500, for the game's
+; kernel, whose tic image leaves the same bytes in $6000-$64FF.
 
         .setcpu "65C02"
         .include "rlayout.inc"
         .include "math.inc"
 
         .export far_get, far_put, far_vgather, far_vput, far_vclear
-        .export far_fstep, far_wload, far_pload
+        .export far_fstep, far_wload, far_wloadt, far_pload
         .import __RENDERW_RUN__, __RENDERW_SIZE__
         .export vg_n, vg_vlo, vg_vhi, vg_al, vg_ah, vg_s, vg_d
 
@@ -326,19 +328,33 @@ vg_s:   .res VG_MAX
 vg_d:   .res VG_MAX
 
 ; ---------------------------------------------------------------------------
-; far_wload: the render window's image into main W (the phase loader);
-; far_pload: the page runs of the list at A:X (A the low byte; each run
-; its first page and its count, a first page of 0 ends the list; in the
-; card, near in the window) of RamWorks bank Y into the same addresses of
-; main memory (milestone 8: the masked phase's image too, mfar.s). One
-; RAMRD window. Changes A, X, Y, FA_SRC, FA_DST, FA_N.
+; far_wload: the render window's image into main W (the phase loader),
+; its code from $6000; far_wloadt (speed wave 2, part frontend): the same
+; from WL_TIC, for a W whose first pages already hold the image's bytes
+; (the game's kernel: the tic image, loaded just before from $6000, holds
+; the same MATHW and AUXW bytes there); far_pload: the page runs of the
+; list at A:X (A the low byte; each run its first page and its count, a
+; first page of 0 ends the list; in the card, near in the window) of
+; RamWorks bank Y into the same addresses of main memory (milestone 8: the
+; masked phase's image too, mfar.s). One RAMRD window. Changes A, X, Y,
+; FA_SRC, FA_DST, FA_N.
+;
+; The copy loop stays (zp),y: on F1.2.1 a page costs the RamWorks reads'
+; time, about 64 us, whatever the loop (a2vm f121: an abs,y loop with
+; patched operands, 13% fewer cycles, loads WCODE in the same 4.92 ms;
+; docs/speed-parts/frontend.md). Fewer pages are the gain: far_wloadt.
 ; ---------------------------------------------------------------------------
         .segment "RLOAD"
 
 WL_FIRST = $60                  ; the front end's code: its first page
+WL_TIC = $65                    ; ... after the tic image's MATHW (its
+                                ;   page $65 holds AUXW and RENDERW too)
 far_wload:
         lda #<wl_front
-        ldx #>wl_front
+        bra :+
+far_wloadt:
+        lda #<wl_tic
+:       ldx #>wl_front
         ldy #WCODE_BANK
 far_pload:
         sta FA_DST
@@ -368,7 +384,13 @@ far_pload:
 @done:  sta RAMRDOFF
         stz RWBANK
         rts
+; the lists (pldisk.area_problems compares RLOAD up to wl_front: what
+; follows is each image's own)
 wl_front:
         .byte WL_FIRST, <(((__RENDERW_RUN__ + __RENDERW_SIZE__ + $FF) >> 8) - WL_FIRST)
         .byte WTABLES_PAGE, WTABLES_PAGES, 0
-.assert >wl_front = >(wl_front + 4), lderror, "the loader's list crosses a page"
+wl_tic:
+        .byte WL_TIC, <(((__RENDERW_RUN__ + __RENDERW_SIZE__ + $FF) >> 8) - WL_TIC)
+        .byte WTABLES_PAGE, WTABLES_PAGES, 0
+.assert >wl_front = >(wl_tic + 4), lderror, "the loader's lists cross a page"
+.assert __RENDERW_RUN__ + __RENDERW_SIZE__ > WL_TIC * $100, lderror, "far_wloadt's first page is past the front end's code"

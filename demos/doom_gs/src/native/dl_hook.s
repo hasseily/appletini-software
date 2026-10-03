@@ -42,7 +42,10 @@
 ;   ST_TickerHook, HU_TickerHook   requests R4 and R5 for part flow: its
 ;                 st_tick ends with jmp ST_TickerHook with A = M_Random's
 ;                 value (s2t_st's st_ticker); its hu_tick starts with jsr
-;                 HU_TickerHook (s2t_hu's hu_ticker)
+;                 HU_TickerHook (s2t_hu's hu_ticker: in the core when
+;                 assembled with PLAY_TIC, play.mk's tic image, so no tic
+;                 loads DLG_HOOK for it; speed wave 2,
+;                 docs/speed-parts/glue.md)
 ;   G_TimeDemoEnd the menu benchmark's end (bmDone): G_CheckDemoStatus's
 ;                 timingdemo branch jumps here at demo3's end with the
 ;                 realtics at flow's fl_realtics; hk_bench below (ghook.s's
@@ -54,10 +57,10 @@
 ; The core also holds the callback s2t_pos (A:X a handle, A the high
 ; byte: its x, y, angle into GT_0-11, carry clear; carry set: none;
 ; FXC_LISTENER the player's mobj), which fx_chan.s (group DLG_HOOK) and
-; s2t_st.s (group DLG_SND) call with jsr. The group DLG_HOOK holds the
-; hooks' bodies, fx_chan.s's scratch block fxc_scr (live only inside a
-; call, and nothing it calls pages a group) and h_sstart (S_Start: every
-; channel stopped, then the level's song).
+; s2t_st.s (group DLG_SND) call with jsr, and fx_chan.s's scratch block
+; fxc_scr (live only inside a call). The group DLG_HOOK holds the hooks'
+; bodies and h_sstart (S_Start: every channel stopped, then the level's
+; song).
 
         .setcpu "65C02"
         .macpack longbranch
@@ -166,9 +169,14 @@ W_StartFinale:
 F_Ticker:
         ldy #HK_FTICKER
         bra hook
-HU_TickerHook:
+HU_TickerHook:                  ; s2t_hu's hu_ticker
+.ifdef PLAY_TIC
+        jmp hu_ticker           ; (in the core: play.mk's tic image, see
+                                ;   the end of this file)
+.else
         ldy #HK_HUTICK
         bra hook
+.endif
 G_TimeDemoEnd:
         ldy #HK_BENCH
 hook:   jsr fc_call
@@ -224,6 +232,20 @@ s2t_pos:
         sta GT_11
         clc
         rts
+
+; HU_TickerHook's jmp: s2t_hu.s assembled with PLAY_TIC (play.mk's
+; TICFLAGS) puts hu_ticker, which runs on every tic, in LOADW, the core;
+; the test images of milestone 11 assemble it without, in S2CODE
+.ifdef PLAY_TIC
+        .assert hu_ticker >= TW_CORE && hu_ticker < TW_CORE_END, lderror, "hu_ticker is not in the tic image's core"
+.endif
+
+; the channel logic's scratch block (fx_chan.s; in the core since speed
+; wave 2: DLG_HOOK, which the brain's sc_update loads at each frame, is
+; then 7 pages, not 8)
+fxc_scr:
+        .res 32
+hk_y:   .res 1
 
 
 ; ===========================================================================
@@ -517,8 +539,3 @@ h_sstart:
         jsr fx_stopall          ; (the voices end, the mailboxes empty)
         DLCALL DLG_SND, s_levelsong
 @rts:   rts
-
-; the channel logic's scratch block (fx_chan.s)
-fxc_scr:
-        .res 32
-hk_y:   .res 1

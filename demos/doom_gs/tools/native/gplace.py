@@ -34,9 +34,13 @@ groups between the slots, while the cost falls and every rule holds:
     a jsr's 3) and less 3 B for each it turns back; a group at most its
     slot's 2,048 B less GROUP_MARGIN; the core's table routines and every
     build's fixed core code (the runtime, milestone 9's core, the play
-    link's dl_hook.o: docs/play-requests.md P2; the test builds' ghook
-    and grec), with their own FCALL sites, at most the core's 13,312 B
-    less CORE_MARGIN (and --core-reserve); at most 43 groups (the play
+    link's dl_hook.o: docs/play-requests.md P2, and since speed wave 2
+    its s2t_hu.o, which play.mk's PLAY_TIC puts in the core with
+    fx_chan's scratch block: docs/speed-parts/glue.md; the test builds'
+    ghook and grec), with their own FCALL sites, at most the core's
+    13,312 B less CORE_MARGIN (and --core-reserve); measured in the links
+    as they are, so a play link older than those sources is named in the
+    report (PLAY_GLUE_CORE); at most 43 groups (the play
     disk's CODE.2: a bank file of 49 segments holds W and the core, the
     glue's 5 groups and the game's), their pages packed in GCODE0 and
     GCODE1;
@@ -768,7 +772,7 @@ FCALL_BYTES = 3                 # fc_call's 6 B against a jsr's 3
 # the groups at most: the play disk's CODE.2 holds the tic image in one
 # bank file of at most LL.BANKFILE_MAX_SEGS (49) segments, W and the core,
 # the glue's 5 groups and the game's (playdisk.tic_segments: 43 game
-# groups); gcall.s's MAXGRP 64 (GROUPS < 64 with the glue's after them)
+# groups); gcall.s's MAXGRP 49 (GROUPS < 49 with the glue's after them)
 MAX_GROUPS = 43
 GROUP_ROOM = GL.SLOTS[1][1] - GL.SLOTS[1][0]
 SWEEPS = 4
@@ -1044,6 +1048,26 @@ class Build(object):
                     if callee and not callee.startswith('@'):
                         out[(u, callee)] = out.get((u, callee), 0) + 1
         return out
+
+
+# the sources of the play link's fixed core code beyond the lockstep
+# builds' (dl_hook.s's core entries and fxc_scr, s2t_hu.s's module under
+# play.mk's PLAY_TIC): a play link older than one of them measures the
+# old bytes
+PLAY_GLUE_CORE = ('src/native/dl_hook.s', 'src/native/s2t_hu.s',
+                  'src/native/play.mk')
+
+
+def play_stale(play: Optional[Path] = None) -> List[str]:
+    """The sources of PLAY_GLUE_CORE newer than the play link's map ([]
+    when none, or no play link)."""
+    pdir = play or (BUILD / 'native' / 'play')
+    lmap = pdir / 'tic' / 'tic.map'
+    if not lmap.exists():
+        return []
+    t = lmap.stat().st_mtime
+    return [s for s in PLAY_GLUE_CORE
+            if (ROOT / s).exists() and (ROOT / s).stat().st_mtime > t]
 
 
 def load_builds(play: Optional[Path] = None) -> List[Build]:
@@ -1744,6 +1768,8 @@ def train(placement: Optional[Dict[str, Any]] = None,
            max(fixed),
            'core_reserve': core_reserve,
            'core_fixed': {b.label: f for b, f in zip(builds, fixed)},
+           'play_stale': play_stale() if any(b.label == 'play'
+                                             for b in builds) else [],
            'a_chase_rule': not any('A_Chase' in p for p in rules),
            'apart_rule': not any('APART' in p for p in rules),
            'a_chase_in_core': gc == 0,
@@ -1784,6 +1810,11 @@ def report(res: Dict[str, Any]) -> List[str]:
         if res.get('core_reserve') else '',
         ', '.join('%s %d B' % kv for kv in res.get('core_fixed', {})
                   .items()))]
+    if res.get('play_stale'):
+        lines.append('WARNING: the play link is older than %s: its fixed '
+                     'core code is the old link\'s (python3 tools/native/'
+                     'playdisk.py, then this again)'
+                     % ', '.join(res['play_stale']))
     for i, g in enumerate(res['groups'], 1):
         lines.append('group %d: slot %d, %d routines, %d B' % (
             i, g['slot'], len(g['routines']), g['bytes']))

@@ -230,16 +230,24 @@ class CardProf(unittest.TestCase):
 
     def window(self, log, pr):
         """The timing's span in the PC log: bt_start's and bt_stop's first
-        visits with their group (dl_disp.s's) in its slot (another group's
-        code may sit at their addresses)."""
+        visits in the tic phase (both run in the brain's K_TIC) with their
+        group (dl_disp.s's) in its slot (another group's code may sit at
+        their addresses; and since speed wave 2 the front end's image
+        reaches slot 1's addresses, bt_stop's $A400 among them, while
+        SLOT_GRP still names the tic phase's last group)."""
         group = self.sym['GROUPS'] + self.sym['DLG_D']
         at = {}
+        step = None
         with open(str(log)) as handle:
             for text in handle:
                 f = text.split()
-                if text.startswith('#') or int(f[-1], 16) != group:
+                if text.startswith('#'):
                     continue
                 name = pr.pcs.get(int(f[1], 16))
+                if name in T.DISPATCH:
+                    step = T.DISPATCH[name]
+                if step != 'K_TIC' or int(f[-1], 16) != group:
+                    continue
                 if name in ('bt_start', 'bt_stop') and name not in at:
                     at[name] = int(f[0])
         self.assertEqual(sorted(at), ['bt_start', 'bt_stop'])

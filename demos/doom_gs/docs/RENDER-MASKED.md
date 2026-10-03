@@ -1421,14 +1421,14 @@ optimisations.
 
 | # | Where | What | Saves, F1.2.1 [A] |
 | --: | --- | --- | --- |
-| 1 | Window loads | Reload only the pages the tic window overwrote (both images are the same bytes each frame); share the two images' common pages (`MATHW`, `rrec.s`, constants) at one address | 2-5 ms |
-| 2 | Walk | Cache the box corners' angles as the vertex angles are (`RENDER.md` "Stage A as built": `pta16` of the corners 1.3-2.8 ms of the walk) | 1-2.5 ms |
+| 1 | Window loads | Reload only the pages the tic window overwrote (both images are the same bytes each frame); share the two images' common pages (`MATHW`, `rrec.s`, constants) at one address. *Speed wave 2, in part (`docs/speed-parts/frontend.md`):* the game's kernel loads the front end's image from page `$65` (`far_wloadt`: the tic image left `MATHW`'s bytes), K_WLOAD 4.95 → 4.70 ms | 2-5 ms |
+| 2 | Walk | Cache the box corners' angles as the vertex angles are (`RENDER.md` "Stage A as built": `pta16` of the corners 1.3-2.8 ms of the walk). *Built in speed wave 2* (`docs/speed-parts/frontend.md`): per node, tagged in the node record's pad, the angles in `RENDB`; −1.15 ms of the walk from the second frame at one map unit | 1-2.5 ms |
 | 3 | Walk, wall setup | Node records trimmed to the 24 bytes read; side and back sector fetched with the seg batch; drawsegs written in one window per batch of walls | 1-2 ms |
-| 4 | Bucket pass and replay | The bucket pass already walks every record: let it make the replay's stage plan (the gather's walk, 2-4 ms, `src/native/README.md` "Results"), and copy texel groups a strip at a time | 2-4 ms |
+| 4 | Bucket pass and replay | The bucket pass already walks every record: let it make the replay's stage plan (the gather's walk, 2-4 ms, `src/native/README.md` "Results"), and copy texel groups a strip at a time. *Speed wave 2 (`docs/speed-parts/replay.md`):* the copies only: a wrap-only span copies its two runs; the stage plan in the bucket pass was not built (no spare record byte) | 2-4 ms |
 | 5 | Replay | Draw the fill records' rows in page order within a strip (the coalescer's page scan, `docs/results/fuzz-timing-2026-09-30.md`) | not estimated |
 | 6 | Projection | One window a sector chain for its things (a card gather) | 0.1-0.5 ms |
 | 7 | Masked phase | Keep each drawseg's seg vertices in the drawseg copy (its spare byte is not enough: a 40-byte copy) | side tests' windows |
-| 8 | Weapon | The profile's records made once per lump and position, reused while `FRVIS` is unchanged (the weapon skip frames already skip most rows) | 0.5-1 ms |
+| 8 | Weapon | The profile's records made once per lump and position, reused while `FRVIS` is unchanged (the weapon skip frames already skip most rows). *Built in speed wave 2 as the clip pass's reuse* (`docs/speed-parts/frontend.md`): in a run of weapon-skip frames with the same `FRVIS` and view bottom, `WCLIP` is copied, 0.459 → 0.073 ms | 0.5-1 ms |
 | 9 | Seg loops | `RENDER.md` risk 2's fallbacks: `FSTEP` gathered by bank | 0.5-1 ms |
 | 10 | Bucket pass | The producers keep each column's byte count (`rec_room` knows both), so walk 1 goes; it needs 320 B of main during the render, which the map has not found. Built in speed wave 1 (docs/speed-parts/bucket.md): the 320 B are W, FCNT after the front end's code and MCNT below MCODE | about a third of the pass: 1-2 ms median, 3-5 ms heavy |
 

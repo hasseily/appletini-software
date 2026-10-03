@@ -249,6 +249,13 @@ GS = {'OK': 0, 'UNBUILT': 1, 'PLANES': 2, 'SPECIALS': 3, 'FINALE': 4,
 KERN_GCOPY = 0xFFD5
 # the tic phase's stack (4.5), the IRQ's, an FCALL across images' cost
 TIC_STACK, IRQ_STACK, FCALL_STACK = 160, R.IRQ_STACK, 5
+# page 1 below the stack (speed wave 2, part objapi, docs/speed-parts/
+# objapi.md): the object API's window code and its descriptors (gobj.s
+# pw_go), copied there by go_reset in the tic images and the load image;
+# the tic stack (TIC_STACK, the IRQ's included, as gcallgraph.py counts
+# it) from the drivers' S ($01EF; the play kernel's is higher) stays above
+TIC_PAGE1 = (0x0100, 0x0150)
+DRIVER_S = 0xEF
 # the bytes a built routine keeps on the stack across its calls, beyond
 # their returns (gcallgraph.py --stack; wave 1 as integrated): P_CheckSight's
 # waiting children, 2 a level over a 2-byte marker, E1's trees 19 deep at
@@ -1149,6 +1156,9 @@ def check() -> None:
         raise ValueError('the tic phase\'s GW fields')
     if TIC_MAIN_END > LL.GBLOCK_END or min(TGM.values()) < LL.GLOBALS_END:
         raise ValueError('the tic phase\'s globals')
+    if TIC_PAGE1[0] < 0x0100 or \
+            TIC_PAGE1[1] > 0x0100 + DRIVER_S + 1 - TIC_STACK:
+        raise ValueError('the API\'s page-1 window under the tic stack')
     if RT_USED > LL.RT_END - LL.RT_STATE:
         raise ValueError('the runtime\'s state passes $%04X' % LL.RT_END)
     if GS_ARG + 2 > LL.PRND or GS_STATUS <= LL.LV_AMEM:
@@ -1384,6 +1394,7 @@ def constants() -> List[Tuple[str, int]]:
         ('GTEST', LL.GTEST), ('GS_STATUS', GS_STATUS), ('GS_ARG', GS_ARG),
         ('TIC_STACK', TIC_STACK), ('FCALL_STACK', FCALL_STACK),
         ('KERN_GCOPY', KERN_GCOPY),
+        ('PW_AT', TIC_PAGE1[0]), ('PW_END', TIC_PAGE1[1]),
         ('GT_LOAD', GT_LOAD), ('FRAME_NONE', FRAME_NONE),
         ('FRAME_FRONT', FRAME_FRONT), ('FRAME_FULL', FRAME_FULL),
         ('FRAME_KIND', FRAME_KIND), ('FRAME_STRIP', FRAME_STRIP),

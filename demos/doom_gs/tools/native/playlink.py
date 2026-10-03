@@ -54,7 +54,8 @@ M11_IMAGES = {'MENUW': ('s2menu2', 's2m2'), 'AMAPW': ('s2amap', 'amw'),
 OVLW_BUILD = ('s2ovl', 'ovlw')
 
 # the symbols each image gives the others (playsym.inc)
-RCARD_SYMS = ('far_get', 'far_put', 'far_pload', 'far_wload', 'far_mload',
+RCARD_SYMS = ('far_get', 'far_put', 'far_pload', 'far_wload', 'far_wloadt',
+              'far_mload',
               'nr_frame', 'nm_masked', 'nm_bkload', 'nb_frame',
               'nat_replay')    # (the benchmark's timing patches its entry)
 LCARD_SYMS = ('nl_setup',)

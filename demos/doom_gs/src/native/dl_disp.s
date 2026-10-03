@@ -22,7 +22,14 @@
 ;   c_bootlist, c_menulist, c_cplist, c_amlist, c_quitlist
 ;
 ; Each list ends the tic phase: the object API's caches back (go_flush)
-; and the walk's planes back to MOBJP (the next image overwrites W).
+; and the walk's planes back to MOBJP (the next image overwrites W); and
+; it sets the kernel's two load lists for the next K_TIC (dl_kern.s, at
+; KLISTS): the core from $66 when the list's last image is P2DW (st_load,
+; kc_from: P2DW leaves the tic image's MATHW and AUXW in $6000-$65FF, and
+; no list has a W step after P2DW's load; playdisk.py checks the bytes and
+; P2DW's writes there), else from $60; each plane's pages below G_MOHWM
+; (planes_out; all three after a load, which sets a new G_MOHWM). The
+; speed plan's part ticloads (docs/speed-parts/ticloads.md).
 ;
 ; While the menu benchmark is timed (docs/PLAY.md 15) a level frame's list
 ; also calls the kernel's bt_mark at three boundaries (before K_MLOAD,
@@ -43,13 +50,18 @@
         .include "playsym2.inc"
         .include "dl.inc"
 
-        .import go_flush, mo_get, ss_get, sec_get, state_at, far_put
+        .import go_flush, mo_get, ss_get, sec_get, state_at
         .import fc_call, fc_unbuilt
         .export c_display, c_loadlist, c_bootlist, c_menulist, c_cplist
         .export c_amlist, c_quitlist, c_savelist, ri_make, planes_out
         .export bt_start, bt_stop, bt_close
 
 PLR = G_PLAYER
+KLISTS = BT_REPLAY - 12         ; the kernel's k_core and k_planes
+KCORE = KLISTS                  ;   (dl_kern.s: their place asserted there
+KPLANES = KLISTS + 3            ;   and in playdisk.py)
+KC_ALL = $60                    ; k_core's first page: W and the core
+KC_SKIP = $66                   ;   the core alone (P2DW's W kept)
 
         .segment "DLGD"
 FC_HERE .set DLG_DISP
@@ -248,7 +260,9 @@ c_loadlist:
         STCALL XS_fin_signoff, #0
         STOP K_TIC
         STOP E_RESUME
-        jmp c_out
+        jsr c_out
+        lda #PLANE_SLOTS >> 8   ; nl_setup sets a new G_MOHWM: the planes
+        jmp kpl_set             ;   whole at E_RESUME
 
 ; c_bootlist: DLINIT (the static tables, the screen), the 2D images'
 ; inits (D_DoomMain's M_Init, WI_Init, F_Init), then the first frame
@@ -362,10 +376,20 @@ st_mark:
         ldy #>BT_MARK
         jmp st_call
 @off:   rts
-; st_load: K_LOAD of the descriptor at Y:A (its bank, its page runs, 0)
+; st_load: K_LOAD of the descriptor at Y:A (its bank, its page runs, 0);
+; the next K_TIC's core from $66 when it is P2DW's, else from $60 (the
+; list's last load decides)
 st_load:
         sta GT_0
         sty GT_1
+        ldx #KC_ALL
+        cmp #<img_p2dw
+        bne :+
+        cpy #>img_p2dw
+        bne :+
+        ldx #KC_SKIP
+:       txa
+        jsr kc_from
         lda #K_LOAD
         jsr st_byte
         ldy #0
@@ -507,22 +531,79 @@ ri_psp: stx GT_4
         .assert PSP1_SPR - PSP0_SPR = PSP1_SY - PSP0_SY, error, "the psprite inputs"
         .assert TH_X = 0 && TH_Y = 4, error, "RTHING's x, y"
 
-; planes_out: W's planes back to MOBJP (a page at a time; gdriver.s's)
-planes_out:
-        lda #MOBJP
-        sta FA_BANK
-        stz FA_SRC
-        stz FA_DST
-        stz FA_N
-        lda #>PL_TNL
-:       sta FA_SRC+1
-        sta FA_DST+1
-        jsr far_put
-        lda FA_SRC+1
-        inc a
-        cmp #>(PL_TICS + PLANE_SLOTS)
-        bne :-
+; kc_from: the kernel's k_core from page A (KC_ALL or KC_SKIP), its count
+; changed by as many pages (it is the boot's, XS_CORE_PAGES, from KC_ALL).
+; Changes A, X.
+kc_from:
+        tax
+        sec
+        sbc KCORE               ; the first page's change
+        stx KCORE
+        eor #$FF                ; the count less the change
+        sec
+        adc KCORE+1
+        sta KCORE+1
         rts
+
+; planes_out: the walk's four planes back to MOBJP, each plane's pages
+; below G_MOHWM (1-3: one when it is 0, all three past the planes, as at the
+; boot before a level's state is set), in one RAMWRT window run from this
+; group's code in W (the fetches read main; the IRQ contract allows any
+; RAMWRT: pl_irq.s); and the next K_TIC's planes list, the same pages
+; (kpl_set). The slots past G_MOHWM in W then hold another image's bytes,
+; never read: a slot becomes used (gt_pooltake raises G_MOHWM) before its
+; planes are written (gt_mosave). Changes A, X, Y, GT_0-3.
+PO_N = GT_0                     ; the pages of a plane
+PO_P = GT_1                     ; (2) the page
+PO_S = GT_3                     ; the plane's first page
+planes_out:
+        lda G_MOHWM             ; (G_MOHWM + 255) >> 8
+        cmp #1
+        lda G_MOHWM+1
+        adc #0
+        bne :+
+        lda #1
+:       cmp #(PLANE_SLOTS >> 8) + 1
+        bcc :+
+        lda #PLANE_SLOTS >> 8
+:       sta PO_N
+        jsr kpl_set
+        lda #MOBJP
+        sta RWBANK
+        sta RAMWRTON
+        stz PO_P
+        ldy #0
+        lda #>PL_TNL
+@plane: sta PO_S
+        sta PO_P+1
+        ldx PO_N
+:       lda (PO_P),y            ; main W to the bank's same address
+        sta (PO_P),y
+        iny
+        lda (PO_P),y
+        sta (PO_P),y
+        iny
+        bne :-
+        inc PO_P+1
+        dex
+        bne :-
+        lda PO_S                ; the next plane
+        clc
+        adc #>PLANE_SLOTS
+        cmp #>(PL_TICS + PLANE_SLOTS)
+        bne @plane
+        sta RAMWRTOFF
+        stz RWBANK
+        rts
+; kpl_set: the kernel's k_planes, A pages of each plane (1-3)
+kpl_set:
+        sta KPLANES+1
+        sta KPLANES+3
+        sta KPLANES+5
+        sta KPLANES+7
+        rts
+        .assert PL_TNH = PL_TNL + PLANE_SLOTS && PL_KIND = PL_TNH + PLANE_SLOTS && PL_TICS = PL_KIND + PLANE_SLOTS, error, "the planes"
+        .assert <PL_TNL = 0 && <PLANE_SLOTS = 0, error, "the planes' pages"
 
 ; the images (playimg.inc, generated by tools/native/playlink.py from the
 ; links: each image's bank, its page runs, 0)

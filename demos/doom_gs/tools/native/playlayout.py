@@ -193,12 +193,15 @@ DL_GROUPS = [('DLG_B', 1, 2),   # the brain: events, the tics, the loads
              ('DLG_C', 2, 1),   # the tic command (G_BuildTiccmd)
              ('DLG_D', 3, 1),   # the frame's list (display), the inputs
              ('DLG_H', 4, 1),   # the hooks' bodies, the channels, the
-                                #   HUD's and the finale's tickers
+                                #   finale's ticker
              ('DLG_S', 5, 1)]   # the status bar's ticker, the songs, the
                                 #   title loop, the renderer's boot state
 # (the brain alone in slot 2: every group it calls is in slot 1, so a call
 # of the brain's never evicts it; game code's calls of the hooks evict and
-# restore their caller's group, gcall.s's fc_call)
+# restore their caller's group, gcall.s's fc_call. Each tic loads DLG_S
+# for the status bar's ticker; the HUD's ticker, s2t_hu.s, is in the core
+# since speed wave 2 (play.mk's PLAY_TIC), so no tic loads DLG_H for it:
+# docs/speed-parts/glue.md)
 
 # MAXTICS (upstream's tics.inc), the command ring (G_CMDS: CMDS of 8 B)
 MAXTICS = 4

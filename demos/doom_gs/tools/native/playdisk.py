@@ -26,8 +26,8 @@ files:
   CODE.2              the tic image: W and the core in GCODE0 at W's
                       addresses, its groups packed after it (GCODE0 $0200,
                       then GCODE1), the group directory written into the
-                      core (grp_bank, grp_src, grp_pages; grp_slot for the
-                      glue's groups)
+                      core (grp_bank, grp_src, grp_pages, grp_tail: each
+                      group's byte length; grp_slot for the glue's groups)
   PLAY.1              DLBANK (DLINIT's image, the static tables' PRIVATE
                       request and their sources, the kernel's menu loop),
                       DEMOB (the title loop's demo3: DOOM1.WAD's DEMO3
@@ -128,14 +128,64 @@ def missing() -> List[str]:
 # The tic image (GCODE0, GCODE1)
 # ---------------------------------------------------------------------------
 
+def group_problems(play: Path) -> List[str]:
+    """The tic link's groups against their files (gcall.s's gr_load copies
+    a group's byte length, not its last page's padding, so the slot's
+    bytes past it are the group before's: docs/SPEED.md 4, item 4): each
+    group's segments are stored (none bss) and end at its file's end, and
+    every label in a slot lies in a group's segment or at its end (no
+    name for the slot's bytes past a group)."""
+    b = PK.tic_build(play)
+    cfg = (play / 'tic' / 'play.cfg').read_text()
+    areas = {m.group(1): int(m.group(2), 16) for m in re.finditer(
+        r'^\s*(G\d+):\s+start = \$([0-9A-F]+),', cfg, re.M)}
+    out = []
+    spans: List[Tuple[int, int]] = []
+    for m in re.finditer(r'^\s*(\w+):\s+load = (G\d+), type = (\w+)',
+                         cfg, re.M):
+        name, area, kind = m.groups()
+        if kind == 'bss':
+            out.append('group segment %s is bss' % name)
+        if name in b.segments:
+            lo, hi = b.segments[name]
+            spans.append((lo, hi + 1))
+    for area, start in sorted(areas.items()):
+        path = b.obj / ('tic.g%s' % area[1:])
+        size = len(path.read_bytes()) if path.exists() else 0
+        ends = [hi + 1 for m in re.finditer(
+            r'^\s*(\w+):\s+load = %s, type' % area, cfg, re.M)
+            for lo, hi in [b.segments.get(m.group(1), (0, -1))] if hi >= lo]
+        if size and max(ends, default=start) != start + size:
+            out.append('group %s: its segments end at $%04X, its file at '
+                       '$%04X' % (area, max(ends, default=start),
+                                  start + size))
+    slots = sorted(set(areas.values()))
+    for name, a in b.labels.items():
+        if any(s <= a < s + PK.GROUP_SIZE for s in slots) and \
+                not any(lo <= a <= hi for lo, hi in spans):
+            out.append('label %s $%04X is in a slot past every group' % (
+                name, a))
+    return out
+
+
 def tic_segments(play: Path) -> List[Segment]:
     """W and the core in GCODE0 at W's addresses, the groups packed, the
     group directory in the core (as tools/native/grun.py packs a test
-    image), the glue's groups' slots in grp_slot."""
+    image: grun.group_entry, each group's byte length), the glue's groups'
+    slots in grp_slot."""
+    from native import grun
     b = PK.tic_build(play)
     lab = b.labels
     groups = PK.gplace_groups(play / 'tic' / 'gen' / 'gplace.inc')
     mine = {groups + off: slot for _, off, slot in PL.DL_GROUPS}
+    maxgrp = lab['grp_bank'] - lab['grp_slot']
+    if groups + len(PL.DL_GROUPS) >= maxgrp or \
+            lab['grp_tail'] - lab['grp_pages'] != maxgrp:
+        raise PlayError('%d groups and the glue\'s %d: gcall.s\'s directory '
+                        'holds %d' % (groups, len(PL.DL_GROUPS), maxgrp - 1))
+    bad = group_problems(play)
+    if bad:
+        raise PlayError('; '.join(bad[:6]))
     w = (b.obj / 'tic.w').read_bytes()
     if len(w) > 0x600:
         raise PlayError('the tic image\'s W is %d B' % len(w))
@@ -159,8 +209,7 @@ def tic_segments(play: Path) -> List[Segment]:
                                       else GCODE0_GROUP_END):
             raise PlayError('the groups pass GCODE1')
         out.append((bank, at[bank], data))
-        for name, v in (('grp_bank', bank), ('grp_src', at[bank] >> 8),
-                        ('grp_pages', pages)):
+        for name, v in grun.group_entry(bank, at[bank] >> 8, len(data)):
             core[lab[name] + n - 0x6600] = v
         if n in mine:
             core[lab['grp_slot'] + n - 0x6600] = mine[n]
@@ -417,9 +466,119 @@ class Disk(NamedTuple):
     main: bytes
 
 
+# The tic image's shared W (docs/SPEED.md 4, item 11): the kernel loads the
+# tic image's core from page $66 when the frame's list ended with P2DW
+# (dl_disp.s kc_from), keeping P2DW's $6000-$65FF, so the two images must
+# link the same bytes there (MATHW and AUXW: the render front end's WCODE
+# links them too, which part frontend's wl_front relies on the same way),
+# and nothing after P2DW's load may write there but the bytes AUXW's own
+# routines set before they read them (their windows' operands, ax_out).
+SHARED_W = (0x6000, 0x6600)
+SHARED_SEGMENTS = ('MATHW', 'AUXW')
+SELF_SET = ('axv_rd', 'axt_b2', 'axt_b3', 'ax3_lo', 'ax3_hi', 'ax4_b0',
+            'ax4_b1', 'ax4_b2', 'ax4_b3')
+KLISTS = PL.BT_REPLAY - 12      # the kernel's k_core (3 B) and k_planes
+#                                 (9 B): dl_kern.s, written by dl_disp.s
+# the 65C02's absolute-mode stores and read-modify-writes (W65C02S)
+ABS_WRITES = frozenset((0x8D, 0x9D, 0x99, 0x8E, 0x8C, 0x9C, 0x9E, 0xEE,
+                        0xFE, 0xCE, 0xDE, 0x0E, 0x1E, 0x4E, 0x5E, 0x2E,
+                        0x3E, 0x6E, 0x7E, 0x0C, 0x1C))
+
+
+def op_length(op: int) -> int:
+    """A W65C02S instruction's bytes from its opcode."""
+    hi, lo = op >> 4, op & 15
+    if lo == 0:
+        return 3 if op == 0x20 else 1 if op in (0x00, 0x40, 0x60) else 2
+    if lo == 9:
+        return 3 if hi & 1 else 2
+    return {3: 1, 8: 1, 10: 1, 11: 1, 12: 3, 13: 3, 14: 3, 15: 3}.get(lo, 2)
+
+
+def abs_writes(code: bytes, base: int, lo: int, hi: int) -> List[Tuple[int,
+                                                                       int]]:
+    """(pc, target) of each absolute-mode write into [lo, hi) in a linear
+    sweep of the code at base (the base of an indexed one)."""
+    out, i = [], 0
+    while i < len(code):
+        op = code[i]
+        if op in ABS_WRITES and i + 2 < len(code):
+            a = code[i + 1] | code[i + 2] << 8
+            if lo <= a < hi:
+                out.append((base + i, a))
+        i += op_length(op)
+    return out
+
+
+def shared_w_problems(play: Path, main: bytes) -> List[str]:
+    """SHARED_W's rule: the tic image, P2DW and WCODE link MATHW and AUXW
+    at the same places with the same bytes and nothing else below $6600 but
+    WCODE's RENDERW (the tic image's and P2DW's bytes past AUXW are not
+    used); no absolute write into SHARED_W in P2DW's code, the kernel or
+    its menu loop (the steps from P2DW's load to K_TIC: s2_frame or
+    s2_poll, bt_mark) but AUXW's self-set operands and ax_out; the
+    kernel's lists at KLISTS. (Indirect writes are not checked: P2DW's go
+    through the far layer and its screen pointers, none to W.)"""
+    out = []
+    tic = PK.tic_build(play)
+    p2 = PK.p2dw_build(play)
+    rc = RC.load_build(pldisk.RCARD, 'rcard')
+    wcode = b''.join(d for bank, a, d in pldisk.render_segments()
+                     if bank == R.WCODE_BANK and a == SHARED_W[0])
+    links = (('the tic image', tic, (tic.obj / 'tic.w').read_bytes()),
+             ('P2DW', p2, (p2.obj / 'p2dw.w').read_bytes()),
+             ('WCODE', rc, wcode))
+    first = None
+    for name, b, w in links:
+        segs = {n: r for n, r in b.segments.items()
+                if SHARED_W[0] <= r[0] < SHARED_W[1]}
+        extra = set(segs) - set(SHARED_SEGMENTS) - (
+            {'RENDERW'} if name == 'WCODE' else set())
+        if extra:
+            out.append('%s links %s below $%04X' % (
+                name, ', '.join(sorted(extra)), SHARED_W[1]))
+        ranges = tuple(segs.get(n) for n in SHARED_SEGMENTS)
+        lo = SHARED_W[0]
+        hi = max(r[1] for r in ranges if r) + 1 if any(ranges) else lo
+        data = w[:hi - lo]
+        if first is None:
+            first = (name, ranges, data)
+        elif (ranges, data) != first[1:]:
+            out.append('%s\'s MATHW, AUXW differ from %s\'s' % (name,
+                                                                first[0]))
+    auxw = p2.segments.get('AUXW', (0, -1))
+    allowed = set(range(p2.labels['ax_out'], p2.labels['ax_out'] + 4))
+    for label in SELF_SET:
+        allowed |= {p2.labels[label] + 1, p2.labels[label] + 2}
+    scans = []
+    for seg in ('MATHW', 'AUXW', 'S2CODE'):
+        lo, hi = p2.segments[seg]
+        area = 'W' if lo < SHARED_W[1] else 'IMG'
+        base = p2.areas[area][0]
+        scans.append(('P2DW ' + seg, lo, s2run.area_bytes(p2, area)[
+            lo - base:hi + 1 - base]))
+    off = 0x2000 - 0xE000           # (the card image: $E000-$FFFF last)
+    scans.append(('the kernel', PL.KERNEL[0],
+                  main[PL.KERNEL[0] + off:PL.KERNEL[1] + off]))
+    card = play / 'card'
+    for suffix, (lo, hi) in (('k08', PL.KMAIN), ('k0b', PL.KMAIN2)):
+        scans.append(('the kernel\'s menu loop', lo,
+                      (card / ('plboot.%s' % suffix)).read_bytes()))
+    for name, base, code in scans:
+        for pc, a in abs_writes(code, base, *SHARED_W):
+            if not (auxw[0] <= a <= auxw[1] and a in allowed):
+                out.append('%s writes $%04X at $%04X' % (name, a, pc))
+    boot = pldisk.load_boot(card)
+    for label, at in (('k_core', KLISTS), ('k_planes', KLISTS + 3)):
+        if boot.labels.get(label) != at:
+            out.append('the kernel\'s %s is not at $%04X' % (label, at))
+    return out
+
+
 def problems(play: Path, main: bytes) -> List[str]:
     """The links against each other: the card's symbols, the images'
-    card parts (pldisk.image_problems), the tic image's card part."""
+    card parts (pldisk.image_problems), the tic image's card part, the
+    tic image's shared W (shared_w_problems)."""
     out = PK.card_problems(play)
     out += pldisk.image_problems(main)
     p2 = PK.p2dw_build(play)
@@ -433,6 +592,7 @@ def problems(play: Path, main: bytes) -> List[str]:
     tb = PK.tic_build(play)
     out += pldisk.area_problems('the tic image', tb.obj, 'tic', main,
                                 tb.segments, tb.labels, card)
+    out += shared_w_problems(play, main)
     return out
 
 

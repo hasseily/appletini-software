@@ -97,6 +97,15 @@ caller's S must be at least `$01E6` [A]. The harness checks that nothing
 of page 1 changes but `$0100-$01B4` and `$01C0` up to the caller's S.
 2D phases (milestone 11, section 18): `$0100-$017F` is `newColors`' bounce
 (`s2_begin`), outside the replay; the stack stays at or above `$01C0`.
+Tic phase and the load image (speed wave 2, part objapi): `$0100-$014F`
+holds the object API's window (`gobj.s` `pw_go`, 55 B of code, then 4
+descriptors of 6 B; `glayout.py` `TIC_PAGE1`, `ggame.inc` `PW_AT`,
+`PW_END`), copied there by `go_reset` at each tic phase's and load's
+start, so the replay's and the 2D phases' page-1 bytes before it do not
+matter. `glayout.py --check` keeps `PW_END` below the tic stack's budget
+(160 B from the drivers' S `$EF`); measured in demo3, the lowest S was
+`$A7` (an IRQ) and `$AA` in tic code, 88 B above the window. Any later
+tic-phase use of page 1 must stay above `$014F`.
 
 **Pair build only.** During the replay `$0100-$017F` is the texel bounce
 buffer [R `NATIVE.md` §4.1], so S stays at or above `$0180` then (about 56
@@ -290,7 +299,8 @@ runs):
 | --- | ---: | --- | --- |
 | `$D000-$DBCF` | 3,024 | Texture row blocks: row pair p (rows 2p, 2p+1) at `$D000 + 36p`, from our own generator | M: 36 B a row pair, `memory` §2.2; upstream's full-view image is 3,195 B [M: linkmap `texBlocks`] |
 | `$DBD0` | 1 | Landing of row 168: `RTS` | A |
-| `$DBD1-$DBFF` | 47 | generator slack | |
+| `$DBD1-$DBF8` | 40 | the replay's per-row copy image `p1_image` (37 B, copied to page 1 `$0190` by `nat_replay`) and `jtent` (3 B); speed wave 2 (`docs/speed-parts/replay.md`) | M: build |
+| `$DBF9-$DBFF` | 7 | free | |
 | `$DC00-$DCFB` | 252 | Fill row blocks of the even rows: row r at `$DC00 + 3 × (r >> 1)`, `STA $2000+160r,X` | M: build. Part A had one chain, "`STA` or `STY abs,X`", 3 B a row: the 65C02 has no `STY abs,X` (nor `STX abs,Y`), so each parity has its chain, and a fill record runs both with its parity's byte in A (upstream 4 B a row [M: linkmap `flatBlocks` 672 B]) |
 | `$DCFC` | 1 | Landing of the even chain: `RTS` | M |
 | `$DCFD-$DCFF` | 3 | slack | |
@@ -708,6 +718,13 @@ Sizes are the build's [M: `render_check.py --sizes`, the link maps];
 | RamWorks | 49 | C: `WPRO`: `WPIDX` (`$0200`, a patch index to its profile, `$FFFF` none) and the profiles from `$0700` (header, then 2 B a column and each column's posts, 5 B each): 26,793 B for the 28 weapon lumps of E1M7, made iff upstream's `wbMake` would fit them into an empty arena 0 |
 | card `$E000` part | `$FD8D-$FE7A` | C (replaces the prototype's row): `BKNEAR` 238 B (the chunk copy with a 24-bit count, the parking and bring-back, `bstop`); `BKCARD` is gone (its routines moved to `BKFAR`/`BKFAR2`). With the replay's `RCODE` (`$F900-$FD8C`), `$F900-$FE7A` holds 1,403 B |
 | card `$E000` part | `$FD8D-$FE4A` | Speed wave 1 (replaces the row above): `BKNEAR` 190 B (`$FD8D-$FE4A`): the chunk's window part `cwin`, the parking and bring-back, `bstop`, and in the game build `bk_cut`, `bk_kept` and `walk1`. With `RCODE`, `$F900-$FE4A`; `$FE4B-$FE7A` (48 B) free |
+| card `$E000` part | `$F900-$FD86`, `$FD87-$FE44` | Speed wave 2 (replaces the row above, `docs/speed-parts/replay.md`): `RCODE` 1,159 B (6 B shorter: `p1_image` and `jtent` moved to bank 2 `$DBD1-$DBF8`), `BKNEAR` 190 B from `$FD87`; `$FE45-$FE7A` (54 B) free before the kernel's `KVARS`. With `-D RELEASE`, `$F900-$FEF5` (10 B free) |
+| card bank 1 | `$DE4D-$DE97`, `$DE98-$DFE5` | Speed wave 2 (`docs/speed-parts/frontend.md`): `RLOAD` 75 B with `far_wloadt` (the front end's image from page `$65`, for the game's kernel); `MFAR` after it in rcard (`$DFE6` in ftest/mtest); 25 B free at the area's end |
+| RamWorks 8 (`RENDB`) | `$1C00-$1C04`, `$2040-$2C3F` | Speed wave 2: the walk's box corner cache, `CCSTATE` (the view's map unit and the stamp) and `CCANG` (node n's two corner angles at `$2040 + 4n`) |
+| LVMAP | each node record's bytes 28-29 | Speed wave 2: the corner cache's tag (stamp, key), written by the walk; the level's load writes 0, the game never reads them (`nd_get` fetches 28 B) |
+| main | the node frames' bytes 30-31 | Speed wave 2: `ND_CCN`, the node's address while the corner cache is on |
+| zero page | `$39-$3E`, `$9D` | Speed wave 2: `CC_ON`, `CC_K`, `CC_A` in the front end (overlay 1, after `T0`); `WP_PO` (overlay 2's last byte) in both render phases |
+| main | `$02BF-$02C3` | Speed wave 2: the spill's `CC_ST` (the corner cache) |
 | W | `$AD00-$AD9F`, `$AE00-$AE9F` | Speed wave 1: FCNTLO, FCNTHI, each column's count of W bytes of the front end's records (rec_room; zeroed by rec_start), after the front end's code (WCODE_END = $AD00); left by the masked image's load and copied by nm_masked into MCNT |
 | W | `$6600-$669F`, `$6700-$679F` | Speed wave 1: MCNTLO, MCNTHI, the masked phase's counts (nm_masked's copy, then mrec_room and OVLW's mrec_room), over the front end's dead first code bytes; nb_bucket makes the batches from them (walk 1 gone; the game build counts again from the staging after a drop or at a column past a batch) |
 | zero page | `$34-$36`, `$A0-$A9` | Speed wave 1: the bucket pass's BK_MODE (game build) and BK_V (scan's page-1 pointer); ZLOOP, the chunk's 10-byte copy loop (written by zl_put each frame) |
@@ -843,6 +860,7 @@ takes the card's `$E000` part in test builds, as `ldriver.s` does).
 | zero page | `$40-$41` | `FC_GRP`, `FC_SLOT`: `gcall.s`'s call |
 | zero page | `$48-$5B` | `GA_0`-`GA_19`: a call's arguments (`GA_X` +0, `GA_Y` +4, `GA_Z` +8, `GA_TYPE` +12) |
 | zero page | `$5C-$74` | `GT_0`-`GT_24`: temporaries; the API's own at `$63-$74` (`PL_N`, `PL_K`, `PL_T`, `FC_P`, `FC_A`, `FC_X`, `FC_Y`, `FC_T`, `FC_PS`, `GO_P`, `GO_I`, `GO_J`, `GO_T`) |
+| main | `$0100-$014F` | Speed wave 2: the object API's page-1 window (`pw_go` and its descriptors, `PW_AT`-`PW_END`; section 2), rewritten by `go_reset` |
 | main | `$0200-$02FF` | `BL_BUF`: `bl_get`'s block list (the bounce buffer and `BKFAR2`, dead after the replay) |
 | main | `$0332-$0333` | `validcount` joined: the frame block's `VALIDCOUNT` is the game's `G_VALID` (`gvalid.s` linked into the render images; `rframe.s` raises it through `gv_inc`) |
 | main | `$03B0-$03B1` | `GS_STATUS`, `GS_ARG`: the tic phase's stop code and its argument |

@@ -33,7 +33,15 @@
 ;               to the view's right side) and their table entries (WPENT).
 ;               A = 0: go; 1: no column or no post shows (nothing to do);
 ;               2: the old code (hi of 255 or more, a first column past the
-;               patch, a post above row 0).
+;               patch, a post above row 0). The front end's (speed wave 2,
+;               RENDER-MASKED.md 6.2 optimisation 8): in a run of frames
+;               that skip the weapon rows (the frame before skipped,
+;               FR_SKIP) with this frame's vissprite the same (FRVIS =
+;               WPREV) and its view bottom (WCLIP's column 0, outside the
+;               weapon, holds the first skipping frame's viewbottom + 1),
+;               WCLIP is FLOORCLIP after that frame's clip pass, made of the
+;               same vissprite, profile and view: FLOORCLIP = WCLIP, A = 1
+;               (nw_clip has nothing more to do).
 ;   wp_list     the list of posts of the column whose entry WP_E points at
 ;               into WPLST (16 bytes; 56 more when its end is not in them).
 ;   wp_yh0      WP_YH0 = (CENTERY << 16 - texturemid - 1) >> 16.
@@ -85,6 +93,7 @@ PS_VIS:
         sec
         rts
 :       ldy psp_ofs,x           ; Y = the psprite's render inputs
+        sty WP_PO
         ldx PSP0_SPR,y          ; SPRFR index = SFIRST[sprite] + (frame &
         lda PSP0_FRAME+1,y      ;   $7FFF)
         and #$7F
@@ -143,8 +152,7 @@ PS_VIS:
         lda WSFR+SF_LUMPS+1
         sta FRVIS+FV_PATCH+1
         jsr WP_HEAD             ; its header: width, leftoffset, topoffset
-        ldx WP_PSP
-        ldy psp_ofs,x
+        ldy WP_PO
         sec                     ; tx = sx - BASEXCENTER - leftoffset
         lda PSP0_SX,y
         sbc #<160
@@ -197,8 +205,7 @@ PS_VIS:
 :       bmi @on
 @off:   sec
         rts
-@on:    ldx WP_PSP
-        ldy psp_ofs,x
+@on:    ldy WP_PO
         sec                     ; texturemid = BASEYCENTER << 16 - (sy -
         lda #0                  ;   topoffset << 16)
         sbc PSP0_SY,y
@@ -260,8 +267,7 @@ PS_VIS:
         clc
         adc #CMAPA_PAGE
         bra @page
-:       ldx WP_PSP              ; FF_FULLBRIGHT: the full colormap
-        ldy psp_ofs,x
+:       ldy WP_PO               ; FF_FULLBRIGHT: the full colormap
         lda PSP0_FRAME+1,y
         bpl :+
         lda #CMAPA_PAGE
@@ -378,6 +384,30 @@ WP_YH0F:
 ; wp_start
 ; ===========================================================================
 WP_START:
+.ifndef MPSP
+        lda FR_SKIP             ; the clip pass of the frame before
+        ora FR_SKIP+1
+        beq @pass
+        lda FRVIS+FV_X1
+        beq @pass               ; (column 0 is the weapon's)
+        ldx VIEWBOT
+        inx
+        cpx WCLIP
+        bne @pass
+        ldx #FV_SIZE - 1
+:       lda FRVIS,x
+        cmp WPREV,x
+        bne @pass
+        dex
+        bpl :-
+        ldx #VIEWWIDTH
+:       lda WCLIP-1,x
+        sta FLOORCLIP-1,x
+        dex
+        bne :-
+        bra @none
+@pass:
+.endif
         lda WP_K                ; the profile's header
         sta FA_SRC
         lda WP_K+1

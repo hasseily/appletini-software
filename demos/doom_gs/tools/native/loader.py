@@ -320,9 +320,11 @@ def make_batches(cols: List[List[Rec]], texels: Texels,
 # ---------------------------------------------------------------------------
 
 def stage_need(data: bytes, csf: int, csi: int) -> Tuple[str, int]:
-    """How the gather copies a texture record's texels (src/native/
-    replay.s gather_texture): ('rows', n), ('span', count) or ('all',
-    128), with its stage bytes."""
+    """How the gather places a texture record's texels in the stage
+    (src/native/replay.s gather_texture): ('rows', n), ('span', count)
+    or ('all', 128), with its stage bytes. An 'all' whose rows reach at
+    most 128 texels is a wrap (texel_copies): it takes 128 bytes of the
+    stage but copies fewer."""
     a, e = data[L.FIELDS['R_ROW']], data[L.FIELDS['R_END']]
     tf, ti = data[L.FIELDS['R_TF']], data[L.FIELDS['R_TI']]
     n = e - a
@@ -335,6 +337,28 @@ def stage_need(data: bytes, csf: int, csi: int) -> Tuple[str, int]:
     return ('span', count)
 
 
+def texel_copies(data: bytes, csf: int, csi: int) -> List[Tuple[int, int]]:
+    """The texel runs the replay copies for a texture record (src/native/
+    replay.s gather_texture, run_one), as (first texel, count): one run
+    for 'rows' (n texels, one a row, stepped), 'span' and 'all'; two for
+    a wrap, a span that passes texel 127 (speed wave 2): the draw's texel
+    wraps at 128, so [TI & ~3, 128) and [0, TI + count - 128 rounded up
+    to 4), both at the stage place + their first texel. A wrap from
+    texel 0-3 copies all 128."""
+    mode, count = stage_need(data, csf, csi)
+    if mode == 'rows':
+        return [(0, count)]
+    ti = data[L.FIELDS['R_TI']]
+    if mode == 'span':
+        return [(ti, count)]
+    a, e = data[L.FIELDS['R_ROW']], data[L.FIELDS['R_END']]
+    tf, n = data[L.FIELDS['R_TF']], e - a
+    reach = (n * csi + ((tf + n * csf) >> 8) + 2 + 3) & ~3
+    if csi >= 2 or reach > 128 or ti < 4:
+        return [(0, 128)]
+    return [(0, (ti + reach - 128 + 3) & ~3), (ti & ~3, 128 - (ti & ~3))]
+
+
 def stage_plan(batch: Batch) -> Dict[str, int]:
     """Strips and stage bytes of one batch, as the replay makes them: whole
     columns while the texels and a 2-byte pointer each fit the 16 KB. And
@@ -343,7 +367,7 @@ def stage_plan(batch: Batch) -> Dict[str, int]:
     room = L.STAGE_END - L.STAGE
     tables = batch.col_tables
     column_needs = []
-    modes = {'rows': 0, 'span': 0, 'all': 0}
+    modes = {'rows': 0, 'span': 0, 'all': 0, 'wrap': 0, 'copy_bytes': 0}
     fuzz = {'fuzz_queued': 0, 'fuzz_full': 0, 'fuzz_now': 0}
     csf = csi = 0
     for c in range(batch.first, batch.end):
@@ -359,6 +383,9 @@ def stage_plan(batch: Batch) -> Dict[str, int]:
             if kind in (L.K_TEX, L.K_TEXC):
                 mode, count = stage_need(data, csf, csi)
                 modes[mode] += 1
+                runs = texel_copies(data, csf, csi)
+                modes['wrap'] += len(runs) == 2
+                modes['copy_bytes'] += sum(k for _, k in runs)
                 need += count + 2
             queued += kind == L.K_FUZZ
             fuzz['fuzz_now'] += kind == L.K_FUZZNOW
@@ -738,8 +765,8 @@ def build_package(capture: Capture, build: Build,
     counts['texel_banks'] = len(texels.banks)
     counts['screen_stores'] = screen_stores(cols, state, w_address)
     plans = [stage_plan(b) for b in batches]
-    for key in ('strips', 'stage_bytes', 'rows', 'span', 'all',
-                'fuzz_queued', 'fuzz_full', 'fuzz_now'):
+    for key in ('strips', 'stage_bytes', 'rows', 'span', 'all', 'wrap',
+                'copy_bytes', 'fuzz_queued', 'fuzz_full', 'fuzz_now'):
         counts[key] = sum(plan[key] for plan in plans)
     return Package(capture.directory.name, batches, texels, state,
                    records_bank, bytes(w.data), counts)

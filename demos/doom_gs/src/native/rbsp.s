@@ -30,6 +30,21 @@
 ; of W (NODEF + 32 a level, FRP): 2 bytes of stack a level. The back side
 ; is a tail call that reuses the frame, as upstream's brl.
 ;
+; The box corner cache (speed wave 2, part frontend; RENDER-MASKED.md 6.2
+; optimisation 2). A corner's angle, R_PointToAngle16 of the corner from
+; the view's map unit, depends on nothing else, so while the view stays
+; at one map unit the two corners of the box and case a node last checked
+; are kept: in RENDB's CCANG (4 bytes a node), named by the node's tag in
+; its record's pad (ND_CCT: the unit's stamp, the box and case), which
+; the walk fetches with the node anyway. The cache has its own state
+; (CCSTATE: the unit and its stamp), read once a frame (cc_frame); a new
+; unit takes a new stamp (after 255, every node's stamp is cleared
+; first). A frame at a new unit neither reads nor writes entries (most
+; frames move: they pay cc_frame's two windows and a test a node); the
+; later frames at the unit read them (one RAMRD window a box) and write
+; the ones they miss (one RAMWRT window). A level's load writes its nodes
+; with tags of 0, which no stamp takes.
+
 ; viewSide: upstream first tries c14Bounds (r_bsp65.s:1237-1311), a log
 ; table interval test it claims exact, and falls back to the two shiftMul
 ; products. This code always takes the products, which gives upstream's
@@ -73,6 +88,7 @@ nr_bsp:
         sta NB_N
         stx NB_N+1
         stz BS_F                ; no solid column yet
+        jsr cc_frame            ; the box corner cache's use this frame
         lda VIEWX+2             ; the vertex angles stay while the view
         cmp VA_VX               ;   stays at the same map unit
         bne @new
@@ -121,30 +137,21 @@ bspnode:
         bne :+
         lda #0
         tax
-        jmp nr_sub
-:       pha
-        txa
-        and #$7F
-        tax
-        pla
-        jmp nr_sub
+:       jmp nr_sub              ; (bit 15 too: SUBBASE + 4 n drops it)
 
-@node:  sta FA_SRC              ; the node into its frame: NODEBASE + 32 n
-        stx FA_SRC+1
-        asl FA_SRC
-        rol FA_SRC+1
-        asl FA_SRC
-        rol FA_SRC+1
-        asl FA_SRC
-        rol FA_SRC+1
-        asl FA_SRC
-        rol FA_SRC+1
-        asl FA_SRC
-        rol FA_SRC+1
+@node:  sta FA_SRC+1            ; the node into its frame: NODEBASE + 32 n,
+        stz FA_SRC              ;   32 n = (n << 8) >> 3 (speed wave 2:
+        txa                     ;   shorter and 20 cycles faster; NODEBASE
+        lsr a                   ;   page aligned)
+        ror FA_SRC+1
+        ror FA_SRC
+        lsr a
+        ror FA_SRC+1
+        ror FA_SRC
+        lsr a
+        ror FA_SRC+1
+        ror FA_SRC
         clc
-        lda FA_SRC
-        adc #<NODEBASE
-        sta FA_SRC
         lda FA_SRC+1
         adc #>NODEBASE
         sta FA_SRC+1
@@ -157,7 +164,15 @@ bspnode:
         lda #NODE_SIZE
         sta FA_N
         jsr far_get
-        jsr nr_side
+        lda CC_ON               ; the corner cache: the node's address in
+        beq :+                  ;   its frame
+        ldy #ND_CCN
+        lda FA_SRC
+        sta (FRP),y
+        iny
+        lda FA_SRC+1
+        sta (FRP),y
+:       jsr nr_side
         bcs @side1
 
         ldy #ND_CH0             ; side 0: the front space children[0],
@@ -519,27 +534,21 @@ nr_checkbox:
 @false: clc
         rts
 
-@go:    stx T0+3                ; angle1 = the first corner - viewangle,
-        lda C1X,x               ;   + $8000 (the signed order is then the
-        ldy C1Y,x               ;   unsigned one)
-        jsr corner
-        sec
-        lda M_R
-        sbc VIEWA16
+@go:    stx T0+3                ; the case
+        jsr cc_corners          ; CC_A: its two corners' angles
+        sec                     ; angle1 = the first corner - viewangle,
+        lda CC_A                ;   + $8000 (the signed order is then the
+        sbc VIEWA16             ;   unsigned one)
         sta BS_A1
-        lda M_R+1
+        lda CC_A+1
         sbc VIEWA16+1
         eor #$80
         sta BS_A1+1
-        ldx T0+3
-        lda C2X,x
-        ldy C2Y,x
-        jsr corner
         sec                     ; angle2 - viewangle + $8000
-        lda M_R
+        lda CC_A+2
         sbc VIEWA16
         sta T0
-        lda M_R+1
+        lda CC_A+3
         sbc VIEWA16+1
         eor #$80
         sta T0+1
@@ -623,6 +632,178 @@ nr_checkbox:
 @false2:
         clc
         rts
+
+; cc_corners: CC_A = the angles of case T0+3's two corners (C1X/C1Y,
+; C2X/C2Y) of the box BP: from the corner cache when it is on (CC_ON) and
+; the node's tag is this unit's stamp and this box and case (the key
+; CC_K), else computed (corner) and, when it is on, kept. Keeps T0+3.
+; Changes A, X, Y, T0, FA_*, the math block.
+cc_corners:
+        lda CC_ON
+        beq @calc
+        lda BP                  ; the key: BP's low byte (the node's frame,
+        eor T0+3                ;   the same for a node at every visit,
+        sta CC_K                ;   + 8 box 0, + 16 box 1) ^ the case
+        ldy #ND_CCT             ; the tag: this unit's stamp, this key?
+        lda (FRP),y
+        cmp CC_ST+4
+        bne @calc
+        iny
+        lda (FRP),y
+        cmp CC_K
+        bne @calc
+        jsr cc_rec              ; FA_SRC = the angles (RENDB)
+        lda #<CC_A
+        ldx #>CC_A
+        ldy #4
+        jmp cc_get
+@calc:  ldx T0+3
+        lda C1X,x
+        ldy C1Y,x
+        jsr corner
+        lda M_R
+        sta CC_A
+        lda M_R+1
+        sta CC_A+1
+        ldx T0+3
+        lda C2X,x
+        ldy C2Y,x
+        jsr corner
+        lda M_R
+        sta CC_A+2
+        lda M_R+1
+        sta CC_A+3
+        lda CC_ON               ; keep them?
+        beq @done
+        jsr cc_rec              ; FA_SRC = their place, FA_DST = the node
+        lda #RENDB
+        sta RWBANK
+        sta RAMWRTON            ; (W's code and data read as always)
+        ldy #3
+:       lda CC_A,y
+        sta (FA_SRC),y
+        dey
+        bpl :-
+        lda #LVMAP
+        sta RWBANK
+        ldy #ND_CCT             ; the node's tag
+        lda CC_ST+4
+        sta (FA_DST),y
+        iny
+        lda CC_K
+        sta (FA_DST),y
+        sta RAMWRTOFF
+        stz RWBANK
+@done:  rts
+
+; cc_rec: FA_DST = the node's address (its frame's ND_CCN), FA_SRC = its
+; angles, CCANG + 4 n = the address / 8 + (CCANG - NODEBASE / 8): a page
+; (rlayout.py). Changes A, Y.
+cc_rec: ldy #ND_CCN
+        lda (FRP),y
+        sta FA_DST
+        sta FA_SRC
+        iny
+        lda (FRP),y
+        sta FA_DST+1
+        lsr a
+        ror FA_SRC
+        lsr a
+        ror FA_SRC
+        lsr a
+        ror FA_SRC
+        clc
+        adc #>(CCANG - NODEBASE / 8)
+        sta FA_SRC+1
+        rts
+
+; cc_get: Y bytes of RENDB at FA_SRC into main X:A (far_get)
+cc_get: sta FA_DST
+        stx FA_DST+1
+        sty FA_N
+        lda #RENDB
+        sta FA_BANK
+        jmp far_get
+
+; cc_frame: CC_ST = CCSTATE (RENDB); at its map unit with a stamp, the
+; cache is on (CC_ON $C0: its entries read and written); else it is off
+; (0) and CCSTATE takes this unit and a new stamp (from 255: every node's
+; stamp cleared, then 1). Changes A, X, Y, FA_*.
+cc_frame:
+        lda #<CCSTATE
+        sta FA_SRC
+        lda #>CCSTATE
+        sta FA_SRC+1
+        lda #<CC_ST
+        ldx #>CC_ST
+        ldy #CCST_SIZE
+        jsr cc_get
+        stz CC_K                ; the same map unit (CC_K 0)? (it takes
+        ldx #3                  ;   this one)
+:       ldy cc_unit,x
+        lda VIEWX,y
+        cmp CC_ST,x
+        beq :+
+        sta CC_ST,x
+        sty CC_K                ; (Y: 2, 3, 6 or 7, not 0)
+:       dex
+        bpl :--
+        lda CC_K
+        bne @new
+        lda CC_ST+4             ; (stamp 0: a fresh state)
+        beq @new
+        lda #$C0
+        bra @on
+@new:   inc CC_ST+4
+        bne :+
+        jsr cc_clear
+        inc CC_ST+4
+:       lda #RENDB              ; CCSTATE = CC_ST (one RAMWRT window)
+        sta RWBANK
+        sta RAMWRTON
+        ldx #CCST_SIZE - 1
+:       lda CC_ST,x
+        sta CCSTATE,x
+        dex
+        bpl :-
+        sta RAMWRTOFF
+        stz RWBANK
+        lda #0
+@on:    sta CC_ON
+        rts
+cc_unit:                        ; the map unit: VIEWX's, VIEWY's high word
+        .byte 2, 3, VIEWY - VIEWX + 2, VIEWY - VIEWX + 3
+
+; cc_clear: every node's stamp 0 (NODES' capacity: the stamps wrapped),
+; 8 nodes a page. One RAMWRT window.
+cc_clear:
+        stz FA_DST
+        lda #>NODEBASE
+        sta FA_DST+1
+        lda #LVMAP
+        sta RWBANK
+        sta RAMWRTON
+        ldy #ND_CCT
+        clc
+@node:  lda #0
+        sta (FA_DST),y
+        tya
+        adc #NODE_SIZE
+        tay
+        bcc @node
+        inc FA_DST+1            ; (C clear again below the end)
+        lda FA_DST+1
+        cmp #>(NODEBASE + NODE_SIZE * NODE_CAP)
+        bne @node
+        sta RAMWRTOFF
+        stz RWBANK
+        rts
+.assert <NODEBASE = 0 && NODE_SIZE = 32 && <(NODE_SIZE * NODE_CAP) = 0, error, "cc_clear's pages"
+.assert <(CCANG - NODEBASE / 8) = 0, error, "cc_rec's angles of a node"
+.assert <NODEBASE = 0 && NODE_SIZE = 32, error, "bspnode's address of a node"
+.assert <SUBBASE = 0 && <SEGBASE = 0, error, "nr_sub's records' bases"
+.assert ND_BOX0 = 8 && ND_BOX1 = 16 && <NODEF = 0 && NODE_SIZE = 32, error, "cc_corners's key: 8 ^ k and 16 ^ k (k 0-8) apart"
+.assert VIEWY - VIEWX < 252 && VIEWY <> VIEWX, error, "cc_unit"
 
 ; corner: M_R = R_PointToAngle16 of the corner (box[A], box[Y]) of the box
 ; BP: A the x field (BX_LEFT, BX_RIGHT), Y the y field (BX_TOP,
@@ -738,10 +919,7 @@ nr_sub:
         rol FA_SRC+1
         asl FA_SRC
         rol FA_SRC+1
-        clc
-        lda FA_SRC
-        adc #<SUBBASE
-        sta FA_SRC
+        clc                     ; (SUBBASE page aligned)
         lda FA_SRC+1
         adc #>SUBBASE
         sta FA_SRC+1
@@ -843,10 +1021,7 @@ nr_sub:
         lda FA_SRC+1
         adc T0+1
         sta FA_SRC+1
-        clc
-        lda FA_SRC
-        adc #<SEGBASE
-        sta FA_SRC
+        clc                     ; (SEGBASE page aligned)
         lda FA_SRC+1
         adc #>SEGBASE
         sta FA_SRC+1

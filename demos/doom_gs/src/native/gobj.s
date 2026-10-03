@@ -30,7 +30,8 @@
 ;   go_flush    every dirty line written back, then every line empty: at
 ;               the tic phase's end, before a load, before a frame, at the
 ;               end of a routine-mode call
-;   go_reset    every line empty, nothing written (a fresh machine)
+;   go_reset    every line empty, nothing written (a fresh machine); the
+;               window's code into page 1 (below)
 ;   pl_get      A:X = a mobj slot: PL_N (its next thinker), PL_K (its kind:
 ;               FN and bit 7 CLEAN), PL_T (its tics, $FF for -1) from the
 ;               planes; pl_put writes the four back; pl_setn the next only;
@@ -64,6 +65,21 @@
 ; Every get, store and flush changes A, X, Y, the API's temporaries
 ; (GO_*, among GT_*) and the far layer's arguments (FA_*); nothing else.
 ;
+; Speed wave 2 (part objapi, docs/speed-parts/objapi.md): a get looks for
+; its tag in the recency order, most recent first (most gets are of the
+; line last got), and moves the line to the front in the same pass. A miss
+; copies all its records in one window, and the victim's dirty records in
+; one more: the window's code runs in page 1 (PW_AT, near in every RAMRD
+; and RAMWRT state, as the replay's gather), copied there by go_reset
+; (every entry of a tic phase and of the load image runs go_reset or
+; go_flush first), from descriptors there (a bank, a source, a
+; destination, a length each), one RWBANK write a descriptor. bl_get's
+; 256 bytes go through it too (two descriptors); the other uncached
+; fetches (28 bytes at most) stay with far_get, which costs less for so
+; few bytes (measured: docs/speed-parts/objapi.md). The counters (GO_HITS,
+; GO_MISS, GO_WBACK: gselftest.py reads them) are kept in the test builds
+; only, GO_WBACK counting the write-back windows.
+;
 ; The load image (nl_setup) links it too, assembled with -D LOADIMG: the
 ; planes are then reached far in bank MOBJP (W holds the load's data), the
 ; caches are the same places (llayout.py: main and W $AE00-$B3FF, the
@@ -80,7 +96,10 @@
         .export mo_get, mo_dirty, mo_store, sec_get, sec_dirty, ln_get
         .export ln_dirty, sp_get, sp_dirty, sp_store, nd_get, sg_get, ss_get
         .export bl_get, go_flush, go_reset, pl_get, pl_put, pl_setn
-        .export mo_tagged, go_stamps0
+        .export go_stamps0
+.ifdef TESTBUILD
+        .export mo_tagged
+.endif
 .ifndef LOADIMG
         .export sd_get, sd_put, lt_get, bk_get, bk_put, sn_get, sn_put
         .export sn_putw, mi_get, hn_get, hn_put, rj_row, rj_byte
@@ -96,7 +115,76 @@
         .assert MOC_LINES = 8 && SCC_LINES = 8 && LNC_LINES = 8, error,  "eight lines"
         .assert SPC_LINES <= 8, error, "the special lines"
 
+; COUNT: a counter of the test builds one up (GO_HITS, GO_MISS, GO_WBACK)
+.macro COUNT counter
+.ifdef TESTBUILD
+        jsr count_hit + (counter - GO_HITS) / 2 * 9
+.endif
+.endmacro
+        .assert GO_MISS = GO_HITS + 2 && GO_WBACK = GO_MISS + 2, error,  "the counters' order"
+
         .segment "LOADW"
+
+; ===========================================================================
+; The window (page 1): descriptors X .. 0 copied in one window, X 0-3
+; ===========================================================================
+PW_MAX = 4
+
+pw_image:                       ; (go_reset copies it to PW_AT)
+        .org PW_AT
+pw_go:
+pw_on   = * + 1                 ; (the switch's low byte: pw_get, pw_put)
+        sta RAMRDON
+pw_desc:
+        lda pw_bank,x
+        sta RWBANK
+        lda pw_sl,x
+        sta pw_src
+        lda pw_sh,x
+        sta pw_src+1
+        lda pw_dl,x
+        sta pw_dst
+        lda pw_dh,x
+        sta pw_dst+1
+        ldy pw_n,x              ; (the length - 1)
+pw_src  = * + 1
+pw_byte:
+        lda $FFFF,y
+pw_dst  = * + 1
+        sta $FFFF,y
+        dey
+        bpl pw_byte
+        dex
+        bpl pw_desc
+pw_off  = * + 1
+        sta RAMRDOFF
+        stz RWBANK
+        rts
+pw_code_end:
+        .reloc
+; the descriptors, after the code: a bank, a source, a destination, the
+; length - 1 (1-128 bytes)
+pw_bank = pw_code_end
+pw_sl   = pw_bank + PW_MAX
+pw_sh   = pw_sl + PW_MAX
+pw_dl   = pw_sh + PW_MAX
+pw_dh   = pw_dl + PW_MAX
+pw_n    = pw_dh + PW_MAX
+        .assert pw_n + PW_MAX <= PW_END, error, "the window's page-1 bytes"
+        .assert pw_go = PW_AT, error, "the window's entry"
+
+; pw_get: descriptors X .. 0 from their RamWorks banks to main; pw_put:
+; from main to their banks. Changes A, X, Y.
+pw_get: lda #<RAMRDON
+        ldy #<RAMRDOFF
+        bra pw_set
+pw_put: COUNT GO_WBACK          ; (the test builds: a write-back window)
+        lda #<RAMWRTON
+        ldy #<RAMWRTOFF
+pw_set: sta pw_on
+        sty pw_off
+        jmp pw_go
+        .assert >RAMRDON = >RAMWRTON && >RAMRDOFF = >RAMWRTOFF && >RAMRDON = >RAMRDOFF, error, "one page of switches"
 
 ; ===========================================================================
 ; The mobjs
@@ -106,17 +194,18 @@
 mo_get:
         sta GO_T
         stx GO_T+1
-        ldx #MOC_LINES - 1
-@find:  lda MOC_TL,x
+        ldy #0                  ; the recency order, the most recent first
+@find:  ldx MOC_ORD,y
+        lda MOC_TL,x
         cmp GO_T
         bne @next
         lda MOC_TH,x
         cmp GO_T+1
         beq @hit
-@next:  dex
-        bpl @find
-        jsr count_miss
-        ldx MOC_ORD + MOC_LINES - 1     ; the least recently got
+@next:  iny
+        cpy #MOC_LINES
+        bne @find
+        COUNT GO_MISS           ; X = the least recently got
         jsr mo_wback
         lda GO_T
         sta MOC_TL,x
@@ -124,34 +213,24 @@ mo_get:
         sta MOC_TH,x
         stz MOC_DT,x
         jsr mo_fetch
-        bra mo_front
-@hit:   jsr count_hit
-        ; (on into mo_front)
+        ldy #MOC_LINES - 1
+        bra mo_top
+@hit:   COUNT GO_HITS
+        ; (on into mo_top)
 
-; mo_front: line X first in the recency order; GC_MP its address
-mo_front:
-        ldy #0
-:       lda MOC_ORD,y
-        stx GO_I
-        cmp GO_I
-        beq :+
-        iny
-        cpy #MOC_LINES
-        bne :-
-        lda #GS_API             ; (a line not in the order: never)
-        jmp stop
-:       cpy #0                  ; shift the ones before it down
-        beq :+
-        lda MOC_ORD-1,y
+; mo_top: line X, at place Y of the recency order, first; GC_MP its
+; address
+mo_top: cpy #0
+        beq @first
+@shift: lda MOC_ORD-1,y
         sta MOC_ORD,y
         dey
-        bra :-
-:       stx MOC_ORD
-        lda moc_lo,x
+        bne @shift
+        stx MOC_ORD
+@first: lda moc_lo,x
         sta GC_MP
         lda moc_hi,x
         sta GC_MP+1
-        stx GO_LAST
         rts
 
 ; mo_dirty: the groups A of the line last got
@@ -170,7 +249,9 @@ mo_dirty:
         jmp stop
 
 ; mo_tagged: carry set when slot A:X has a line (X: the line), for the
-; tests and the spawn
+; tests (the recency order unchanged); in the test driver's card part
+.ifdef TESTBUILD
+        .segment "DRIVER"
 mo_tagged:
         sta GO_T
         stx GO_T+1
@@ -180,29 +261,23 @@ mo_tagged:
         bne @next
         lda MOC_TH,x
         cmp GO_T+1
-        bne @next
-        sec
-        rts
+        beq @done               ; (C set: equal)
 @next:  dex
         bpl :-
         clc
-        rts
+@done:  rts
+        .segment "LOADW"
+.endif
 
-; mo_store: LW_MOB into slot GC_MO's line, every group dirty
+; mo_store: LW_MOB into slot GC_MO's line, every group dirty (its line
+; got: a miss reads the old record, which the copy then overwrites)
 mo_store:
         lda GC_MO
         ldx GC_MO+1
-        jsr mo_tagged
-        bcs @have
-        ldx MOC_ORD + MOC_LINES - 1
-        jsr mo_wback
-        lda GC_MO
-        sta MOC_TL,x
-        lda GC_MO+1
-        sta MOC_TH,x
-@have:  lda #$0F
+        jsr mo_get              ; GC_MP
+        ldx MOC_ORD
+        lda #$0F
         sta MOC_DT,x
-        jsr mo_front            ; GC_MP
         ldy #MOC_LINE - 1
 :       lda LW_MOB,y
         sta (GC_MP),y
@@ -210,68 +285,84 @@ mo_store:
         bpl :-
         rts
 
-; mo_wback: line X's dirty groups to their banks; X kept
+; mo_wback: line X's dirty groups to their banks, one window; X kept
 mo_wback:
         lda MOC_DT,x
         beq @done
         lda MOC_TH,x
         cmp #$FF
         beq @clean
+        phx
         jsr mo_addr             ; GO_P = the record's address
-        lda #0                  ; GO_J = the group
-        sta GO_J
-@group: lda MOC_DT,x
-        ldy GO_J
-        and bit_of,y
-        beq @skip
-        lda mo_bank,y
-        sta FA_BANK
-        lda GO_P
-        sta FA_DST
-        lda GO_P+1
-        sta FA_DST+1
-        clc
-        lda moc_lo,x
-        adc mo_ofs,y
+        lda MOC_DT,x
+        sta GO_J                ; the groups
+        lda moc_lo,x            ; FA_SRC: the group's place in the line
         sta FA_SRC
         lda moc_hi,x
-        adc #0
         sta FA_SRC+1
-        lda #MO_SIZE
-        sta FA_N
-        jsr far_put
-        jsr count_wback
-@skip:  inc GO_J
-        lda GO_J
-        cmp #4
+        ldx #$FF                ; the descriptors
+        ldy #0                  ; the group
+@group: lsr GO_J
+        bcc @skip
+        inx
+        lda mo_bank,y
+        sta pw_bank,x
+        lda FA_SRC
+        sta pw_sl,x
+        lda FA_SRC+1
+        sta pw_sh,x
+        lda GO_P
+        sta pw_dl,x
+        lda GO_P+1
+        sta pw_dh,x
+        lda #MO_SIZE - 1
+        sta pw_n,x
+@skip:  clc
+        lda FA_SRC
+        adc #MO_SIZE
+        sta FA_SRC
+        bcc :+
+        inc FA_SRC+1
+:       iny
+        cpy #4
         bne @group
+        txa                     ; (no group of the four: nothing)
+        bmi :+
+        jsr pw_put
+:       plx
 @clean: stz MOC_DT,x
 @done:  rts
 
-; mo_fetch: line X from slot MOC_TL/TH,x's four records; X kept
+; mo_fetch: line X from slot MOC_TL/TH,x's four records, one window; X
+; kept
 mo_fetch:
+        phx
         jsr mo_addr
-        ldy #3
-@group: lda mo_bank,y
-        sta FA_BANK
-        lda GO_P
-        sta FA_SRC
-        lda GO_P+1
-        sta FA_SRC+1
-        clc
         lda moc_lo,x
-        adc mo_ofs,y
         sta FA_DST
         lda moc_hi,x
-        adc #0
         sta FA_DST+1
-        lda #MO_SIZE
-        sta FA_N
-        phy
-        jsr far_get
-        ply
-        dey
+        ldx #3
+@group: lda mo_bank,x
+        sta pw_bank,x
+        lda GO_P
+        sta pw_sl,x
+        lda GO_P+1
+        sta pw_sh,x
+        clc
+        lda FA_DST
+        adc mo_ofs,x
+        sta pw_dl,x
+        lda FA_DST+1
+        adc #0
+        sta pw_dh,x
+        lda #MO_SIZE - 1
+        sta pw_n,x
+        dex
         bpl @group
+        ldx #3
+        jsr pw_get
+        plx
         rts
 
 ; mo_addr: GO_P = RTHBASE + 24 slot (the tag of line X); X kept
@@ -311,7 +402,6 @@ mo_addr:
 mo_bank:
         .byte RTH, MOBJA, MOBJB, MOBJC
 mo_ofs: .byte 0, MO_SIZE, 2 * MO_SIZE, 3 * MO_SIZE
-bit_of: .byte 1, 2, 4, 8
 moc_lo:
         .repeat MOC_LINES, I
         .byte <(MOC + MOC_LINE * I)
@@ -320,6 +410,7 @@ moc_hi:
         .repeat MOC_LINES, I
         .byte >(MOC + MOC_LINE * I)
         .endrepeat
+        .assert MO_SIZE <= 128, error, "a group in one descriptor"
 
 ; ===========================================================================
 ; The sectors
@@ -328,72 +419,65 @@ moc_hi:
 ; sec_get: GC_SP = the line of sector A
 sec_get:
         sta GO_T
-        ldx #SCC_LINES - 1
-:       lda SCC_TAG,x
+        ldy #0
+@find:  ldx SCC_ORD,y
+        lda SCC_TAG,x
         cmp GO_T
         beq @hit
-        dex
-        bpl :-
-        jsr count_miss
-        ldx SCC_ORD + SCC_LINES - 1
+        iny
+        cpy #SCC_LINES
+        bne @find
+        COUNT GO_MISS
         jsr sec_wback
         lda GO_T
         sta SCC_TAG,x
         stz SCC_DT,x
+        phx
         jsr sec_addr
         lda #LVMAP              ; the render record
-        sta FA_BANK
+        sta pw_bank
         lda GO_P
-        sta FA_SRC
+        sta pw_sl
         lda GO_P+1
-        sta FA_SRC+1
-        lda scc_lo,x
-        sta FA_DST
-        lda scc_hi,x
-        sta FA_DST+1
-        lda #SEC_SIZE
-        sta FA_N
-        jsr far_get
+        sta pw_sh
         lda #LVG1               ; the game record
-        sta FA_BANK
+        sta pw_bank+1
         lda GO_I
-        sta FA_SRC
+        sta pw_sl+1
         lda GO_J
-        sta FA_SRC+1
+        sta pw_sh+1
         clc
         lda scc_lo,x
+        sta pw_dl
         adc #SEC_SIZE
-        sta FA_DST
+        sta pw_dl+1
         lda scc_hi,x
+        sta pw_dh
         adc #0
-        sta FA_DST+1
-        lda #SECG_SIZE
-        sta FA_N
-        jsr far_get
-        bra sec_front
-@hit:   jsr count_hit
-sec_front:
-        ldy #0
-:       txa
-        cmp SCC_ORD,y
-        beq :+
-        iny
-        cpy #SCC_LINES
-        bne :-
-        lda #GS_API
-        jmp stop
-:       cpy #0
-        beq :+
-        lda SCC_ORD-1,y
+        sta pw_dh+1
+        lda #SEC_SIZE - 1
+        sta pw_n
+        lda #SECG_SIZE - 1
+        sta pw_n+1
+        ldx #1
+        jsr pw_get
+        plx
+        ldy #SCC_LINES - 1
+        bra sec_top
+@hit:   COUNT GO_HITS
+; sec_top: line X, at place Y of the recency order, first; GC_SP
+sec_top:
+        cpy #0
+        beq @first
+@shift: lda SCC_ORD-1,y
         sta SCC_ORD,y
         dey
-        bra :-
-:       stx SCC_ORD
-        lda scc_lo,x
+        bne @shift
+        stx SCC_ORD
+@first: lda scc_lo,x
         sta GC_SP
         lda scc_hi,x
         sta GC_SP+1
-        stx GO_LAST+1
         rts
 
 ; sec_dirty: the records A (1 render, 2 game) of the sector line last got
@@ -411,50 +495,56 @@ sec_dirty:
         lda #GS_API
         jmp stop
 
+; sec_wback: line X's dirty records to their banks, one window; X kept
 sec_wback:
         lda SCC_DT,x
         beq @done
         lda SCC_TAG,x
         cmp #$FF
         beq @clean
+        phx
         jsr sec_addr
+        ldy #$FF                ; the descriptors
         lda SCC_DT,x
         and #1
         beq @game
+        iny
         lda #LVMAP
-        sta FA_BANK
-        lda GO_P
-        sta FA_DST
-        lda GO_P+1
-        sta FA_DST+1
+        sta pw_bank,y
         lda scc_lo,x
-        sta FA_SRC
+        sta pw_sl,y
         lda scc_hi,x
-        sta FA_SRC+1
-        lda #SEC_SIZE
-        sta FA_N
-        jsr far_put
-        jsr count_wback
+        sta pw_sh,y
+        lda GO_P
+        sta pw_dl,y
+        lda GO_P+1
+        sta pw_dh,y
+        lda #SEC_SIZE - 1
+        sta pw_n,y
 @game:  lda SCC_DT,x
         and #2
-        beq @clean
+        beq @put
+        iny
         lda #LVG1
-        sta FA_BANK
-        lda GO_I
-        sta FA_DST
-        lda GO_J
-        sta FA_DST+1
+        sta pw_bank,y
         clc
         lda scc_lo,x
         adc #SEC_SIZE
-        sta FA_SRC
+        sta pw_sl,y
         lda scc_hi,x
         adc #0
-        sta FA_SRC+1
-        lda #SECG_SIZE
-        sta FA_N
-        jsr far_put
-        jsr count_wback
+        sta pw_sh,y
+        lda GO_I
+        sta pw_dl,y
+        lda GO_J
+        sta pw_dh,y
+        lda #SECG_SIZE - 1
+        sta pw_n,y
+@put:   tya
+        bmi :+                  ; (neither record: nothing)
+        tax
+        jsr pw_put
+:       plx
 @clean: stz SCC_DT,x
 @done:  rts
 
@@ -512,90 +602,91 @@ scc_hi:
 ln_get:
         sta GO_T
         stx GO_T+1
-        ldx #LNC_LINES - 1
-@find:  lda LNC_TL,x
+        ldy #0
+@find:  ldx LNC_ORD,y
+        lda LNC_TL,x
         cmp GO_T
         bne @next
         lda LNC_TH,x
         cmp GO_T+1
         beq @hit
-@next:  dex
-        bpl @find
-        jsr count_miss
-        ldx LNC_ORD + LNC_LINES - 1
+@next:  iny
+        cpy #LNC_LINES
+        bne @find
+        jmp ln_miss
+@hit:   COUNT GO_HITS
+; ln_top: line X, at place Y of the recency order, first; GC_LP
+ln_top:
+        cpy #0
+        beq @first
+@shift: lda LNC_ORD-1,y
+        sta LNC_ORD,y
+        dey
+        bne @shift
+        stx LNC_ORD
+@first: lda lnc_lo,x
+        sta GC_LP
+        lda lnc_hi,x
+        sta GC_LP+1
+        rts
+
+; ln_miss: line X (the least recently got) written back, then line GO_T's
+; record and sectors into it, one window; then first
+ln_miss:
+        COUNT GO_MISS
         jsr ln_wback
         lda GO_T
         sta LNC_TL,x
         lda GO_T+1
         sta LNC_TH,x
         stz LNC_DT,x
+        phx
         jsr ln_addr
         lda #LVG0               ; the record
-        sta FA_BANK
+        sta pw_bank
         lda GO_P
-        sta FA_SRC
+        sta pw_sl
         lda GO_P+1
-        sta FA_SRC+1
-        lda lnc_lo,x
-        sta FA_DST
-        lda lnc_hi,x
-        sta FA_DST+1
-        lda #LINE_SIZE
-        sta FA_N
-        jsr far_get
+        sta pw_sh
         lda #LVS                ; its front sector, then its back sector
-        sta FA_BANK
+        sta pw_bank+1
+        sta pw_bank+2
+        lda GO_T                ; (LNSECF's low byte 0)
+        sta pw_sl+1
+        sta pw_sl+2
         clc
-        lda LNC_TL,x
-        adc #<LVS_LNSECF
-        sta FA_SRC
-        lda LNC_TH,x
+        lda GO_T+1
         adc #>LVS_LNSECF
-        sta FA_SRC+1
-        clc
-        lda lnc_lo,x
-        adc #LINE_SIZE
-        sta FA_DST
-        lda lnc_hi,x
-        adc #0
-        sta FA_DST+1
-        lda #1
-        sta FA_N
-        jsr far_get
-        clc
-        lda FA_SRC+1
+        sta pw_sh+1
         adc #>(LVS_LNSECB - LVS_LNSECF)
-        sta FA_SRC+1
-        inc FA_DST
-        bne :+
-        inc FA_DST+1
-:       jsr far_get
-        bra ln_front
-@hit:   jsr count_hit
-ln_front:
-        ldy #0
-:       txa
-        cmp LNC_ORD,y
-        beq :+
-        iny
-        cpy #LNC_LINES
-        bne :-
-        lda #GS_API
-        jmp stop
-:       cpy #0
-        beq :+
-        lda LNC_ORD-1,y
-        sta LNC_ORD,y
-        dey
-        bra :-
-:       stx LNC_ORD
+        sta pw_sh+2
+        clc
         lda lnc_lo,x
-        sta GC_LP
+        sta pw_dl
+        adc #LINE_SIZE
+        sta pw_dl+1
         lda lnc_hi,x
-        sta GC_LP+1
-        stx GO_LAST+2
-        rts
-        .assert <(LVS_LNSECB - LVS_LNSECF) = 0, error, "LNSECB a page on"
+        sta pw_dh
+        adc #0
+        sta pw_dh+1
+        sta pw_dh+2
+        lda pw_dl+1             ; (the two sectors' bytes on one page)
+        inc a
+        sta pw_dl+2
+        lda #LINE_SIZE - 1
+        sta pw_n
+        stz pw_n+1
+        stz pw_n+2
+        ldx #2
+        jsr pw_get
+        plx
+        ldy #LNC_LINES - 1
+        jmp ln_top
+        .assert <(LVS_LNSECB - LVS_LNSECF) = 0 && <LVS_LNSECF = 0, error, "LNSECF, LNSECB on pages"
+        .assert LVS_LNSECB + LINE_ROOM <= $10000, error, "LNSECB's high byte"
+        .repeat LNC_LINES, I
+        .assert >(LNC + LNC_LINE * I + LINE_SIZE) = >(LNC + LNC_LINE * I + LINE_SIZE + 1), error, "a line's two sectors on one page"
+        .endrepeat
 
 ; ln_dirty: the record of the line last got changed
 ln_dirty:
@@ -609,27 +700,30 @@ ln_dirty:
 @none:  lda #GS_API
         jmp stop
 
+; ln_wback: line X's record to LVG0 when dirty; X kept
 ln_wback:
         lda LNC_DT,x
         beq @done
         lda LNC_TH,x
         cmp #$FF
         beq @clean
+        phx
         jsr ln_addr
         lda #LVG0
-        sta FA_BANK
-        lda GO_P
-        sta FA_DST
-        lda GO_P+1
-        sta FA_DST+1
+        sta pw_bank
         lda lnc_lo,x
-        sta FA_SRC
+        sta pw_sl
         lda lnc_hi,x
-        sta FA_SRC+1
-        lda #LINE_SIZE
-        sta FA_N
-        jsr far_put
-        jsr count_wback
+        sta pw_sh
+        lda GO_P
+        sta pw_dl
+        lda GO_P+1
+        sta pw_dh
+        lda #LINE_SIZE - 1
+        sta pw_n
+        ldx #0
+        jsr pw_put
+        plx
 @clean: stz LNC_DT,x
 @done:  rts
 
@@ -678,67 +772,64 @@ sp_get:
         stx GO_T+1
         jsr sp_find
         bcs @hit
-        jsr count_miss
+        COUNT GO_MISS
         jsr sp_take
+        phx
         jsr sp_addr
         lda #ZONE0
-        sta FA_BANK
+        sta pw_bank
         lda GO_P
-        sta FA_SRC
+        sta pw_sl
         lda GO_P+1
-        sta FA_SRC+1
+        sta pw_sh
         lda spc_lo,x
-        sta FA_DST
+        sta pw_dl
         lda spc_hi,x
-        sta FA_DST+1
-        lda #SPEC_SIZE
-        sta FA_N
-        jsr far_get
-        bra sp_front
-@hit:   jsr count_hit
-sp_front:
-        ldy #0
-:       txa
-        cmp SPC_ORD,y
-        beq :+
-        iny
-        cpy #SPC_LINES
-        bne :-
-        lda #GS_API
-        jmp stop
-:       cpy #0
-        beq :+
-        lda SPC_ORD-1,y
+        sta pw_dh
+        lda #SPEC_SIZE - 1
+        sta pw_n
+        ldx #0
+        jsr pw_get
+        plx
+        ldy #SPC_LINES - 1
+        bra sp_top
+@hit:   COUNT GO_HITS
+; sp_top: line X, at place Y of the recency order, first; GC_XP
+sp_top:
+        cpy #0
+        beq @first
+@shift: lda SPC_ORD-1,y
         sta SPC_ORD,y
         dey
-        bra :-
-:       stx SPC_ORD
-        lda spc_lo,x
+        bne @shift
+        stx SPC_ORD
+@first: lda spc_lo,x
         sta GC_XP
         lda spc_hi,x
         sta GC_XP+1
-        stx GO_LAST+3
         rts
 
-; sp_find: carry set and X = the line of handle GO_T
+; sp_find: carry set, X the line of handle GO_T and Y its place in the
+; recency order; carry clear: X the least recently got line, Y its place
 sp_find:
-        ldx #SPC_LINES - 1
-:       lda SPC_TL,x
+        ldy #0
+@find:  ldx SPC_ORD,y
+        lda SPC_TL,x
         cmp GO_T
         bne @next
         lda SPC_TH,x
         cmp GO_T+1
-        bne @next
-        sec
-        rts
-@next:  dex
-        bpl :-
+        beq @done               ; (C set: equal)
+@next:  iny
+        cpy #SPC_LINES
+        bne @find
+        dey
         clc
-        rts
+@done:  rts
 
-; sp_take: X = the least recently got line, written back, tagged GO_T
+; sp_take: line X (the least recently got) written back, tagged GO_T; X
+; kept
 sp_take:
-        ldx SPC_ORD + SPC_LINES - 1
         jsr sp_wback
         lda GO_T
         sta SPC_TL,x
@@ -756,9 +847,10 @@ sp_store:
         jsr sp_find
         bcs :+
         jsr sp_take
+        ldy #SPC_LINES - 1
 :       lda #1
         sta SPC_DT,x
-        jsr sp_front
+        jsr sp_top
         ldy #SPEC_SIZE - 1
 :       lda LW_SPEC,y
         sta (GC_XP),y
@@ -778,27 +870,30 @@ sp_dirty:
 @none:  lda #GS_API
         jmp stop
 
+; sp_wback: line X's record to ZONE0 when dirty; X kept
 sp_wback:
         lda SPC_DT,x
         beq @done
         lda SPC_TH,x
         cmp #$FF
         beq @clean
+        phx
         jsr sp_addr
         lda #ZONE0
-        sta FA_BANK
-        lda GO_P
-        sta FA_DST
-        lda GO_P+1
-        sta FA_DST+1
+        sta pw_bank
         lda spc_lo,x
-        sta FA_SRC
+        sta pw_sl
         lda spc_hi,x
-        sta FA_SRC+1
-        lda #SPEC_SIZE
-        sta FA_N
-        jsr far_put
-        jsr count_wback
+        sta pw_sh
+        lda GO_P
+        sta pw_dl
+        lda GO_P+1
+        sta pw_dh
+        lda #SPEC_SIZE - 1
+        sta pw_n
+        ldx #0
+        jsr pw_put
+        plx
 @clean: stz SPC_DT,x
 @done:  rts
 
@@ -839,6 +934,7 @@ spc_hi:
         .repeat SPC_LINES, I
         .byte >(SPC + SPC_LINE * I)
         .endrepeat
+
 
 ; ===========================================================================
 ; The read-only fetches (no cache)
@@ -930,25 +1026,46 @@ ss_get:
         jmp fetch_to
 
 ; bl_get: BL_BUF = 256 bytes of the blockmap from its word A:X (LVG2
-; BLOCKMAP_AT + 2 w)
+; BLOCKMAP_AT + 2 w), one window of two descriptors of 128
 bl_get:
-        sta FA_SRC
+        asl a                   ; 2 w + BLOCKMAP_AT
+        tay
         txa
-        asl FA_SRC
         rol a
-        sta FA_SRC+1
+        tax
+        tya
         clc
-        lda FA_SRC
         adc #<BLOCKMAP_AT
-        sta FA_SRC
-        lda FA_SRC+1
+        sta pw_sl
+        txa
         adc #>BLOCKMAP_AT
-        sta FA_SRC+1
-        ldx #<BL_BUF
-        ldy #>BL_BUF
-        stz FA_N                ; (256)
+        sta pw_sh
+        clc                     ; the second half, 128 bytes on
+        lda pw_sl
+        adc #128
+        sta pw_sl+1
+        lda pw_sh
+        adc #0
+        sta pw_sh+1
         lda #LVG2
-; fetch_to: FA_N bytes of bank A at FA_SRC to main Y:X
+        sta pw_bank
+        sta pw_bank+1
+        lda #<BL_BUF
+        sta pw_dl
+        lda #<(BL_BUF + 128)
+        sta pw_dl+1
+        lda #>BL_BUF
+        sta pw_dh
+        sta pw_dh+1
+        lda #127
+        sta pw_n
+        sta pw_n+1
+        ldx #1
+        jmp pw_get
+        .assert <BL_BUF = 0, error, "BL_BUF on a page"
+
+; fetch_to: FA_N bytes of bank A at FA_SRC to main Y:X (far_get: a small
+; record costs less there than through the page-1 window)
 fetch_to:
         sta FA_BANK
         stx FA_DST
@@ -1277,7 +1394,8 @@ go_flush:
         bpl :-
         ; (on into go_reset)
 
-; go_reset: every line empty, the orders 0 up, no line last got
+; go_reset: every line empty, the orders 0 up; the window's code into page
+; 1 (the phases before overwrote it)
 go_reset:
         ldx #7
 :       lda #$FF
@@ -1304,11 +1422,11 @@ go_reset:
         sta SPC_ORD,x
         dex
         bpl :-
-        lda #$FF
-        sta GO_LAST
-        sta GO_LAST+1
-        sta GO_LAST+2
-        sta GO_LAST+3
+        ldx #pw_code_end - PW_AT - 1    ; the window's code into page 1
+:       lda pw_image,x
+        sta PW_AT,x
+        dex
+        bpl :-
         rts
 
 ; go_stamps0: the release's validcount wrap (gvalid.s): the caches
@@ -1372,7 +1490,11 @@ go_stamps0:
 @done:  rts
         .assert LN_RVALID = LN_VALID + 2, error, "the line's two stamps"
 
-; the counters (the tests read them)
+; the counters of the test builds (gselftest.py reads them): three
+; routines of 9 bytes, in GO_HITS's order (COUNT), in the test driver's
+; card part
+.ifdef TESTBUILD
+        .segment "DRIVER"
 count_hit:
         inc GO_HITS
         bne :+
@@ -1388,6 +1510,9 @@ count_wback:
         bne :+
         inc GO_WBACK+1
 :       rts
+        .assert count_miss = count_hit + 9 && count_wback = count_miss + 9,  error, "the counters' routines"
+        .segment "LOADW"
+.endif
 
 ; stop: the API's stops (A the code)
 stop:

@@ -78,6 +78,12 @@ draws one batch of records, in strips of whole columns:
      TI + n × step + 1 (the even rows' rounding can pass the exact
      position by one), rounded up to 4 for the unrolled copy, or all 128
      when that passes texel 127; the draw uses the record's own step.
+     Since speed wave 2 (`docs/speed-parts/replay.md`) a span whose
+     count stays within 128 but whose end passes texel 127 (a wrap) copies
+     only its two runs, `[TI & $FC, 128)` and `[0, (TI + count - 128 + 3)
+     & $FC)`, into the same 128 bytes of the stage (the hole between them
+     is never read); the descriptor's +6 holds the second run's first
+     texel and marks the wrap.
 3. **Draw.** RAMWRT on (`$C073` 0: the screen). For each column: its
    covered-range cut (upstream's `cvCol`, `cutTex`, `cutFill`,
    `texStart`), then each record by kind:
@@ -343,6 +349,11 @@ writes equal to the model on every frame, both runs, in both models.
 | demo-10 | 1,227 | 8,944 | 2 / 3 | 59 / 0 / 0 | 33.28 | 32.89 | 30.11 | 3.91 / 8.93 / 0.37 / 20.26 | 221 | 19,339 |
 | demo-11 | 1,198 | 8,755 | 2 / 3 | 91 / 0 / 0 | 34.06 | 33.67 | 30.23 | 3.98 / 8.89 / 0.35 / 20.99 | 213 | 20,184 |
 | e1m3-1 | 520 | 3,806 | 1 / 2 |  | 28.44 | 28.29 | 19.39 | 2.16 / 6.23 / 0.13 / 20.05 | 83 | 20,230 |
+
+*Since speed wave 2* a wrap copies only its two runs: the copy column
+falls by 0.4-3.0 ms (still-1 5.25 → 4.82, demo-02 7.91 → 4.96, demo-10
+8.93 → 6.18), the replay by 0.35-2.83 ms; `docs/speed-parts/replay.md`
+has the new table (`replay_check.py --breakdown`).
 
 Against NATIVE.md's 9.2-16.9 ms standing still and 23.8-39.7 ms in the
 demo on F1.2.1: still at the top of its range; the demo frames 21.9-34.1,

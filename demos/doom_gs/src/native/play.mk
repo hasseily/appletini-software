@@ -57,7 +57,7 @@ vpath %.inc $(HERE) $(ROOT)/src/native
 
 ASFLAGS = --cpu 65C02 -g -I $(GEN) -I $(HERE) -I $(ROOT)/src/native \
           --bin-include-dir $(TABLES) --bin-include-dir $(TABLES)/math
-TICFLAGS = $(ASFLAGS) -I $(TIC)/gen
+TICFLAGS = $(ASFLAGS) -I $(TIC)/gen -D PLAY_TIC
 S2FLAGS = $(ASFLAGS) -I $(M11)/s2data -I $(SOUND65)
 
 .PHONY: all gen p2dw init tic card lcode sizes clean FORCE

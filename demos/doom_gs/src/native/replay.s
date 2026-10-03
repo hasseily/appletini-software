@@ -62,8 +62,15 @@
 ;                    row blocks do and copies the texel of each row; the
 ;                    draw then uses a unit step from position 127.0.
 ;   span             the bytes the rows can reach, from the first texel
-;                    TI to TI + n * step + 1, or all 128 when that passes
-;                    127; the draw uses the record's own step.
+;                    TI to TI + n * step + 1; the draw uses the record's
+;                    own step.
+;   wrap             (speed wave 2) the same bytes when they pass texel
+;                    127: the draw's texel wraps at 128, so they are
+;                    [TI, 128) and [0, TI + count - 128). The record takes
+;                    128 bytes of the stage, as all 128 texels would, but
+;                    only those two runs are copied (each widened to whole
+;                    groups of 4); the hole between them is never read.
+;   all              128 texels, when the rows reach more than 128.
 
         .setcpu "65C02"
         .include "layout.inc"
@@ -112,15 +119,16 @@ csf:    .res 1          ; the chain's step (K_TEX: R_SF, R_SI)
 csi:    .res 1
 esf:    .res 1          ; the record's step as drawn
 esi:    .res 1
-pl:     .res 2          ; the next stage pointer (down from STAGE_END)
 ta:     .res 1          ; the first row
 te:     .res 1          ; the row after the last
 tt:     .res 1          ; the texel position (whole part)
 dsz:    .res 1          ; the size of the record
 
+pl:     .res 2          ; the next stage pointer (down from STAGE_END)
 gtop:   .res 2          ; the stage's first free byte (gather)
-gbank:  .res 1          ; the chain's texel bank (gather)
 gdx:    .res 1          ; DESC_SIZE * the descriptors queued
+gbank:  .res 1          ; the chain's texel bank (gather)
+        .assert gtop = pl + 2 && gdx = pl + 4, error, "pl, gtop, gdx"
 
 ; the gather's walk (RAMRD off) uses the draw's temporaries; the queued
 ; descriptors can run only at the end of a record, so what a record
@@ -162,9 +170,10 @@ fqn     = gdx
 gcol:   .res 1          ; the next column to gather
 cend:   .res 1          ; the column after the batch
 sc0:    .res 1          ; the first column of the strip
-cgtop:  .res 2          ; gtop, pl and gdx at the column's start
-cpl:    .res 2
+cpl:    .res 2          ; pl, gtop and gdx at the column's start
+cgtop:  .res 2
 cgdx:   .res 1
+        .assert cgtop = cpl + 2 && cgdx = cpl + 4, error, "cpl, cgtop, cgdx"
 mlo:    .res 1          ; the product's low byte, then a count
 
         .assert <STAGE = 0 && <STAGE_END = 0, error, "stage alignment"
@@ -226,16 +235,11 @@ nat_replay:
         cmp     sc0                     ;   past the stage, @cut below)
         beq     @cut
 .endif
-        lda     cgtop                   ; the column does not fit: the
-        sta     gtop                    ;   strip ends before it
-        lda     cgtop+1
-        sta     gtop+1
-        lda     cpl
-        sta     pl
-        lda     cpl+1
-        sta     pl+1
-        lda     cgdx
-        sta     gdx
+        ldx     #4                      ; the column does not fit: the
+:       lda     cpl,x                   ;   strip ends before it (pl,
+        sta     pl,x                    ;   gtop, gdx as at its start)
+        dex
+        bpl     :-
         lda     gcol
         cmp     sc0
         bne     @full
@@ -441,6 +445,9 @@ gather_texture:
         ldx     gdx
         sta     gneed
         sta     DESC+5,x
+        adc     gti                     ; (C clear) past texel 127: a wrap
+        cmp     #129
+        bcs     @wrap
         stz     DESC+6,x
         lda     gsrc                    ; the copy starts at TI; the draw
         clc                             ;   indexes from 0: its pointer is
@@ -457,11 +464,20 @@ gather_texture:
         sbc     #0
         sta     gptr+1
         bra     queue
+@wrap:  sbc     #128 - 3                ; (C set) [0, TI + count - 128)
+        and     #$FC                    ;   in whole groups of 4, from the
+        sta     DESC+5,x                ;   texels' and the stage's bases
+        lda     gti                     ; and [TI & $FC, 128), from the
+        and     #$FC                    ;   same bases moved by that (a
+        beq     @all                    ;   run from texel 0: all 128)
+        sta     DESC+6,x
+        bra     @whole
 @all:   ldx     gdx
         lda     #128
-        sta     gneed
         sta     DESC+5,x
         stz     DESC+6,x
+@whole: lda     #128                    ; the stage: all 128, texel t at
+        sta     gneed                   ;   its place + t
         lda     gsrc
         sta     DESC+1,x
         lda     gsrc+1
@@ -545,8 +561,9 @@ room:   lda     gtop                    ; gtop + gneed + 2 <= pl
 ; span_length: the texels n rows at step csi.csf can reach from TI.TF, as
 ; a count from TI: n * csi + hi(TF + n * csf) + 2 (the last row's texel
 ; is at most one past the exact position after n steps), rounded up to 4
-; for the unrolled copy. C set when that passes texel 127 (so all 128 are
-; copied). csi is 0 or 1 here.
+; for the unrolled copy. C set when that passes 128 (so all 128 are
+; copied); the caller tells a span past texel 127 (a wrap). csi is 0 or 1
+; here.
 span_length:
         lda     gn                      ; n * csf, shift and add
         sta     mlo
@@ -573,18 +590,8 @@ span_length:
         adc     gn
         bcs     @far
 :       and     #$FC
-        cmp     #129
-        bcs     @far
-        sta     mlo
-        clc                             ; TI + the count <= 128
-        adc     gti
-        cmp     #129
-        bcs     @far
-        lda     mlo
-        clc
-        rts
-@far:   sec
-        rts
+        cmp     #129                    ; (every branch here: C set)
+@far:   rts
 
 ; ---------------------------------------------------------------------------
 ; run_descriptors: the queued copies, one pass (one $C073 write) a bank
@@ -632,7 +639,11 @@ run_descriptors:
 @none:  MARK 0
         rts
 
-; run_one: descriptor X (kept). RAMRD on, $C073 its bank.
+; run_one: descriptor X (kept). RAMRD on, $C073 its bank. A descriptor:
+; +0 the bank, +1/+2 the texels, +3/+4 the stage place, +5 the count; +6
+; 0 (a span, or all 128), $80 + the first row's parity (one texel a row:
+; +7 TF, +8 TI, +9 the fraction step, +10 the whole step), or a wrap's
+; second run's first texel (4-124: [+6, 128) at both bases + it).
 run_one:
         lda     DESC+1,x
         sta     gs
@@ -644,7 +655,27 @@ run_one:
         sta     gd+1
         lda     DESC+6,x
         bmi     @rows
-        ldy     DESC+5,x                ; a span: 4-128 bytes, a multiple
+        beq     @span
+        ldy     DESC+5,x                ; a wrap: [0, DESC+5) first, then
+        dey                             ;   [DESC+6, 128): both bases moved
+        jsr     @copy                   ;   by DESC+6, Y from 127 - DESC+6
+        lda     DESC+6,x
+        clc
+        adc     gs
+        sta     gs
+        bcc     :+
+        inc     gs+1
+:       lda     DESC+6,x
+        clc
+        adc     gd
+        sta     gd
+        bcc     :+
+        inc     gd+1
+:       lda     DESC+6,x
+        eor     #$7F
+        tay
+        bra     @copy
+@span:  ldy     DESC+5,x                ; a span: 4-128 bytes, a multiple
         dey                             ;   of 4
 @copy:  lda     (gs),y
         sta     (gd),y
@@ -721,6 +752,10 @@ run_one:
         plx
         rts
 
+; (speed wave 2: in card bank 2 after the row blocks' landing $DBD0, the
+; generator's slack $DBD1-$DBFF, to make room in the $F900 part: nat_replay
+; copies it with bank 2 selected, and jtent's callers run there)
+        .segment "TEXBLK"
 ; p1_image: the per-row copy, run from page 1 (P1CODE) with its absolute
 ; operands set for each descriptor (page 1 is near in every RAMRD state,
 ; as zero page is). Y = the texel, X from 256 - n up to 0, carry clear;
@@ -754,6 +789,10 @@ p1_done:
         rts
 P1_SIZE = * - p1_image
         .assert P1CODE + P1_SIZE <= P1CODE_END, error, "page 1 code"
+
+; jtent: the draw's call into a row block chain (bank 2, like its callers)
+jtent:  jmp     (tent)
+        .segment "RCODE"
 
 ; ---------------------------------------------------------------------------
 ; the fuzz and overlay records: their fields into zero page; a K_FUZZ into
@@ -1031,7 +1070,8 @@ dtexture:
 @skip:  lda     dsz
         jmp     dnext
 
-; (the cold helpers of the draw pass live in the $E000 part)
+; (the cold helpers of the draw pass live in the $E000 part; jtent in bank
+; 2, after p1_image)
 .segment "RCODE"
 
 ; advance: the position tt.fr moves cv1 - ta rows at esi.esf (texStart of
@@ -1062,8 +1102,6 @@ advance:
         and     #$7F
         sta     tt
         rts
-
-jtent:  jmp     (tent)
 
 .segment "RHOT"
 

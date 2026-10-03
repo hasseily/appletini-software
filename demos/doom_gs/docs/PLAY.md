@@ -28,7 +28,7 @@ this work needs changed in them is asked in
 | The brain: D_DoomLoop's logic, tryRunTics, the events, the menu's requests | `src/native/dl_brain.s` | The tic image's group `DLG_BRAIN` (slot 2) |
 | G_BuildTiccmd, buildNewTiccmds, P_SwitchWeapon, the weapon cycle | `src/native/dl_cmd.s` | Group `DLG_CMD` (slot 1) |
 | D_Display: which images draw the frame, the step lists | `src/native/dl_disp.s` | Group `DLG_DISP` (slot 1) |
-| The hooks milestone 10's parts call (sounds, I_GetTime, AM_*, ST_*, HU_*, WI_*, F_*, D_PageTicker, D_AdvanceDemo) | `src/native/dl_hook.s` | The tic image's core and group `DLG_HOOK` (slot 1) |
+| The hooks milestone 10's parts call (sounds, I_GetTime, AM_*, ST_*, HU_*, WI_*, F_*, D_PageTicker, D_AdvanceDemo) | `src/native/dl_hook.s` | The tic image's core and group `DLG_HOOK` (slot 1); the HUD's ticker `s2t_hu.s` and `fxc_scr` in the core since speed wave 2 (`play.mk`'s `PLAY_TIC`) |
 | The songs, the title loop's D_DoAdvanceDemo, the renderer's boot and level state | `src/native/dl_snd.s` | Group `DLG_SND` (slot 1), with `s2t_st.s` |
 | P2DW's frame glue (poll, palettes, status bar, HUD) | `src/native/dl_p2d.s` | The `P2DW` image |
 | DLINIT: the boot's PRIVATE copies, the quit's last screen | `src/native/dl_init.s` | W `$6600`, loaded from `DLBANK` |
@@ -77,9 +77,9 @@ to the kernel, which runs it:
 | `K_END` | 0 | the list's end: `K_TIC E_FRAME` |
 | `K_LOAD` | 1, bank, runs..., 0 | `far_pload` of the bank's page runs into the same addresses of main |
 | `K_CALL` | 2, address, A, X | `jsr` with A, X (Y 0); its A into `DL_RES` |
-| `K_WLOAD` | 3 | `far_wload` (the front end's code and the level's W tables) |
+| `K_WLOAD` | 3 | `far_wloadt` (the front end's code from page `$65` and the level's W tables; since speed wave 2: the tic image left the same `MATHW` bytes in `$6000-$64FF`, `playdisk.shared_w_problems` asserts it) |
 | `K_MLOAD` | 4 | `far_mload` (the masked phase's image) |
-| `K_TIC` | 5, code | the tic image's W and core (`GCODE0`) and the walk's planes (`MOBJP`) back, the slots empty, then `dl_brain` through `gcall.s`'s `fc_go` with `DL_CODE` = code |
+| `K_TIC` | 5, code | the tic image's core (and its W unless the list ended with P2DW, which left the same bytes in `$6000-$65FF`: then from page `$66`) from `GCODE0` and each plane's pages below `G_MOHWM` from `MOBJP` (speed wave 2), the slots empty, then `dl_brain` through `gcall.s`'s `fc_go` with `DL_CODE` = code; `planes_out` writes the planes back in one `RAMWRT` window and sets the next `K_TIC`'s two load lists (`k_core`, `k_planes` at `KLISTS`) |
 | `K_MENU` | 6 | the menu's paused frames with `MENUW` in W, until the menu closes or asks something (`M_REQ`) |
 | `K_HALT` | 7 | the quit's end |
 
@@ -108,7 +108,7 @@ its phase timing's `BT_*` (section 15):
 
 | Space | Range | Holds |
 | --- | --- | --- |
-| Main card | `$FF00-$FFC3`, `$FFC4-$FFD4`, `$FFD5-$FFF9` | the kernel (196 B), the benchmark timing's `bt_replay` at `BT_REPLAY` (17 B, section 15) and, since speed wave 1, `far_gcopy` at `KERN_GCOPY` (`glayout.py`): `gr_load`'s copy of a whole group in one `RAMRD` window (the 250 B before the vectors are all used: `dl_kern.s` pads to `KERN_GCOPY`) |
+| Main card | `$FF00-$FFB6`, `$FFB8-$FFC3`, `$FFC4-$FFD4`, `$FFD5-$FFF7` | the kernel's code (`$FFB7` padding), its two load lists `k_core` and `k_planes` at `KLISTS` (speed wave 2: `dl_disp.s` in the tic image rewrites them each frame), the benchmark timing's `bt_replay` at `BT_REPLAY` (17 B, section 15) and, since speed wave 1, `far_gcopy` at `KERN_GCOPY` (`glayout.py`): `gr_load`'s copy of a group in one `RAMRD` window, since wave 2 its length only (from byte 256 − its tail of the page before it). 248 of the 250 B before the vectors |
 | Main card | `$FE80-$FEFF`, `$FE7B-$FE7F` | `DLBUF` (the step list), `KV_*` |
 | Main | `$0880-$08FF`, `$0B94-$0BFF` | the kernel's menu loop and the benchmark timing's `bt_mark` at `BT_MARK` (`$08CA`) and `BT_MARK2` (`$0BE1`) (read-only code, copied by DLINIT's PRIVATE request with the static tables: MEMORY_MAP.md 3.2's free bytes, never `$0878-$087F`; `$08F3-$08FF` free) |
 | Main | `$0844-$0867` | `bt_mark`'s middle part `bt_ext`, which the brain's `bt_start` writes there at each benchmark's start (section 15) |
@@ -122,12 +122,12 @@ its phase timing's `BT_*` (section 15):
 | RamWorks 104 (`S2STATE`) | `$0200-` | the 2D state's first values (the palette state, the automap's, the HUD's, the menu's save slots' text, the settings' defaults) |
 
 **The tic image** (glayout's game layout, linked by `play.mk` with
-`playlink.py --tic-cfg`): W `$6000-$65FF`, core `$6600-$98CE` (13,007 of
-13,312 B with speed wave 1's placement), slot 1 `$9E00-$A5FF`, slot 2
+`playlink.py --tic-cfg`): W `$6000-$65FF`, core `$6600-$993D` (13,118 of
+13,312 B with speed wave 2's placement; 13,007 with wave 1's), slot 1 `$9E00-$A5FF`, slot 2
 `$A600-$ADFF`, the planes `$B400-$BFFF`. The glue's groups follow
-milestone 10's, 43 since speed wave 1: `DLG_B` 1,049, `DLG_C` 1,081,
-`DLG_D` 1,242, `DLG_H` 1,902, `DLG_S` 1,270 B (of 2,048: `make -f
-play.mk sizes`). `gcall.s`'s slot cache tags (`SLOT_GRP`) and, since
+milestone 10's, 43 since speed wave 1: `DLG_B` 1,097, `DLG_C` 1,603,
+`DLG_D` 1,937, `DLG_H` 1,775 (7 pages since wave 2: the HUD's ticker left it), `DLG_S` 1,270 B (of 2,048: `make -f
+play.mk sizes`). Since wave 2 the group directory holds each group's whole pages and the bytes of its last page (`grp_tail`), and `gr_load` copies only the group's length. `gcall.s`'s slot cache tags (`SLOT_GRP`) and, since
 speed wave 1, the lazy restore's `SLOT_NEED` are reset at each `K_TIC`
 because every other image overwrites the slots.
 
@@ -141,7 +141,7 @@ uses none.
 
 | Image | Bank, pages | Load, measured or from the rate |
 | --- | --- | --- |
-| Tic image (W + core + planes) | 72 and 74: 57 + 12 pages | 4.4 ms (from the rate) |
+| Tic image (W + core + planes) | 72 and 74: 58 + 12 pages; since speed wave 2 52 + 4-12 (the core from `$66` after P2DW, the planes below `G_MOHWM`) | 4.4 ms (from the rate); less since wave 2 |
 | A group (slot) | 72-73: up to 8 pages | 0.5 ms each switch (from the rate) |
 | `WCODE` + the level's W tables | 112 | 5.0 ms (measured) |
 | `MCODE` | 113 | 2.5 ms (measured) |
@@ -184,7 +184,7 @@ far layer, phase loader, replay), and the bank files: the level store
 render images, the 2D images, `OVLW`), `CODE.2` (the tic image, its group
 directory written into the core), `PLAY.1` (`DLBANK`, `DEMOB`,
 `S2STATE`'s first values, `SPRBOUND`), `RTABLES.1`, `SONGS.1`, `SFX.1`,
-`GFX.1`, `HUDTXT.1`. 4,027,904 bytes (speed wave 1).
+`GFX.1`, `HUDTXT.1`. 4,029,952 bytes (speed wave 2).
 
 `DOOM.SYSTEM` probes the card, loads every bank file into RamWorks and the
 card images into the card, checks the CRCs, starts the mouse card's clock
@@ -196,6 +196,18 @@ static tables and the menu loop; black palettes), `MENUW`'s `m_init`,
 title page shows about 6 s after the start of `DOOM.SYSTEM`.
 
 ## 8. Frame rate (a2vm, f121, measured)
+
+**After speed wave 2 (2026-10-03; section 16, `docs/SPEED.md` 5).** Same
+commands, card-equivalent; "before" is wave 1's disk with the benchmark's
+timing (SHA-1 `90635ac1…`), rebuilt and measured again with the same a2vm:
+
+| Scene | f121 before | f121 after | fastpath before | fastpath after | `K_TIC` after (f121) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| E1M1's start, standing still (15-25 s) | 88.4 ms, **11.32 FPS** | 80.3 ms, **12.45 FPS** | 84.7 ms, 11.81 FPS | 78.6 ms, 12.72 FPS | 19.0 ms (24.8 before) |
+| demo3 on E1M7, gametics 1052-1796 | 272.1 ms, **3.67 FPS** | 247.2 ms, **4.04 FPS** | 244.6 ms, 4.09 FPS | 226.9 ms, 4.41 FPS | 168.4 ms (188.9 before) |
+| OPTIONS, BENCHMARK (all of demo3) | FPS **3.294** | FPS **3.631** | FPS 3.717 | FPS 4.026 | |
+
+The page's rows on a2vm f121: `TIC 201.1  3D 22.9` / `MASK 14.2  DRAW 31.9` / `REST 5.6  N 534` (before: 225.2, 23.2, 14.2, 35.7, 5.6).
 
 **After speed wave 1 (2026-10-02; section 14, `docs/SPEED.md` 5).**
 `python3 tools/native/playtime.py --scene still|demo3 [--profile
@@ -666,3 +678,74 @@ and the machine's sums.
 
 **Not done**: the card has not run it (the owner's test); NTSC is
 converted by its rate but was not run on a2vm (it runs PAL).
+
+## 16. What changed in speed wave 2 (2026-10-03)
+
+For the owner, after the card's benchmark rows (`TIC 260  3D 26.1` /
+`MASK 16.4  DRAW 37.7` / `REST 6.2  N 534  OVF 1`): the tic phase is three
+quarters of the card's frame, so this wave works mostly there. Nothing the
+game shows or does changed: the game's state and demo3's sync stay exact
+against ref816, and every frame the renderer draws is byte for byte the
+same (checked below). Only the time changed. `docs/SPEED.md` 4-5 has the
+plan and the figures, `docs/speed-parts/*.md` each part's details.
+
+**What you will notice** (a2vm f121, card-equivalent; `playtime.py`):
+
+| | Before (wave 1, your disk `90635ac1`) | After wave 2 |
+| --- | ---: | ---: |
+| E1M1's start, standing still | 11.32 FPS (88.4 ms) | **12.45 FPS** (80.3 ms) |
+| demo3 on E1M7, gametics 1052-1796 | 3.67 FPS (272 ms) | **4.04 FPS** (247 ms) |
+| The menu's BENCHMARK | 3.294 | **3.631** |
+| Its rows | TIC 225.2, 3D 23.2, MASK 14.2, DRAW 35.7, REST 5.6 | TIC 201.1, 3D 22.9, MASK 14.2, DRAW 31.9, REST 5.6 |
+| (fastpath: still / demo3 / BENCHMARK) | 11.81 / 4.09 / 3.717 | 12.72 / 4.41 / 4.026 |
+
+On your card, with the factors your rows showed (TIC and MASK about 1.155,
+3D 1.125, DRAW 1.056), the benchmark should read about **3.18 FPS** (about
+314 ms a frame: TIC about 232, DRAW about 34) against 2.897. That is an
+estimate: your card's page gives the figure.
+
+**What was changed**
+
+1. **The object API's misses copy in one window** (part objapi): a mobj's
+   four record groups, a line with its sectors, a sector's two records and
+   a block list each come over in one `RAMRD` window (a small copy routine
+   in page 1), not two to four; lookups start from the line last used. The
+   caches keep their sizes (bigger ones would gain about 1.5 ms in memory
+   that does not exist). demo3 −13.4 ms a frame.
+2. **Smaller tic loads** (part ticloads): a group load copies only the
+   group's bytes, not its last page's padding, in one window; the walk's
+   planes come and go only below the highest mobj slot used, written back
+   in one window; after the status bar's image the tic image's first six
+   pages are already in place and are not loaded again. demo3 −6 ms,
+   still −3.5 ms.
+3. **The HUD's ticker stays resident** (part glue): it runs from the tic
+   core instead of loading its 8-page group every tic. −1.3 to −1.7 ms.
+4. **The replay copies fewer texels** (part replay): a texture span that
+   wraps past texel 127 copies its two used runs, not all 128. DRAW −3.8 ms
+   in the benchmark; the heaviest frames −8 to −26 ms.
+5. **The front end** (part frontend): its image loads from page `$65`
+   (the tic image left the first five pages identical), the BSP walk
+   remembers each node's box corner angles while the view stands still,
+   and the weapon's clip pass is reused while the weapon is off screen.
+   −2.4 ms standing still.
+
+**How it was checked** (the owner's rule: only what changed, once each):
+the lockstep demo3 run against ref816 (`ticrun.py --run demo3 --frames
+front --fills a5`: 2,134 tics, 0 failures; the game code, the placement
+and the paging), `frame8.py` on 23 frames from one fill (demo3-036, the
+ten heaviest, every 50th demo3 frame, still-1 and still-2: all 23 equal,
+24,381 records; the renderer), the benchmark played whole from the menu on
+f121 and fastpath (the kernel), then the fast full suite
+(`python3 tools/testpar.py`; its first run found four harness checks that
+did not know a part's change and one defect of the integration in the
+test driver, each fixed: `docs/SPEED.md` 5, "Integration of wave 2").
+
+**The disk**: `build/native/DOOM.hdv`, 4,029,952 bytes, SHA-1
+`f92c81aeaf03fd9436e33fec5c6aa125ea105893`.
+
+**Not done** (each part's note says why and what it would take): the
+status bar's ticker in the core (no room), the brain's tic loop in the
+core, the object API's 2-byte blockmap reads and stamp-only line
+write-backs (outside that part's files), the replay's stage plan in the
+bucket pass (no spare record byte), the patched copy loops (no gain on
+F1.2.1), the planes' dirty flag (measured slower).

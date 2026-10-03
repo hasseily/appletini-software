@@ -119,9 +119,14 @@ SEG = {'V1X': 0, 'V1Y': 2, 'V2X': 4, 'V2Y': 6, 'OFFSET': 8, 'ANGLE': 10,
        'V2N': 20, 'PEGS': 22}
 SEG_SIZE = 24
 # Node, 32 bytes: x, y, dx, dy, bbox[0] (top, bottom, left, right),
-# bbox[1], children[0], children[1] (bit 15: a subsector), pad.
+# bbox[1], children[0], children[1] (bit 15: a subsector), pad. Speed wave
+# 2 (part frontend, RENDER-MASKED.md 6.2 optimisation 2): the pad's first
+# two bytes are the box corner cache's tag (CCT: the stamp, then the key:
+# the case | $40 box 0, $80 box 1; the level's records have 0 there, no
+# stamp), which the walk reads with the node; in the walk's node frame
+# the last two (CCN) take the node's address.
 NODE = {'X': 0, 'Y': 2, 'DX': 4, 'DY': 6, 'BOX0': 8, 'BOX1': 16,
-        'CH0': 24, 'CH1': 26}
+        'CH0': 24, 'CH1': 26, 'CCT': 28, 'CCN': 30}
 BOX = {'TOP': 0, 'BOTTOM': 2, 'LEFT': 4, 'RIGHT': 6}
 NODE_SIZE = 32
 # Subsector, 4 bytes: sector, seg count, first seg.
@@ -162,6 +167,22 @@ VAS = VAH + VTX_CAP             #   stamps
 VTX_STRIDE = VTX_CAP
 SECTORS = Array('sector', LVMAP, 0x8000, SEC_SIZE, 255)
 SIDES = Array('side', LVMAP, 0x9000, SIDE_SIZE, 1024)
+# Speed wave 2, part frontend (RENDER-MASKED.md 6.2 optimisation 2): the
+# box corner cache in RENDB, after OPENHI. CCSTATE: the view's map unit
+# (x, y: 2 bytes each) its entries are for and their stamp (1-255; 0:
+# none). CCANG: 4 bytes a
+# node, the angles of the two corners of the box and case its tag names
+# (R_PointToAngle16 of the corner from the unit: they depend on nothing
+# else), at CCANG + 4 n = the node's address / 8 + $2000 (rbsp.s cc_rec).
+# Its own state, not the frame block's (95 of 96 B taken): no harness
+# injects it, so a frame injected whole never meets entries its view did
+# not make.
+CCSTATE, CCST_SIZE = 0x1C00, 5
+CCANG = 0x2000 + (NODES.base >> 3)
+CCANG_END = CCANG + 4 * NODES.capacity
+assert OPENHI + MAXOPENINGS <= CCSTATE and CCSTATE + CCST_SIZE <= CCANG \
+    and CCANG_END <= BANK_ROOM[1] and NODE_SIZE == 32 and \
+    (CCANG - (NODES.base >> 3)) & 0xFF == 0
 TXFLAT = 0xB000                 # patchless-column bitmaps (stage B)
 TXFLAT_END = 0xC000
 assert VAS + VTX_CAP <= SECTORS.base
@@ -481,6 +502,10 @@ OV1_A = [
     ('FPC', 2),         # floor, ceiling plane colour ($FFFF none, $FFFE
     ('CPC', 2),         #   sky, else the FLATCM byte)
     ('T0', 4),          # temporaries of the walk
+    # speed wave 2, part frontend: the box corner cache (rbsp.s): the
+    # frame's use of it ($C0: read and write entries; 0: off, a new map
+    # unit), a box's key (its tag's second byte) and its two corner angles
+    ('CC_ON', 1), ('CC_K', 1), ('CC_A', 4),
 ]
 # Overlay 2, stage B: the seg loop's page, the hot part of the seg
 # descriptor SEGD (RENDER.md 3.2, 3.3). The edges keep upstream's forms
@@ -531,6 +556,9 @@ SPILL_A = [
     ('GYL', 2), ('GYH', 2), ('GTOP', 2), ('GCC', 2), ('GFC', 2),
     ('GBOT', 2), ('GMID', 2),
     ('GFLAG', 1),       # far_fstep: a column's scale past 64.0
+    # speed wave 2, part frontend: the box corner cache's state (rbsp.s:
+    # CCSTATE's copy for the frame)
+    ('CC_ST', CCST_SIZE),
 ]
 # The wall setup's variables (main $0DA0-$0DFF, RENDER.md 1.7's render
 # scratch): what R_StoreWallRange keeps in its znear
@@ -770,6 +798,7 @@ OVW = [
     ('WP_PYH', 1),      # the clip pass's R_DrawVisSprite: the run, the last
     ('WP_RUN', 1),      #   row of the post above, the post's rows
     ('WP_YL', 1), ('WP_YH1', 1),
+    ('WP_PO', 1),       # (speed wave 2) the psprite's render inputs' offset
 ]
 
 FAR = allocate(FAR_ZP, *ZP_FAR)
@@ -873,6 +902,10 @@ def regions() -> List[Region]:
                       DRAWSEGS + DS_SIZE * MAXDRAWSEGS, 'drawsegs'))
     out.append(Region('bank%d' % RENDB, OPENHI, OPENHI + MAXOPENINGS,
                       'OPENHI'))
+    out.append(Region('bank%d' % RENDB, CCSTATE, CCSTATE + CCST_SIZE,
+                      'the corner cache\'s state'))
+    out.append(Region('bank%d' % RENDB, CCANG, CCANG_END,
+                      'the corner cache\'s angles'))
     out.append(Region('aux0', OPENLO, OPENLO + MAXOPENINGS, 'openings'))
     out.append(Region('aux0', STAGE, STAGE_END, 'record staging'))
     return out
@@ -1066,6 +1099,9 @@ def constants() -> List[Tuple[str, int]]:
         ('FCNTLO', FCNTLO), ('FCNTHI', FCNTHI), ('MCNTLO', MCNTLO),
         ('MCNTHI', MCNTHI), ('BK_ZLOOP', BK_ZLOOP),
         ('BK_ZLOOP_SIZE', BK_ZLOOP_SIZE),
+        # speed wave 2, part frontend
+        ('CCSTATE', CCSTATE), ('CCST_SIZE', CCST_SIZE), ('CCANG', CCANG),
+        ('NODE_CAP', NODES.capacity),
     ]
     out += [('DS_' + k, v) for k, v in DS.items()]
     out += [('SEG_' + k, v) for k, v in SEG.items()]
@@ -1114,12 +1150,32 @@ def include_text() -> str:
 # with it): storage, bank, [start, end) with the reason.
 # ---------------------------------------------------------------------------
 
+def corner_cache_writes() -> List[Tuple[str, int, int, int, str]]:
+    """Speed wave 2, part frontend: what the walk's box corner cache
+    writes: its state and angles (RENDB) and each node's tags (LVMAP, the
+    record's pad). Last in the allowed sets: the node's ranges are many and
+    rare."""
+    out = [('aux', RENDB, CCSTATE, CCSTATE + CCST_SIZE,
+            'the corner cache\'s state'),
+           ('aux', RENDB, CCANG, CCANG_END, 'the corner cache\'s angles')]
+    for n in range(NODES.capacity):
+        a = NODES.address(n) + NODE['CCT']
+        out.append(('aux', LVMAP, a, a + 2, 'node %d\'s corner tag' % n))
+    return out
+
+
 def allowed_writes(nsectors: int, nvertices: int
                    ) -> List[Tuple[str, int, int, int, str]]:
     """The fixed part. The card's own bytes the render code may write are
     labels of the build (render_check.allowed_sets adds them: the vertex
     gather's entries vg_n .. vg_d, the math's self-modified operands): the
     rest of card bank 1 $DC00-$DFFF is code, the phase loader's included."""
+    return walk_writes(nsectors, nvertices) + corner_cache_writes()
+
+
+def walk_writes(nsectors: int, nvertices: int
+                ) -> List[Tuple[str, int, int, int, str]]:
+    """allowed_writes without the corner cache's."""
     out = [
         ('main', 0, ZP_FAR[0], ZP_FAR[1], 'far layer arguments'),
         ('main', 0, ZP_OV1[0], ZP_OV1[1], 'overlay 1'),
@@ -1245,7 +1301,7 @@ def allowed_writes_b(nsectors: int, nvertices: int
     the spans (not the covered ranges), the drawseg columns, LNMAP, the
     record batch, W's scratch of the seg, the openings, the staging and
     spill, the drawsegs and OPENHI."""
-    return allowed_writes(nsectors, nvertices) + [
+    return walk_writes(nsectors, nvertices) + [
         ('main', 0, ZP_OV2[0], ZP_OV2[1], 'overlay 2'),
         ('main', 0, SWVAR, SWVAR_END, 'wall setup variables'),
         ('main', 0, SPANS, SPANS_END, 'fill spans'),
@@ -1260,7 +1316,8 @@ def allowed_writes_b(nsectors: int, nvertices: int
         ('aux', 0, OPENLO, OPENLO + MAXOPENINGS, 'openings'),
         ('aux', 0, STAGE, STAGE_END, 'record staging'),
         ('aux', RENDB, DRAWSEGS, OPENHI + MAXOPENINGS, 'drawsegs, OPENHI'),
-    ] + [('aux', b, 0x0200, STAGE_END, 'record spill') for b in RECSP]
+    ] + [('aux', b, 0x0200, STAGE_END, 'record spill') for b in RECSP] + \
+        corner_cache_writes()
 
 
 def main(argv: Sequence[str]) -> int:

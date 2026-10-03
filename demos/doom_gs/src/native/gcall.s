@@ -25,18 +25,22 @@
 ;               unbuilt entry: GS_ARG = its number and table, GS_UNBUILTD
 ;   act_num     A = the ACTTAB number of the action of the state LW_STATE
 ;               (0 none; a stop GS_ACTION for an action not in ACT_ADDR)
-;   gr_load     group A into its slot (its image's pages from its bank:
-;               far_gcopy, one read window in the play build's kernel,
-;               dl_kern.s; far_get a page at a time in the test builds'
-;               driver, gdriver.s); SLOT_GRP updated
+;   gr_load     group A into its slot (its image's whole pages from its
+;               bank, then the used bytes of its last page: far_gcopy, one
+;               read window each in the play build's kernel, dl_kern.s;
+;               far_get a page at a time in the test builds' driver,
+;               gdriver.s); SLOT_GRP updated
 ;   g_stop      A = a stop code: GS_STATUS = A, then BRK
 ;   ld_stop     the game core's stops in the tic image (LV_STATUS, BRK),
 ;               as lload.s's in the load image
 ;
-; The group directory (grp_bank, grp_src, grp_pages: each group image's
-; bank, first page and pages) is the image's, written by the harness
-; (tools/native/grun.py) or the boot where it puts the images in GCODE0-1;
-; grp_slot is the placement's (gplace.inc).
+; The group directory (grp_bank, grp_src, grp_pages, grp_tail: each group
+; image's bank, first page, whole pages and the bytes it copies of the page
+; after them: its byte length, rounded up to an even count, or to the page
+; when that copies faster) is the image's, written by the harness
+; (tools/native/grun.py) or the disk's builder (tools/native/playdisk.py)
+; where they put the images in GCODE0-1; grp_slot is the placement's
+; (gplace.inc).
 
         .setcpu "65C02"
         .macpack longbranch
@@ -49,11 +53,16 @@
 
         .export fc_call, fc_unbuilt, dc_call, act_num, gr_load, g_stop
         .export ld_stop, fc_go, grp_bank, grp_src, grp_pages, grp_slot
+        .export grp_tail
         .export ACTTAB, THTAB, ITTAB, TRVTAB, LSTAB
         .import far_gcopy       ; (game.cfg: the kernel's, KERN_GCOPY,
                                 ;   unless the test driver links its own)
 
-MAXGRP  = 64
+; the directory's entries: group 0 (none), the placement's groups (gplace.py
+; MAX_GROUPS, 43, at most: the disk's CODE.2 holds 49 segments), then the
+; play link's glue groups (playlayout.py DL_GROUPS: 5; playdisk.py checks
+; they fit) or the test builds' harness groups (glayout.py TEST_GROUPS: 3)
+MAXGRP  = 43 + 5 + 1
         .assert GROUPS < MAXGRP, error, "too many groups"
 
         .include "gdisp.inc"
@@ -236,14 +245,26 @@ act_num:
         jmp g_stop
 
 ; ---------------------------------------------------------------------------
-; gr_load: group A into its slot: its FA_N pages through far_gcopy, from
-; page FA_SRC of bank FA_BANK to the slot's page FA_DST (both page aligned).
-; far_gcopy is the card's: with RAMRD on, the fetches of $0200-$BFFF come
-; from the bank, so the core cannot hold the copy. The play build's is the
-; kernel's one read window (dl_kern.s); the test builds' is the driver's,
-; far_get a page at a time with the pages counted in FC_PS, as gr_load's
-; own loop was (gdriver.s: the parts' write checks allow far_get's stores
-; into the slots; fc_ret keeps the callee's P across a load).
+; gr_load: group A into its slot, from page grp_src of bank grp_bank to the
+; slot's first page (both page aligned): its grp_pages whole pages (at
+; least one: 0 marks a group the image does not hold) and, when grp_tail
+; is not 0, the first grp_tail bytes (an even count) of the page after
+; them: the group's length, not its last page's padding (docs/SPEED.md 4,
+; item 4; playdisk.py and grun.py choose the entry: grun.group_entry). One
+; far_gcopy call copies them all (part ticloads' request 3, speed wave 2
+; as integrated): FA_N = the pages + 1 from the page before, low byte
+; grp_tail, and Y = 256 - grp_tail, so its first page is the group's
+; first grp_tail bytes and the pages after them end at its last. far_gcopy
+; copies FA_N pages from FA_SRC + Y to FA_DST + Y (the first page from
+; byte Y). The play build's is the kernel's one read window (dl_kern.s):
+; with RAMRD on, the fetches of $0200-$BFFF come from the bank, so the
+; core cannot hold the copy. The test builds' is the driver's, far_get a
+; page at a time with the pages counted in FC_PS, as gr_load's own loop
+; was (gdriver.s: the parts' write checks allow far_get's stores into the
+; slots; fc_ret keeps the callee's P across a load). Both leave X as it
+; was. The slot's bytes past the group keep what they held: no group
+; reads them (its link's segments end within its length, which
+; playdisk.py checks).
 ; ---------------------------------------------------------------------------
 gr_load:
 .ifdef TESTBUILD                ; (a test build's harness: the timing)
@@ -253,23 +274,32 @@ gr_load:
 .endif                          ;   counts as the object API's)
 .endif
         tax
-        lda grp_pages,x
+        lda grp_pages,x         ; the whole pages
         bne :+
         lda #GS_GROUP           ; (a group the image does not hold)
         jmp g_stop
-:       sta FA_N                ; (the pages)
+:       sta FA_N
         lda grp_bank,x
         sta FA_BANK
         lda grp_src,x
         sta FA_SRC+1
-        stz FA_SRC
         ldy grp_slot,x
         txa
         sta SLOT_GRP,y
         lda slot_page-1,y
         sta FA_DST+1
-        stz FA_DST
-        jsr far_gcopy
+        ldy #0
+        lda grp_tail,x          ; a tail: one page more, from byte 256 -
+        sta FA_SRC              ;   grp_tail of the page before the group
+        sta FA_DST
+        beq :+
+        dec FA_SRC+1
+        dec FA_DST+1
+        inc FA_N
+        eor #$FF
+        inc a
+        tay
+:       jsr far_gcopy
         inc FC_LOADS
         bne :+
         inc FC_LOADS+1
@@ -311,4 +341,6 @@ grp_bank:
 grp_src:
         .res MAXGRP, 0
 grp_pages:
+        .res MAXGRP, 0
+grp_tail:
         .res MAXGRP, 0
