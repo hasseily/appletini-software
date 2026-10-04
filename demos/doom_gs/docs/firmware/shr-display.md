@@ -19,7 +19,7 @@ The owner's decision is built underneath: **`$C035` SHADOW**, IIgs semantics. Wi
 | Item | Decision |
 |---|---|
 | The display | The renderer's existing aux copy, `g_aux_bank` `$2000-$9FFF` in CPU1's DDR (`FW/ps_sources/frontend/apple_cycle_egress.h:37-39` V). It is fed only by capture records (`apple_cycle_egress.c:270-298` V). No new RAM. |
-| `$C035` | Write-only, latched by the vTW core from its own bus write. Honoured only while SHR is selected. Bit 3 inhibits aux `$6000-$9FFF`; bits 3 **and** 4 inhibit aux `$2000-$5FFF` (the IIgs rule, section 1.2). Other bits are stored and ignored. Reset value `$00`, not the IIgs's `$08`. |
+| `$C035` | Write-only, latched by the vTW core from its own bus write. Honoured only while SHR is selected. Bit 3 inhibits aux `$6000-$9FFF`. Aux `$2000-$3FFF` and `$4000-$5FFF` are inhibited when bit 3 is set and either bit 4 or bit 1 (bit 2 for `$4000-$5FFF`) is set: the IIgs rule, section 1.2. The other bits are stored and ignored. Reset value `$00`, as on the IIgs (Hardware Reference p.21; rev 2026-10-04). |
 | Arming | Nothing changes until software writes `$C035` once after reset. VidHD-era software never does, so for it F1.2.2 behaviour is exact. |
 | Inhibited writes | Shadow BRAM only, like a PRIVATE memory-API write today. They never reach the display or the motherboard, and nothing reconciles them later. |
 | CPU display window | None (rev 2026-10-04). `$E1` on `$C071`/`$C073` is ignored, as every bit-7 value is today (`FW/hdl/apple/soft_switch_manager.sv:141-144` V). |
@@ -54,18 +54,24 @@ So the card already behaves like an IIgs with SHR shadowing from bank `$01` alwa
 | 7 | reserved | stored, ignored |
 | 6 | IOLC inhibit | stored, never honoured |
 | 5 | text page 2 (ROM 03) | stored, ignored |
-| 4 | aux hi-res pages `$01:2000-5FFF` | honoured together with bit 3 |
+| 4 | aux hi-res pages 1 and 2 in odd banks | honoured, with bits 1-3 (rule below) |
 | 3 | SHR buffer `$01:2000-9FFF` | honoured |
-| 2, 1 | hi-res page 2, page 1 (bank `$00`) | stored, ignored |
+| 2, 1 | hi-res page 2, page 1, main and aux | honoured for aux `$4000-$5FFF`, `$2000-$3FFF` (rule below); main ignored |
 | 0 | text page 1 | stored, ignored |
 
-Sources: `GSQ/Docs/AppleIIgs-Memory.md:26-84` (V; an emulator author's notes, medium-high confidence).
+Sources (rev 2026-10-04): the **Apple IIgs Hardware Reference**, pp.19-21, Figure 2-5 and Table 2-1. Bit 4: "When this bit is 1, shadowing is disabled for Hi-Res graphics pages 1 and 2 (as determined by bits 0 through 3 in this register) in all auxiliary (odd) banks". Bit 3: "When this bit is 1, shadowing is disabled for the entire 32K video buffer". Bit 2: "When this bit is 1, shadowing is disabled for Hi-Res graphics Page 2 and auxiliary Hi-Res graphics Page 2". This replaces the earlier source, gssquared's notes (`GSQ/Docs/AppleIIgs-Memory.md:26-84`).
 
-**Bit 3 alone does not inhibit `$01:2000-5FFF` on the IIgs.** gssquared's shadow test passes bank `$01` hi-res unless both bit 3 and bit 4 are set: "Odd-bank $2000-$5FFF is gated by AUXHGR|SHR (inhibit only when both are set; see SHADOW.s inhbt1)" (`GSQ/src/mmus/mmu_iigs.hpp:117-131` V). Its tests 28 and 29 write `$08` alone and `$10` alone and both expect the byte in `$E1` (`GSQ/apps/iigsmmutest/tests.hpp:493-517` V). The two halves of the range shadow for different reasons: the SHR rule covers `$2000-$9FFF`, the aux hi-res rule covers `$2000-$5FFF`, and a byte is shadowed if either rule says so. Upstream DOOM GS writes `$3F` (`DOOM/build/upstream/src/iigs/i_iigs65.s:252-253` V), so it never sees the difference.
+**The rule for bank `$01` (aux), rev 2026-10-04.** A byte is shadowed if either the Super Hi-Res rule or the aux hi-res rule shadows it. Apple's text implies this; it does not spell it out. MAME's IIgs implements it (`mame/src/mame/apple/apple2gs.cpp` `b1ram2000_w`/`b1ram4000_w`, `:3042-3063`, read in the verification's copy), as do gssquared's code and tests (`GSQ/src/mmus/mmu_iigs.hpp:117-131`, `GSQ/apps/iigsmmutest/tests.hpp:493-517` V):
 
-This design follows the IIgs: **`$08` inhibits only `$6000-$9FFF`; `$18` inhibits all of `$2000-$9FFF`.** Software should write `$18` (or upstream's `$3F`). Gssquared's own notes say bits 1 and 2 also gate the aux pages (`AppleIIgs-Memory.md:59`, `:71`, `:77` V); its code says they do not. The difference matters only for values with bit 4 = 0 and bit 1 or 2 = 1, and v1 ignores bits 1 and 2. Question 1 asks the owner to confirm against the IIgs Hardware Reference.
+| Aux range | Shadowed when |
+|---|---|
+| `$2000-$3FFF` | bit 3 = 0, **or** (bit 1 = 0 **and** bit 4 = 0) |
+| `$4000-$5FFF` | bit 3 = 0, **or** (bit 2 = 0 **and** bit 4 = 0) |
+| `$6000-$9FFF` | bit 3 = 0 |
 
-**Reset value.** The IIgs resets SHADOW to `$08` (`GSQ/src/mmus/mmu_iigs.cpp:793` V; M, medium-high for real hardware). The Appletini resets to `$00`: VidHD-era software never writes `$C035`, and `$08` would hide its `$6000-$9FFF` writes.
+So **`$08` inhibits only `$6000-$9FFF`**. `$18`, `$0E` or upstream DOOM GS's `$3F` (`DOOM/build/upstream/src/iigs/i_iigs65.s:252-253` V) inhibit all of `$2000-$9FFF`. Software should write `$18`. The Appletini honours bits 1, 2 and 4 for aux only, which costs a few LUTs over bits 3 and 4 alone. Main-bank hi-res and text shadowing have no meaning on the //e side and are ignored.
+
+**Reset value.** The IIgs **clears** SHADOW on reset: "When the Shadow register is cleared on reset, it defaults to shadowing all video areas" (Hardware Reference p.21). gssquared's `$08` (`GSQ/src/mmus/mmu_iigs.cpp:793`) does not match the book. The Appletini resets to `$00`, the same as the IIgs, and VidHD-era software, which never writes `$C035`, is unaffected.
 
 **Other IIgs facts used here.** The IIgs has no SHR page flip (M, high). Writes to `$E1` are not copied back to `$01`, and changing bit 3 copies nothing either way (M, high). `$C036` bit 4 shadows every bank into `$E1` (`AppleIIgs-Memory.md:96-103` V); it is not modelled.
 
@@ -96,9 +102,12 @@ Everything resets on power-up, Apple RES# (Ctrl-Reset), session start and end, a
 **Effective inhibit.**
 
 ```
-inh_hi  = ARMED && SHR selected && SHADOW[3]                  ; aux $6000-$9FFF
-inh_lo  = ARMED && SHR selected && SHADOW[3] && SHADOW[4]     ; aux $2000-$5FFF
+inh_hi  = ARMED && SHR selected && SHADOW[3]                                ; aux $6000-$9FFF
+inh_p1  = ARMED && SHR selected && SHADOW[3] && (SHADOW[4] || SHADOW[1])    ; aux $2000-$3FFF
+inh_p2  = ARMED && SHR selected && SHADOW[3] && (SHADOW[4] || SHADOW[2])    ; aux $4000-$5FFF
 ```
+
+(rev 2026-10-04: `inh_lo` split into `inh_p1` and `inh_p2` to follow the IIgs rule of section 1.2 exactly. Wherever C2-C4 below say `inh_lo_q`, read `inh_p1_q` for `$2000-$3FFF` and `inh_p2_q` for `$4000-$5FFF`; C4's compared vector becomes `{inh_p1_q, inh_p2_q, inh_hi_q}`. The cost grows by one register and two LUTs (E).)
 
 "Aux" means **physical bank 1**, after RAMRD/RAMWRT, 80STORE/PAGE2/HIRES and `$C073`. Main is never inhibited (IIgs bit 3 concerns bank `$01` only), so the paged-SHR second field in main and the A2Li holes behave as today. Outside SHR, `$C035` has no effect (question 2).
 
@@ -499,14 +508,14 @@ If shadowed SHR writes simply never went to the motherboard while SHR is selecte
 | Showing the active RamWorks bank | AppleWin today | Rejected by the owner: it tears, and no period hardware did it. |
 | A Videx-style window in `$Cxxx` | period cards | Every `$Cxxx` access is a bus cycle of about 1 µs, as slow as the drain. |
 | A page flip to a RamWorks bank | — | Capture covers banks 0 and 1 only (`apple_cycle_capture.sv:67-72` V); scattered PSRAM writes cost 0.504 µs (`calib.md:219` V). |
-| Reset value `$08` | the IIgs | VidHD-era software would lose its `$6000-$9FFF` writes. |
-| Bit 3 alone inhibiting all of `$2000-$9FFF` | the owner's wording | Differs from the IIgs for `$08` (section 1.2). Question 1. |
+| Reset value `$08` | gssquared | Not the IIgs: the Hardware Reference clears SHADOW on reset (section 1.2, rev 2026-10-04). It would also hide VidHD-era software's `$6000-$9FFF` writes. |
+| Bit 3 alone inhibiting all of `$2000-$9FFF` | the owner's wording | Differs from the IIgs for `$08` (section 1.2). Answered from the Hardware Reference and MAME (question 1, rev 2026-10-04). |
 | Inhibit outside SHR | the IIgs | The //e's own video and the legacy paged modes depend on aux writes. Question 2. |
 | A CPU-only design | — | A CPU present costs 5-7 ms a frame (26,880 bytes at about 0.2-0.27 µs, E) and tears; DOOM's net gain would shrink to 1-5 ms. |
 
 ## 10. Open questions for the owner
 
-1. **Bit 4.** Follow the IIgs (`$08` inhibits `$6000-$9FFF` only; `$18` inhibits everything), or make bit 3 alone inhibit all of `$2000-$9FFF`? And should bits 1 and 2 gate the aux pages when bit 4 is 0 (gssquared's notes and code disagree)? Please check against the IIgs Hardware Reference.
+1. **Bit 4.** Answered as far as sources go (rev 2026-10-04). The Hardware Reference defines the bits and the reset value. MAME's IIgs and gssquared's code give the overlap rule (section 1.2): `$08` inhibits `$6000-$9FFF` only, and bits 1, 2 and 4 gate the aux hi-res pages. The design now follows that exactly. It remains for the owner to confirm IIgs fidelity over "bit 3 inhibits everything".
 2. **Outside SHR.** v1 ignores `$C035` unless SHR is selected. Should the inhibit also apply in DHGR, where the IIgs would apply it?
 3. **Reading `$C035`.** Answer reads from the latch inside the card (no click, IIgs read-modify-write works), against the TransWarp rule "no new soft switches" (`README_VIRTUAL_TRANSWARP.md:279` V)?
 4. **Reading the display.** With the CPU kept out (rev 2026-10-04), the only read path would be the optional API source stage (S4). Is it wanted, or is the RAM copy in aux 0 enough?
