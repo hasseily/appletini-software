@@ -106,9 +106,11 @@ IRQ_BOUNDS = pldisk.IRQ_BOUNDS
 # with an AppleMouse II the handler also reads the //e's switches and
 # turns them off and back ($C000-$C01F), calls the firmware ($C200-$C2FF),
 # which borrows zero page $06 and uses slot 2's screen holes, which
-# ap_swap exchanges (MEMORY_MAP.md rule 2 as amended)
+# ap_swap exchanges (MEMORY_MAP.md rule 2 as amended); $07 too: Apple's
+# SERVEMOUSE runs an RTS at $06, whose dummy read on the 65C02 is $07
+# (a2vm --mouse-rom, 2026-10-04)
 APPLE_HOLES = [0x047A + 0x80 * k for k in range(8)]
-APPLE_IRQ_BOUNDS = ','.join(['0006-0006', '00D8-01FF'] +
+APPLE_IRQ_BOUNDS = ','.join(['0006-0007', '00D8-01FF'] +
                             ['%04X-%04X' % (h, h) for h in APPLE_HOLES] +
                             ['C000-C01F', 'C0A0-C0AF', 'C200-C2FF',
                              'C400-C4FF', 'E000-FFFF'])

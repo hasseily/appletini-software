@@ -1341,8 +1341,9 @@ empty (the `?`: no VIA to count a frame; right for the fork's `clock =
    `tools/native/nomouse.py`'s `apple_patches`, written by `playdisk.py`
    into `DOOM.SYSTEM`'s `ap_mpatch` (176 B, 164 used).
 4. **The clock's standard** (`ap_clock`, from `bt_detect`, interrupts
-   on): row 5 first (a mouse that never interrupts holds the boot
-   there, with the row saying why); then, when VIA-A's timer 1 latch
+   on): row 5 first (a mouse that never interrupted held the boot
+   there; since the fix below it falls back to VIA-B's timer); then,
+   when VIA-A's timer 1 latch
    holds what is written, one of the mouse's VBLs counted by it as
    `pl_detect` does: within 512 cycles of 20,280 PAL, of 17,030 NTSC;
    else NTSC with a `?`. Clock priority: your card, then an AppleMouse
@@ -1407,3 +1408,93 @@ frames, 2,958 realtics, as before.
 - The fork's Mockingboard gives the PAL/NTSC count and no music: the
   Phasor's native mode (your branch `codex/phasor-dual-ssi263`, commit
   `c786a6d1`) is needed for the sound.
+
+### The freeze on GSSquared (2026-10-04)
+
+The owner: "If I run DOOM_Appletini.gs2, it starts loading and says
+`APPLEMOUSE VBL CLOCK,` and freezes" (GSSquared's `feature/appletini-doom`,
+slot 2 `mouse`, slot 4 `phasor`, slot 7 `appletini`; `DOOM.hdv` SHA-1
+`515ec351`).
+
+**The cause is GSSquared's, not DOOM's or Apple's ROM's.** Read in its
+source (not run: the GUI is never launched here):
+
+- `src/util/EventTimer.cpp` (`scheduleEvent`, lines 23-25) drops any event
+  whose time is below `clock->get_cycles()`, the CPU's cycle count, and
+  prints `scheduleEvent: Event in the past, skipping`. The card's VBL
+  is scheduled on `computer->event_timer`, whose times are 14M ticks
+  (`gs2.cpp` processes it against `clock->get_c14m()`).
+- The `appletini` card sets 33.3 MHz when it starts (`pdblock3.cpp`
+  1282). In that mode `NClockII::slow_incr_cycles` adds a CPU cycle at
+  every cycle but a 14M tick on about 43% of them (238,944 / 556,272 a
+  frame), so the CPU count runs ahead of the 14M count from the start
+  and is over a frame ahead after about 20 ms.
+- `applemouseiii.cpp` (lines 37-50) schedules each VBL at the frame's
+  start + a frame + 192 lines, in 14M ticks: below the CPU count, so it
+  is dropped; `vbl_timer_armed` is still set, so SETMOUSE `$09`'s
+  `applemouseiii_schedule_vbl` returns at once. The card's VBL never
+  comes again. INITMOUSE, POSMOUSE and SETMOUSE are synchronous in its
+  model, so the boot gets to row 5, and `ap_wait` then waited for a
+  VBL that never came. Ludicrous speed (F9) has the same wrong-clock
+  check, and its probe frames also leave `get_frame_start_cycle()`
+  behind ("AppleMouse III vbl cycle is before current cycle").
+- The fix there: compare each timer's events with its own clock (14M
+  for `event_timer`, video cycles for `vid_event_timer`, CPU cycles for
+  `cpu_event_timer`), or drop the check, since `processEvents` already
+  fires late events; and in `applemouseiii.cpp` set `vbl_timer_armed`
+  only when the event was taken, and schedule the next VBL from the
+  last one + a frame.
+
+Apple's firmware itself works with DOOM: a2vm's new `--mouse-rom FILE`
+runs Apple's ROM 342-0270-C (read from GSSquared's assets at run time,
+never copied here) on a port of GSSquared's PIA and 6805 model, and
+DOOM boots and plays on it (below). Its SERVEMOUSE runs an RTS at zero
+page `$06`, whose dummy read on the 65C02 is `$07`: `playdisk.py`'s
+AppleMouse interrupt bounds now include `$07` (`MEMORY_MAP.md` rule 2).
+
+**What was changed in DOOM** (`pl_boot.s` `PLMOUSE` only: `PLBOOT` and
+`PLAMEM` keep every byte, and the Appletini's card runs the same
+bytes; `DOOM.SYSTEM`'s `PLMOUSE` is `$2FFF-$330B`, 244 B left before
+`$3400`): `ap_wait`, which `ap_clock` and `ap_count` use, gives up after
+20 changes of `$C019`'s bit 7 (10 frames, at any CPU speed). Then
+`ap_novbl`, masked: SETMOUSE `$01` (on, no interrupt) and a SERVEMOUSE
+(an interrupt that came late cleared); `pl_vbody`'s head on VIA-B's
+timer 1 as without a mouse card, but calling `ap_irq` with its
+SERVEMOUSE a `CLC`, so that each tick reads the mouse (READMOUSE,
+POSMOUSE: `MEMORY_MAP.md` 21); the timer checked (`mo_via`: else the
+stop) and `bd_via`'s standard, with row 5 saying
+`APPLEMOUSE NO VBL: PHASOR CLOCK, ` and the standard. On GSSquared
+until its timer is fixed the game should then run on the Phasor's timer
+with the mouse read once a frame (not run there). a2vm has
+`--mouse-no-vbl` for this: the ROM card's controller never sees a VBL.
+
+**How it was checked** (once each, a2vm `f122-nod2` (PAL), the Phasor
+and the memory API; `--rom` GSSquared's `apple2e_enh/main.rom`, whose
+`$FBB3` is `$06`, for the ROM card):
+
+| Run | Row 5 | `CLK_TICS` | Mouse firmware | The rest |
+| --- | --- | --- | --- | --- |
+| `--mouse-rom`, 47 s | `APPLEMOUSE VBL CLOCK, PAL` | 328 to 1,376 over 15-45 s: 34.93 a second (0.19% under 35) | mode `$09`; 2,076 interrupts, raised and released 2,076 times; SET 1, SERVE 2,076, READ 2,076, POS 2,077, INIT 2 | 1,900 AY writes; demo3 on E1M7, gametic 1,270 at 45 s, 1,310 at 46.8 s, views 62 to 72 |
+| `--mouse-rom`, a new game, 16 s | `APPLEMOUSE VBL CLOCK, PAL` | | 523 interrupts, each served | the mouse 300 right at 11.6 s: the view 90 to 40.56 degrees; 200 left at 13 s: 73.52; button 0 held 14.2-15.0 s: BT_ATTACK in the command, the clip 50, 49, 48 |
+| `--mouse-rom --mouse-no-vbl`, a new game, 20 s | `APPLEMOUSE NO VBL: PHASOR CLOCK, PAL` | 76 to 478 over 8-19.5 s: 34.96 a second | mode `$01`, no interrupt raised; SET 2, SERVE 1, READ 710, POS 711 (one a VIA-B tick) | 973 AY writes; the same turns (40.56, 73.52) and the same shots |
+| `--mouse-apple`, 47 s | `APPLEMOUSE VBL CLOCK, PAL` | 328 to 1,377: 34.97 a second | calls SET 1, SERVE 2,077, READ 2,077, POS 2,078, INIT 1 | 1,946 AY writes; demo3 on E1M7, gametic 1,282 to 1,326 |
+
+Then `tests/test_m11_plboot.py` without its planted bugs (11 tests, OK)
+and the BENCHMARK with your card (`playtime.py --scene bench --profile
+f122-nod2`): 6.519 FPS, 551 frames, 2,958 realtics, as before. All four
+runs ended at their cycle limit within their interrupt bounds.
+
+**The disk**: `build/native/DOOM.hdv`, 4,030,976 bytes, SHA-1
+`2a4d0dad452afd1f0d670665438af2762b3dd8fe`; only `DOOM.SYSTEM` differs
+from `515ec351`'s, from `$3038` (in `PLMOUSE`) on.
+
+**Open problems**
+
+- Not run on GSSquared. With its timer as it is, the boot should say
+  `APPLEMOUSE NO VBL: PHASOR CLOCK,` and play on the Phasor's timer; with
+  its timer fixed, `APPLEMOUSE VBL CLOCK,` as on a2vm.
+- A mouse whose VBL stops after the boot (GSSquared's Ludicrous speed
+  pressed during the game) still stops the game's clock: the fallback is
+  decided once, at the boot.
+- `ap_wait` trusts `$C019` to change: a machine whose blanking flag
+  never moves and whose mouse never interrupts would still wait.

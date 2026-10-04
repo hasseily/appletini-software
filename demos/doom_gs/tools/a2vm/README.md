@@ -407,6 +407,8 @@ rendered.
 | `--phasor-mb-only` | The Phasor locked to Mockingboard mode, as the card's `audio_control` bit 26 does (`hdl/apple/mockingboard.sv:38-41`): accesses to `$C0C0-$C0CF` do not change its mode, so it keeps one AY behind each VIA. Off by default |
 | `--irq-bounds LO-HI[,LO-HI...]` | Interrupt bounds (below): the address ranges (hex, at most 24) an interrupt handler may read or write; any other access halts the run |
 | `--mouse-apple`, `--no-phasor` | Slot 2 an AppleMouse II ("The AppleMouse II", below; needs `--core w65c02s`); slot 4 empty |
+| `--mouse-rom FILE` | Slot 2 an AppleMouse II that runs Apple's ROM, FILE ("The AppleMouse II's ROM", below); it replaces the other slot-2 options |
+| `--mouse-no-vbl` | With `--mouse-rom`: the controller never sees a VBL, so mode `$09` never interrupts, as GSSquared's card at 33.3 MHz |
 
 **Input events**, one a line, `WHEN ACTION`. `WHEN` is `start`,
 `boundary N` (after the Nth boundary's snapshot), `cycle N` (after the
@@ -473,6 +475,53 @@ SERVEMOUSE releases it. The final state's `applemouse` gives it with
 the count of calls to each entry. The model does not run Apple's ROM or
 its 6805: the firmware's own stack (about 6 bytes) and time are not
 there, and nothing of it is reached through `$C0A0-$C0AF`.
+
+### The AppleMouse II's ROM
+
+`--mouse-rom FILE` (2026-10-04, for DOOM GS's freeze on GSSquared after
+`APPLEMOUSE VBL CLOCK,`) puts in slot 2 an AppleMouse II that runs
+Apple's own firmware: FILE is the 2 KB ROM 342-0270-C, read at start-up
+from where it is (GSSquared's `assets/roms/cards/applemouseiii/`); it is
+never copied into this repository. The card is GSSquared's
+`applemouseiii` (`PIA6520.cpp`, `MouseController.cpp`,
+`applemouseiii.cpp`, from A2Pico's mouse-interface) in C, with the same
+protocol and the same timing:
+
+- `$Cn00-$CnFF` shows the ROM's bank `(ORB & DDRB & $0E) >> 1`, from the
+  next read after the PIA write that changes it (the firmware switches
+  banks under its own PC);
+- `$C0n0-$C0nF` is the 6520 (the address's low two bits: port A or its
+  DDR, CRA, port B or its DDR, CRB; bit 2 of CRx picks the port);
+- the 6805 is the controller's `run()`: before and after each PIA read,
+  after each PIA write and at each VBL, nothing in between, so it
+  answers at once. Port B bit 5 (WRREQUEST) hands it a byte of port A
+  and it raises bit 7 (WRACK); with bits 4, 5 and 7 low it puts the next
+  reply byte on port A with bit 6 (RDREADY), which bit 4 (RDACK)
+  consumes. The commands (SETMOUSE `$0m`, READMOUSE `$10`, SERVEMOUSE
+  `$20`, CLEARMOUSE, POSMOUSE, INITMOUSE, CLAMPMOUSE, HOMEMOUSE,
+  TIMEMOUSE, `$Fx` reads of its memory) are `MouseController.cpp`'s;
+- at each vertical blanking (line 192, a2vm's VBL event), with the
+  mode's bit 3 on, the VBL bit is set in its interrupt state; the slot's
+  interrupt rises when a bit of VBL, button or movement appears in a
+  state that had none, and falls at SERVEMOUSE and INITMOUSE (as in
+  GSSquared, INITMOUSE does not clear the state's bits).
+
+The input events `mouse`, `mouse-to` and `buttons` reach it as
+GSSquared's host mouse does (moves in steps of -128..127, button 0 the
+left, 1 the right). The firmware needs the //e's ROM: INITMOUSE reads
+`$FBB3` and, when it is not `$06`, takes the II+ path, which clears
+`$2000-$3FFF`; a run with an all-zero `--rom` fails there. The final
+state's `mouserom` gives the position, mode, interrupt state and line,
+the bank, the PIA's registers, and counts: commands by their high
+nibble, interrupts raised and released, VBLs, PIA accesses, bank
+changes. Both cores run it.
+
+`--mouse-no-vbl` (2026-10-04) keeps a2vm's VBL from the controller
+(`vbls` stays 0), which is what GSSquared's card does at 33.3 MHz: its
+`EventTimer::scheduleEvent` rejects a time in 14M ticks that is below
+the CPU's cycle count, and at 33.3 MHz the CPU count runs about 2.33
+times ahead, so the card's VBL is never re-scheduled after the first
+frame (DOOM GS's `docs/PLAY.md` 22).
 
 ### The AY log
 

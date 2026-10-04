@@ -240,6 +240,348 @@ static void mouse_write(a2vm_mouse *c, unsigned reg, uint8_t value)
     }
 }
 
+/* ---- --mouse-rom: an AppleMouse II running Apple's ROM ----
+
+   GSSquared's applemouseiii (src/devices/applemouseiii: PIA6520.cpp,
+   MouseController.cpp, applemouseiii.cpp) in C, function by function,
+   with the same protocol and the same timing: the controller's run()
+   at each PIA access (before and after a read, after a write) and at
+   each VBL, nothing in between. Port B: bits 1-3 the ROM's bank (A8-A10,
+   ORB and DDRB), bit 4 RDACK and bit 5 WRREQUEST from the 6502, bit 6
+   RDREADY and bit 7 WRACK from the controller. */
+
+enum {
+    RM_RDACK = 0x10, RM_WRREQUEST = 0x20, RM_RDREADY = 0x40, RM_WRACK = 0x80,
+    RM_SET = 0x00, RM_READ = 0x10, RM_SERVE = 0x20, RM_CLEAR = 0x30,
+    RM_POS = 0x40, RM_INIT = 0x50, RM_CLAMP = 0x60, RM_HOME = 0x70,
+    RM_TIME = 0x90, RM_A0 = 0xa0, RM_RDMEM = 0xf0,
+    RM_WAS_BUTTON1 = 1, RM_IRQ_MOVEMENT = 2, RM_IRQ_BUTTON = 4,
+    RM_IRQ_VBL = 8, RM_IS_BUTTON1 = 0x10, RM_MOVED = 0x20,
+    RM_WAS_BUTTON0 = 0x40, RM_IS_BUTTON0 = 0x80,
+    RM_MODE_ENABLED = 1, RM_MODE_MOVED_IRQ = 3, RM_MODE_BUTTON_IRQ = 5,
+    RM_MODE_VBL_IRQ = 8,
+    RM_IRQ_BITS = RM_IRQ_VBL | RM_IRQ_MOVEMENT | RM_IRQ_BUTTON
+};
+
+static uint8_t rm_port_a(const a2vm_romouse *r)
+{
+    return (uint8_t)((r->ora & r->ddra) | (r->ia & ~r->ddra));
+}
+
+static uint8_t rm_port_b(const a2vm_romouse *r)
+{
+    return (uint8_t)((r->orb & r->ddrb) | (r->ib & ~r->ddrb));
+}
+
+/* the bank at $Cn00 (PIA6520::rom_bank) */
+static unsigned rm_bank(const a2vm_romouse *r)
+{
+    return (unsigned)((r->orb & r->ddrb & 0x0e) >> 1);
+}
+
+static void rm_irq(a2vm_romouse *r, int asserted)
+{
+    if (r->irq == asserted)
+        return;
+    r->irq = (uint8_t)asserted;
+    if (asserted)
+        r->irq_asserts++;
+    else
+        r->irq_releases++;
+}
+
+static void rm_notify_bank(a2vm_romouse *r)
+{
+    uint8_t bank = (uint8_t)rm_bank(r);
+    if (bank != r->last_bank) {
+        r->last_bank = bank;
+        r->bank_switches++;
+    }
+}
+
+static void rm_clamp_xy(a2vm_romouse *r)
+{
+    if (r->x < r->clamp_min_x)
+        r->x = r->clamp_min_x;
+    if (r->y < r->clamp_min_y)
+        r->y = r->clamp_min_y;
+    if (r->x > r->clamp_max_x)
+        r->x = r->clamp_max_x;
+    if (r->y > r->clamp_max_y)
+        r->y = r->clamp_max_y;
+}
+
+static void rm_home(a2vm_romouse *r)
+{
+    r->x = r->last_x = r->clamp_min_x;
+    r->y = r->last_y = r->clamp_min_y;
+}
+
+static void rm_command(a2vm_romouse *r)
+{
+    uint8_t *w = r->write_buffer, *b = r->read_buffer;
+    r->commands[r->command >> 4]++;
+    switch (r->command & 0xf0) {
+    case RM_SET:
+        r->mode = r->command & 0x0f;
+        break;
+    case RM_READ: {
+        uint8_t st = r->int_state & RM_MOVED;
+        if (r->last_button0)
+            st |= RM_WAS_BUTTON0;
+        if (r->last_button1)
+            st |= RM_WAS_BUTTON1;
+        if (r->button0)
+            st |= RM_IS_BUTTON0;
+        if (r->button1)
+            st |= RM_IS_BUTTON1;
+        b[4] = (uint8_t)(r->x & 0xff);
+        b[3] = (uint8_t)((r->x >> 8) & 0xff);
+        b[2] = (uint8_t)(r->y & 0xff);
+        b[1] = (uint8_t)((r->y >> 8) & 0xff);
+        b[0] = st;
+        r->int_state = (uint8_t)(st & ~RM_MOVED);
+        r->last_x = r->x;
+        r->last_y = r->y;
+        r->last_button0 = r->button0;
+        r->last_button1 = r->button1;
+        r->read_pos = 5;
+        break;
+    }
+    case RM_SERVE:
+        b[0] = (uint8_t)(r->int_state & ~RM_MOVED);
+        r->read_pos = 1;
+        r->int_state &= (uint8_t)~RM_IRQ_BITS;
+        rm_irq(r, 0);
+        break;
+    case RM_CLEAR:
+        r->x = r->y = 0;
+        break;
+    case RM_POS:
+        r->x = (int16_t)(w[3] | w[2] << 8);
+        r->y = (int16_t)(w[1] | w[0] << 8);
+        rm_clamp_xy(r);
+        r->last_x = r->x;
+        r->last_y = r->y;
+        break;
+    case RM_INIT:
+        r->clamp_max_x = r->clamp_max_y = 1023;
+        r->clamp_min_x = r->clamp_min_y = 0;
+        rm_home(r);
+        rm_irq(r, 0);
+        break;
+    case RM_CLAMP: {
+        int16_t low = (int16_t)(w[3] | w[1] << 8);
+        int16_t high = (int16_t)(w[2] | w[0] << 8);
+        if (low > high) {
+            uint32_t t = (uint32_t)(int32_t)high + (uint32_t)(int32_t)low;
+            high = (int16_t)(uint16_t)(t >> 1);
+            low = 0;
+        }
+        if (r->command & 1) {
+            r->clamp_min_y = low;
+            r->clamp_max_y = high;
+        } else {
+            r->clamp_min_x = low;
+            r->clamp_max_x = high;
+        }
+        rm_clamp_xy(r);
+        break;
+    }
+    case RM_HOME:
+        rm_home(r);
+        break;
+    case RM_TIME:
+        r->intervbl = (r->command & 1) ? 20280 : 17030;
+        break;
+    case RM_RDMEM: {
+        uint16_t address = (uint16_t)(w[1] | w[0] << 8);
+        uint8_t v = 0;
+        switch (address) {
+        case 0x47: v = (uint8_t)(r->clamp_min_x >> 8); break;
+        case 0x48: v = (uint8_t)(r->clamp_min_y >> 8); break;
+        case 0x49: v = (uint8_t)r->clamp_min_x; break;
+        case 0x4a: v = (uint8_t)r->clamp_min_y; break;
+        case 0x4b: v = (uint8_t)(r->clamp_max_x >> 8); break;
+        case 0x4c: v = (uint8_t)(r->clamp_max_y >> 8); break;
+        case 0x4d: v = (uint8_t)r->clamp_max_x; break;
+        case 0x4e: v = (uint8_t)r->clamp_max_y; break;
+        }
+        b[0] = v;
+        r->read_pos = 1;
+        break;
+    }
+    }
+}
+
+static void rm_accept(a2vm_romouse *r)
+{
+    if (r->write_pos)
+        r->write_buffer[--r->write_pos] = rm_port_a(r);
+    else {
+        r->command = rm_port_a(r);
+        switch (r->command & 0xf0) {
+        case RM_POS:
+        case RM_CLAMP: r->write_pos = 4; break;
+        case RM_A0: r->write_pos = 1; break;
+        case RM_RDMEM: r->write_pos = 2; break;
+        case RM_TIME:
+            switch (r->command & 0x0c) {
+            case 0x4: r->write_pos = 2; break;
+            case 0x8: r->write_pos = 1; break;
+            case 0xc: r->write_pos = 3; break;
+            }
+            break;
+        }
+    }
+    if (r->write_pos == 0)
+        rm_command(r);
+}
+
+static void rm_run(a2vm_romouse *r)
+{
+    uint8_t port_b = rm_port_b(r);
+    if ((port_b ^ r->last_port_b) & RM_WRREQUEST) {         /* process_write */
+        if (port_b & RM_WRREQUEST) {
+            r->read_pos = 0;
+            rm_accept(r);
+            r->ib = (uint8_t)((r->ib & ~RM_RDREADY) | RM_WRACK);
+        } else if (r->ib & RM_WRACK)
+            r->ib &= (uint8_t)~RM_WRACK;
+    }
+    if (port_b & RM_RDACK) {                                /* process_read */
+        if (r->ib & RM_RDREADY) {
+            if (r->read_pos > 0)
+                r->read_pos--;
+            r->ib &= (uint8_t)~RM_RDREADY;
+        }
+    } else if ((port_b & (RM_WRACK | RM_WRREQUEST)) == 0 &&
+               (r->ib & RM_RDREADY) == 0) {
+        r->ia = r->read_pos > 0 ? r->read_buffer[r->read_pos - 1] : 0x00;
+        r->ib |= RM_RDREADY;
+    }
+    r->last_port_b = port_b;
+    if (r->vbl_pending) {
+        r->vbl_pending = 0;
+        r->int_state |= RM_IRQ_VBL;
+    }
+    if ((r->int_state & RM_IRQ_BITS) && (r->old_int & RM_IRQ_BITS) == 0)
+        rm_irq(r, 1);
+    r->old_int = r->int_state;
+}
+
+static void rm_reset(a2vm_romouse *r)
+{
+    rm_irq(r, 0);
+    r->ddra = r->ddrb = r->ora = r->orb = r->cra = r->crb = 0;
+    r->ia = r->ib = 0;
+    r->command = 0;
+    memset(r->read_buffer, 0, sizeof r->read_buffer);
+    memset(r->write_buffer, 0, sizeof r->write_buffer);
+    r->read_pos = r->write_pos = 0;
+    r->last_port_b = r->old_int = 0;
+    r->intervbl = 17030;
+    r->mode = r->int_state = r->vbl_pending = 0;
+    r->x = r->y = r->last_x = r->last_y = 0;
+    r->button0 = r->button1 = r->last_button0 = r->last_button1 = 0;
+    r->clamp_min_x = r->clamp_min_y = 0;
+    r->clamp_max_x = r->clamp_max_y = 1023;
+    r->last_bank = 0xff;
+    rm_notify_bank(r);
+}
+
+static uint8_t rm_pia_read(a2vm_romouse *r, unsigned address)
+{
+    uint8_t value;
+    r->pia_reads++;
+    rm_run(r);
+    switch (address & 3) {
+    case 0: value = (r->cra & 4) ? rm_port_a(r) : r->ddra; break;
+    case 1: value = r->cra; break;
+    case 2: value = (r->crb & 4) ? rm_port_b(r) : r->ddrb; break;
+    default: value = r->crb; break;
+    }
+    rm_run(r);
+    return value;
+}
+
+static void rm_pia_write(a2vm_romouse *r, unsigned address, uint8_t value)
+{
+    r->pia_writes++;
+    switch (address & 3) {
+    case 0:
+        if (r->cra & 4)
+            r->ora = value;
+        else
+            r->ddra = value;
+        break;
+    case 1: r->cra = value & 0x3f; break;
+    case 2:
+        if (r->crb & 4)
+            r->orb = value;
+        else
+            r->ddrb = value;
+        break;
+    default: r->crb = value & 0x3f; break;
+    }
+    rm_notify_bank(r);
+    rm_run(r);
+}
+
+static void rm_vbl(a2vm_romouse *r)
+{
+    r->vbls++;
+    if (r->mode & RM_MODE_VBL_IRQ)
+        r->vbl_pending = 1;
+    rm_run(r);
+}
+
+static void rm_move_xy(a2vm_romouse *r, int8_t dx, int8_t dy)
+{
+    int16_t old_x = r->x, old_y = r->y;
+    r->x = (int16_t)(r->x + dx);
+    if (dx > 0) {
+        if (r->x < old_x || r->x > r->clamp_max_x)
+            r->x = r->clamp_max_x;
+    } else if (r->x > old_x || r->x < r->clamp_min_x)
+        r->x = r->clamp_min_x;
+    r->y = (int16_t)(r->y + dy);
+    if (dy > 0) {
+        if (r->y < old_y || r->y > r->clamp_max_y)
+            r->y = r->clamp_max_y;
+    } else if (r->y > old_y || r->y < r->clamp_min_y)
+        r->y = r->clamp_min_y;
+    if (r->x != old_x || r->y != old_y) {
+        r->int_state |= RM_MOVED;
+        if ((r->mode & RM_MODE_MOVED_IRQ) == RM_MODE_MOVED_IRQ)
+            r->int_state |= RM_IRQ_MOVEMENT;
+    }
+    rm_run(r);
+}
+
+static void rm_button(a2vm_romouse *r, int number, int pressed)
+{
+    if (number == 0)
+        r->button0 = (uint8_t)(pressed != 0);
+    else
+        r->button1 = (uint8_t)(pressed != 0);
+    if ((r->mode & RM_MODE_BUTTON_IRQ) == RM_MODE_BUTTON_IRQ)
+        r->int_state |= RM_IRQ_BUTTON;
+    rm_run(r);
+}
+
+/* a move of (dx, dy) in the controller's steps of -128..127 */
+static void rm_delta(a2vm_romouse *r, int64_t dx, int64_t dy)
+{
+    while (dx || dy) {
+        int64_t sx = dx < -128 ? -128 : dx > 127 ? 127 : dx;
+        int64_t sy = dy < -128 ? -128 : dy > 127 ? 127 : dy;
+        rm_move_xy(r, (int8_t)sx, (int8_t)sy);
+        dx -= sx;
+        dy -= sy;
+    }
+}
+
 /* ---- the Phasor (a2sim.Phasor) ---- */
 
 enum { MOCKINGBOARD = 0, NATIVE = 5 };
@@ -1126,6 +1468,8 @@ static uint8_t io_read(a2vm *m, uint16_t address)
             phasor_mode_switch(&m->phasor, low);
     } else if (m->mouse_on && (int)(low >> 4) == 8 + m->mouse_slot)
         return mouse_read(&m->mouse, low & 0x0f);
+    else if (m->mouse_rom && (int)(low >> 4) == 8 + m->mouse_slot)
+        return rm_pia_read(&m->romouse, low & 0x0f);
     return 0x00;
 }
 
@@ -1161,6 +1505,8 @@ static void io_write(a2vm *m, uint16_t address, uint8_t value)
             phasor_mode_switch(&m->phasor, low);
     } else if (m->mouse_on && (int)(low >> 4) == 8 + m->mouse_slot)
         mouse_write(&m->mouse, low & 0x0f, value);
+    else if (m->mouse_rom && (int)(low >> 4) == 8 + m->mouse_slot)
+        rm_pia_write(&m->romouse, low & 0x0f, value);
 }
 
 /* ---- the bus ---- */
@@ -1188,6 +1534,9 @@ static uint8_t slow_read(a2vm *m, uint16_t address)
     if (m->mouse_apple && !m->sw[SW_INTCXROM] && address < 0xc800 &&
         slot == m->mouse_slot)
         return apple_mouse_rom(address & 0xff);
+    if (m->mouse_rom && !m->sw[SW_INTCXROM] && address < 0xc800 &&
+        slot == m->mouse_slot)
+        return m->romouse.rom[rm_bank(&m->romouse) << 8 | (address & 0xff)];
     return m->rom[address - 0xc000];
 }
 
@@ -1508,6 +1857,8 @@ static void vbl_event(a2vm *m)
     m->next_vbl += m->frame_cycles;
     if (m->mouse_on || m->mouse_apple)
         mouse_vblank(&m->mouse);
+    if (m->mouse_rom && !m->mouse_no_vbl)
+        rm_vbl(&m->romouse);
 }
 
 static void skip_idle(a2vm *m, uint16_t pc)
@@ -1739,7 +2090,7 @@ void a2vm_step(a2vm *m)
     if (m->core == A2VM_CORE_PY65) {
         m->instruction_pc = m->r.pc;
         if ((((m->mouse_on || m->mouse_apple) && m->mouse.irq) ||
-             via_irq(m)) &&
+             (m->mouse_rom && m->romouse.irq) || via_irq(m)) &&
             !(m->r.p & P65_I)) {
             m->r.waiting = 0;
             p65_irq(m);
@@ -1772,7 +2123,7 @@ void a2vm_step(a2vm *m)
         return;
     }
     int irq = ((m->mouse_on || m->mouse_apple) && m->mouse.irq) ||
-              via_irq(m);
+              (m->mouse_rom && m->romouse.irq) || via_irq(m);
     cpu65c02_set_irq(&m->cpu, 1, irq);
     int taken = irq && !(m->cpu.p & CPU65C02_I) &&
                 m->cpu.state != CPU65C02_STOPPED;
@@ -1851,11 +2202,19 @@ void a2vm_release(a2vm *m)
 
 void a2vm_mouse_move(a2vm *m, int64_t x, int64_t y)
 {
+    if (m->mouse_rom) {
+        rm_delta(&m->romouse, x - m->romouse.x, y - m->romouse.y);
+        return;
+    }
     mouse_commit(&m->mouse, x, y, m->mouse.ps_buttons, 1);
 }
 
 void a2vm_mouse_delta(a2vm *m, int64_t dx, int64_t dy)
 {
+    if (m->mouse_rom) {
+        rm_delta(&m->romouse, dx, dy);
+        return;
+    }
     a2vm_mouse *c = &m->mouse;
     int64_t x = clamp16(c->x + dx, c->clamp[0][0], c->clamp[0][1]);
     int64_t y = clamp16(c->y + dy, c->clamp[1][0], c->clamp[1][1]);
@@ -1864,6 +2223,13 @@ void a2vm_mouse_delta(a2vm *m, int64_t dx, int64_t dy)
 
 void a2vm_mouse_buttons(a2vm *m, int left, int right)
 {
+    if (m->mouse_rom) {
+        if (m->romouse.button0 != (left != 0))
+            rm_button(&m->romouse, 0, left);
+        if (m->romouse.button1 != (right != 0))
+            rm_button(&m->romouse, 1, right);
+        return;
+    }
     mouse_commit(&m->mouse, m->mouse.x, m->mouse.y,
                  (left ? 1u : 0u) | (right ? 2u : 0u), 1);
 }
@@ -2081,6 +2447,23 @@ a2vm *a2vm_new(const a2vm_config *config, char *error, size_t error_size)
     m->mouse_on = config->mouse;
     m->mouse_plain = config->mouse_plain;
     m->mouse_apple = config->mouse_apple;
+    if (config->mouse_rom) {
+        FILE *file = fopen(config->mouse_rom, "rb");
+        size_t n = file ? fread(m->romouse.rom, 1, sizeof m->romouse.rom,
+                                file) : 0;
+        int more = file && fgetc(file) != EOF;
+        if (file)
+            fclose(file);
+        if (n != sizeof m->romouse.rom || more) {
+            snprintf(error, error_size, "%s is not a 2 KB AppleMouse II ROM",
+                     config->mouse_rom);
+            a2vm_free(m);
+            return NULL;
+        }
+        m->mouse_rom = 1;
+        m->mouse_no_vbl = config->mouse_no_vbl;
+        rm_reset(&m->romouse);
+    }
     m->phasor_slot = config->phasor_slot;
     m->mouse_slot = config->mouse_slot;
     m->amem_on = config->amem;

@@ -19,6 +19,15 @@
  *                       firmware's entry points serviced by a2vm with the
  *                       screen-hole protocol, its VBL interrupt (needs
  *                       --core w65c02s; README.md, "The AppleMouse II")
+ *   --mouse-rom FILE    slot 2 an AppleMouse II running Apple's ROM, FILE
+ *                       (342-0270-C, 2 KB, never copied here): its eight
+ *                       banks, its 6520 PIA and its 6805 controller as
+ *                       GSSquared's applemouseiii models them, its VBL
+ *                       interrupt (README.md, "The AppleMouse II's ROM");
+ *                       it replaces the slot-2 options above
+ *   --mouse-no-vbl      with --mouse-rom: its controller sees no VBL, so
+ *                       mode $09 never interrupts (GSSquared's card at
+ *                       33.3 MHz, whose event timer drops the VBL)
  *   --no-phasor         slot 4 empty: no Phasor
  *   --amem              the memory API in slot 7 (FakeSmartPortMemory)
  *   --amem-unsupported, --amem-unavailable
@@ -355,6 +364,10 @@ static void parse(int argc, char **argv, options *o)
             o->config.mouse_apple = 1;
             continue;
         }
+        if (!strcmp(arg, "--mouse-no-vbl")) {
+            o->config.mouse_no_vbl = 1;
+            continue;
+        }
         if (!strcmp(arg, "--no-phasor")) {
             o->config.phasor_slot = 0;
             continue;
@@ -408,6 +421,8 @@ static void parse(int argc, char **argv, options *o)
         const char *value = argv[++i];
         if (!strcmp(arg, "--rom"))
             o->config.rom_path = value;
+        else if (!strcmp(arg, "--mouse-rom"))
+            o->config.mouse_rom = value;
         else if (!strcmp(arg, "--core")) {
             if (!strcmp(value, "py65"))
                 o->config.core = A2VM_CORE_PY65;
@@ -535,6 +550,10 @@ static void parse(int argc, char **argv, options *o)
     }
     if (!o->config.rom_path)
         fail("give --rom (the Apple //e enhanced ROM)");
+    if (o->config.mouse_rom)        /* it replaces any other slot-2 card */
+        o->config.mouse = o->config.mouse_plain = o->config.mouse_apple = 0;
+    else if (o->config.mouse_no_vbl)
+        fail("--mouse-no-vbl needs --mouse-rom");
     if ((o->snapshot_boundaries || o->final_snapshot) && !o->snapshot_dir &&
         !o->snapshot_stream)
         fail("snapshots need --snapshot-dir");
@@ -949,6 +968,29 @@ static void write_state_body(FILE *out, a2vm *m)
                 m->mouse_calls[1], m->mouse_calls[2], m->mouse_calls[3],
                 m->mouse_calls[4], m->mouse_calls[5], m->mouse_calls[6],
                 m->mouse_calls[7]);
+    if (m->mouse_rom) {
+        const a2vm_romouse *r = &m->romouse;
+        fprintf(out, "  \"mouserom\": {\"x\": %d, \"y\": %d, "
+                "\"buttons\": [%u, %u], \"mode\": %u, \"int_state\": %u, "
+                "\"irq\": %u, \"bank\": %u, \"clamp\": [[%d, %d], "
+                "[%d, %d]], \"pia\": {\"ora\": %u, \"orb\": %u, "
+                "\"ddra\": %u, \"ddrb\": %u, \"cra\": %u, \"crb\": %u, "
+                "\"ia\": %u, \"ib\": %u}, \"read_pos\": %u, "
+                "\"write_pos\": %u, \"command\": %u, \"irq_asserts\": %"
+                PRIu64 ", \"irq_releases\": %" PRIu64 ", \"vbls\": %" PRIu64
+                ", \"pia_reads\": %" PRIu64 ", \"pia_writes\": %" PRIu64
+                ", \"bank_switches\": %" PRIu64 ", \"commands\": [",
+                r->x, r->y, r->button0, r->button1, r->mode, r->int_state,
+                r->irq, (r->orb & r->ddrb & 0x0e) >> 1, r->clamp_min_x,
+                r->clamp_max_x, r->clamp_min_y, r->clamp_max_y, r->ora,
+                r->orb, r->ddra, r->ddrb, r->cra, r->crb, r->ia, r->ib,
+                r->read_pos, r->write_pos, r->command, r->irq_asserts,
+                r->irq_releases, r->vbls, r->pia_reads, r->pia_writes,
+                r->bank_switches);
+        for (unsigned i = 0; i < 16; i++)
+            fprintf(out, "%s%" PRIu64, i ? ", " : "", r->commands[i]);
+        fputs("]},\n", out);
+    }
     if (m->mouse_on)
         fprintf(out, "  \"mouse\": {\"x\": %d, \"y\": %d, \"buttons\": %u, "
                 "\"prev_buttons\": %u, \"moved\": %u, \"move_irq\": %u, "

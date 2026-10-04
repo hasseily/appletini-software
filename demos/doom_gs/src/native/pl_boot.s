@@ -118,6 +118,7 @@ MOUSE_ROM       = $C200
 MOUSE_MODE      = $C0AE
 MOUSE_ACK       = $C0AF
 MODE_VBL        = $09           ; the mouse card on, its VBL interrupt on
+MODE_ON         = $01           ; on, no interrupt (an AppleMouse II's)
 ACK_ALL         = $03
 MOUSE_ROOM      = 44            ; probe_mouse's bytes in A (fd3ce9fd)
 RDVBLBAR        = $C019         ; bit 7 low in the vertical blanking
@@ -1451,7 +1452,7 @@ bd_via: sta VIA_B_ACR
         sta VIA_A_T1LL          ;   leaves it on the card: the BENCHMARK
         sta VIA_A_T1CH          ;   page's rows count its turns (bt_mark)
         lda #5
-        ldx #<s_viaclk
+bd_msg: ldx #<s_viaclk          ; (PLMOUSE's ap_novbl: its own message)
         ldy #>s_viaclk
         jsr say
 bd_std: ldx #<s_pal              ; (PLMOUSE's ap_clock: from here too)
@@ -1731,11 +1732,12 @@ ap_detect:
         jmp bd_via
 
 ; ap_clock: interrupts on, the mouse's VBL counting. Row 5 says the clock
-; first (a mouse that never interrupts holds the boot there); then with
-; VIA-A's timer 1 (its latch holds what is written: a Phasor or a
-; Mockingboard in slot 4) one VBL counted in bus cycles as pl_detect does
-; (ap_count) and std_of: that standard; else NTSC with a '?'. pl_clkset,
-; then bt_detect's end (bd_std: the standard, the mark, CLI, RTS)
+; first; then the first VBL waited for (ap_wait: a mouse that does not
+; interrupt within 10 frames goes to ap_novbl); then with VIA-A's timer 1
+; (its latch holds what is written: a Phasor or a Mockingboard in slot 4)
+; one VBL counted in bus cycles as pl_detect does (ap_count) and std_of:
+; that standard; else NTSC with a '?'. pl_clkset, then bt_detect's end
+; (bd_std: the standard, the mark, CLI, RTS)
 ap_clock:
         lda #5
         ldx #<s_apclk
@@ -1745,9 +1747,12 @@ ap_clock:
         sta VB+3
         lda #STD_NTSC
         sta VB+2
+        jsr ap_wait             ; the first VBL
+        jcs ap_novbl
         jsr ap_latch
         bcs @set
         jsr ap_count
+        jcs ap_novbl
         jsr std_of
         bcc @set
         sta VB+2
@@ -1776,17 +1781,20 @@ ap_latch:
         rts
 
 ; ap_count: VIA-A's timer 1 from $FFFF over one VBL (pl_detect's
-; measure, which ap_irq replaced in the card): X:Y = the bus cycles
+; measure, which ap_irq replaced in the card): X:Y = the bus cycles and C
+; clear; C set when a VBL did not come (ap_wait)
 ap_count:
         lda #$FF
         sta VIA_A_T1LL
         sta VIA_A_T1CH
         jsr ap_wait
+        bcs @r
         lda VIA_A_T1CL
         ldy VIA_A_T1CH
         sta VB
         sty VB+1
         jsr ap_wait
+        bcs @r
         lda VIA_A_T1CL
         ldy VIA_A_T1CH
         sta tmp
@@ -1798,12 +1806,82 @@ ap_count:
         lda VB+1
         sbc tmp+1
         tax
-        rts
+        clc
+@r:     rts
+
+; ap_wait: to vbl_count's next change (the mouse's VBL interrupt), C
+; clear; C set when RDVBLBAR's bit 7 changed AP_EDGES times first (10
+; frames on any CPU's speed: no VBL interrupt; GSSquared's AppleMouse at
+; 33.3 MHz, whose event timer drops the card's VBL: docs/PLAY.md 21)
+AP_EDGES        = 20
+AW              = hdr           ; RDVBLBAR's bit 7 as last seen
 ap_wait:
-        lda vbl_count
-:       cmp vbl_count
-        beq :-
+        ldx #AP_EDGES
+        ldy vbl_count
+@flag:  lda RDVBLBAR
+        and #$80
+        sta AW
+@w:     cpy vbl_count
+        bne @vbl
+        lda RDVBLBAR
+        and #$80
+        cmp AW
+        beq @w
+        dex
+        bne @flag
+        sec
         rts
+@vbl:   clc
+        rts
+
+; ap_novbl: SETMOUSE $09 gave no VBL interrupt (ap_wait): the clock is
+; VIA-B's timer 1 and its handler reads the mouse. Masked: SETMOUSE $01
+; (on, no interrupt) and SERVEMOUSE (an interrupt that came late
+; cleared), the firmware's holes exchanged around them as ap_irq does;
+; ap_frecs; VIA-B's timer 1 checked (mo_via: else the stop); then
+; bd_via, with row 5 saying so
+ap_novbl:
+        sei
+        jsr AP_SWAP             ; the firmware's holes in
+        lda #MODE_ON
+        ldx #AP_SET
+        jsr ap_fw
+        ldx #AP_SERVE
+        jsr ap_fw
+        jsr AP_SWAP             ; and out
+        lda #<ap_frecs
+        ldx #>ap_frecs
+        jsr am_records
+        jsr mo_via
+        lda #<s_apvia
+        sta bd_msg + 1
+        lda #>s_apvia
+        sta bd_msg + 3
+        lda #ACR_FREE
+        jmp bd_via
+
+; ap_frecs (am_records' form): pl_vbody's head on VIA-B's timer 1 as
+; mo_vh, then JSR ap_irq in place of its 3 NOPs; ap_irq's SERVEMOUSE a
+; CLC (READMOUSE and POSMOUSE at every tick, the card in mode $01)
+ap_frecs:
+        .byte AF_N, 0
+        .word pl_vbody
+ap_fh:  .byte $AD               ; lda VIA_B_IFR
+        .word VIA_B_IFR
+        .byte $29, IFR_T1       ; and #IFR_T1
+        .byte $F0, <(pl_vnone - (pl_vbody + 7))  ; beq pl_vnone
+        .byte $8D               ; sta VIA_B_IFR: the flag cleared
+        .word VIA_B_IFR
+        .byte $20, <AP_IRQ, >AP_IRQ     ; jsr ap_irq: the mouse read
+AF_N = * - ap_fh
+        .byte 3, 0
+        .word ai_serve
+        .byte $18, $EA, $EA     ; clc, nop, nop: no SERVEMOUSE
+        .byte 0
+        .assert AF_N = 13, error, "ap_frecs' head"
+
+s_apvia:
+        .byte "APPLEMOUSE NO VBL: PHASOR CLOCK, ", 0
 
 s_apclk:
         .byte "APPLEMOUSE VBL CLOCK, ", 0

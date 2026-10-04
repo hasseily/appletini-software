@@ -83,6 +83,31 @@ typedef struct {
     uint64_t log_reads, log_writes; /* a2sim's log, counted */
 } a2vm_mouse;
 
+/* --mouse-rom: an AppleMouse II that runs Apple's own ROM (342-0270-C,
+   2 KB: eight banks of 256 bytes, each in turn at $Cn00-$CnFF), behind
+   its 6520 PIA at $C0n0-$C0n3 and the 6805 controller that answers it,
+   as GSSquared's applemouseiii models them (PIA6520.cpp and
+   MouseController.cpp, after A2Pico's mouse-interface): the controller
+   runs at each PIA access and at each VBL, so it answers at once. The
+   ROM is read from a path given at run time; a2vm holds no copy. */
+typedef struct {
+    /* the PIA (port A the data, port B the handshake and the bank) */
+    uint8_t ddra, ddrb, ora, orb, cra, crb, ia, ib;
+    /* the controller */
+    uint8_t command, read_buffer[8], write_buffer[8];
+    uint8_t read_pos, write_pos, last_port_b, old_int;
+    uint8_t mode, int_state, irq, vbl_pending, last_bank;
+    uint8_t button0, button1, last_button0, last_button1;
+    int16_t x, y, last_x, last_y;
+    int16_t clamp_min_x, clamp_min_y, clamp_max_x, clamp_max_y;
+    uint16_t intervbl;
+    uint8_t rom[2048];
+    /* counted, for the state */
+    uint64_t commands[16];          /* by the command's high nibble */
+    uint64_t irq_asserts, irq_releases, vbls, pia_reads, pia_writes;
+    uint64_t bank_switches;
+} a2vm_romouse;
+
 /* The Phasor in slot 4, as far as a2sim.Phasor models it. */
 typedef struct {
     int64_t t1_start[2];
@@ -237,6 +262,11 @@ typedef struct a2vm {
     uint64_t mouse_calls[8];        /* its firmware calls, by entry
                                        (SETMOUSE .. INITMOUSE) */
     a2vm_mouse mouse;
+    int mouse_rom;                  /* --mouse-rom: an AppleMouse II
+                                       running Apple's ROM (romouse) */
+    int mouse_no_vbl;               /* --mouse-no-vbl: its VBL never
+                                       reaches the controller */
+    a2vm_romouse romouse;
     a2vm_phasor phasor;
     int amem_on;
     a2vm_amem amem;
@@ -337,6 +367,11 @@ typedef struct {
     int mouse, phasor_slot, mouse_slot;
     int mouse_plain;                /* the plain ROM instead (mouse 0) */
     int mouse_apple;                /* an AppleMouse II instead (mouse 0) */
+    const char *mouse_rom;          /* an AppleMouse II running the ROM
+                                       of this path (2 KB) instead (mouse
+                                       0, mouse_apple 0); NULL: none */
+    int mouse_no_vbl;               /* that card's controller sees no VBL
+                                       (GSSquared's at 33.3 MHz) */
     int amem;                       /* attach the memory API */
 } a2vm_config;
 

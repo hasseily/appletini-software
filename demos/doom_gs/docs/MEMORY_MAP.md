@@ -48,7 +48,7 @@ Banks 1-126 are RamWorks PSRAM; 127 is never used [R `NATIVE.md` §4.4].
 | # | Rule | Why |
 | --: | --- | --- |
 | 1 | The language card is always RAM for reading and writing. Bank 1 of `$D000` is selected in every phase except the replay; the replay selects bank 2 on entry and bank 1 on exit (`bit $C083` twice, `bit $C08B` twice). | Two 4 KB banks at `$D000` serve two sets of phases [R `tools/a2vm/README.md:195`: two reads of an odd address enable writes]. |
-| 2 | The IRQ handler touches only zero page `$D8-$FF`, the stack page, `$E000-$FFFF` and I/O (`$C0A0-$C0AF`, `$C400-$C4FF`). Never `$D000-$DFFF` (its bank depends on the phase), never `$0200-$BFFF` (RAMRD, RAMWRT, `$C073` and the pair may be set). **With an AppleMouse II in slot 2** (2026-10-04, section 21, `PLAY.md` 21) it also reads `$C013`, `$C014`, `$C018` and turns 80STORE, RAMRD and RAMWRT off and back on as it found them (`$C000-$C005`), so that main memory is the firmware's; calls the mouse's firmware in `$C200-$C2FF` (its ROM banks switched through its PIA at `$C0A0-$C0A3`), which borrows zero page `$06` (an RTS there, given back) and about 8 bytes of stack; and exchanges slot 2's eight screen holes, main `$047A + $80k` (k = 0-7), with the card's `ap_hb` before and after the firmware, so that every byte of `$0200-$BFFF` holds at the RTI what it held at the interrupt. `$C073` and the pair are never needed: with those switches off no access reaches an aux bank. ALTZP is off in every handler (rule 7, the bridge). | The IRQ contract of S2 [R `src/sound/README.md`, "The IRQ contract"], tightened from `$D000-$FFFF` to `$E000-$FFFF`. The AppleMouse II's interrupt is acknowledged only through its firmware (SERVEMOUSE), whose 6805 answers through the PIA. |
+| 2 | The IRQ handler touches only zero page `$D8-$FF`, the stack page, `$E000-$FFFF` and I/O (`$C0A0-$C0AF`, `$C400-$C4FF`). Never `$D000-$DFFF` (its bank depends on the phase), never `$0200-$BFFF` (RAMRD, RAMWRT, `$C073` and the pair may be set). **With an AppleMouse II in slot 2** (2026-10-04, section 21, `PLAY.md` 21) it also reads `$C013`, `$C014`, `$C018` and turns 80STORE, RAMRD and RAMWRT off and back on as it found them (`$C000-$C005`), so that main memory is the firmware's; calls the mouse's firmware in `$C200-$C2FF` (its ROM banks switched through its PIA at `$C0A0-$C0A3`), which borrows zero page `$06` (an RTS there, given back; the 65C02's RTS also reads `$07`) and about 8 bytes of stack; and exchanges slot 2's eight screen holes, main `$047A + $80k` (k = 0-7), with the card's `ap_hb` before and after the firmware, so that every byte of `$0200-$BFFF` holds at the RTI what it held at the interrupt. `$C073` and the pair are never needed: with those switches off no access reaches an aux bank. ALTZP is off in every handler (rule 7, the bridge). When the card gives no VBL interrupt (`ap_novbl`, section 21) the interrupt is VIA-B's timer 1 and the handler makes the same calls but SERVEMOUSE, so it touches a subset of these. | The IRQ contract of S2 [R `src/sound/README.md`, "The IRQ contract"], tightened from `$D000-$FFFF` to `$E000-$FFFF`. The AppleMouse II's interrupt is acknowledged only through its firmware (SERVEMOUSE), whose 6805 answers through the PIA. |
 | 3 | Main `$0400-$0BFF` and `$2000-$5FFF`, and aux 0 `$0400-$0BFF`, hold only read-only data written by memory-API PRIVATE copies. No CPU store ever targets them after boot. (Since the frame slots, 2026-10-03: during the tic phase `$2000-$5FFF` also holds the placement's pinned groups, code that PRIVATE copies in and that runs there but never stores there; PRIVATE puts the colormap bytes back before the tic phase ends: 3.4, section 17, `SPEED.md` 9.) **Without the memory API** (2026-10-03, section 19, `PLAY.md` 19) the same copies, at the same points, are CPU stores: the frame slots' loads and restores, the level's colormaps (`$2000-$5FFF`, `$0400-$07FF`) and `FUZZDARK` (aux 0 `$0800`), DLINIT's static tables (`$0800-$0BFF`, aux 0 `$0200`, `$0900`, `$0A00`). They are video writes: harmless in an emulator, about 1 µs a byte on an Appletini, which has the API. **With an AppleMouse II** (section 21) the interrupt's `ap_swap` stores into slot 2's eight screen holes of main `$0400-$07FF` (colormaps A and B, levels 32 and 33, at `$7A` and `$FA`) twice a VBL and puts their bytes back before the RTI. No other code stores there. | A CPU store there is a video write that leaves a mirror byte [R `tools/a2vm/a2vm.c:651-656`; `memory` §1.1]. |
 | 4 | Aux 0 `$2000-$9FFF` is written only by CPU stores with RAMWRT on. PRIVATE never targets it. | PRIVATE writes are never shown [R `appletini-one/README_MEMORY_API.md` §4]. |
 | 5 | Inside a far window only zero page, the stack page and the language card are near; code in a read window runs from the card or zero page. | `NATIVE.md` §4.5 rules 1-2. |
@@ -1057,6 +1057,23 @@ entries of SERVEMOUSE, READMOUSE and POSMOUSE into `ap_irq`'s JSRs;
 into `ap_hb`); `bt_detect` counts one VBL with VIA-A's timer 1 when its
 latch holds what is written (`ap_clock`, `pl_detect`'s measure, in
 `DOOM.SYSTEM` since `ap_irq` took its place), else NTSC with a `?`.
+
+**No VBL interrupt** (2026-10-04, `PLAY.md` 21, "The freeze on
+GSSquared"): `ap_clock` waits for each of its VBLs at most 20 changes of
+`$C019`'s bit 7 (10 frames, at any CPU speed). When none comes,
+`ap_novbl` (masked) sends SETMOUSE `$01` (on, no interrupt) and one
+SERVEMOUSE (an interrupt that came late cleared), the holes exchanged
+around both, then writes `ap_frecs`:
+
+| Space | Range | Without the mouse's VBL |
+| --- | --- | --- |
+| card `$E000` part | `pl_vbody` (13 B) | section 20's head on VIA-B's timer 1 (`LDA`, `AND #$40`, `BEQ pl_vnone`, `STA` to clear the flag), its 3 NOPs a `JSR ap_irq` |
+| card `$E000` part | `ai_serve`, the JSR to SERVEMOUSE in `ap_irq` (3 B) | `CLC`, `NOP`, `NOP`: READMOUSE and POSMOUSE at each tick, nothing else changed |
+
+and goes to `bd_via` (the timer checked as without a mouse card, else
+the stop; row 5 `APPLEMOUSE NO VBL: PHASOR CLOCK,` and the standard).
+`ap_mpatch`'s poll records stay: the poll reads `AP_X` and `AP_SB`, now
+updated once a frame by VIA-B's handler.
 
 ## Appendix: the measurements made for this map
 
