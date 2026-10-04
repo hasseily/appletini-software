@@ -1,5 +1,7 @@
 # The SHR display as bank `$E1`: IIgs shadowing on the Appletini (specification)
 
+**Revised 2026-10-04: the owner dropped the CPU display window; the memory API is the only way to write the display.** The window (`$C073 = $E1`) is now in section 9 with its reasons. Every other section was revised to match; edits of this revision are marked "(rev 2026-10-04)" where a figure or reference changed.
+
 Written 2026-10-03 from three candidate designs and their two reviews (firmware and software). This is the recommended design; section 9 lists what was taken from each and what was rejected. Nothing was built or simulated, and no firmware file was changed.
 
 **Marks.** **V**: I read it at the cited file:line in this session. **G**: the grounding or review notes of this design round read it; I did not re-read it. **M**: memory or public knowledge, with a confidence. **E**: my estimate from the cited figures. **I**: my inference. **A**: an assumption still to be checked.
@@ -10,10 +12,7 @@ Written 2026-10-03 from three candidate designs and their two reviews (firmware 
 
 ## 0. Summary
 
-**The answer to the owner's question.** The display buffer is **bank `$E1`**, as on the IIgs. One name, two ways in:
-
-- **The memory API** (the fast way, and the only tear-free one): AUX logical bank `$E1` becomes a COPY/FILL destination for `$2000-$9FFF`. One CONTROL list is one **present**: the renderer shows it whole, at one frame edge.
-- **The CPU** (the direct way): writing `$E1` to `$C073` opens a **write-only display window**. Stores that would go to aux `$2000-$9FFF` go to the display instead. Reads, zero page, the stack and the language card stay on the bank selected before.
+**The answer to the owner's question.** The display buffer is **bank `$E1`**, as on the IIgs, and **the memory API is the only way in** (the owner, 2026-10-04): AUX logical bank `$E1` becomes a COPY/FILL destination for `$2000-$9FFF`. One CONTROL list is one **present**: the renderer shows it whole, at one frame edge. The CPU has no path that writes the display directly; `$C071`/`$C073` are unchanged from F1.2.2 (section 9 says why the window was dropped).
 
 The owner's decision is built underneath: **`$C035` SHADOW**, IIgs semantics. With shadowing inhibited, CPU stores to aux bank 0 `$2000-$9FFF` (the IIgs bank `$01`) stay in RAM: no record, no bus cycle, no motherboard mirror. They run as TURBO fast writes.
 
@@ -23,10 +22,10 @@ The owner's decision is built underneath: **`$C035` SHADOW**, IIgs semantics. Wi
 | `$C035` | Write-only, latched by the vTW core from its own bus write. Honoured only while SHR is selected. Bit 3 inhibits aux `$6000-$9FFF`; bits 3 **and** 4 inhibit aux `$2000-$5FFF` (the IIgs rule, section 1.2). Other bits are stored and ignored. Reset value `$00`, not the IIgs's `$08`. |
 | Arming | Nothing changes until software writes `$C035` once after reset. VidHD-era software never does, so for it F1.2.2 behaviour is exact. |
 | Inhibited writes | Shadow BRAM only, like a PRIVATE memory-API write today. They never reach the display or the motherboard, and nothing reconciles them later. |
-| CPU display window | `$C073 = $E1` (armed only). Write-only. Each store is one direct capture record, at every speed. No shadow write, no bus cycle, no coalescer. |
-| API display endpoint | AUX bank `$E1`, destination only, `$2000-$9FFF`, flags 0. The copy engine streams the bytes into the capture FIFO. The PS brackets each CONTROL list with present markers, and CPU1 does not rebuild the SHR frame while one is open. |
+| CPU display window | None (rev 2026-10-04). `$E1` on `$C071`/`$C073` is ignored, as every bit-7 value is today (`FW/hdl/apple/soft_switch_manager.sv:141-144` V). |
+| API display endpoint | AUX bank `$E1`, destination only, `$2000-$9FFF`, flags 0. The copy engine streams the bytes into the capture FIFO. The PS brackets each CONTROL list that writes `$E1` with present markers (check 2026-10-04: was "each CONTROL list"; section 3.4 emits them around the `$E1` descriptors only), and CPU1 does not rebuild the SHR frame while one is open. |
 | Reading the display | Not in v1. The program reads its RAM copy (aux 0). An API source path is a later, optional stage (section 3.6). |
-| Cost | About 150-240 LUTs and 60 FFs, **0 BRAM** (E). About 120-205 lines of PS code (E; the sum of section 3.4's rows, check 2026-10-03). |
+| Cost | About 110-185 LUTs and 58 FFs, **0 BRAM** (E; section 3.3, rev 2026-10-04, was 150-240 and 60 with the window). About 115-195 lines of PS code (E; the sum of section 3.4's rows, rev 2026-10-04, was 120-205). |
 | Kill switch | Compile-time `DSP_ENABLE`, runtime `CARD_CTRL 0x35` bit 2. Bit 0 is the paged-SHR fallback (`FW/hdl/apple/apple_top.sv:2821`, `:2964` V); bit 1 is change 3's `lazy_en` (`lazy-mirror-spec.md:12` V). |
 | DOOM GS | `$C035 = $18`, draw into aux 0 exactly as today, present `$2000-$88FF` once a frame. DRAW 31.3 → about 21-25 ms, **6.343 → about 6.6-6.8 FPS**, and tear-free (section 8). |
 
@@ -79,8 +78,8 @@ This design follows the IIgs: **`$08` inhibits only `$6000-$9FFF`; `$18` inhibit
 | SHADOW latch | 8 | `$00` | any write to `$C035` |
 | ARMED | 1 | 0 | any write to `$C035` |
 | SHR selected | 1 | 0 | `$C029` written with bits 7:6 = 11 (and the host allows fake SHR) |
-| Display window | 1 | 0 | `$C071`/`$C073` written with `$E1` while ARMED |
-| Underlying bank | 7 | 0 | today's RamWorks bank (`FW/hdl/apple/soft_switch_manager.sv:141-144` V); `$E1` leaves it unchanged |
+
+(rev 2026-10-04: the display-window bit and the "underlying bank" are gone; the RamWorks bank is today's, untouched.)
 
 Everything resets on power-up, Apple RES# (Ctrl-Reset), session start and end, and a CORE_RUN drop: the `core_res_n` term, as in `zpbank-spec.md:242-256` (V). It also resets when the kill switch clears. The display contents survive Apple RES, as `g_aux_bank` does today.
 
@@ -89,7 +88,7 @@ Everything resets on power-up, Apple RES# (Ctrl-Reset), session start and end, a
 **`$C035` SHADOW, write.**
 
 - Latches all 8 bits and sets ARMED.
-- The write still goes out as a real bus cycle, so capture records it for the renderer as today (`apple_cycle_capture.sv:74-79` V). It stays an exposure access (`core:1399` V); that flush is correct, because bytes written before the switch keep their old class.
+- The write still goes out as a real bus cycle, so capture records it for the renderer as today (`apple_cycle_capture.sv:74-79` V). It stays an exposure access (`core:1399` V); that flush is correct, because bytes written before the switch keep their old class. Absorbing it is question 5 (check 2026-10-04: that question had lost its reference with the `$C073` table).
 - On a //e, `$C030-$C03F` is the speaker, so each write clicks once (M, medium-high; AppleWin says the same: "Writes to $C03x addresses will still toggle the speaker, even with a VidHD present", `AW/Memory.cpp:643-652` V). Write it rarely: entering and leaving SHR.
 
 **`$C035`, read.** Not decoded. A read is a bus cycle that clicks the speaker and returns the floating-bus byte (`core:1104-1107` V; the scanner-byte return for `$C030-$C05F` reads is `core:1255-1270` V, check 2026-10-03). Keep a copy in memory. IIgs code that does `LDA SHADOW / ORA #$08 / STA SHADOW`, as upstream's automap does (`DOOM/build/upstream/src/iigs/am_map65.s:1105-1109` V), must be rewritten. Answering reads is question 3.
@@ -103,16 +102,7 @@ inh_lo  = ARMED && SHR selected && SHADOW[3] && SHADOW[4]     ; aux $2000-$5FFF
 
 "Aux" means **physical bank 1**, after RAMRD/RAMWRT, 80STORE/PAGE2/HIRES and `$C073`. Main is never inhibited (IIgs bit 3 concerns bank `$01` only), so the paged-SHR second field in main and the A2Li holes behave as today. Outside SHR, `$C035` has no effect (question 2).
 
-**`$C071` / `$C073`.**
-
-| Value written | F1.2.2 | This design |
-|---|---|---|
-| `$00-$7F` | selects the bank | same; also closes the display window |
-| `$E1`, ARMED | ignored, bank kept (`soft_switch_manager.sv:141-144` V) | **opens the display window**; the bank is kept as the underlying bank |
-| `$E1`, not ARMED | ignored | ignored |
-| any other `$80-$FF` | ignored | ignored; also closes the display window |
-
-The `$E1` write stays a real bus cycle and an exposure access (`core:1400` V). The motherboard trackers ignore it, as they ignore every bit-7 value. Keeping it on the bus avoids a new FSM branch, as change 5 does for `$C069` (`zpbank-spec.md:121-127` V). Absorbing it is question 6.
+**`$C071` / `$C073`.** Unchanged from F1.2.2 (rev 2026-10-04). `$00-$7F` selects the bank while `ramworks_en` is set (check 2026-10-04: the decode is gated on it, `soft_switch_manager.sv:141` V); every `$80-$FF` value, `$E1` included, is ignored and the bank kept (`soft_switch_manager.sv:141-144` V). The design adds no state, decode or meaning to these addresses.
 
 ### 2.3 What each access reaches
 
@@ -120,34 +110,31 @@ The `$E1` write stays a real bus cycle and an exposure access (`core:1400` V). T
 |---|---|---|---|
 | CPU store to aux 0 `$2000-$9FFF`, not inhibited | yes | yes, one record | yes (posted or coalesced, as F1.2.2) |
 | CPU store to aux 0, **inhibited** | yes; TURBO fast write except page `$9D` | **no** | **no, ever** |
-| CPU store with the **display window** open, aux-destined, `$2000-$9FFF` | **no** | yes, one direct record | no |
-| CPU store with the window open, main-destined (RAMWRT off), or outside `$2000-$9FFF` | as F1.2.2, under the underlying bank | as F1.2.2 | as F1.2.2 |
-| CPU load from anywhere, window open or not | RAM, under the underlying bank | — | — |
+| Any other CPU store or load | as F1.2.2 | as F1.2.2 | as F1.2.2 |
 | Memory API PRIVATE write to aux 0 | yes | no | no (unchanged, `README_MEMORY_API.md:179-191` V) |
 | Memory API write to **AUX `$E1`** | **no** | yes, inside one present | no |
-| SmartPort block read into aux `$2000-$9FFF`, inhibited | yes | no | no (section 3.5) |
+| SmartPort block read into aux `$2000-$9FFF`, inhibited | yes | no | no (section 3.4; rev 2026-10-04, was "3.5") |
 | Native motherboard CPU (vTW off) | motherboard | as today: bit 3 has no effect | — |
+
+(rev 2026-10-04: the window rows are gone. No CPU access reaches the display without also writing aux 0: the display is changed by the CPU only through a shadowed store, and otherwise only by a present.)
 
 Consequences:
 
-- **The display window is write-only.** `INC $2000` with the window open reads RAM and writes the display.
-- **Reads under the window follow the underlying bank.** `lda #N / sta $C073 / lda #$E1 / sta $C073` reads bank N and writes the display. With N = 0 it reads aux 0 and writes the display, which is a CPU present.
+- **The CPU cannot read the display.** A program reads its RAM copy, aux 0 (section 2.7).
 - **Turning shadowing back on copies nothing.** Bytes written while inhibited reach the display only by a present or by being written again, as on the IIgs.
-- **Inhibited and display-only writes leave the motherboard's aux RAM, and PSRAM bank 1 when the Appletini provides aux, stale for good.** This matches the TransWarp contract: "motherboard RAM is deliberately stale outside the video windows" (`FW/README_VIRTUAL_TRANSWARP.md:112` V), and Ctrl-Reset handback returns the machine cold (`:116` V). It is the same staleness a PRIVATE write leaves today. Question 7 asks the owner to confirm.
+- **Inhibited writes and presents leave the motherboard's aux RAM, and PSRAM bank 1 when the Appletini provides aux, stale for good.** This matches the TransWarp contract: "motherboard RAM is deliberately stale outside the video windows" (`FW/README_VIRTUAL_TRANSWARP.md:112` V), and Ctrl-Reset handback returns the machine cold (`:116` V). It is the same staleness a PRIVATE write leaves today. Question 6 asks the owner to confirm.
 
 ### 2.4 Mode interactions
 
 | With | Rule |
 |---|---|
-| `$C029` | Entering SHR with `$18` already latched starts the inhibit at once. Leaving SHR stops it; nothing is copied. Inhibited bytes in aux `$2000-$5FFF` then show stale in DHGR, on the //e's own video and on the Appletini's, until rewritten. The window and the API endpoint work in every mode, because the renderer builds every mode from `g_aux_bank`; `$E1:$2000` written with SHR off shows in DHGR on the Appletini's output only. |
-| SCBs `$9D00-$9DC7`, palettes `$9E00-$9FFF` | Part of the range. While inhibited they change on screen only when presented or written through the window. A present that carries them changes them together with the pixels. |
-| `$9DC8-$9DFF` | Stays software-reserved. `$9DF8` (paged control) and `$9DFC` (`SHR4`/`3200` magic) change the renderer's mode (G `apple_cycle_renderer.c:1434-1435`, `:1504-1515`). The core's `$9DF8` tracker (`core:1877-1882` V) follows the **display**: it updates on an aux 0 `$9DF8` write that is not inhibited, on a window write and on an API write to `$E1:$9DF8`, and ignores inhibited writes. |
+| `$C029` | Entering SHR with `$18` already latched starts the inhibit at once. Leaving SHR stops it; nothing is copied. Inhibited bytes in aux `$2000-$5FFF` then show stale in DHGR, on the //e's own video and on the Appletini's, until rewritten. The API endpoint works in every mode, because the renderer builds every mode from `g_aux_bank`; `$E1:$2000` written with SHR off shows in DHGR on the Appletini's output only. |
+| SCBs `$9D00-$9DC7`, palettes `$9E00-$9FFF` | Part of the range. While inhibited they change on screen only when presented. A present that carries them changes them together with the pixels. |
+| `$9DC8-$9DFF` | Stays software-reserved. `$9DF8` (paged control) and `$9DFC` (`SHR4`/`3200` magic) change the renderer's mode (G `apple_cycle_renderer.c:1434-1435`, `:1504-1515`). The core's `$9DF8` tracker (`core:1877-1882` V) follows the **display**: it updates on an aux 0 `$9DF8` write that is not inhibited and on an API write to `$E1:$9DF8`, and ignores inhibited writes. |
 | Paged SHR (SHR4, 3200) | Main second field unchanged. |
 | A2Li | The holes are in main (`$0878-$087F`, `$4078-$407F`), never inhibited; the policy keeps them immediate (G `vtw_video_policy.sv:33-37`). |
-| ALTZP, language card | Follow the underlying bank; the window does not touch them. |
-| Interrupts | The same rules as any RamWorks bank. A handler that stores into `$2000-$9FFF` with RAMWRT on would write the display. |
-| ROM, ProDOS, SmartPort calls | Close the window first (`stz $C073`). The `$C035` latch can stay set. |
-| Change 5's pair, if built | Optional extension: pair write value `$E1` means the display window for that direction (`zpbank-spec.md:29` reserves `$80-$FF` V). Not needed for v1. |
+| ALTZP, language card, interrupts, ROM, ProDOS, SmartPort calls | No new rule (rev 2026-10-04: the rows for the window are gone). The `$C035` latch can stay set across them; an inhibited store from a handler stays in RAM like any other (I). |
+| Change 5's pair, if built | No interaction (rev 2026-10-04): this design defines no pair value, and `zpbank-spec.md:29`'s `$80-$FF` reservation (V) is left as it is. |
 
 ### 2.5 Memory API 1.1
 
@@ -157,7 +144,7 @@ Major version stays 1; 1.0 lists stay valid. A 1.0 caller checks the signature, 
 |---|---|
 | Destination space 1 (AUX), bank `$E1` | **The display.** `$2000 <= address`, `address + length <= $A000`. Flags must be 0 (PRIVATE has no meaning there). COPY and FILL. |
 | Source space 1, bank `$E1` | Invalid in 1.1 (RANGE `$63`). Reserved for the optional stage in section 3.6. |
-| Feature bits, STATUS offset 8 | New bit 4 (`$10`) `DISPLAY`: the AUX `$E1` endpoint. New bit 5 (`$20`) `SHADOW`: `$C035` and the CPU window. Today's bits are COPY 1, FILL 2, PRIVATE 4 (`FW/ps_sources/frontend/memory_api.h:23-25` V); change 5 claims 8 (`zpbank-spec.md:301` V). Both new bits require the bitstream's capability bit, the kill switch on and the capture egress enabled. |
+| Feature bits, STATUS offset 8 | New bit 4 (`$10`) `DISPLAY`: the AUX `$E1` endpoint. New bit 5 (`$20`) `SHADOW`: the `$C035` inhibit (rev 2026-10-04: no longer also the CPU window). Today's bits are COPY 1, FILL 2, PRIVATE 4 (`FW/ps_sources/frontend/memory_api.h:23-25` V); change 5 claims 8 (`zpbank-spec.md:301` V). Both new bits require the bitstream's capability bit, the kill switch on and the capture egress enabled. |
 | Present | All `$E1` destinations of one CONTROL list form one present. CPU1 does not rebuild the SHR frame between its first and last byte. Other descriptors in the same list run in order as today. |
 | Errors | On any refusal or abort after the first `$E1` byte, the present is still closed. The display may then hold part of the list. |
 | Old firmware | F1.2.2 refuses AUX bank `$E1` with RANGE (`README_MEMORY_API.md:163-165` V; the code: `memory_api.c:43-47` V, bank > 126), so a caller learns the feature is absent before anything is written: every descriptor is validated before the hold (`memory_api.c:116-153` V) (check 2026-10-03). |
@@ -166,7 +153,7 @@ Major version stays 1; 1.0 lists stay valid. A 1.0 caller checks the signature, 
 
 ### 2.6 Detection
 
-Use the memory API STATUS (`FW/software/memory_api/example.s:16-41` V), then test the two feature bits. A CPU-only probe is unsafe: a real RamWorks III may alias `$E1` onto a populated bank, and a store to `$2000` there would look like a working window (I, medium). Run the probe only after identifying the Appletini slot ROM, and prefer STATUS.
+Use the memory API STATUS (`FW/software/memory_api/example.s:16-41` V), then test the two feature bits. There is no CPU-only probe (rev 2026-10-04): the CPU can neither write nor read the display, and `$C035` cannot be read back (section 2.2), so STATUS is the only test.
 
 ```
         ; capabilities: the 32-byte STATUS block (example.s, probe_params)
@@ -178,7 +165,7 @@ Use the memory API STATUS (`FW/software/memory_api/example.s:16-41` V), then tes
 
 ### 2.7 Examples (ca65, 65C02)
 
-Constants: `RAMRDOFF = $C002`, `RAMRDON = $C003`, `RAMWRTOFF = $C004`, `RAMWRTON = $C005`, `RWBANK = $C073`, `NEWVIDEO = $C029`, `SHADOW = $C035`. `SP_ENTRY` is the Appletini slot-7 SmartPort entry (`$C70D` in `example.s:12` V; discover it in a general caller). The SmartPort entry writes main `$07F8`; save it as `example.s:18-20` does.
+Constants: `RAMRDOFF = $C002`, `RAMRDON = $C003`, `RAMWRTOFF = $C004`, `RAMWRTON = $C005`, `NEWVIDEO = $C029`, `SHADOW = $C035`. `SP_ENTRY` is the Appletini slot-7 SmartPort entry (`$C70D` in `example.s:12` V; discover it in a general caller). The SmartPort entry writes main `$07F8`; save it as `example.s:18-20` does.
 
 **Turning shadowing off and on.**
 
@@ -235,49 +222,31 @@ present_list:
         AMEM_COPY_RECORD AMEM_AUX, 0, $9E00, AMEM_AUX, AMEM_DISPLAY, $9E00, $0200, 0  ; palettes
 ```
 
-**Presenting it with the CPU** (no SmartPort call; it tears like any direct write). The loop must run from the language card or zero page, because RAMRD also redirects opcode fetches from `$0200-$BFFF`.
+(check 2026-10-04: the parameter block, `AMEM_BEGIN` and `AMEM_COPY_RECORD`'s argument order match `FW/software/memory_api/memory_api.inc` and `example.s:63-71` (V). Every `$E1` range ends within section 2.5's limit: `$2000 + $7D00 = $9D00`, `$9D00 + $C8 = $9DC8`, `$9E00 + $200 = $A000`; flags are 0.)
+
+(rev 2026-10-04: the "presenting it with the CPU" example, a copy loop through the `$C073 = $E1` window, is removed with the window. The API present above is the only present.)
+
+**Changing a few display bytes** (palette 0, colour 15 to white, while inhibited). Write the RAM copy, then present just those bytes. (rev 2026-10-04: replaces the window example "writing the display directly".)
 
 ```
-        ; in language-card RAM, interrupts masked
-        sta RAMRDON             ; reads of $0200-$BFFF: aux, underlying bank 0
-        sta RAMWRTON
-        lda #$E1
-        sta RWBANK              ; window open: stores to $2000-$9FFF -> display
-        ldy #0                  ; (check 2026-10-03: the label was "cpy",
-cp_s:   lda $2000,y             ;  a mnemonic; ca65 rejects it) aux 0 (RAM)
-cp_d:   sta $2000,y             ; display
-        iny
-        bne cp_s
-        inc cp_s+2              ; next page, source and destination
-        inc cp_d+2
-        lda cp_s+2
-        cmp #$A0
-        bne cp_s
-        stz RWBANK              ; window closed, bank 0
-        sta RAMWRTOFF
-        sta RAMRDOFF
-```
-
-**Writing the display directly** (palette 0, colour 15 to white, whatever SHADOW says).
-
-```
-        lda #$E1
-        sta RWBANK              ; window open (after a $C035 write armed it)
-        sta RAMWRTON
+        sta RAMWRTON            ; aux 0, $C073 = 0
         lda #$FF
-        sta $9E1E               ; colour 15, low byte: green and blue
+        sta $9E1E               ; colour 15, low byte: green and blue (RAM only)
         lda #$0F
         sta $9E1F               ; high byte: red
         sta RAMWRTOFF
-        stz RWBANK              ; back to bank 0; the window closes
+        ; then CONTROL with pal_list, as in the present above
+pal_list:
+        AMEM_BEGIN 1
+        AMEM_COPY_RECORD AMEM_AUX, 0, $9E1E, AMEM_AUX, AMEM_DISPLAY, $9E1E, $0002, 0
 ```
 
-RAM (aux 0 `$9E1E`) is unchanged. If the program also keeps aux 0 as its copy of the screen, it writes the same bytes there too.
+A FILL to `$E1` writes the display without touching RAM; this colour needs two, one a byte value (`AMEM_FILL_RECORD AMEM_AUX, AMEM_DISPLAY, $9E1E, 1, $FF, 0` and `AMEM_FILL_RECORD AMEM_AUX, AMEM_DISPLAY, $9E1F, 1, $0F, 0`; check 2026-10-04: the text showed only the first, which leaves red unchanged; the macro's argument order checked against `FW/software/memory_api/memory_api.inc:49-55`, V 2026-10-04), but then aux 0 no longer equals the display, which breaks the rule below. Shadowing on, the two stores alone change the display, as F1.2.2 does.
 
 **Reading it back.** v1 has no read path to the display. A program reads its RAM copy, which equals the display when every display byte also went through aux 0: shadowing on, or drawn in aux 0 and presented.
 
 ```
-        sta RAMRDON             ; $C073 = 0, window closed
+        sta RAMRDON             ; $C073 = 0
         lda $2000               ; aux 0: the display's byte, under the rule above
         sta RAMRDOFF
 ```
@@ -300,20 +269,19 @@ restore_list:                   ; one present, and the RAM copy put back
 
 ### 3.1 Core (`hdl/apple/vtw_core_top.sv`)
 
+(rev 2026-10-04: the window's items, old C3 `disp_q`, C6 `xl_is_display` and C7 the display record leg, are removed, and the rest renumbered: old C4, C5, C5b, C8, C9 are now C3, C4, C4b, C5, C6. Section 9 lists what the window would have needed. What remains is the inhibit alone; C3 and C4 were re-checked against the core on 2026-10-04.)
+
 | # | Change | Anchor |
 |---|---|---|
 | C1 | `shr_selected_q`: decode `$C029` writes from the registered tuple at `X_ROUTE`, value `cycle_wdata_q[7:6]==2'b11`, reset as section 2.1 and on `!fake_shr_allowed`. **Shared with change 3**, which specifies the same register (`lazy-mirror-spec.md:26-32` V). New input `fake_shr_allowed` from `apple_top.sv:1033` (V). | beside `:1877` |
 | C2 | `shadow_q[7:0]`, `shadow_armed_q`: latch on `X_ROUTE && xl_is_bus && xl_is_write && cycle_addr_q==16'hC035`, the same pattern as the `$9DF8` tracker. Derive `inh_lo_q`, `inh_hi_q` as registers (section 2.2), so no new decode sits on the cycle path. | `:1877-1882` V |
-| C3 | `disp_q`: on a `$C071`/`$C073` write at `X_ROUTE`, `disp_q <= shadow_armed_q && dsp_en && cycle_wdata_q == 8'hE1`. | same block |
-| C4 | `xl_inhibited = !xl_is_bus && xl_shadow_valid && xl_is_write && xl_decoded[23:16]==8'd1 && (cycle_addr_q in $6000-$9FFF ? inh_hi_q : cycle_addr_q in $2000-$5FFF ? inh_lo_q : 0) && !xl_is_overlay_post`. `xl_is_posted` gains `&& !xl_inhibited`. Inhibited writes then take the plain shadow path, and TURBO fast-write permission follows from `turbo_map_fast_write = !xl_is_posted && ...` unchanged. | `:565-569`, `:1216-1219` V |
-| C5 | **Must-fix: invalidation.** `turbo_invalidate` gains `({inh_lo_q, inh_hi_q, disp_q} != turbo_dsp_q)`. Fast-write permission is computed at fill time (`:1216-1219` V). Without this term, cached fast-write entries for aux `$2000-$9FFF` would survive an inhibit release, and later shadowed writes would skip their records. The cost per `$C035` or window change is one cache refill, like any `$C073` bank change today (`:1185`, `:1206-1211` V). | `:1206-1211` V |
-| C5b | `turbo_mapping` at `:1185` is `wire [18:0]` (V). C5 keeps the new state out of `TranslateState`, so that width does not change. | `:1185` V |
-| C6 | `xl_is_display = disp_q && xl_is_write && !xl_is_bus && xl_decoded[23:16]!=8'd0 && cycle_addr_q in $2000-$9FFF`. **Must-fix: route it before the RamWorks test.** With an underlying bank of 1 or more, the translation is `APPLE_ROUTE_CACHE` with no shadow backing, so `xl_is_ramworks` (`:643-644` V) would send the write to PSRAM. A display write must touch no shadow byte, no PSRAM line, no posted queue and no coalescer, and fill no TURBO map entry. (check 2026-10-03) The anchor `:643-644` alone does none of the last four. With underlying bank 0 the write has `xl_shadow_valid`, so today it would also be written to shadow at `X_ROUTE` (`core_shadow_issue`, `shadow_a_we`: `:1307-1308`, `:1320` V) and would fill a TURBO write-map entry (`turbo_map_fill`, `:1212-1213` V). That entry's fast bit is `!xl_is_posted && ...` (`:1218-1219` V), which is 1 for a display write that is not posted (and for an inhibited one, C4), and a write hit needs only `write_valid && write_fast` and a page tag (`:1240-1242` V). So without gating, the second store to the same page in TURBO would hit the map and land in shadow RAM, not the display. `turbo_map_fill` (or the fast bit), `core_shadow_issue`'s write enable and `xl_is_posted` each need a `!xl_is_display` term. | `:643-644`, `:1212-1219`, `:1307-1320` V |
-| C7 | Display record leg. `video_record_valid` (`:1379` V) gains a display term at **every** speed, with `video_record_addr = {1'b1, cycle_addr_q}`. In TURBO it is admitted like today's direct record but without the coalescer handshake. At classic speeds (`video_selected` is TURBO only, `:1352-1353` V) it first waits for `eng_post_idle && !post_stage_valid_q`, so earlier posted writes reach capture first. | `:1352-1384` V |
-| C8 | `$9DF8` tracker: add `!xl_inhibited`; also update on a display write to `$9DF8` (C6) and on the engine's `$E1:$9DF8` byte (input from 3.2). | `:1877-1882` V |
-| C9 | Debug: `shadow_q`, ARMED, `disp_q`, `inh_lo_q`, `inh_hi_q` in a read-only card-control word for `vtw status`. | — |
+| C3 | `xl_inhibited = !xl_is_bus && xl_shadow_valid && xl_is_write && xl_decoded[23:16]==8'd1 && (cycle_addr_q in $6000-$9FFF ? inh_hi_q : cycle_addr_q in $2000-$5FFF ? inh_lo_q : 0) && !xl_is_overlay_post`. `xl_is_posted` gains `&& !xl_inhibited`. Inhibited writes then take the plain shadow path: shadow written at `X_ROUTE` (`core_shadow_issue`, `shadow_a_we`: `:1307-1308`, `:1320` V), no post request (`core_post_req` needs `xl_is_posted`, `:1347-1348` V), so no `X_POST_STALL`, no TURBO record (`video_record_valid` comes only from `X_POST_STALL`, `:1370-1371`, `:1379` V) and no coalescer byte; the FSM goes to `X_MEM_CAPTURE` as for any private write (`:2037-2042` V). No new FSM branch. TURBO fast-write permission follows from `turbo_map_fast_write = !xl_is_posted && ...` unchanged (`:1218-1219` V), so an inhibited page fills its map entry with the fast bit set. | `:565-569`, `:1218-1219` V |
+| C4 | **Must-fix: invalidation** (re-checked 2026-10-04; still needed without the window). `turbo_invalidate` gains `({inh_lo_q, inh_hi_q} != turbo_inh_q)`, with `turbo_inh_q` registered beside `turbo_overlay_q` (`:1186-1201` V). Fast-write permission is computed at fill time (`:1218-1219` V) and stored in each map entry (`vtw_turbo_cache.sv:96`, read back as `write_fast` at `:79` V), and a write hit needs only `write_valid && write_fast` and a page tag (`:1240-1242` V). An entry filled while inhibited has the fast bit set (C3). Without this term it would survive an inhibit release (`$C035` back to 0, or leaving SHR with `$C029`), and later stores, which must now be recorded and posted, would complete as TURBO fast writes with no record and no motherboard write. Nothing invalidates on those writes today: neither changes `turbo_mapping`, and "Cxxx accesses always take the original route" (`:1202-1211` V). The other direction (0→1) is safe without the term, since entries filled while shadowed carry fast = 0 and miss (I); comparing both bits covers both. Cost per change of the effective inhibit: one cache refill, like any `$C073` bank change today (`:1185`, `:1206-1211` V). | `:1202-1211` V |
+| C4b | `turbo_mapping` at `:1185` is `wire [18:0]` (V). C4 keeps the new state out of `TranslateState`, so that width does not change. | `:1185` V |
+| C5 | `$9DF8` tracker: add `!xl_inhibited`; also update on the engine's `$E1:$9DF8` byte (input from 3.2). (rev 2026-10-04: the window term is gone.) Page `$9D` is never a fast write (`:1218-1219` V), so every aux `$9DF8` store reaches the tracker at `X_ROUTE`. | `:1877-1882` V |
+| C6 | Debug: `shadow_q`, ARMED, `inh_lo_q`, `inh_hi_q` in a read-only card-control word for `vtw status`. | — |
 
-Not changed: `globals.sv translate_apple_addr`, `soft_switch_manager.sv`, `vtw_video_policy.sv`, the coalescer, the bank sync and the motherboard trackers. The exposure list (`:1390-1400` V) is unchanged; with SHR writes inhibited, a `$C073` write in DOOM finds nothing deferred to flush.
+Not changed: `globals.sv translate_apple_addr`, `soft_switch_manager.sv`, `vtw_video_policy.sv`, the coalescer, the bank sync, the motherboard trackers, and (rev 2026-10-04) the `xl_is_ramworks` routing (`:643-644` V), `turbo_map_fill` (`:1212-1213` V), the shadow write enable (`:1307-1308`, `:1320` V; check 2026-10-04: the citation had read as if it were in `:1352-1384`) and the record leg (`:1352-1384` V), which the window would have changed. The exposure list (`:1390-1400` V) is unchanged; with SHR writes inhibited, a `$C073` write in DOOM finds nothing deferred to flush.
 
 ### 3.2 Copy engine (`hdl/apple/vtw_copy_engine.sv`) and the record mux
 
@@ -330,16 +298,23 @@ Capture's direct port already keeps FIFO order with physical records, and accept
 
 | Block | LUT | FF | BRAM |
 |---|---:|---:|---:|
-| C1-C3, C9 latches and decode | 20-35 | 25 | 0 |
-| C4-C6 classification, invalidation term | 25-45 | 4 | 0 |
-| C7 display record leg, classic wait | 20-35 | 2 | 0 |
+| C1, C2, C6 latches and decode | 17-30 | 24 | 0 |
+| C3-C5 inhibit classification, invalidation term, tracker gate | 14-28 | 2 | 0 |
 | E1-E2 engine display destination | 50-80 | 30 | 0 |
 | E3-E4 direct-port mux, present marker | 30-45 | 2 | 0 |
-| **Total** | **about 150-240** | **about 60** | **0** |
+| **Total** | **about 110-185** | **58** | **0** |
+
+(rev 2026-10-04, E.) The 2026-10-03 table had the latches row (with old C3) at 20-35 LUT, 25 FF; the classification row (old C4-C6) at 25-45 LUT, 4 FF; and a C7 record-leg row at 20-35 LUT, 2 FF; the E rows are unchanged. Without the window:
+
+- Latches: minus `disp_q` (1 FF) and its `$C071`/`$C073` decode with an 8-bit compare against `$E1` (about 3-5 LUTs): 20-35 − 3-5 = **17-30 LUT**, 25 − 1 = **24 FF**.
+- Classification: minus old C6's `xl_is_display` (an address range, a bank test, and gate terms on `turbo_map_fill`, the shadow write enable, `xl_is_posted` and the routing before `xl_is_ramworks`: about 11-17 LUTs): 25-45 − 11-17 = **14-28 LUT**. FFs: the invalidation snapshot `turbo_inh_q` is 2 bits (was `turbo_dsp_q`, 3 bits, in a 4-FF row): **2 FF**.
+- Record leg: removed, −20-35 LUT, −2 FF.
+- Total LUT: 17 + 14 + 50 + 30 = 111 to 30 + 28 + 80 + 45 = 183. Total FF: 24 + 2 + 30 + 2 = 58 (was 25 + 4 + 2 + 30 + 2 = 63, "about 60").
+- The window's share was therefore about 34-57 LUTs (3 + 11 + 20 to 5 + 17 + 35) and 5 FFs.
 
 Budget: 110 of 140 BRAM tiles, 36,086 of 53,200 LUTs, 83.95% of slices occupied (`FW/README_VIVADO_RUNTIME_AUDIT.md:101-106` V; that audit predates F1.2.2's copy engine, A).
 
-**Timing.** C4 adds a term to `xl_is_posted`, on the admission family. The recorded margins are thin: the TURBO shadow-RAM family at +0.171 ns and the capture FIFO at +0.182 ns against a +0.200 ns gate (`FW/docs/FABRIC_TIMING_MARGIN_PLAN.md:2192-2194` V; the column meanings were not re-read, A). (check 2026-10-03) Those two figures are the table's "F1.1.4 baseline" column (`:2186` V); the second trial of the same day shows +0.273 and +0.546 ns, and the +0.200 ns gate is "the then-current" one of the September 25 trials (`:2072` V; the standing rule is a +0.150 ns nominal floor, `:2055` V). No routed figure for F1.2.2 is recorded there. Every new operand is a register (`inh_*_q`, `disp_q`, the registered tuple). Fallback: compute `xl_inhibited` and `xl_is_display` one stage earlier, at `X_CAPTURE`, from `core_addr` and the registered state, as change 5 does for `cycle_zpb_redirect_q` (`zpbank-spec.md:311` V). The mux in E3 should be registered.
+**Timing.** C3 adds a term to `xl_is_posted`, on the admission family. The recorded margins are thin: the TURBO shadow-RAM family at +0.171 ns and the capture FIFO at +0.182 ns against a +0.200 ns gate (`FW/docs/FABRIC_TIMING_MARGIN_PLAN.md:2192-2194` V; the column meanings were not re-read, A). (check 2026-10-03) Those two figures are the table's "F1.1.4 baseline" column (`:2186` V); the second trial of the same day shows +0.273 and +0.546 ns, and the +0.200 ns gate is "the then-current" one of the September 25 trials (`:2072` V; the standing rule is a +0.150 ns nominal floor, `:2055` V). No routed figure for F1.2.2 is recorded there. Every new operand is a register (`inh_*_q`, the registered tuple). Without the window, `xl_is_posted` gains one term, not two, and `turbo_map_fill` and the shadow write enable gain none (rev 2026-10-04). Fallback: compute `xl_inhibited` one stage earlier, at `X_CAPTURE`, from `core_addr` and the registered state, as change 5 does for `cycle_zpb_redirect_q` (`zpbank-spec.md:311` V). The mux in E3 should be registered.
 
 ### 3.4 PS (ARM) changes
 
@@ -349,14 +324,17 @@ Budget: 110 of 140 BRAM tiles, 36,086 of 53,200 LUTs, 83.95% of slices occupied 
 | `memory_api_hw.c` | Physical `$E1xxxx` on the engine path only; the ARM DMA fallback refuses it (`hw_dma` rejects ≥ `0x800000`, `:150-156` V). Emit present-open before the first `$E1` descriptor and present-close after the last, on every exit path, after the engine reports DONE. | 30-50 lines |
 | `apple_cycle_egress.c` | Kind 3: call a renderer hook with open or close. On a gap or resync, force the present closed. | 10-20 lines |
 | `apple_cycle_renderer.c` | In the SHR branch (`:3063-3095` V; check 2026-10-03, was `:3062-3090`), skip the rebuild while a present is open, counting it like the settle skip (`:3073-3082` V). Cap: after 8 frame markers with a present open, rebuild anyway, so a lost close cannot freeze the screen. | 15-25 lines |
-| `smartport_service.c`, `smartport_card.sv` | Add the inhibit bits to the switch snapshot (as change 5 does, `zpbank-spec.md:277-288` V). Skip `arm_post` for inhibited aux `$2000-$9FFF` bytes (SmartPort posts video-window bytes today: `core:238-241` V). With the window open, direct spans into `$2000-$9FFF` fall back to the core's byte path, which handles the display. | 20-40 lines |
-| `vtw_service.c` | `vtw: shadow=$18 armed=1 shr=1 inh=lo,hi win=0` | 5-10 lines |
+| `smartport_service.c`, `smartport_card.sv` | Add the inhibit bits to the switch snapshot (as change 5 does, `zpbank-spec.md:277-288` V). Skip `arm_post` for inhibited aux `$2000-$9FFF` bytes (SmartPort posts video-window bytes today: `core:238-241` V). (rev 2026-10-04: the window's span fallback is gone, 20-40 → 15-30, E.) | 15-30 lines |
+| `vtw_service.c` | `vtw: shadow=$18 armed=1 shr=1 inh=lo,hi` | 5-10 lines |
+
+Sum (rev 2026-10-04): 40 + 30 + 10 + 15 + 15 + 5 = 115 to 60 + 50 + 20 + 25 + 30 + 10 = 195 lines (E).
 
 ### 3.5 What is not done
 
 - No reconcile of inhibited bytes to the motherboard: not at SHR exit, not at session end, not on `$C073` writes (section 2.3).
 - No readable display RAM (section 9, question 4).
-- No IIgs bank `$00`/`$E0` shadowing: main is never inhibited, and there is no main display window.
+- No CPU path to the display, read or write (rev 2026-10-04; section 9).
+- No IIgs bank `$00`/`$E0` shadowing: main is never inhibited.
 - No effect on the native motherboard CPU.
 
 ### 3.6 Stages
@@ -365,14 +343,13 @@ Each stage is one full build against +0.200 ns.
 
 | Stage | Content | Gives |
 |---|---|---|
-| S0 | C1-C3, C9, kill switch; state latched but unused | Equivalence with F1.2.2; status line |
-| S1 | C4, C5, C8: the inhibit | IIgs shadowing; the DOOM speed-up needs S1 and S2 together |
-| S2 | E1-E4 and the PS present (3.4) | The API endpoint, tear-free presents |
-| S3 | C6, C7: the CPU window | Direct CPU writes to the display |
-| S4 (optional) | Packed records (kind 4, 4 bytes a record) for engine presents | CPU1 work per present ÷4, if CPU1 is the bound |
-| S5 (optional) | AUX `$E1` as a source: CPU0 asks CPU1 to apply every record up to the hold, clean the range and acknowledge, then reads `g_aux_bank` | Reading the display back, saving the true screen |
+| S0 | C1, C2, C6, kill switch; state latched but unused; PS: `vtw_service.c`'s status line (3.4) | Equivalence with F1.2.2; status line |
+| S1 | C3, C4, C5: the inhibit; PS: `smartport_service.c`/`smartport_card.sv`'s inhibit snapshot and `arm_post` skip (3.4) | IIgs shadowing; the DOOM speed-up needs S1 and S2 together |
+| S2 | E1-E4 and the PS present: `memory_api*`, `apple_cycle_egress.c`, `apple_cycle_renderer.c` (3.4) | The API endpoint, tear-free presents |
+| S3 (optional) | Packed records (kind 4, 4 bytes a record) for engine presents | CPU1 work per present ÷4, if CPU1 is the bound |
+| S4 (optional) | AUX `$E1` as a source: CPU0 asks CPU1 to apply every record up to the hold, clean the range and acknowledge, then reads `g_aux_bank` | Reading the display back, saving the true screen |
 
-S1 without S2 is safe but useless for DOOM: inhibited frames never show. Ship S1 and S2 together.
+(rev 2026-10-04: the old S3, the CPU window, is dropped; old S4 and S5 are now S3 and S4.) S1 without S2 is safe but useless: inhibited frames never show, and with no window the API is the only way to show them. Ship S1 and S2 together.
 
 ## 4. Verification
 
@@ -380,7 +357,7 @@ The benches that build and pass under Verilator on this Mac: `tb_vtw_turbo`, `tb
 
 | Bench (script) | Cases |
 |---|---|
-| `hdl/sim/tb_vtw_turbo.sv` (`scripts/test_vtw_turbo.py`) | Kill switch off, or never armed: traces identical to F1.2.2 (posted count, records, perf counters). `$18` in SHR: a 256-byte aux burst then `lda $C000` gives 0 posted writes, 0 records, no video wait. `$08`: `$2000-$5FFF` still recorded and posted, `$6000-$9FFF` not. Inhibit outside SHR: no effect. Warm fast-write entries for aux page `$40`, then `$C035 = 0`: the next store is recorded (C5). Leave SHR with entries warm: same. Window: `$E1` with underlying bank 0 and 5; stores to `$2000`, `$9FFF`, `$A000`, `$1FFF`; loads under the window; `INC $2000`; one record each and no shadow or PSRAM change (C6); window under 80STORE+PAGE2+HIRES; `$E1` unarmed is ignored; a `$00-$7F` or other `$80-$FF` write closes it. Classic speed (1 MHz, divided): a window store after 20 posted bytes reaches capture after them (C7). `$9DF8` under each class (C8). Apple RES, CORE_RUN drop, kill switch: all state cleared. |
+| `hdl/sim/tb_vtw_turbo.sv` (`scripts/test_vtw_turbo.py`) | Kill switch off, or never armed: traces identical to F1.2.2 (posted count, records, perf counters). `$18` in SHR: a 256-byte aux burst then `lda $C000` gives 0 posted writes, 0 records, no video wait. `$08`: `$2000-$5FFF` still recorded and posted, `$6000-$9FFF` not. Inhibit outside SHR: no effect. With `$C035 = $18` latched, warm fast-write entries for aux page `$40`, then `$C035 = 0`: the next store is recorded and posted (C4). Leave SHR with entries warm: same. `$C035 = $18` with entries warm from shadowed stores: the next store misses, refills fast, and is not recorded. `$C073 = $E1`, armed or not: ignored, the bank kept, traces as F1.2.2 (rev 2026-10-04: replaces the window cases). Page `$9D` inhibited: never fast, shadow only (C3). `$9DF8` shadowed and inhibited (C5). Apple RES, CORE_RUN drop, kill switch: all state cleared. |
 | `hdl/sim/tb_apple_cycle_capture.sv` | Direct records from the engine port and the core port in FIFO order with physical records; kind 3 markers; behaviour at the 4064 threshold. |
 | `hdl/sim/tb_vtw_copy_engine.sv` (`scripts/test_vtw_copy_engine.py`) | `$E1` destination from shadow and from PSRAM, unaligned ends, FILL: the record stream equals the source bytes in order, and shadow BRAM is untouched. Abort mid-copy: `completed` equals records accepted. Back-pressure from `rec_ready`. |
 | `hdl/sim/tb_apple_cycle_egress.sv` (`scripts/test_apple_cycle_egress.py`) | Kind 3 passes through the ring unchanged. |
@@ -388,23 +365,24 @@ The benches that build and pass under Verilator on this Mac: `tb_vtw_turbo`, `tb
 | `hdl/sim/tb_vtw_system.sv` | The translation monitor stays green (translation is unchanged). Needs XSim or a fix for the 5 Verilator failures first. |
 | `scripts/test_memory_api.py`, `test_memory_api_hw.py` | Bank `$E1` limits; flags must be 0; source `$E1` refused; markers emitted on success, refusal and abort; feature bits only with the capability bit. |
 | `scripts/test_apple_cycle_egress.py`, renderer tests | Present open across a frame marker: the frame is skipped; the cap forces a rebuild after 8; a gap closes the present. |
-| `scripts/test_smartport_service.py` | Inhibit bits in the snapshot; inhibited video bytes not posted; window open: no direct span into `$2000-$9FFF`. |
+| `scripts/test_smartport_service.py` | Inhibit bits in the snapshot; inhibited video bytes not posted. |
 
-**On the card.** New CALIB page lines (DOOM's `CALIB.hdv`): `INH SEQ` and `INH COL` (the `SHR SEQ`/`SHR COL` loops of `calib.md:69-70` with `$18` latched; expected near plain aux RAM speed), `DSP SEQ` and `DSP COL` (window stores), `PRES 26880` and `PRES 32000` (the API present's 65C02 time), and the egress counters during a present (`lazy-mirror-spec.md:198-203` V) to measure CPU1's record rate. A visual check: a program alternating two full screens by present shows no torn frame.
+**On the card.** New CALIB page lines (DOOM's `CALIB.hdv`): `INH SEQ` and `INH COL` (the `SHR SEQ`/`SHR COL` loops of `calib.md:69-70` with `$18` latched; expected near plain aux RAM speed), `PRES 26880` and `PRES 32000` (the API present's 65C02 time), and the egress counters during a present (`lazy-mirror-spec.md:198-203` V) to measure CPU1's record rate. A visual check: a program alternating two full screens by present shows no torn frame.
 
-**In a2vm.** a2vm needs a model of the inhibit, the window and the present, priced from the CALIB lines, before DOOM's gain can be checked (section 8).
+**In a2vm.** a2vm needs a model of the inhibit and the present, priced from the CALIB lines, before DOOM's gain can be checked (section 8).
 
 ## 5. Compatibility
 
 | Software | Effect |
 |---|---|
-| VidHD-era //e SHR software | Never writes `$C035` (A, medium: VidHD's manual lists no `$C035`, G `vidhd.txt:203-216`), so it is never armed: F1.2.2 behaviour exactly, `$E1` included. |
-| RamWorks sizing probes, AppleWorks expanders, RAM disks | `$E1` is ignored unless armed, as all bit-7 values are today (`soft_switch_manager.sv:141-144` V). Probes do not write `$C035` (A). |
+| VidHD-era //e SHR software | Never writes `$C035` (A, medium: VidHD's manual lists no `$C035`, G `vidhd.txt:203-216`), so it is never armed: F1.2.2 behaviour exactly. |
+| RamWorks sizing probes, AppleWorks expanders, RAM disks | Unaffected (rev 2026-10-04): `$C071`/`$C073` are unchanged, and `$E1` is ignored as all bit-7 values are today (`soft_switch_manager.sv:141-144` V), armed or not. A probe that also writes `$C035` (none known, A) could only inhibit aux stores in SHR. |
 | A stray `$C035` write (sound code hitting `$C030-$C03F`) | Arms; harmful only if the byte has bit 3 set while in SHR. Low risk (I). |
-| IIgs code ported to the //e | Bit 3 and bit 4 as on the IIgs. Bits 0-2, 5, 6 ignored. `$C035` cannot be read. No `$E0`, no bank `$00` shadowing, no `$C036` bit 4. The display is write-only to the CPU, unlike `$E1` on the IIgs. |
+| IIgs code ported to the //e | Bit 3 and bit 4 as on the IIgs. Bits 0-2, 5, 6 ignored. `$C035` cannot be read. No `$E0`, no bank `$00` shadowing, no `$C036` bit 4. The CPU cannot address `$E1` at all, unlike the IIgs: its `MVN` to `$E1` becomes a memory-API COPY (section 0). |
 | ONE//e | Uses the same core; untested, as for change 3 (`lazy-mirror-spec.md:255` V). Ship behind the kill switch. |
-| II/II+ host | No aux bank 1 in the translation (`README_VIRTUAL_TRANSWARP.md:109` V), so the inhibit never matches. The window's behaviour there is untested. |
+| II/II+ host | No aux bank 1 in the translation (`README_VIRTUAL_TRANSWARP.md:109` V), so the inhibit never matches. |
 | Real VidHD, AppleWin, old Appletini firmware | No `$C035` behaviour and no `$E1`. Software keeps today's path and selects the new one from the feature bits. |
+| A future scheme with more than 128 banks | Unaffected (rev 2026-10-04): `$E1` on `$C073` is no longer reserved. This design defines no bit-7 value, so R9 is left open (section 6). |
 
 **Emulator: what AppleWin's VidHD would need.**
 
@@ -415,8 +393,7 @@ Today AppleWin stores `$C035` and ignores it (`AW/VidHD.cpp:98` V). It draws SHR
    - While bit 3 is 0 (or not armed): the display tracks aux 0. The simple model renders from `RWpages[0]`.
    - On a 0→1 change of the effective inhibit: copy `RWpages[0][$2000-$9FFF]` into the buffer, then render from it. With bit 3 set and bit 4 clear, render `$2000-$5FFF` from aux 0 and `$6000-$9FFF` from the buffer.
    - On 1→0: the IIgs keeps the old bytes until rewritten. The simple model jumps to aux 0 at once; exact behaviour needs a write hook on aux pages `$20-$9F` (AppleWin writes through the `memwrite[]` page table, `AW/Memory.cpp:226`, `:505-508` V; I, medium on the cost).
-3. **The window:** in the `$C071`/`$C073` handler, accept `$E1` when armed, keep `g_uActiveBank`, and point the `memwrite[]` entries of aux pages `$20-$9F` at the display buffer while RAMWRT (or 80STORE+PAGE2) selects aux. `memread[]` is untouched. Rebuild in `UpdatePaging`.
-4. **The memory API** is Appletini-specific; AppleWin has none. DOOM already has a CPU fallback for machines without it (DOOM commit e3d4649c).
+3. **The memory API** is Appletini-specific; AppleWin has none, and with no CPU window (rev 2026-10-04) it is the only way to write the buffer of item 2. Without an API model, item 2 alone can only follow aux 0. DOOM already has a CPU fallback for machines without the API (DOOM commit e3d4649c).
 
 **Period precedent for the bank-0 lock** (added 2026-10-03 after this design round, from a separate verification). On a //e with a RamWorks III or II, the //e's own video (80-column text's aux half, DHGR) always comes from bank 0, whatever `$C073` selects. The verification rates this high confidence; the original 1985 RamWorks is inferred, not documented:
 
@@ -432,16 +409,17 @@ So the Appletini's bank-0 SHR follows the RamWorks line's own rule. The exceptio
 
 | Change | Interaction |
 |---|---|
-| Change 1 (bank register in the bank-steer list) | If `$C071`/`$C073` writes join the bank-steer flush, an `$E1` write needs no flush: it changes no motherboard state. Exempt the value, or accept one posted-queue drain per window open. |
-| Change 3 (lazy SHR mirror) | Shares `shr_selected_q`. Inhibited and display writes are not lazy: they are never mirrored. Change 3 still speeds up shadowed SHR writes (VidHD-era software). Its `$C073` flush finds no inhibited bytes. |
-| Change 5 (zero-page pair) | Optional: pair value `$E1` = the window for that direction. Not needed by DOOM. |
-| R4 (API writes that reach the display, `requests.md:147-177` V) | Implemented here as the AUX `$E1` endpoint. R4's "when CPU1 applies the block" is answered: whole, at a frame edge, by the present markers. |
-| R9 (bank 127, bit-7 values) | `$E1` becomes the one defined bit-7 value. Question 8. |
+| Change 1 (bank register in the bank-steer list) | None (rev 2026-10-04): this design gives `$C071`/`$C073` no new value, so nothing needs exempting from the bank-steer flush. |
+| Change 3 (lazy SHR mirror) | Shares `shr_selected_q`. Inhibited writes are not lazy: they are never mirrored, and API presents never touch the motherboard. Change 3 still speeds up shadowed SHR writes (VidHD-era software). Its `$C073` flush finds no inhibited bytes. |
+| Change 5 (zero-page pair) | None (rev 2026-10-04): with no window there is no pair value `$E1`; the pair's `$80-$FF` reservation (`zpbank-spec.md:29` V) stays its own. |
+| R4 (API writes that reach the display, `requests.md:147-177` V) | Implemented here as the AUX `$E1` endpoint, now the only way to write the display. R4's "when CPU1 applies the block" is answered: whole, at a frame edge, by the present markers. |
+| R9 (bank 127, bit-7 values) | Unaffected (rev 2026-10-04): `$E1` on `$C073` stays an ignored bit-7 value and needs no reserving. `$E1` is now only a memory-API bank number, free there because F1.2.2's API refuses AUX banks above 126 (`memory_api.c:43-47` V, section 2.5). |
 
 ## 7. Implementation risks
 
-- **CPU1's record rate is unmeasured.** The lazy spec assumes 1-3 M records a second (`lazy-mirror-spec.md:194` V, A). A 26,880-byte present is then 9-27 ms of CPU1 work, done after the 65C02 has moved on. A frame shows the present 9-47 ms after the request (E, plus up to one PAL frame). S4 divides that by four. Today DOOM already sends about one record per SHR store, 20-26 K a frame (E, section 8), so the load is about the same as now.
-- **Ordering.** A present's records follow every record emitted before the hold, because the core is held and its direct leg idle (E3). The classic-speed window leg (C7) needs its bench proof.
+- **CPU1's record rate is unmeasured.** The lazy spec assumes 1-3 M records a second (`lazy-mirror-spec.md:194` V, A). A 26,880-byte present is then 9-27 ms of CPU1 work, done after the 65C02 has moved on. A frame shows the present 9-47 ms after the request (E, plus up to one PAL frame). S3 divides that by four (check 2026-10-04: said S4, the old number of the packed-records stage). Today DOOM already sends about one record per SHR store, 20-26 K a frame (E, section 8), so the load is about the same as now.
+- **Ordering.** A present's records follow every record emitted before the hold, because the core is held and its direct leg idle (E3). (rev 2026-10-04: with no window there is no classic-speed record leg to prove.)
+- **The invalidation term (C4).** The inhibit's one must-fix. Missing it fails silently: after an inhibit release, TURBO stores to a page warmed while inhibited skip their record and their motherboard write, so the screen misses them. The bench case in section 4 covers it.
 - **The present-open cap** trades a frozen screen for one torn frame if a close is lost.
 
 ## 8. DOOM GS: use and expected gain
@@ -464,7 +442,7 @@ A DOOM invariant follows: **aux 0 always holds the last presented frame plus the
 
 The present builder needs room: `AMEMLC` is full, 164 of 164 bytes (`DOOM/docs/SPEED.md:376`, `:434` V). It can live in the frame's code area, since the present is made between phases.
 
-DOOM does not need the CPU window (S3) at all. Its whole gain comes from S1 and S2.
+DOOM never used the CPU window (the old S3), so dropping it changes nothing here (rev 2026-10-04). Its whole gain comes from S1 and S2, and section 8.2 stands as written.
 
 ### 8.2 Expected gain (E)
 
@@ -506,16 +484,17 @@ The uncounted fast-write and switch effects could add about 1-2 ms, about 6.85 F
 
 ### 8.3 Compared with dropping the mirror alone
 
-If shadowed SHR writes simply never went to the motherboard while SHR is selected (no `$C035` needed), DOOM would save the same 8.0-10.4 ms with **no code change** and no present: about 6.68-6.78 FPS. It would still tear, and every shadowed SHR program would change behaviour. That is change 3 without its reconcile, not a display API; question 10 asks whether to pursue it as well.
+If shadowed SHR writes simply never went to the motherboard while SHR is selected (no `$C035` needed), DOOM would save the same 8.0-10.4 ms with **no code change** and no present: about 6.68-6.78 FPS. It would still tear, and every shadowed SHR program would change behaviour. That is change 3 without its reconcile, not a display API; question 8 asks whether to pursue it as well.
 
 ## 9. Alternatives rejected
 
 | Alternative | From | Why not |
 |---|---|---|
-| A readable display RAM (8 RAMB36 fed from the capture FIFO's write side) behind `$C073 = $E1` | the "bank" design | 8 more BRAM tiles at 110 of 140 and 83.95% slices; a new source on the `core_data_in_q` mux next to the shadow (TURBO shadow-RAM family at +0.171 ns) and a write tap on the capture FIFO path (+0.182 ns); a cache veto. Kept: the `$E1` name, arming by `$C035`, the window's address map. Readability is question 4. |
-| The zero-page pair as the only CPU path (`zp_wr = $E1`) | the "select" design | Depends on change 5, which is not built, and inherits its rules (`$C069` setup, clear before ROM calls, IRQ saves). Kept: no reconcile, the motherboard left stale, the record address `{1, addr}`, 0 BRAM; the pair value `$E1` as an optional extension. |
+| **The CPU display window**: `$C073 = $E1`, armed by `$C035`, write-only; stores to aux `$2000-$9FFF` become one direct capture record each (the 2026-10-03 design's old C3, C6, C7 and stage S3) | the 2026-10-03 design | (rev 2026-10-04) **The owner's decision, 2026-10-04: "drop the CPU window, API only".** The check of 2026-10-03 also showed it was not cheap. In TURBO every window store after the first one to a page would land in aux-0 shadow RAM, not the display: the first store fills a TURBO write-map entry (`turbo_map_fill`, `core:1212-1213` V) whose fast bit is `!xl_is_posted && ...` (`:1218-1219` V), 1 for an unposted window store, and a write hit needs only that bit and a page tag (`:1240-1242` V). The fast bit (or the fill), the shadow write enable (`core_shadow_issue`, `shadow_a_we`, `:1307-1308`, `:1320` V) and `xl_is_posted` would each have needed a display term. Other costs: routing before `xl_is_ramworks`, since with a RamWorks bank of 1 or more the write would otherwise go to PSRAM whenever `ramworks_en` is set (`:643-644` V); a record leg at every speed that waits at classic speed for the posted queue (`:1352-1384` V); about 34-57 LUTs, 5 FFs and 5-10 PS lines (section 3.3, E); `$E1` reserved on `$C073` for good (R9); a probe hazard on a real RamWorks III (I, medium); and a CPU present that tears and costs 5-7 ms a frame (the CPU-only row below). DOOM never used it (section 8.1). |
+| A readable display RAM (8 RAMB36 fed from the capture FIFO's write side) behind `$C073 = $E1` | the "bank" design | 8 more BRAM tiles at 110 of 140 and 83.95% slices; a new source on the `core_data_in_q` mux next to the shadow (TURBO shadow-RAM family at +0.171 ns) and a write tap on the capture FIFO path (+0.182 ns); a cache veto. Kept: the `$E1` name and arming by `$C035` (rev 2026-10-04: no longer the window's address map, now dropped too). Reading the display back is question 4. |
+| The zero-page pair as the only CPU path (`zp_wr = $E1`) | the "select" design | Depends on change 5, which is not built, and inherits its rules (`$C069` setup, clear before ROM calls, IRQ saves); and (rev 2026-10-04) any CPU path to the display is now ruled out by the owner. Kept: no reconcile, the motherboard left stale, 0 BRAM. |
 | A STALE class with a reconcile at SHR exit, TURBO exit and session end, and a bank sync that steers `$C073` | the "api" design | The most complex firmware of the three, and unnecessary once inhibited writes never reach the motherboard. Kept: the present as a memory-API request, applied whole at a frame edge, and the capture ring as the only path into CPU1's copy. |
-| A new space value 2 `DISPLAY` | the "api" design | AUX bank `$E1` gives the CPU and the API one name. |
+| A new space value 2 `DISPLAY` | the "api" design | AUX bank `$E1` keeps the IIgs's name for the buffer and needs no new space value; old firmware already refuses it with RANGE (section 2.5). (rev 2026-10-04: the reason was "gives the CPU and the API one name"; the CPU no longer reaches it.) |
 | Inhibiting main `$2000-$9FFF` in paged SHR | "api", "select" | Not IIgs behaviour; the paged modes have their own A2Li hold. |
 | Showing the active RamWorks bank | AppleWin today | Rejected by the owner: it tears, and no period hardware did it. |
 | A Videx-style window in `$Cxxx` | period cards | Every `$Cxxx` access is a bus cycle of about 1 µs, as slow as the drain. |
@@ -530,27 +509,28 @@ If shadowed SHR writes simply never went to the motherboard while SHR is selecte
 1. **Bit 4.** Follow the IIgs (`$08` inhibits `$6000-$9FFF` only; `$18` inhibits everything), or make bit 3 alone inhibit all of `$2000-$9FFF`? And should bits 1 and 2 gate the aux pages when bit 4 is 0 (gssquared's notes and code disagree)? Please check against the IIgs Hardware Reference.
 2. **Outside SHR.** v1 ignores `$C035` unless SHR is selected. Should the inhibit also apply in DHGR, where the IIgs would apply it?
 3. **Reading `$C035`.** Answer reads from the latch inside the card (no click, IIgs read-modify-write works), against the TransWarp rule "no new soft switches" (`README_VIRTUAL_TRANSWARP.md:279` V)?
-4. **A readable display.** Is a CPU-readable `$E1` worth 8 BRAM tiles and the timing risk, or is the optional API source path (S5) enough?
-5. **Window reads.** v1 reads under `$E1` come from the underlying bank. A readable display later would need a different selector value. Agree to fix this meaning now?
-6. **Absorbing `$C035` and `$E1` writes** in the vTW (no bus cycle, no click, no exposure flush) at the cost of a private-serve FSM branch?
-7. **The motherboard copy.** Inhibited and display writes never reach the motherboard's aux RAM or PSRAM bank 1, and are never reconciled. Does any consumer depend on them after an SHR session (a //e's own monitor after leaving SHR, the native CPU after handback)?
-8. **`$E1` on `$C073`.** Reserve this one bit-7 value permanently (R9), knowing it blocks a future scheme with more than 128 banks from using it?
-9. **Present atomicity.** Is "whole, at the next frame edge after CPU1 has applied it" enough, or should the 65C02 be able to wait until a present is shown (a deferred SmartPort response)?
-10. **Dropping the mirror for shadowed SHR writes** (section 8.3): pursue it too, for unmodified software, as a variant of change 3?
-11. **Kill-switch default.** On by default, given that nothing happens until `$C035` is written?
-12. **Native CPU.** Should `$C035` act when the vTW is off (a renderer-side filter on bus records), or stay a vTW feature?
-13. **Stage order.** S1+S2 for DOOM first and the CPU window (S3) later, or all at once?
-14. **CPU1 measurement first.** Measure CPU1's record rate (the egress counters) before building S2, since it decides whether S4 is needed?
+4. **Reading the display.** With the CPU kept out (rev 2026-10-04), the only read path would be the optional API source stage (S4). Is it wanted, or is the RAM copy in aux 0 enough?
+5. **Absorbing `$C035` writes** in the vTW (no bus cycle, no click, no exposure flush) at the cost of a private-serve FSM branch?
+6. **The motherboard copy.** Inhibited writes and presents never reach the motherboard's aux RAM or PSRAM bank 1, and are never reconciled. Does any consumer depend on them after an SHR session (a //e's own monitor after leaving SHR, the native CPU after handback)?
+7. **Present atomicity.** Is "whole, at the next frame edge after CPU1 has applied it" enough, or should the 65C02 be able to wait until a present is shown (a deferred SmartPort response)?
+8. **Dropping the mirror for shadowed SHR writes** (section 8.3): pursue it too, for unmodified software, as a variant of change 3?
+9. **Kill-switch default.** On by default, given that nothing happens until `$C035` is written?
+10. **Native CPU.** Should `$C035` act when the vTW is off (a renderer-side filter on bus records), or stay a vTW feature?
+11. **CPU1 measurement first.** Measure CPU1's record rate (the egress counters) before building S2, since it decides whether S3 (packed records) is needed?
+
+(rev 2026-10-04: dropped with the window: old 5, window reads; old 8, reserving `$E1` on `$C073`; old 13, stage order with the window as S3. Old 4 lost its CPU-readable option; old 6 lost the `$E1` write. The rest are renumbered: old 7, 9, 10, 11, 12, 14 are now 6, 7, 8, 9, 10, 11.)
 
 ## 11. Not verified
 
 - The IIgs semantics of bits 1, 2 and 4, and the real IIgs reset value: from gssquared, not the Apple IIgs Hardware Reference.
 - That a //e clicks on `$C035` writes: from memory and an AppleWin comment.
 - That no VidHD-era software or RamWorks probe writes `$C035`.
-- What a real RamWorks III does with `$E1`.
 - CPU1's record rate, egress throughput during a burst, and the present's real 65C02 cost.
-- That the engine's record port and the core's direct leg can never be active together.
-- That a read under the window leaves the TURBO write map unfilled for `$2000-$9FFF` (the read and write maps are separate per `FW/README_TURBO.md:47-72`, G). (check 2026-10-03: verified, the map index is `{rw, page_set}`, `vtw_turbo_cache.sv:66`, `:83` V, so a read fills only read entries. A **write** under the window does fill a write entry today: see C6.)
+- That the engine's record port and the core's direct leg (today's TURBO record) can never be active together.
+- That no cached state other than the TURBO map's per-entry fast bit (`vtw_turbo_cache.sv:79`, `:96` V) carries a write's class across an inhibit change; the byte cache holds read data only and is snooped on shadow writes (`core:1214-1215`, `:1232-1235` V), so C4 is believed sufficient (I).
 - F1.2.2's BRAM and LUT use after the copy engine.
+- The LUT split behind section 3.3's revised figures: the window's share is estimated, not synthesized.
 - Whether `tb_apple_cycle_capture` and `tb_vtw_copy_engine` build and pass under Verilator here.
 - DOOM's benchmark store count, and every DOOM reader of aux 0 outside the replay.
+
+(rev 2026-10-04: dropped with the window: what a real RamWorks III does with `$E1`, and whether a read under the window fills the TURBO write map. Check 2026-10-04: this note moved below the list, which it had split in two.)
