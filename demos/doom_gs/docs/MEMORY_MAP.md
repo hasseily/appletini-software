@@ -48,14 +48,14 @@ Banks 1-126 are RamWorks PSRAM; 127 is never used [R `NATIVE.md` §4.4].
 | # | Rule | Why |
 | --: | --- | --- |
 | 1 | The language card is always RAM for reading and writing. Bank 1 of `$D000` is selected in every phase except the replay; the replay selects bank 2 on entry and bank 1 on exit (`bit $C083` twice, `bit $C08B` twice). | Two 4 KB banks at `$D000` serve two sets of phases [R `tools/a2vm/README.md:195`: two reads of an odd address enable writes]. |
-| 2 | The IRQ handler touches only zero page `$D8-$FF`, the stack page, `$E000-$FFFF` and I/O (`$C0A0-$C0AF`, `$C400-$C4FF`). Never `$D000-$DFFF` (its bank depends on the phase), never `$0200-$BFFF` (RAMRD, RAMWRT, `$C073` and the pair may be set). | The IRQ contract of S2 [R `src/sound/README.md`, "The IRQ contract"], tightened from `$D000-$FFFF` to `$E000-$FFFF`. |
-| 3 | Main `$0400-$0BFF` and `$2000-$5FFF`, and aux 0 `$0400-$0BFF`, hold only read-only data written by memory-API PRIVATE copies. No CPU store ever targets them after boot. (Since the frame slots, 2026-10-03: during the tic phase `$2000-$5FFF` also holds the placement's pinned groups, code that PRIVATE copies in and that runs there but never stores there; PRIVATE puts the colormap bytes back before the tic phase ends: 3.4, section 17, `SPEED.md` 9.) **Without the memory API** (2026-10-03, section 19, `PLAY.md` 19) the same copies, at the same points, are CPU stores: the frame slots' loads and restores, the level's colormaps (`$2000-$5FFF`, `$0400-$07FF`) and `FUZZDARK` (aux 0 `$0800`), DLINIT's static tables (`$0800-$0BFF`, aux 0 `$0200`, `$0900`, `$0A00`). They are video writes: harmless in an emulator, about 1 µs a byte on an Appletini, which has the API. No other code stores there. | A CPU store there is a video write that leaves a mirror byte [R `tools/a2vm/a2vm.c:651-656`; `memory` §1.1]. |
+| 2 | The IRQ handler touches only zero page `$D8-$FF`, the stack page, `$E000-$FFFF` and I/O (`$C0A0-$C0AF`, `$C400-$C4FF`). Never `$D000-$DFFF` (its bank depends on the phase), never `$0200-$BFFF` (RAMRD, RAMWRT, `$C073` and the pair may be set). **With an AppleMouse II in slot 2** (2026-10-04, section 21, `PLAY.md` 21) it also reads `$C013`, `$C014`, `$C018` and turns 80STORE, RAMRD and RAMWRT off and back on as it found them (`$C000-$C005`), so that main memory is the firmware's; calls the mouse's firmware in `$C200-$C2FF` (its ROM banks switched through its PIA at `$C0A0-$C0A3`), which borrows zero page `$06` (an RTS there, given back) and about 8 bytes of stack; and exchanges slot 2's eight screen holes, main `$047A + $80k` (k = 0-7), with the card's `ap_hb` before and after the firmware, so that every byte of `$0200-$BFFF` holds at the RTI what it held at the interrupt. `$C073` and the pair are never needed: with those switches off no access reaches an aux bank. ALTZP is off in every handler (rule 7, the bridge). | The IRQ contract of S2 [R `src/sound/README.md`, "The IRQ contract"], tightened from `$D000-$FFFF` to `$E000-$FFFF`. The AppleMouse II's interrupt is acknowledged only through its firmware (SERVEMOUSE), whose 6805 answers through the PIA. |
+| 3 | Main `$0400-$0BFF` and `$2000-$5FFF`, and aux 0 `$0400-$0BFF`, hold only read-only data written by memory-API PRIVATE copies. No CPU store ever targets them after boot. (Since the frame slots, 2026-10-03: during the tic phase `$2000-$5FFF` also holds the placement's pinned groups, code that PRIVATE copies in and that runs there but never stores there; PRIVATE puts the colormap bytes back before the tic phase ends: 3.4, section 17, `SPEED.md` 9.) **Without the memory API** (2026-10-03, section 19, `PLAY.md` 19) the same copies, at the same points, are CPU stores: the frame slots' loads and restores, the level's colormaps (`$2000-$5FFF`, `$0400-$07FF`) and `FUZZDARK` (aux 0 `$0800`), DLINIT's static tables (`$0800-$0BFF`, aux 0 `$0200`, `$0900`, `$0A00`). They are video writes: harmless in an emulator, about 1 µs a byte on an Appletini, which has the API. **With an AppleMouse II** (section 21) the interrupt's `ap_swap` stores into slot 2's eight screen holes of main `$0400-$07FF` (colormaps A and B, levels 32 and 33, at `$7A` and `$FA`) twice a VBL and puts their bytes back before the RTI. No other code stores there. | A CPU store there is a video write that leaves a mirror byte [R `tools/a2vm/a2vm.c:651-656`; `memory` §1.1]. |
 | 4 | Aux 0 `$2000-$9FFF` is written only by CPU stores with RAMWRT on. PRIVATE never targets it. | PRIVATE writes are never shown [R `appletini-one/README_MEMORY_API.md` §4]. |
 | 5 | Inside a far window only zero page, the stack page and the language card are near; code in a read window runs from the card or zero page. | `NATIVE.md` §4.5 rules 1-2. |
 | 6 | During the replay's draw pass (RAMWRT on, `$C073` = 0), the replay writes only zero page `$48-$6F`, the stack, the row-block patch bytes in card bank 2, and aux 0 `$2000-$88FF`. | With RAMWRT on, every store to `$0200-$BFFF` goes to aux 0 [R `a2vm.c:643-648`]. Upstream writes back into records (`texStart`, `fillStart`) and resets `COLW` and `CV_ROW` during the replay [R `r_list65.s:601-605`, `:636-638`, `:1102`, `:1123`]; the native replay keeps those values in zero page and clears the covered ranges of a strip's columns after that strip's draw pass (RAMWRT off). |
 | 7 | On F1.2.1, `ALTZP` is on only inside a window of straight-line code bracketed by SEI and CLI, which keeps results in registers or in main `$0200-$BFFF`. | The F1.2.1 aux card is full of tables and has no vectors (section 4.3). With `ALTZP` on, zero page and stack are aux's [R `appletini-hardware.md:109`]. |
 | 8 | Nothing is ever written to main `$0878-$087F` or `$4078-$407F` by the CPU, except without the memory API (section 19), where the frame slot at page `$40` and colormap B's level 0 come by CPU stores: `playdisk.py` checks that no group pinned there holds `A2Li` at `$4078`; colormap B's bytes there (the level palette's) are not checked. | The firmware reads an `A2Li` signature and a load-hold byte there from its shadow of main memory, and treats writes there as immediate [R `appletini-one/hdl/apple/vtw_video_policy.sv:33-37`; `ps_sources/frontend/apple_cycle_renderer.c:2283-2336`]. PRIVATE writes emit no capture records, so a colormap loaded there by PRIVATE never reaches that shadow [R `README_MEMORY_API.md` §4]. |
-| 9 | Slot holes of main `$0400-$07FF` (`$x78-$x7F`, `$xF8-$xFF`) and `$07F8` are written by slot firmware and SmartPort calls. The pages there are reloaded after any firmware call. | [R `NATIVE.md` §4.1, §10]. |
+| 9 | Slot holes of main `$0400-$07FF` (`$x78-$x7F`, `$xF8-$xFF`) and `$07F8` are written by slot firmware and SmartPort calls. The pages there are reloaded after any firmware call; an AppleMouse II's calls in the interrupt (section 21) instead find their own bytes there and leave the colormaps' (`ap_swap`). | [R `NATIVE.md` §4.1, §10]. |
 | 10 | Aux 0 `$9DC8-$9DFF` stays zero. | Standard SHR. The bytes `"SHR4"`\|`$80` at `$9DFC-$9DFF` would switch the card to its PAL256 mode [R `demos/doom/docs/DESIGN.md:60-72`]. |
 
 ## 2. Zero page and stack
@@ -70,7 +70,7 @@ Main zero page, both variants, all phases:
 | `$18-$41` | 42 | phase overlay 1 | Per phase, below |
 | `$42-$47` | 6 | reserved | Never live across a SmartPort call [R `NATIVE.md` §10; the pair spec's forbidden ROM and ProDOS zero page, `zpbank-spec.md` §7] |
 | `$48-$D7` | 144 | phase overlay 2 | Per phase, below; the replay's `$48-$6F` (section 8) |
-| `$D8-$FF` | 40 | IRQ | The player's 31 B [M: S2 `SNDZP`], effect ring pointers 6 B [A], 3 spare |
+| `$D8-$FF` | 40 | IRQ | The player's 31 B [M: S2 `SNDZP`], effect ring pointers 6 B [A], 3 spare; with an AppleMouse II (section 21) the 3 spare are its X for the poll (`$FD-$FE`) and its button and count (`$FF`), and the effect player's temporaries `$F7-$FB` serve the handler before `fx_step` |
 
 | Phase | Overlays used | Stack (main page 1) |
 | --- | --- | --- |
@@ -1016,6 +1016,47 @@ latch, IER `$C0`) comes after `snd_init`'s IER `$7F` and touches neither
 port, so the music's and the effects' register traffic is unchanged. With
 the Appletini's card none of this is written and the card is byte for
 byte as before.
+
+## 21. The AppleMouse II (2026-10-04, `PLAY.md` 21)
+
+`DOOM.SYSTEM` takes slot 2 for an AppleMouse II when its ROM has the
+AppleMouse ID bytes but not the Appletini's own, and the firmware entries
+it uses in its table (`pl_boot.s` `mo_apple`, segment `PLMOUSE` after
+`PLAMEM`: `DOOM.SYSTEM` now spans `$2000-$33FF`). Its VBL interrupt is
+then the clock, before the Phasor's VIA-B timer. After the install,
+with interrupts masked, `bt_init` writes section 20's records, then
+these (`ap_recs`, then `ap_mpatch`'s, 176 B, 164 used,
+`tools/native/nomouse.py` `apple_patches`, written by `playdisk.py`):
+
+| Space | Range | With an AppleMouse II |
+| --- | --- | --- |
+| card `$E000` part | `pl_vbody` (13 B) | `JSR ap_irq`, `BCS pl_vnone`, `BRA` to the clock, 6 NOPs: the cause is the mouse's VBL, as SERVEMOUSE says |
+| card `$E000` part | `$F88E-$F8FD` (112 of 114 B, to FXC's end `$F8FF`) | `ap_irq` over `pl_detect` and `pl_wait`, which only the boot calls, and only with the Appletini's card (`playdisk.apple_card_problems` checks that nothing else of the card's links lies there and that LC.BIN is zero after FXCODE) |
+| card `$E000` part | `$F4DD-$F503` (39 of 40 B, after S2's `SNDRODATA`, before FXCODE) | `ap_swap` and `ap_hb`, the firmware's eight hole bytes between calls (checked free and zero the same way) |
+| P2DW (107), MENUW (108), WIW (95), FINW (96) | `pl_poll`'s read of `$C0A5` (3 B), `pl_mouse` (18 B from its first byte), `pl_centre` (8 B) | the operands `$C0A5`, `$C0A6` become `$00FF` (`AP_SB`), `$C0A1`, `$C0A2` become `$00FD`, `$00FE` (`AP_X`), still absolute; `pl_mouse`'s first byte back to `LDY #2` (section 20 made it an `RTS`) |
+
+`ap_irq`, at each interrupt: the switches read and turned off (80STORE,
+RAMRD, RAMWRT, their states in `$F9-$FB`); `ap_swap` (the holes, main
+`$047A + $80k`, exchanged with `ap_hb`: the firmware sees its own
+bytes, the colormaps' bytes wait in `ap_hb`); SERVEMOUSE (C set: not
+the mouse's interrupt, nothing counts); READMOUSE (X less 512 added to
+`AP_X`, button 0 into `AP_SB`'s bit 0 and `AP_SB` + 4, the sequence
+the poll reads twice); POSMOUSE back to X 512; `ap_swap` again; the
+switches back. The poll's arithmetic is the card's: `AP_X` moves as the
+card's X did, and the poll re-centres it at `$8000`. The stack: the
+interrupt's 8 bytes to `pl_vbody`, `ap_irq`'s call (2), the firmware's
+call (2) and its own use (by its listing at most 6: READMOUSE's five
+result bytes and a bank's byte): about 18 B, within section 2's 24 for
+the IRQ (a2vm's model of the firmware pushes nothing of its own).
+
+The boot: `mo_apple` (ROM visible, masked) runs INITMOUSE (its //e
+path reads `$FBB3` and times `$C019`; its II path, never taken on a
+//e, would clear `$2000-$3FFF`), POSMOUSE to X 512 and writes the
+entries of SERVEMOUSE, READMOUSE and POSMOUSE into `ap_irq`'s JSRs;
+`bt_init` then SETMOUSE `$09` and `ap_swap` once (the firmware's holes
+into `ap_hb`); `bt_detect` counts one VBL with VIA-A's timer 1 when its
+latch holds what is written (`ap_clock`, `pl_detect`'s measure, in
+`DOOM.SYSTEM` since `ap_irq` took its place), else NTSC with a `?`.
 
 ## Appendix: the measurements made for this map
 

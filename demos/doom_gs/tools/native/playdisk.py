@@ -39,7 +39,8 @@ files:
 
 --run boots the disk on a2vm (its MLI trap, the memory API unless
 --no-amem, the mouse card's VBL clock unless --mouse none or plain: then
-VIA-B's timer 1, a2vm --via-timers), --cost-timed under the Doom profile, the interrupt
+VIA-B's timer 1, a2vm --via-timers; --mouse apple: an AppleMouse II's
+VBL through its firmware, docs/PLAY.md 21), --cost-timed under the Doom profile, the interrupt
 bounds of SCREENS.md 2.3) and plays SCRIPT: a2vm's input events (tools/
 a2vm/README.md "Input events"), with the names of the play link's labels
 for pc events (pc @dl_halt ...). Every run is bounded (bounded.run: its
@@ -92,13 +93,29 @@ PROFILES = {'f121': 'f121+phasor+window32',
             'f122': 'f122+phasor+window32',
             # the same at 60 Hz (the card's frame of 262 lines)
             'f122-nod2-ntsc': 'f122+phasor+window32+nod2+ntsc'}
-# slot 2 (run's `mouse`): the Appletini's mouse card, none, or a ROM with
-# the AppleMouse ID bytes and no Appletini registers (a2vm --mouse-plain);
-# without the Appletini's card the clock is VIA-B's timer 1, so a2vm runs
-# the Phasor's timers (--via-timers)
+# slot 2 (run's `mouse`): the Appletini's mouse card, none, a ROM with
+# the AppleMouse ID bytes and no Appletini registers (a2vm --mouse-plain),
+# or an AppleMouse II (a2vm --mouse-apple: its firmware's entry points
+# and VBL interrupt; docs/PLAY.md 21); without the Appletini's card the
+# clock is VIA-B's timer 1 or the AppleMouse's VBL, and a2vm runs the
+# Phasor's timers (--via-timers: VIA-A's for the PAL/NTSC count)
 MICE = {'appletini': [], 'none': ['--no-mouse', '--via-timers'],
-        'plain': ['--mouse-plain', '--via-timers']}
+        'plain': ['--mouse-plain', '--via-timers'],
+        'apple': ['--mouse-apple', '--via-timers']}
 IRQ_BOUNDS = pldisk.IRQ_BOUNDS
+# with an AppleMouse II the handler also reads the //e's switches and
+# turns them off and back ($C000-$C01F), calls the firmware ($C200-$C2FF),
+# which borrows zero page $06 and uses slot 2's screen holes, which
+# ap_swap exchanges (MEMORY_MAP.md rule 2 as amended)
+APPLE_HOLES = [0x047A + 0x80 * k for k in range(8)]
+APPLE_IRQ_BOUNDS = ','.join(['0006-0006', '00D8-01FF'] +
+                            ['%04X-%04X' % (h, h) for h in APPLE_HOLES] +
+                            ['C000-C01F', 'C0A0-C0AF', 'C200-C2FF',
+                             'C400-C4FF', 'E000-FFFF'])
+# the card's ranges an AppleMouse II's handler takes (pl_boot.s AP_IRQ ..
+# AP_IRQ_END over pl_detect and pl_wait, AP_SWAP .. AP_SWAP_END)
+APPLE_IRQ_END = 0xF900
+APPLE_SWAP_END = 0xF505
 MAX_BYTES = 512 << 20
 GROUP_FIRST = 0x0200
 GCODE0_GROUP_END = 0x6000
@@ -837,12 +854,56 @@ def with_patches(system: bytes, boot: pldisk.Boot, play: Path) -> bytes:
     return with_mouse_patches(system, boot, play)
 
 
+def apple_card_problems(boot: pldisk.Boot, main: bytes) -> List[str]:
+    """An AppleMouse II's handler (docs/PLAY.md 21) goes into the play
+    card at pl_boot.s's ap_irq (pl_detect's place, to the end of FXC's
+    area) and ap_swap (after S2's tables): ap_irq must be pl_detect, with
+    only pl_detect and pl_wait (the boot's) after it in the card link;
+    both ranges in no other segment of the card's links or layouts, and
+    zero in LC.BIN past the card link's code."""
+    lab = boot.labels
+    out = []
+    ranges = (('ap_irq', lab.get('ap_irq'), APPLE_IRQ_END),
+              ('ap_swap', lab.get('ap_swap'), APPLE_SWAP_END))
+    if None in (lab.get('ap_irq'), lab.get('ap_swap')):
+        return ['the card link has no ap_irq or ap_swap']
+    if lab['ap_irq'] != lab.get('pl_detect'):
+        out.append('ap_irq $%04X is not pl_detect' % lab['ap_irq'])
+    for n, a in sorted(lab.items()):
+        if lab['ap_irq'] <= a < APPLE_IRQ_END and \
+                n not in ('pl_detect', 'pl_wait') and \
+                not n.lstrip('.').startswith(('ap_', 'ai_', '@')):
+            out.append('%s $%04X is in ap_irq\'s range' % (n, a))
+    rc = RC.load_build(pldisk.RCARD, 'rcard')
+    used = [(n, rc.segments[n]) for n in ('RCODE', 'BKNEAR', 'BKCARD')
+            if n in rc.segments]
+    used += [('the card link\'s ' + n, r) for n, r in boot.segments.items()
+             if r[0] >= 0xE000 and n != 'FXCODE']
+    used += [(r.what, (r.start, r.end - 1)) for r in PL.regions()
+             if r.space == 'card']
+    fx = boot.segments.get('FXCODE')
+    for name, lo, hi in ranges:
+        for what, (a, b) in used:
+            if a < hi and lo <= b:
+                out.append('%s $%04X-$%04X overlaps %s $%04X-$%04X' % (
+                    name, lo, hi - 1, what, a, b))
+        start = max(lo, fx[1] + 1) if fx and fx[0] <= lo <= fx[1] else lo
+        if fx and lo < fx[0] < hi:
+            out.append('%s $%04X-$%04X overlaps FXCODE' % (name, lo, hi - 1))
+        at = pldisk.card_offset(start, True)
+        if any(main[at:at + hi - start]):
+            out.append('%s $%04X-$%04X is not zero in LC.BIN' % (
+                name, start, hi - 1))
+    return out
+
+
 def with_mouse_patches(system: bytes, boot: pldisk.Boot,
                        play: Path) -> bytes:
     """DOOM.SYSTEM with the frame images' polls without the mouse in
     bt_mpatch (nomouse.play_patches: what bt_init writes when slot 2 is
     not the Appletini's mouse card, after its own mo_recs, whose bytes
-    nomouse.card_problems checks)."""
+    nomouse.card_problems checks), and with an AppleMouse II's in
+    ap_mpatch (nomouse.apple_patches: written after pl_boot.s's ap_recs)."""
     from native import amcpu, nomouse
     lab = boot.labels
     size = lab['bt_mpatch_end'] - lab['bt_mpatch']
@@ -860,6 +921,18 @@ def with_mouse_patches(system: bytes, boot: pldisk.Boot,
     at = lab['bt_mpatch'] - pldisk.BOOT_LO
     if any(system[at:at + size]):
         raise PlayError('bt_mpatch is not zero in the link')
+    system = system[:at] + data + system[at + size:]
+    size = lab['ap_mpatch_end'] - lab['ap_mpatch']
+    if size != nomouse.APATCH_SIZE:
+        raise PlayError('ap_mpatch is %d B, nomouse.APATCH_SIZE %d' % (
+            size, nomouse.APATCH_SIZE))
+    try:
+        data = amcpu.table(nomouse.apple_patches(play), size)
+    except amcpu.PatchError as e:
+        raise PlayError('with an AppleMouse II: %s' % e)
+    at = lab['ap_mpatch'] - pldisk.BOOT_LO
+    if any(system[at:at + size]):
+        raise PlayError('ap_mpatch is not zero in the link')
     return system[:at] + data + system[at + size:]
 
 
@@ -870,7 +943,7 @@ def build(play: Path, out: Path = OUT) -> Disk:
         raise PlayError('DOOM.SYSTEM is %d bytes' % len(system))
     aux, main = card_main(boot, play)
     bad = problems(play, main) + amem_cpu_problems(boot, main) + \
-        a2li_problems(play)
+        a2li_problems(play) + apple_card_problems(boot, main)
     if bad:
         raise PlayError('; '.join(bad[:6]))
     system = with_patches(system, boot, play)
@@ -1006,7 +1079,8 @@ def run(disk: Disk, script: str, work: Path, profile: str = 'f121',
             '--load', '2000:%s' % (work / pldisk.SYSTEM),
             '--reg', 'pc=2000', '--reg', 's=FF',
             '--cost', str(work / 'cost.txt'), '--cost-timed',
-            '--irq-bounds', IRQ_BOUNDS,
+            '--irq-bounds', APPLE_IRQ_BOUNDS if mouse == 'apple'
+            else IRQ_BOUNDS,
             '--stop-pc', '%X' % lab['pl_crash'],
             '--stop-pc', '%X' % lab['dl_halt'],
             '--cycles', str(int(seconds * fabric_hz)),
@@ -1088,7 +1162,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument('--mouse', default='appletini', choices=sorted(MICE),
                         help='slot 2: the Appletini\'s mouse card (its VBL '
                         'the clock), none or a plain AppleMouse ROM (the '
-                        'clock VIA-B\'s timer 1)')
+                        'clock VIA-B\'s timer 1), or an AppleMouse II (its '
+                        'VBL the clock, through its firmware)')
     args = parser.parse_args(argv)
     gone = missing()
     if gone:

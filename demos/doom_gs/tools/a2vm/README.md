@@ -243,7 +243,8 @@ above `$2000`).
 | `$C061-$C063` | Buttons: Open Apple, Solid Apple, button 2 |
 | `$C064-$C067`, `$C070` | Paddles: 1,400 cycles of the 1 MHz bus clock from the trigger |
 | `$C0A0-$C0AF`, `$C200-$C2FF` | The Appletini mouse card in slot 2 (`mouse_card.sv`): status, position, buttons, sequence, clamps, commands, mode, acknowledge, its slot ROM. A VBL interrupt (mode bit 3) is raised at the start of each vertical blanking and delivered while I is clear, until the program acknowledges it |
-| `$C0C0-$C0CF`, `$C400-$C4FF` | The Phasor in slot 4: mode switch, two 6522 VIAs (ports, directions, timer 1 as a free-running counter; with `--via-timers` timer 1 as the card's 6522 runs it, with its interrupt: "The VIA timers" below), four AY chips' registers through the VIA port protocol in Mockingboard and native modes, the SSI-263's phoneme timer. No sound |
+| `$C200-$C2FF` with `--mouse-apple` | An AppleMouse II in slot 2 ("The AppleMouse II", below) instead of the Appletini's card: its ID bytes, its entry table, each firmware call serviced at its entry; its VBL interrupt |
+| `$C0C0-$C0CF`, `$C400-$C4FF` | The Phasor in slot 4 (none with `--no-phasor`): mode switch, two 6522 VIAs (ports, directions, timer 1 as a free-running counter; with `--via-timers` timer 1 as the card's 6522 runs it, with its interrupt: "The VIA timers" below), four AY chips' registers through the VIA port protocol in Mockingboard and native modes, the SSI-263's phoneme timer. No sound |
 | `$C700-$C7FF`, `$CFF0-$CFF2`, `$CFFF` | With `--amem`, the memory API of appletini-one's `README_MEMORY_API.md`, version 1, behind its raw FIFO transport, as `FakeSmartPortMemory` models it: the slot-7 ROM ID bytes, C8 selection and release, STATUS with the 32-byte capability block, CONTROL with COPY, FILL and PRIVATE, and every validation error: `$21` (unsupported selector, command or firmware), `$60` (unavailable), `$61` (header), `$62` (descriptor), `$63` (range), `$64` (overlap), `$65` (PRIVATE required). All descriptors are checked before any is executed. `--amem-unsupported` and `--amem-unavailable` select the two failing firmware answers |
 
 ### Time and interrupts
@@ -404,7 +405,8 @@ rendered.
 | `--via-ora-nh` | A write to a Phasor VIA's register 15, ORA without handshake, sets ORA, as the card's 6522 does (`hdl/apple/via6522.v:149`). Off by default: `a2sim.py` ignores the register, and the comparison with it must stay exact |
 | `--via-timers` | Each Phasor VIA's timer 1 as the card's 6522 runs it, with its interrupt ("The VIA timers", below). Off by default: `a2sim.py` has a free-running counter only, and the comparison with it must stay exact |
 | `--phasor-mb-only` | The Phasor locked to Mockingboard mode, as the card's `audio_control` bit 26 does (`hdl/apple/mockingboard.sv:38-41`): accesses to `$C0C0-$C0CF` do not change its mode, so it keeps one AY behind each VIA. Off by default |
-| `--irq-bounds LO-HI[,LO-HI...]` | Interrupt bounds (below): the address ranges (hex, at most 8) an interrupt handler may read or write; any other access halts the run |
+| `--irq-bounds LO-HI[,LO-HI...]` | Interrupt bounds (below): the address ranges (hex, at most 24) an interrupt handler may read or write; any other access halts the run |
+| `--mouse-apple`, `--no-phasor` | Slot 2 an AppleMouse II ("The AppleMouse II", below; needs `--core w65c02s`); slot 4 empty |
 
 **Input events**, one a line, `WHEN ACTION`. `WHEN` is `start`,
 `boundary N` (after the Nth boundary's snapshot), `cycle N` (after the
@@ -435,6 +437,42 @@ an effective address, as the core's `ST_MEM_READ` and `ST_MEM_WRITE`
 make it, which the pair redirects), `zpbank` (its state and counters),
 `zpbank-arm 0|1`, `reset` (the CPU's RESET sequence, which turns the
 pair off; the //e's switches are not reset, as `a2sim.py` has no RES#).
+
+### The AppleMouse II
+
+`--mouse-apple` (2026-10-04, for DOOM GS's `docs/PLAY.md` 21) puts in
+slot 2 an AppleMouse II as a program sees it through its firmware, as
+GSSquared and AppleWin run Apple's ROM 342-0270: the slot ROM reads
+`BIT $FF58` at `$C200`, the ID bytes (`$C205` `$38`, `$C207` `$18`,
+`$C20B` `$01`, `$C20C` `$20`, `$C2FB` `$D6`) and the entry table at
+`$C212-$C219` with that ROM's offsets (SETMOUSE `$B3`, SERVEMOUSE `$C4`,
+READMOUSE `$9B`, CLEARMOUSE `$A4`, POSMOUSE `$C0`, CLAMPMOUSE `$8A`,
+HOMEMOUSE `$DD`, INITMOUSE `$BC`), an RTS at each entry. When the exact
+core is about to run an entry (INTCXROM off), a2vm does the call at a
+high level, as the firmware leaves memory (slot n's holes: X `$0478+n`
+and `$0578+n`, Y `$04F8+n` and `$05F8+n`, `$0678+n` and `$06F8+n` the
+firmware's bank and command bytes, status `$0778+n`, mode `$07F8+n`),
+through the CPU's bus, so that RAMRD, RAMWRT, 80STORE and the interrupt
+bounds apply to them as to the real firmware's stores; then an RTS
+(6 cycles), C clear for success:
+
+| Entry | What a2vm does |
+| --- | --- |
+| SETMOUSE | A < `$10`: the mode (bit 0 on, bit 3 the VBL interrupt), also into the mode hole; else C set |
+| SERVEMOUSE | Zero page `$06` written `$60` and given back (the firmware's RTS there); the pending interrupt bits (VBL 3, button 2, move 1) into the status hole's bits 1-3; the interrupt released; C set when none was pending |
+| READMOUSE | X, Y into their holes; the status hole: bit 7 button 0 down, bit 6 down at the last read, bit 5 moved since |
+| POSMOUSE | X, Y from their holes, clamped |
+| CLAMPMOUSE | A = 0 (X) or 1 (Y): the window from `$0478`/`$0578` (minimum) and `$04F8`/`$05F8` (maximum) |
+| CLEARMOUSE, HOMEMOUSE, INITMOUSE | X, Y to 0 or the windows' minimum; INITMOUSE also the windows 0-1023 and the mode 0 |
+
+Its position, buttons, clamps and mode are the mouse card's structure,
+so the input events `mouse`, `mouse-to` and `buttons` move it (while the
+mode's bit 0 is on), and a VBL interrupt is raised at each vertical
+blanking while the mode's bit 3 is on, delivered while I is clear until
+SERVEMOUSE releases it. The final state's `applemouse` gives it with
+the count of calls to each entry. The model does not run Apple's ROM or
+its 6805: the firmware's own stack (about 6 bytes) and time are not
+there, and nothing of it is reached through `$C0A0-$C0AF`.
 
 ### The AY log
 

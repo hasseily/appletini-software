@@ -377,6 +377,10 @@ ZP_MUSIC = (0xD8, 0xD8 + 31)    # S2's player [R src/sound/README.md]
 # the effect player's interrupt: the ring of the voice it runs and four
 # temporaries (part fxplay, request FXPLAY-1)
 ZP_FXRING = (0xF7, 0xFD)
+# with an AppleMouse II (docs/PLAY.md 21) the spare bytes are the
+# handler's: AP_X at $FD-$FE, AP_SB at $FF (pl_boot.s PLMOUSE), read by
+# the poll; the effect player's temporaries $F7-$FB serve its handler
+# before fx_step
 ZP_SPARE = (0xFD, 0x100)
 ZP_IRQ = (0xD8, 0x100)          # MEMORY_MAP.md rule 2
 FX_ZP = {'FXZ_RING': 0xF7, 'FXZ_N': 0xF9, 'FXZ_T': 0xFA, 'FXZ_AV': 0xFB,

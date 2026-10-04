@@ -15,6 +15,11 @@
  *   --no-mouse          no mouse card in slot 2
  *   --mouse-plain       slot 2's ROM an AppleMouse-style one (its ID
  *                       bytes) with no registers: not the Appletini's card
+ *   --mouse-apple       slot 2 an AppleMouse II: its ID bytes, its
+ *                       firmware's entry points serviced by a2vm with the
+ *                       screen-hole protocol, its VBL interrupt (needs
+ *                       --core w65c02s; README.md, "The AppleMouse II")
+ *   --no-phasor         slot 4 empty: no Phasor
  *   --amem              the memory API in slot 7 (FakeSmartPortMemory)
  *   --amem-unsupported, --amem-unavailable
  *                       its STATUS answers $21, its CONTROL $60
@@ -143,7 +148,7 @@
  *   --irq-bounds RANGES the only addresses an interrupt handler may read
  *                       or write, from its first instruction to its RTI,
  *                       as hex ranges LO-HI separated by commas (at most
- *                       8); any other access halts the run (README.md,
+ *                       24); any other access halts the run (README.md,
  *                       "Interrupt bounds")
  *
  * A snapshot NAME is NAME.json (the state: registers, time, switches,
@@ -343,6 +348,15 @@ static void parse(int argc, char **argv, options *o)
         if (!strcmp(arg, "--mouse-plain")) {
             o->config.mouse = 0;
             o->config.mouse_plain = 1;
+            continue;
+        }
+        if (!strcmp(arg, "--mouse-apple")) {
+            o->config.mouse = 0;
+            o->config.mouse_apple = 1;
+            continue;
+        }
+        if (!strcmp(arg, "--no-phasor")) {
+            o->config.phasor_slot = 0;
             continue;
         }
         if (!strcmp(arg, "--amem")) {
@@ -924,6 +938,17 @@ static void write_state_body(FILE *out, a2vm *m)
         fputs("  \"mli_hi\": null,\n", out);
 
     const a2vm_mouse *c = &m->mouse;
+    if (m->mouse_apple)
+        fprintf(out, "  \"applemouse\": {\"x\": %d, \"y\": %d, "
+                "\"buttons\": %u, \"mode\": %u, \"irq\": %u, "
+                "\"clamp\": [[%d, %d], [%d, %d]], \"calls\": [%" PRIu64
+                ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %" PRIu64 ", %"
+                PRIu64 ", %" PRIu64 ", %" PRIu64 "]},\n", c->x, c->y,
+                c->buttons, c->mode, c->irq, c->clamp[0][0], c->clamp[0][1],
+                c->clamp[1][0], c->clamp[1][1], m->mouse_calls[0],
+                m->mouse_calls[1], m->mouse_calls[2], m->mouse_calls[3],
+                m->mouse_calls[4], m->mouse_calls[5], m->mouse_calls[6],
+                m->mouse_calls[7]);
     if (m->mouse_on)
         fprintf(out, "  \"mouse\": {\"x\": %d, \"y\": %d, \"buttons\": %u, "
                 "\"prev_buttons\": %u, \"moved\": %u, \"move_irq\": %u, "

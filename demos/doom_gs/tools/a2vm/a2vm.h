@@ -54,7 +54,7 @@ enum {
     A2VM_VBL_LINE = 192,
     A2VM_TURBO_FRAME = 1250000,     /* a2sim.py's historical "turbo" frame */
     A2VM_MAX_IDLE = 16,
-    A2VM_MAX_IRQ_BOUNDS = 8,
+    A2VM_MAX_IRQ_BOUNDS = 24,
     A2VM_MAX_KEYS = 256,
     A2VM_AMEM_BUFFER = 0x10100
 };
@@ -228,6 +228,14 @@ typedef struct a2vm {
     int mouse_on, phasor_slot, mouse_slot;
     int mouse_plain;                /* --mouse-plain: an AppleMouse-style
                                        ROM in slot 2, no registers */
+    int mouse_apple;                /* --mouse-apple: an AppleMouse II in
+                                       slot 2, its firmware's entry points
+                                       serviced at a high level (README.md,
+                                       "The AppleMouse II"); its state is
+                                       `mouse`'s position, buttons, clamps,
+                                       mode and pending interrupts */
+    uint64_t mouse_calls[8];        /* its firmware calls, by entry
+                                       (SETMOUSE .. INITMOUSE) */
     a2vm_mouse mouse;
     a2vm_phasor phasor;
     int amem_on;
@@ -328,6 +336,7 @@ typedef struct {
     unsigned ramworks_banks;        /* 1-128 */
     int mouse, phasor_slot, mouse_slot;
     int mouse_plain;                /* the plain ROM instead (mouse 0) */
+    int mouse_apple;                /* an AppleMouse II instead (mouse 0) */
     int amem;                       /* attach the memory API */
 } a2vm_config;
 

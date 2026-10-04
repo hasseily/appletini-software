@@ -13,9 +13,11 @@
 ;      number written to its $0200, from 126 down to 0, then each read
 ;      back from 1 up: the first that does not hold its number is the
 ;      first missing, PL_BANKS); the mouse card in slot 2 (its ROM's ID
-;      bytes and the Appletini's own: probe_mouse, mo_check; without the
-;      Appletini's card the clock is the Phasor's VIA-B timer 1, and
-;      without that either the stop PL_NOMOUSE, docs/PLAY.md 20); the
+;      bytes and the Appletini's own: probe_mouse, mo_check; with the ID
+;      bytes alone an AppleMouse II, INITMOUSE'd, whose VBL is then the
+;      clock: PLMOUSE, docs/PLAY.md 21; with no mouse card the clock is
+;      the Phasor's VIA-B timer 1, and without that either the stop
+;      PL_NOMOUSE, docs/PLAY.md 20); the
 ;      memory API in slot 7 (COPY, FILL,
 ;      PRIVATE: probe_amem; without it a message, and the game goes on
 ;      with the CPU's copies: step 4's am_patch; docs/PLAY.md 19);
@@ -46,25 +48,31 @@
 ;      $06-$07 zeroed [R NATIVE.md 10; MEMORY_MAP.md 2];
 ;   5. bt_init: the mouse card's VBL on (mode $09, masked), or without
 ;      the Appletini's card mo_recs and bt_mpatch's records (the handler
-;      on VIA-B's timer 1, no mouse read: tools/native/nomouse.py); then
+;      on VIA-B's timer 1, no mouse read: tools/native/nomouse.py), and
+;      with an AppleMouse II then ap_recs and ap_mpatch's (the handler on
+;      its VBL through its firmware, the poll on what that handler reads)
+;      and SETMOUSE $09 (PLMOUSE mo_go); then
 ;      (without the memory API) am_patch writes bt_patch's records: the
 ;      transport's CPU version over the card, each W image's walker over its own
 ;      transport in its bank, tools/native/amcpu.py), pl_init (the input
 ;      block, the key table, the mouse's window), snd_init, fx_init with
 ;      snd_probe's answer, pl_clkset (PAL until pl_detect), CLI,
-;      bt_detect (PAL or NTSC: its clock; pl_detect with the mouse card,
-;      else the VBL flag timed by VIA-B's timer, which then runs at a
-;      frame's period, and row 5 says so), PL_STATUS = PL_READY, and the
+;      bt_detect (PAL or NTSC: its clock; pl_detect with the mouse card;
+;      with an AppleMouse II one of its VBLs timed by VIA-A's timer when
+;      slot 4 has one, else NTSC with a '?' (PLMOUSE ap_clock); else the
+;      VBL flag timed by VIA-B's timer, which then runs at a frame's
+;      period; row 5 says which), PL_STATUS = PL_READY, and the
 ;      ready loop pl_ready in the card, which the second half replaces
 ;      with the title loop.
 ;
-; Main memory while booting: this code $2000-$2FFF (DOOM.SYSTEM; the
+; Main memory while booting: this code $2000-$33FF (DOOM.SYSTEM; the
 ; boot is discarded: nothing calls it after pl_ready), STAGE and DATABUF
 ; $6000-$9FFF, ProDOS's buffer $A000, the catalog $A400, a header $A500,
 ; the bounce page $A600, the CRC tables $A700-$AAFF, CRCLIST $AB00-$BEFF;
 ; page 1's routine at $0100. The boot's CPU stores in $2000-$5FFF are its
-; own variables and patched operands in $2000-$2FFF, and none reaches
-; $0878-$087F or $4078-$407F (MEMORY_MAP.md rule 8); the probe leaves
+; own variables and patched operands in $2000-$33FF, and none reaches
+; $0878-$087F or $4078-$407F (MEMORY_MAP.md rule 8); an AppleMouse II's
+; firmware writes slot 2's screen holes in the text page; the probe leaves
 ; each bank's number at its $0200 (aux 0's too: 0) where no file writes.
 ; Its zero page is $18-$3F (overlay 1).
 ;
@@ -151,7 +159,8 @@ BANKS           = 126           ; the banks the game needs (NATIVE.md 15.1)
 ZP_PAIR         = $06           ; zp_rd, zp_wr (MEMORY_MAP.md 2)
 ZP_PLATFORM_END = $18           ; $00-$17: the platform's (cleared)
 
-BOOT_END        = $3000         ; this code (DOOM.SYSTEM) $2000-$2FFF
+BOOT_END        = $3400         ; this code (DOOM.SYSTEM) $2000-$33FF (to
+                                ;   $2FFF before PLMOUSE, 2026-10-04)
 STAGE           = $6000         ; a card image, 16 KB
 STAGE_SIZE      = $4000
 DATABUF         = $6000         ; a bank file's bytes, 8 KB at a time
@@ -366,7 +375,7 @@ probe_mouse:
         cmp #$20
         bne @none
         jmp mo_check
-@none:  jmp mo_none
+@none:  jmp mo_absent           ; (no mouse card: PLMOUSE)
         .assert * - probe_mouse <= MOUSE_ROOM, error, "probe_mouse's room"
         .res MOUSE_ROOM - (* - probe_mouse)
 
@@ -1176,7 +1185,7 @@ s_nomusic:
 s_banks:
         .byte "8 MB OF RAMWORKS NEEDED: NO BANK $", 0
 s_noclock:                      ; (in A's s_nomouse and s_noamem: the
-        .byte "NO CLOCK: NO APPLETINI MOUSE OR PHASOR", 0 ; strings and the
+        .byte "NO CLOCK: NO MOUSE CARD OR PHASOR", 0 ; strings and the
 s_pal:  .byte "PAL", 0          ;   parts after DOOM.SYSTEM's PLBOOT stay
 s_ntsc: .byte "NTSC", 0         ;   put)
         .res 50 - (* - s_noclock)
@@ -1192,7 +1201,7 @@ s_at:
         .byte " AT $", 0
 
         .assert p1_end - p1_code <= $40, error, "page 1's routine"
-        .assert * <= BOOT_END, error, "the boot passes $3000"
+        .assert * <= BOOT_END, error, "the boot passes BOOT_END"
         .assert IOBUF >= STAGE + STAGE_SIZE, error, "ProDOS's buffer"
         .assert DATABUF + DATAMAX <= IOBUF, error, "the data buffer"
         .assert CRCBUF + CRC_MAX <= MLI, error, "CRCLIST's buffer"
@@ -1231,7 +1240,7 @@ bt_init:
 @nomouse:
         lda #<mo_recs
         ldx #>mo_recs
-        jsr am_records
+        jsr mo_go               ; am_records, then an AppleMouse II's
 @amem:  bit bt_amem
         bpl :+
         jsr am_patch
@@ -1289,8 +1298,9 @@ s_cpu:  .byte "NO MEMORY API: COPIES BY THE CPU $", 0
 bt_amem:
         .byte 0                 ; bit 7: no memory API (the CPU's copies)
 bt_mouse:
-        .byte 0                 ; bit 7: not the Appletini's mouse card
-                                ;   (the clock VIA-B's timer 1)
+        .byte 0                 ; bit 7: not the Appletini's mouse card;
+                                ;   bit 6: an AppleMouse II, its VBL the
+                                ;   clock ($C0), else VIA-B's timer 1 ($80)
 
 ; ---------------------------------------------------------------------------
 ; The mouse card optional (docs/PLAY.md 20): with the Appletini's mouse
@@ -1313,11 +1323,14 @@ mo_check:
         dex
         bpl :-
         rts                     ; bt_mouse 0: the Appletini's
-; mo_none: no Appletini mouse card: VIA-B's timer 1 must be there (its
-; latch holds what is written, MUSIC.SYSTEM's timer_check), else the stop
+; mo_none: the AppleMouse ID bytes but not the Appletini's: an AppleMouse
+; II, its VBL the clock (PLMOUSE's mo_apple; docs/PLAY.md 21). mo_via:
+; no mouse card (PLMOUSE's mo_absent, from probe_mouse): VIA-B's timer 1
+; must be there (its latch holds what is written, MUSIC.SYSTEM's
+; timer_check), else the stop
 mo_none:
-        dec bt_mouse
-        ldx #$55
+        jmp mo_apple            ; (was dec bt_mouse: the same 3 bytes)
+mo_via: ldx #$55
         jsr @try
         bcs @stop
         ldx #$AA
@@ -1365,9 +1378,9 @@ bt_detect:
         lda #STD_NTSC
         jsr pl_clkset
 :       rts
-@via:   sei
-        lda #ACR_FREE
-        sta VIA_B_ACR
+@via:   jmp ap_detect           ; (was sei, lda #ACR_FREE: an AppleMouse
+                                ;   II's clock in PLMOUSE, else back here)
+bd_via: sta VIA_B_ACR
         lda #'?' | $80          ; until measured: NTSC, marked
         sta VB+3
         lda #STD_NTSC
@@ -1434,11 +1447,14 @@ bt_detect:
         jsr pl_clkset           ; (php, sei, plp: still masked)
         lda #$80 | IFR_T1
         sta VIA_B_IER
+        lda #$FF                ; VIA-A's timer 1 from $FFFF, as pl_detect
+        sta VIA_A_T1LL          ;   leaves it on the card: the BENCHMARK
+        sta VIA_A_T1CH          ;   page's rows count its turns (bt_mark)
         lda #5
         ldx #<s_viaclk
         ldy #>s_viaclk
         jsr say
-        ldx #<s_pal
+bd_std: ldx #<s_pal              ; (PLMOUSE's ap_clock: from here too)
         ldy #>s_pal
         bit VB+2
         bpl :+
@@ -1554,7 +1570,353 @@ s_viaclk:
 bt_patch:
         .res PATCH_SIZE
 bt_patch_end:
-        .assert * <= BOOT_END, error, "the boot passes $3000"
+        .assert * <= BOOT_END, error, "the boot passes BOOT_END"
+
+; ===========================================================================
+.segment "PLMOUSE"
+; ===========================================================================
+; The AppleMouse II (docs/PLAY.md 21; MEMORY_MAP.md 21): slot 2 with the
+; AppleMouse ID bytes but not the Appletini's own (mo_check) is a standard
+; AppleMouse II, as GSSquared and AppleWin emulate it, used through its
+; firmware (the entry table at $C212-$C219; X = $C2, Y = $20 at each
+; call). Its VBL interrupt is the clock, before the Phasor's VIA-B timer;
+; its X and button 0 are the mouse. In a segment of its own after
+; PLAMEM: PLBOOT and PLAMEM keep every address, and the Appletini's path
+; runs the same bytes (bt_mouse 0 takes none of this).
+;
+; The boot (probe_mouse, ROM visible, interrupts masked): INITMOUSE (on a
+; //e its firmware reads $FBB3 and times $C019), then POSMOUSE to X 512;
+; the firmware's SERVEMOUSE, READMOUSE and POSMOUSE entries go into
+; ap_irq's JSRs. bt_init (after the install, masked): mo_recs and
+; bt_mpatch as without a mouse card, then ap_recs (am_records' form):
+;   pl_vbody's head    JSR ap_irq, BCS pl_vnone (not the mouse's VBL),
+;                      BRA to the clock (13 B, as mo_vh)
+;   ap_irq             over pl_detect and pl_wait (boot-time code, which
+;                      the Appletini's path alone calls) and FXCODE's
+;                      spare bytes, $F88E-$F8FF
+;   ap_swap, ap_hb     after S2's tables, $F4DD-$F504
+;   ap_mpatch          playdisk.py's records (tools/native/nomouse.py
+;                      apple_patches): each frame image's pl_poll reads
+;                      AP_X, AP_SB instead of the card's X, sequence and
+;                      buttons, and pl_centre writes AP_X
+; then SETMOUSE $09 (on, the VBL interrupt) and ap_swap once (the
+; firmware's holes into ap_hb). bt_detect (interrupts on): ap_clock.
+;
+; The interrupt (ap_irq, from pl_vbody): RAMRD, RAMWRT and 80STORE read
+; ($C013, $C014, $C018) and turned off, so that the firmware's screen
+; holes are main's (PAGE2 then maps nothing: it is left as it is; ALTZP
+; is off in every handler, MEMORY_MAP.md rule 7; INTCXROM is never on
+; after the boot); ap_swap exchanges slot 2's eight holes, main $047A,
+; $04FA ... $07FA (colormaps A and B, levels 32 and 33, at $7A and $FA:
+; MEMORY_MAP.md 3.2), with ap_hb, which keeps the firmware's between
+; calls; SERVEMOUSE (C set: not the mouse's interrupt, nothing counts),
+; READMOUSE (X less 512 added to AP_X, button 0 into AP_SB with its
+; sequence), POSMOUSE back to 512; ap_swap again; the switches back as
+; they were; C clear for a VBL. The firmware also borrows zero page $06
+; (SERVEMOUSE's RTS there, given back) and the stack (about 8 bytes):
+; MEMORY_MAP.md rule 2 as amended.
+
+RD80STORE       = $C018         ; bit 7: 80STORE on
+RDRAMRD         = $C013
+RDRAMWRT        = $C014
+AP_SLOT         = $C2           ; the firmware's X ($Cn) and Y ($n0)
+AP_SLOT16       = $20
+AP_TABLE        = MOUSE_ROM + $12       ; its entries' low bytes:
+AP_SET          = 0             ;   SETMOUSE
+AP_SERVE        = 1             ;   SERVEMOUSE
+AP_READ         = 2             ;   READMOUSE
+AP_POS          = 4             ;   POSMOUSE
+AP_INIT         = 7             ;   INITMOUSE
+H_XL            = $047A         ; slot 2's holes: X, its high byte, status
+H_XH            = $057A
+H_YL            = $04FA
+H_YH            = $05FA
+H_STATUS        = $077A         ; READMOUSE: bit 7 button 0 down
+AP_MID          = 512           ; X after each READMOUSE (POSMOUSE)
+AP_X            = $FD           ; (2) the mouse's X for pl_poll (ZP_SPARE)
+AP_SB           = $FF           ; bits 2-7 a count of AP_X's updates, bit 0
+                                ;   button 0: pl_poll's sequence and buttons
+AP_T            = $F7           ; (2) ap_swap's hole, an interrupt
+AP_S            = $F9           ; (3) and the switches: the effect player's
+                                ;   temporaries, free before fx_step
+AP_IRQ          = $F88E         ; = pl_detect: ap_irq to FXC's end
+AP_IRQ_END      = $F900
+AP_SWAP         = $F4DD         ; after SNDRODATA, before FXCODE
+AP_SWAP_END     = $F505
+APATCH_SIZE     = 176           ; ap_mpatch (nomouse.APATCH_SIZE)
+VIA_A_T1CL      = $C414         ; the Phasor's VIA-A, timer 1 (pl_detect's)
+VIA_A_T1CH      = $C415
+VIA_A_T1LL      = $C416
+VIA_A_T1LH      = $C417
+STORE80ON       = $C001
+
+; mo_absent: no mouse card in slot 2 (probe_mouse's @none): bt_mouse $80,
+; then VIA-B's timer 1 must be there (mo_via)
+mo_absent:
+        lda #$80
+        sta bt_mouse
+        jmp mo_via
+
+; mo_apple: an AppleMouse II (mo_none), when the five entries it uses are
+; in its table (none is 0: a ROM with the ID bytes and no firmware is
+; taken as no mouse card, mo_absent): bt_mouse $C0; INITMOUSE (the ROM
+; read, ProDOS's state: its firmware reads $FBB3 on a //e), POSMOUSE to
+; X 512, Y 0; the entries of SERVEMOUSE, READMOUSE and POSMOUSE into
+; ap_irq's JSRs. Masked; it never stops the boot
+mo_apple:
+        ldx #AP_USED - 1
+:       ldy ap_used,x
+        lda AP_TABLE,y
+        beq mo_absent
+        dex
+        bpl :-
+        lda #$C0
+        sta bt_mouse
+        bit LCROM
+        ldx #AP_INIT
+        jsr ap_fw
+        stz H_XL
+        lda #>AP_MID
+        sta H_XH
+        stz H_YL
+        stz H_YH
+        ldx #AP_POS
+        jsr ap_fw
+        lda AP_TABLE + AP_SERVE
+        sta ap_irq_bytes + (ai_serve + 1 - AP_IRQ)
+        lda AP_TABLE + AP_READ
+        sta ap_irq_bytes + (ai_read + 1 - AP_IRQ)
+        lda AP_TABLE + AP_POS
+        sta ap_irq_bytes + (ai_pos + 1 - AP_IRQ)
+        rts
+
+ap_used:
+        .byte AP_SET, AP_SERVE, AP_READ, AP_POS, AP_INIT
+AP_USED = * - ap_used
+
+; ap_fw: the firmware's entry X (AP_SET .. AP_INIT) with A as it is
+; (SETMOUSE's mode), X = $C2, Y = $20; its RTS returns to ap_fw's caller
+ap_fw:  ldy AP_TABLE,x
+        sty @to + 1
+        ldx #AP_SLOT
+        ldy #AP_SLOT16
+@to:    jmp MOUSE_ROM
+
+; mo_go: bt_init without the Appletini's mouse card (A/X: mo_recs):
+; mo_recs and bt_mpatch, then with an AppleMouse II ap_recs and
+; ap_mpatch, AP_X and AP_SB 0, SETMOUSE $09 and ap_swap (the firmware's
+; holes into ap_hb, the text screen's holes zero)
+mo_go:  jsr am_records
+        bit bt_mouse
+        bvc @r
+        lda #<ap_recs
+        ldx #>ap_recs
+        jsr am_records
+        stz AP_X
+        stz AP_X + 1
+        stz AP_SB
+        lda #MODE_VBL
+        ldx #AP_SET
+        jsr ap_fw
+        jmp AP_SWAP
+@r:     rts
+
+; ap_detect: bt_detect without the Appletini's card (its first 3 bytes
+; here): with an AppleMouse II ap_clock, else back to the VIA's clock
+ap_detect:
+        bit bt_mouse
+        bvs ap_clock
+        sei
+        lda #ACR_FREE
+        jmp bd_via
+
+; ap_clock: interrupts on, the mouse's VBL counting. Row 5 says the clock
+; first (a mouse that never interrupts holds the boot there); then with
+; VIA-A's timer 1 (its latch holds what is written: a Phasor or a
+; Mockingboard in slot 4) one VBL counted in bus cycles as pl_detect does
+; (ap_count) and std_of: that standard; else NTSC with a '?'. pl_clkset,
+; then bt_detect's end (bd_std: the standard, the mark, CLI, RTS)
+ap_clock:
+        lda #5
+        ldx #<s_apclk
+        ldy #>s_apclk
+        jsr say
+        lda #'?' | $80
+        sta VB+3
+        lda #STD_NTSC
+        sta VB+2
+        jsr ap_latch
+        bcs @set
+        jsr ap_count
+        jsr std_of
+        bcc @set
+        sta VB+2
+        stz VB+3
+@set:   lda VB+2
+        jsr pl_clkset
+        jmp bd_std
+
+; ap_latch: C clear when VIA-A's timer 1 latch holds $55AA then $AA55
+ap_latch:
+        ldx #$55
+        jsr @try
+        bcs @r
+        ldx #$AA
+@try:   stx VIA_A_T1LL
+        txa
+        eor #$FF
+        sta VIA_A_T1LH
+        cpx VIA_A_T1LL
+        bne @no
+        cmp VIA_A_T1LH
+        bne @no
+        clc
+@r:     rts
+@no:    sec
+        rts
+
+; ap_count: VIA-A's timer 1 from $FFFF over one VBL (pl_detect's
+; measure, which ap_irq replaced in the card): X:Y = the bus cycles
+ap_count:
+        lda #$FF
+        sta VIA_A_T1LL
+        sta VIA_A_T1CH
+        jsr ap_wait
+        lda VIA_A_T1CL
+        ldy VIA_A_T1CH
+        sta VB
+        sty VB+1
+        jsr ap_wait
+        lda VIA_A_T1CL
+        ldy VIA_A_T1CH
+        sta tmp
+        sty tmp+1
+        sec
+        lda VB
+        sbc tmp
+        tay
+        lda VB+1
+        sbc tmp+1
+        tax
+        rts
+ap_wait:
+        lda vbl_count
+:       cmp vbl_count
+        beq :-
+        rts
+
+s_apclk:
+        .byte "APPLEMOUSE VBL CLOCK, ", 0
+
+; ap_recs: the AppleMouse II's records (am_records' form, bank 0: the
+; main card), then ap_mpatch's, 0 ending them
+ap_recs:
+        .byte AH_N, 0
+        .word pl_vbody
+ap_vh:  .byte $20, <AP_IRQ, >AP_IRQ     ; jsr ap_irq
+        .byte $B0, <(pl_vnone - (pl_vbody + 5)) ; bcs pl_vnone
+        .byte $80, 6                    ; bra pl_vbody + 13: the clock
+        .byte $EA, $EA, $EA, $EA, $EA, $EA
+AH_N = * - ap_vh
+        .byte AI_N, 0
+        .word AP_IRQ
+ap_irq_bytes:
+        .org AP_IRQ
+; ap_irq: from pl_vbody (A, X, Y free); C clear: the mouse's VBL
+ap_irq: ldx #2                  ; the switches: 80STORE, RAMRD, RAMWRT
+@sv:    ldy ai_rd,x
+        lda $C000,y
+        sta AP_S,x
+        ldy ai_on,x
+        dey                     ; (its off switch)
+        sta $C000,y
+        dex
+        bpl @sv
+        jsr ap_swap             ; the firmware's holes in
+        ldx #AP_SLOT
+        ldy #AP_SLOT16
+ai_serve:
+        jsr MOUSE_ROM           ; SERVEMOUSE (mo_apple: the entry)
+        bcs ai_out              ; not the mouse's interrupt
+        ldx #AP_SLOT
+        ldy #AP_SLOT16
+ai_read:
+        jsr MOUSE_ROM           ; READMOUSE
+        lda H_XL                ; AP_X += X - 512
+        clc
+        adc AP_X
+        sta AP_X
+        lda H_XH
+        adc AP_X + 1
+        sec
+        sbc #>AP_MID
+        sta AP_X + 1
+        lda H_STATUS            ; C: button 0 down
+        asl a
+        lda AP_SB               ; the count + 1, the button in bit 0
+        and #$FC
+        adc #4
+        sta AP_SB
+        stz H_XL                ; X back to 512
+        lda #>AP_MID
+        sta H_XH
+        ldx #AP_SLOT
+        ldy #AP_SLOT16
+ai_pos: jsr MOUSE_ROM           ; POSMOUSE
+        clc                     ; a VBL
+ai_out: php
+        jsr ap_swap             ; the colormaps' bytes back
+        ldx #2                  ; the switches as they were
+@rs:    lda AP_S,x
+        bpl :+
+        ldy ai_on,x
+        sta $C000,y
+:       dex
+        bpl @rs
+        plp
+        rts
+ai_rd:  .byte <RD80STORE, <RDRAMRD, <RDRAMWRT
+ai_on:  .byte <STORE80ON, <RAMRDON, <RAMWRTON
+AI_N = * - AP_IRQ
+        .assert * <= AP_IRQ_END, error, "ap_irq passes FXC's end"
+        .reloc
+        .byte AS_N, 0
+        .word AP_SWAP
+ap_swap_bytes:
+        .org AP_SWAP
+; ap_swap: main $047A + $80 k (k = 0-7: slot 2's holes) exchanged with
+; ap_hb + k; X, Y, A and C changed
+ap_swap:
+        ldy #7
+@k:     tya
+        lsr a                   ; the page $04 + k / 2, C: the half
+        ora #>$0400
+        sta AP_T + 1
+        lda #0
+        ror a
+        ora #$7A
+        sta AP_T
+        lda (AP_T)
+        tax
+        lda ap_hb,y
+        sta (AP_T)
+        txa
+        sta ap_hb,y
+        dey
+        bpl @k
+        rts
+ap_hb:  .res 8                  ; the firmware's holes between calls
+AS_N = * - AP_SWAP
+        .assert * <= AP_SWAP_END, error, "ap_swap passes FXCODE's start"
+        .reloc
+ap_mpatch:
+        .res APATCH_SIZE
+ap_mpatch_end:
+        .byte 0                 ; (the records' end when ap_mpatch is full)
+        .assert AH_N = 13, error, "pl_vbody's head"
+        .assert pl_vnone - (pl_vbody + 5) < 128, lderror, "ap_vh's branch"
+        .assert pl_detect = AP_IRQ, lderror, "pl_detect is not at AP_IRQ"
+        .assert * <= BOOT_END, error, "the boot passes BOOT_END"
 
 ; ===========================================================================
 .segment "PLRES"

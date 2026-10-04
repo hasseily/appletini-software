@@ -62,6 +62,30 @@ static uint8_t plain_mouse_rom(unsigned offset)
     }
 }
 
+/* --mouse-apple: an AppleMouse II's slot ROM as far as a program reads
+   it: the ID bytes, its first instruction (BIT $FF58) and the firmware's
+   entry table at $Cn12-$Cn19 (the offsets of 342-0270-C's bank 0:
+   SETMOUSE $B3, SERVEMOUSE $C4, READMOUSE $9B, CLEARMOUSE $A4, POSMOUSE
+   $C0, CLAMPMOUSE $8A, HOMEMOUSE $DD, INITMOUSE $BC). Each entry holds an
+   RTS; a2vm services the call when the CPU is about to run it
+   (apple_mouse_call). */
+static const uint8_t apple_entries[8] = {
+    0xb3, 0xc4, 0x9b, 0xa4, 0xc0, 0x8a, 0xdd, 0xbc
+};
+
+static uint8_t apple_mouse_rom(unsigned offset)
+{
+    for (unsigned i = 0; i < 8; i++) {
+        if (offset == 0x12u + i)
+            return apple_entries[i];
+        if (offset == apple_entries[i])
+            return 0x60;
+    }
+    if (offset == 0xfb)
+        return 0xd6;
+    return plain_mouse_rom(offset);
+}
+
 static void halt(a2vm *m, const char *reason)
 {
     if (!m->halt[0])
@@ -1097,7 +1121,7 @@ static uint8_t io_read(a2vm *m, uint16_t address)
         m->paddle_trigger = (int64_t)a2vm_bus_clock(m);
     else if (low >= 0x80 && low <= 0x8f)
         lc_switch(m, low, 1);
-    else if ((int)(low >> 4) == 8 + m->phasor_slot) {
+    else if (m->phasor_slot > 0 && (int)(low >> 4) == 8 + m->phasor_slot) {
         if (!m->phasor_mb_only)
             phasor_mode_switch(&m->phasor, low);
     } else if (m->mouse_on && (int)(low >> 4) == 8 + m->mouse_slot)
@@ -1132,7 +1156,7 @@ static void io_write(a2vm *m, uint16_t address, uint8_t value)
         zpb_enable(m, value);
     else if (low >= 0x80 && low <= 0x8f)
         lc_switch(m, low, 0);
-    else if ((int)(low >> 4) == 8 + m->phasor_slot) {
+    else if (m->phasor_slot > 0 && (int)(low >> 4) == 8 + m->phasor_slot) {
         if (!m->phasor_mb_only)
             phasor_mode_switch(&m->phasor, low);
     } else if (m->mouse_on && (int)(low >> 4) == 8 + m->mouse_slot)
@@ -1153,7 +1177,7 @@ static uint8_t slow_read(a2vm *m, uint16_t address)
             return (uint8_t)value;
     }
     int slot = (address >> 8) & 7;
-    if (!m->sw[SW_INTCXROM] && slot == m->phasor_slot)
+    if (!m->sw[SW_INTCXROM] && m->phasor_slot > 0 && slot == m->phasor_slot)
         return phasor_read(m, address);
     if (m->mouse_on && !m->sw[SW_INTCXROM] && address < 0xc800 &&
         slot == m->mouse_slot)
@@ -1161,6 +1185,9 @@ static uint8_t slow_read(a2vm *m, uint16_t address)
     if (m->mouse_plain && !m->sw[SW_INTCXROM] && address < 0xc800 &&
         slot == m->mouse_slot)
         return plain_mouse_rom(address & 0xff);
+    if (m->mouse_apple && !m->sw[SW_INTCXROM] && address < 0xc800 &&
+        slot == m->mouse_slot)
+        return apple_mouse_rom(address & 0xff);
     return m->rom[address - 0xc000];
 }
 
@@ -1175,7 +1202,7 @@ static void slow_write(a2vm *m, uint16_t address, uint8_t value)
     *m->clock += m->io_cycles;
     if (m->amem_on && amem_write(m, address, value))
         return;
-    if (((address >> 8) & 7) == m->phasor_slot)
+    if (m->phasor_slot > 0 && ((address >> 8) & 7) == m->phasor_slot)
         phasor_write(m, address, value);
 }
 
@@ -1479,7 +1506,7 @@ void a2vm_set_register(a2vm *m, char name, unsigned value)
 static void vbl_event(a2vm *m)
 {
     m->next_vbl += m->frame_cycles;
-    if (m->mouse_on)
+    if (m->mouse_on || m->mouse_apple)
         mouse_vblank(&m->mouse);
 }
 
@@ -1558,6 +1585,129 @@ static int native_mli(a2vm *m)
     return 1;
 }
 
+/* --mouse-apple: the AppleMouse II's firmware call the CPU is about to
+   run at an entry of the table, serviced as the firmware does it
+   (README.md, "The AppleMouse II"): X = $Cn and Y = $n0 by the
+   convention, the slot's screen holes of main $0478-$07FF (through the
+   bus, so the //e's switches and the interrupt bounds apply) and, for
+   SERVEMOUSE, zero page $06, which the real firmware borrows for an RTS
+   and gives back; then an RTS, C clear for success (SETMOUSE's mode over
+   $0F, and SERVEMOUSE with no interrupt of the mouse pending, set C). */
+static int apple_mouse_call(a2vm *m)
+{
+    uint16_t pc = m->cpu.pc;
+    unsigned n = (unsigned)m->mouse_slot, entry;
+    if (m->sw[SW_INTCXROM] || (pc >> 8) != 0xc0 + n)
+        return 0;
+    for (entry = 0; entry < 8; entry++)
+        if ((pc & 0xff) == apple_entries[entry])
+            break;
+    if (entry == 8)
+        return 0;
+    a2vm_mouse *c = &m->mouse;
+    uint16_t xl = (uint16_t)(0x0478 + n), yl = (uint16_t)(0x04f8 + n),
+             xh = (uint16_t)(0x0578 + n), yh = (uint16_t)(0x05f8 + n),
+             bank = (uint16_t)(0x0678 + n), cmd = (uint16_t)(0x06f8 + n),
+             status = (uint16_t)(0x0778 + n), mode = (uint16_t)(0x07f8 + n);
+    int fail = 0;
+    m->mouse_calls[entry]++;
+    switch (entry) {
+    case 0:                                         /* SETMOUSE */
+        if (m->cpu.a >= 0x10) {
+            fail = 1;
+            break;
+        }
+        c->mode = m->cpu.a;
+        a2vm_write(m, mode, m->cpu.a);
+        a2vm_write(m, cmd, m->cpu.a);
+        a2vm_write(m, bank, 0x06);
+        break;
+    case 1: {                                       /* SERVEMOUSE */
+        uint8_t keep = a2vm_read(m, 0x0006);
+        a2vm_write(m, 0x0006, 0x60);
+        a2vm_write(m, 0x0006, keep);
+        a2vm_write(m, cmd, 0x20);
+        a2vm_write(m, bank, 0x06);
+        uint8_t bits = (uint8_t)((c->vbl_pending << 3) |
+                                 (c->button_pending << 2) |
+                                 (c->move_irq << 1));
+        a2vm_write(m, status,
+                   (uint8_t)((a2vm_read(m, status) & 0xf1) | bits));
+        c->vbl_pending = c->button_pending = c->move_irq = c->irq = 0;
+        fail = bits == 0;
+        break;
+    }
+    case 2: {                                       /* READMOUSE */
+        a2vm_write(m, cmd, 0x00);
+        a2vm_write(m, bank, 0x00);
+        a2vm_write(m, xl, (uint8_t)c->x);
+        a2vm_write(m, xh, (uint8_t)(c->x >> 8));
+        a2vm_write(m, yl, (uint8_t)c->y);
+        a2vm_write(m, yh, (uint8_t)(c->y >> 8));
+        a2vm_write(m, status, (uint8_t)(((c->buttons & 1) << 7) |
+                                        ((c->prev_buttons & 1) << 6) |
+                                        (c->moved << 5)));
+        c->prev_buttons = c->buttons;
+        c->moved = 0;
+        break;
+    }
+    case 3:                                         /* CLEARMOUSE */
+        c->x = clamp16(0, c->clamp[0][0], c->clamp[0][1]);
+        c->y = clamp16(0, c->clamp[1][0], c->clamp[1][1]);
+        a2vm_write(m, cmd, 0x30);
+        a2vm_write(m, xl, 0);
+        a2vm_write(m, xh, 0);
+        a2vm_write(m, yl, 0);
+        a2vm_write(m, yh, 0);
+        break;
+    case 4:                                         /* POSMOUSE */
+        a2vm_write(m, cmd, 0x40);
+        a2vm_write(m, bank, 0x0e);
+        c->x = clamp16(a2vm_read(m, xl) | a2vm_read(m, xh) << 8,
+                       c->clamp[0][0], c->clamp[0][1]);
+        c->y = clamp16(a2vm_read(m, yl) | a2vm_read(m, yh) << 8,
+                       c->clamp[1][0], c->clamp[1][1]);
+        break;
+    case 5: {                                       /* CLAMPMOUSE */
+        int32_t *window = c->clamp[m->cpu.a & 1];
+        window[0] = a2vm_read(m, 0x0478) | a2vm_read(m, 0x0578) << 8;
+        window[1] = a2vm_read(m, 0x04f8) | a2vm_read(m, 0x05f8) << 8;
+        a2vm_write(m, cmd, (uint8_t)(0x60 | (m->cpu.a & 1)));
+        a2vm_write(m, bank, 0x0e);
+        mouse_reclamp(c);
+        break;
+    }
+    case 6:                                         /* HOMEMOUSE */
+        c->x = c->clamp[0][0];
+        c->y = c->clamp[1][0];
+        a2vm_write(m, cmd, 0x70);
+        break;
+    default:                                        /* INITMOUSE */
+        c->clamp[0][0] = c->clamp[1][0] = 0;
+        c->clamp[0][1] = c->clamp[1][1] = 1023;
+        c->x = c->y = 0;
+        c->mode = 0;
+        c->moved = c->move_irq = c->button_pending = 0;
+        c->vbl_pending = c->irq = 0;
+        c->prev_buttons = c->buttons;
+        a2vm_write(m, mode, 0x00);
+        a2vm_write(m, status, 0x00);
+        a2vm_write(m, bank, 0x04);
+        break;
+    }
+    /* the RTS */
+    uint8_t lo = a2vm_read(m, (uint16_t)(0x0100 + (uint8_t)(m->cpu.s + 1)));
+    uint8_t hi = a2vm_read(m, (uint16_t)(0x0100 + (uint8_t)(m->cpu.s + 2)));
+    m->cpu.s = (uint8_t)(m->cpu.s + 2);
+    m->cpu.pc = (uint16_t)((lo | hi << 8) + 1);
+    if (fail)
+        m->cpu.p |= CPU65C02_C;
+    else
+        m->cpu.p &= (uint8_t)~CPU65C02_C;
+    m->cpu.cycles += 6;
+    return 1;
+}
+
 /* --ay-log: an interrupt taken, or an RTI about to run. */
 static void ay_log_irq(a2vm *m)
 {
@@ -1588,7 +1738,8 @@ void a2vm_step(a2vm *m)
     m->instructions++;
     if (m->core == A2VM_CORE_PY65) {
         m->instruction_pc = m->r.pc;
-        if (((m->mouse_on && m->mouse.irq) || via_irq(m)) &&
+        if ((((m->mouse_on || m->mouse_apple) && m->mouse.irq) ||
+             via_irq(m)) &&
             !(m->r.p & P65_I)) {
             m->r.waiting = 0;
             p65_irq(m);
@@ -1600,6 +1751,9 @@ void a2vm_step(a2vm *m)
         }
         uint16_t pc = m->r.pc;
         m->instruction_pc = pc;
+        if (m->mouse_apple && (pc >> 8) == 0xc0 + m->mouse_slot)
+            halt(m, "mouse-apple: the AppleMouse II's firmware needs "
+                 "--core w65c02s");
         if (m->idle_map[pc >> 3] & (1u << (pc & 7)))
             skip_idle(m, pc);
         if (m->pc_hook && !m->r.waiting &&
@@ -1617,7 +1771,8 @@ void a2vm_step(a2vm *m)
         }
         return;
     }
-    int irq = (m->mouse_on && m->mouse.irq) || via_irq(m);
+    int irq = ((m->mouse_on || m->mouse_apple) && m->mouse.irq) ||
+              via_irq(m);
     cpu65c02_set_irq(&m->cpu, 1, irq);
     int taken = irq && !(m->cpu.p & CPU65C02_I) &&
                 m->cpu.state != CPU65C02_STOPPED;
@@ -1635,6 +1790,9 @@ void a2vm_step(a2vm *m)
         m->pc_hook(m, pc);
     if (m->prodos && m->cpu.state == CPU65C02_RUNNING &&
         !(irq && !(m->cpu.p & CPU65C02_I)) && native_mli(m))
+        return;
+    if (m->mouse_apple && m->cpu.state == CPU65C02_RUNNING &&
+        !(irq && !(m->cpu.p & CPU65C02_I)) && apple_mouse_call(m))
         return;
     int rti = (m->ay_log || m->irq_bound_count) && !taken &&
               m->cpu.state == CPU65C02_RUNNING && at_rti(m, m->cpu.pc);
@@ -1922,6 +2080,7 @@ a2vm *a2vm_new(const a2vm_config *config, char *error, size_t error_size)
     m->ramworks_banks = config->ramworks_banks;
     m->mouse_on = config->mouse;
     m->mouse_plain = config->mouse_plain;
+    m->mouse_apple = config->mouse_apple;
     m->phasor_slot = config->phasor_slot;
     m->mouse_slot = config->mouse_slot;
     m->amem_on = config->amem;

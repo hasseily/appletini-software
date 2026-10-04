@@ -133,7 +133,7 @@ DOOM_TOOLS = ROOT.parent / 'doom' / 'tools'
 
 VOLUME = 'DOOM'
 SYSTEM = 'DOOM.SYSTEM'
-BOOT_LO, BOOT_HI = 0x2000, 0x3000           # pl_boot.s BOOT_END
+BOOT_LO, BOOT_HI = 0x2000, 0x3400           # pl_boot.s BOOT_END
 STAGE, HALF = 0x6000, 0x4000                # pl_boot.s STAGE, STAGE_SIZE
 CAT_MAX, C_NAMES = 0x0100, 16               # pl_boot.s CATALOG
 MAX_FILES = (CAT_MAX - C_NAMES) // 16
@@ -210,6 +210,7 @@ def cfg_text() -> str:
         '    S2RODATA:  load = BOOT,  type = ro, define = yes;',
         '    SNDBOOT:   load = BOOT,  type = ro, define = yes;',
         '    PLAMEM:    load = BOOT,  type = rw, define = yes;',
+        '    PLMOUSE:   load = BOOT,  type = rw, define = yes;',
         '    SNDZP:     load = SNDZP, type = zp;',
         '    SNDRING:   load = RING,  type = bss, align = $100;',
         '    SNDLIST:   load = LIST,  type = bss;',
@@ -985,7 +986,7 @@ CHECKS = (
     Check('boot-ntsc', PROFILES[0] + '+ntsc', {}, None, ''),
     Check('nomusic', PROFILES[0], {'mb_only': True}, None, 'NO MUSIC'),
     Check('nomouse', PROFILES[0], {'mouse': False}, 'NOMOUSE',
-          'NO CLOCK: NO APPLETINI MOUSE OR PHASOR'),
+          'NO CLOCK: NO MOUSE CARD OR PHASOR'),
     Check('banks', PROFILES[0], {'banks': 64}, 'BANKS',
           '8 MB OF RAMWORKS NEEDED: NO BANK $40'),
     Check('noamem', PROFILES[0], {'amem': False}, None,
