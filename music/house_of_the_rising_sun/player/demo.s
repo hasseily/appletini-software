@@ -9,6 +9,10 @@
         .export start, load_song, start_song, poll, timer_on, timer_off
         .export region, loaded, error, song_length, status, open_path
         .export quit, mli_call
+        .ifdef SHOWCASE
+        .import __RELOAD_LOAD__, __RELOAD_RUN__, __RELOAD_SIZE__
+        .export reload_basic
+        .endif
 
 MLI = $BF00
 SONG = $3000
@@ -153,10 +157,40 @@ quit:
         jsr phs_stop
         jsr timer_off
         bit $C0C8           ; restore Mockingboard mode for next program
+        .ifdef SHOWCASE
+        ; BASIC.SYSTEM replaces $2000 upward, including this SYS program.
+        ; Relocate the entire return routine AND its MLI parameter blocks.
+        lda #<__RELOAD_LOAD__
+        sta text_ptr
+        lda #>__RELOAD_LOAD__
+        sta text_ptr+1
+        lda #<__RELOAD_RUN__
+        sta screen_ptr
+        lda #>__RELOAD_RUN__
+        sta screen_ptr+1
+        ldy #0
+copy_reload:
+        lda (text_ptr),y
+        sta (screen_ptr),y
+        inc text_ptr
+        bne :+
+        inc text_ptr+1
+:       inc screen_ptr
+        bne :+
+        inc screen_ptr+1
+:       lda text_ptr
+        cmp #<(__RELOAD_LOAD__ + __RELOAD_SIZE__)
+        bne copy_reload
+        lda text_ptr+1
+        cmp #>(__RELOAD_LOAD__ + __RELOAD_SIZE__)
+        bne copy_reload
+        jmp reload_basic
+        .else
         jsr MLI
         .byte $65
         .word quit_params
         jmp quit            ; QUIT normally never returns
+        .endif
 
 ; The only disk accesses. GET_EOF prevents silently accepting an oversized
 ; file; READ must return the complete file, and CLOSE is always attempted.
@@ -413,10 +447,17 @@ line_text:
 :       rts
 
         .segment "RODATA"
+        .ifdef SHOWCASE
+path_ntsc: .byte path_ntsc_end-path_ntsc-1, "/MSDOS/MUSIC/SUN.NTSC"
+path_ntsc_end:
+path_pal: .byte path_pal_end-path_pal-1, "/MSDOS/MUSIC/SUN.PAL"
+path_pal_end:
+        .else
 path_ntsc: .byte path_ntsc_end-path_ntsc-1, "/RISING.SUN/SUN.NTSC"
 path_ntsc_end:
 path_pal: .byte path_pal_end-path_pal-1, "/RISING.SUN/SUN.PAL"
 path_pal_end:
+        .endif
 open_params: .byte 3
 open_path: .word path_ntsc
         .word IOBUF
@@ -445,7 +486,11 @@ hex: .byte "0123456789ABCDEF"
 s_title: .byte "HOUSE OF THE RISING SUN",0
 s_subtitle: .byte "A TRADITIONAL SONG FOR PHASOR",0
 s_hardware: .byte "APPLETINI F1.2.4 / NATIVE SLOT 4",0
+        .ifdef SHOWCASE
+s_keys: .byte "R REPLAY   SPACE STOP   Q MENU",0
+        .else
 s_keys: .byte "R REPLAY   SPACE STOP   Q QUIT",0
+        .endif
 s_region: .byte "N NTSC     P PAL (RELOADS SONG)",0
 s_voice: .byte "FOUR AY CHIPS + TWO SSI-263 VOICES",0
 s_loading: .byte "LOADING...",0
@@ -454,3 +499,85 @@ s_pal: .byte "PLAYING: PAL / 100 HZ",0
 s_stopped: .byte "STOPPED. PRESS R TO REPLAY.",0
 s_complete: .byte "COMPLETE. PRESS R TO REPLAY.",0
 s_error: .byte "ERROR $00. N/P RETRY; Q QUIT.",0
+
+        .ifdef SHOWCASE
+; Appletini_Demos contains the known 10,240-byte BASIC.SYSTEM. Check its
+; complete length before replacing ourselves, then check READ and CLOSE.
+; No reference here may point back into the overwritten SYS code or data.
+BASIC_SIZE = $2800
+        .segment "RELOAD"
+reload_basic:
+        jsr MLI
+        .byte $C8
+        .word basic_open
+        bcs return_fallback
+        lda basic_ref
+        sta basic_eof_ref
+        sta basic_read_ref
+        sta basic_close_ref
+        jsr MLI
+        .byte $D1
+        .word basic_eof
+        bcs return_close_error
+        lda basic_length
+        cmp #<BASIC_SIZE
+        bne return_close_error
+        lda basic_length+1
+        cmp #>BASIC_SIZE
+        bne return_close_error
+        lda basic_length+2
+        bne return_close_error
+        jsr MLI
+        .byte $CA
+        .word basic_read
+        bcs return_close_error
+        lda basic_got
+        cmp #<BASIC_SIZE
+        bne return_close_error
+        lda basic_got+1
+        cmp #>BASIC_SIZE
+        bne return_close_error
+        jsr MLI
+        .byte $CC
+        .word basic_close
+        bcs return_fallback
+        ; A BASIC dash launch can leave the MLI prefix empty. STARTUP and
+        ; its relative file references must resolve against the root.
+        jsr MLI
+        .byte $C6
+        .word basic_prefix
+        bcs return_fallback
+        jmp $2000
+return_close_error:
+        jsr MLI
+        .byte $CC
+        .word basic_close
+return_fallback:
+        jsr MLI
+        .byte $65
+        .word basic_quit
+:       jmp :-              ; don't execute a partly loaded BASIC on error
+
+basic_open: .byte 3
+        .word basic_path, IOBUF
+basic_ref: .byte 0
+basic_eof: .byte 2
+basic_eof_ref: .byte 0
+basic_length: .res 3, 0
+basic_read: .byte 4
+basic_read_ref: .byte 0
+        .word $2000, BASIC_SIZE
+basic_got: .word 0
+basic_close: .byte 1
+basic_close_ref: .byte 0
+basic_prefix: .byte 1
+        .word root_path
+basic_quit: .byte 4, 0
+        .word 0
+        .byte 0
+        .word 0
+basic_path: .byte basic_path_end-basic_path-1, "/MSDOS/BASIC.SYSTEM"
+basic_path_end:
+root_path: .byte root_path_end-root_path-1, "/MSDOS"
+root_path_end:
+        .endif

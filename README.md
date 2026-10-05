@@ -6,7 +6,8 @@ Apple II software and hardware demonstrations built to exercise Appletini.
 
 - [Appletini Demos](demos/appletini_demos/README.md): the bootable 32 MB
   ProDOS showcase disk, with its HGR launcher, video and speed demos,
-  network apps, SuperSprite demo, and AD8088 MS-DOS HGR cube.
+  network apps, SuperSprite demo, AD8088 MS-DOS HGR cube, and a Phasor
+  performance of House of the Rising Sun with SSI-263 singing.
 - [FATDOG MAGIC](demos/fatdog_magic/README.md): a bootable 32 MB
   ProDOS gallery with an HGR folder menu and 32 images converted by FATDOG
   in Standard HGR and 20 in Brooks SHR-3200, plus the Appletini demo image formats. Use phosphor blur
@@ -27,18 +28,19 @@ Apple II software and hardware demonstrations built to exercise Appletini.
 
 ## Disk images
 
-Each demo's bootable image is tracked next to its README. Mount one on an
+Each demo's bootable image is tracked next to its README, directly or in a ZIP.
+Extract ZIP downloads first, then mount an image on an
 Appletini SmartPort drive (in GSSquared, `-ds7d1=<image>`) and boot it.
 
 | Project | Image | Size | Boots |
 |---|---|---|---|
-| Appletini Demos | [Appletini_Demos.po](demos/appletini_demos/Appletini_Demos.po) | 32 MB | BASIC.SYSTEM, STARTUP launcher |
+| Appletini Demos | [Appletini_Demos.zip](demos/appletini_demos/Appletini_Demos.zip) | 32 MB extracted | BASIC.SYSTEM, STARTUP launcher |
 | FATDOG MAGIC | [FATDOG_MAGIC.po](demos/fatdog_magic/FATDOG_MAGIC.po) | 32 MB | MAGIC.SYSTEM |
 | Appletini Invasion | [Appletini-Invasion.hdv](demos/appletini_invasion/Appletini-Invasion.hdv) | 800 KB | INVASION.SYSTEM |
 | The Bilestoad, SHR port | [Bilestoad.po](demos/bilestoad/Bilestoad.po) | 800 KB | TOAD.SYSTEM |
 | Appletini Bosconian | [Appletini-Bosconian.hdv](demos/appletini_bosconian/Appletini-Bosconian.hdv) | 800 KB | BOSCO.SYSTEM |
 
-Each image is the `dist/` output of its project's build, copied next to the
+Each image is an output of its project's build, copied or packaged next to the
 README at the commit that built it; the build directories themselves are not
 tracked. The Bilestoad image contains the converted upstream game, which has
 no licence: check its rights before you redistribute that image.

@@ -7,6 +7,13 @@ compiled NTSC/PAL versions of the complete House of the Rising Sun score.
 It targets the native Phasor in **slot 4, firmware F1.2.4**, with four AY
 chips and both SSI-263s. A 65C02 is required.
 
+An unenhanced //e with its original 6502 cannot run this build. An original
+physical Phasor has not been validated: timing and vocal pitch have been
+checked against Appletini's F1.2.4 model. The same vocal is sent to both SSI-263s
+without waiting for speech-chip replies, so one fitted SSI-263 should provide
+the complete vocal through its output; that configuration still needs a
+hardware audition. Two chips center the voice across both speech outputs.
+
 Mount the image in a bootable SmartPort drive and boot it. NTSC playback
 starts automatically. Press **P** for PAL, **N** for NTSC, **R** to replay,
 **Space** to stop, or **Q/Escape** to quit through ProDOS. Changing region
@@ -30,6 +37,39 @@ framework and refuses any score whose rate is not 100 Hz or whose encoded
 size exceeds the demo's 34,816-byte buffer. `check.py` verifies the assembled
 SYS program, not a Python reimplementation of the player. Results are written
 to `build/validation.json`.
+
+## Appletini demo-disk variant
+
+`make showcase` (or `python3 build_showcase.py` without make) regenerates the
+score and both streams, then builds `build/showcase/SUN.SYSTEM`. Set `CA65`
+and `LD65` to explicit assembler/linker paths if needed. The Appletini demo
+disk builder runs this helper and installs the SYS program and the existing
+`build/SUN.NTSC` / `build/SUN.PAL` files into `/MSDOS/MUSIC`.
+
+The showcase variant uses those absolute song paths. **Q/Escape** silences
+all Phasor channels, stops the timer, restores Mockingboard mode, and reloads
+`/MSDOS/BASIC.SYSTEM` so its `STARTUP` program returns to the demo menu.
+The loader requires the demo master's 10,240-byte BASIC.SYSTEM, checks its
+full read and successful close, and sets the ProDOS prefix to `/MSDOS`.
+Any failed OPEN, GET_EOF, length, READ, CLOSE, or SET_PREFIX check falls back
+to ProDOS QUIT without executing a partial BASIC image. If the master is
+updated to a differently sized BASIC.SYSTEM, update `BASIC_SIZE` in `demo.s`.
+
+The return routine and all of its MLI parameter blocks relocate to
+`$1400..$14A0` before loading BASIC at `$2000..$47FF`, so the load cannot
+overwrite code it is still executing. The showcase SYS file initially
+occupies `$2000..$28A8`; its song buffer and ProDOS I/O buffer match the
+standalone version below. The linker reserves `$1400..$17FF` for return
+code and limits player state to `$1000..$13FF` to prevent overlap.
+
+Run `make check-showcase` with `py65` available to verify both complete
+regional streams plus Q/Escape menu returns, short/failed reads, each MLI
+failure, invalid BASIC lengths, and safe fallback after the SYS program has
+been overwritten. Its report is `build/showcase/validation.json`. The
+showcase peak is 5,192 nominal cycles at tick 9,933; the different code
+placement changes instruction page crossings. As with the standalone
+check, ROM boot, BASIC execution, physical disk I/O and slot wait states
+are not emulated.
 
 ## Loading and timing
 
