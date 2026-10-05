@@ -46,6 +46,14 @@
  *                       (README.md, "The zero-page bank pair"; needs
  *                       --core w65c02s); the cost profiles f121zp and
  *                       fastzp arm it too
+ *   --vidhd SLOT        a VidHD in SLOT (1-7): its ID bytes at $Cn00-$Cn02,
+ *                       its own SHR copy fed by aux $2000-$9FFF writes of
+ *                       any RamWorks bank, gated by its $C035 (README.md,
+ *                       "The VidHD"); the state's "vidhd" has its counts,
+ *                       and a final snapshot writes its copy as vidhd.shr
+ *   --vidhd-check LIST  hex PCs, commas (at most 64): before each
+ *                       instruction there, its copy compared with aux 0's
+ *                       $2000-$9FFF
  *
  * Start
  *   --image FILE        memory records (A2VMIMG1, see README.md)
@@ -303,6 +311,7 @@ typedef struct {
     const char *write_log, *write_log_file, *snapshot_ranges, *lowest_s_in;
     const char *snapshot_stream;
     const char *pclog, *pclog_pcs, *pclog_bytes;
+    const char *vidhd_check;
     uint64_t pclog_from, pclog_limit;
     uint64_t snapshot_limit;
     int snapshot_limit_given;
@@ -542,6 +551,12 @@ static void parse(int argc, char **argv, options *o)
             o->pclog_from = number(value, 0);
         else if (!strcmp(arg, "--pclog-limit"))
             o->pclog_limit = number(value, 0);
+        else if (!strcmp(arg, "--vidhd")) {
+            o->config.vidhd_slot = (int)number(value, 0);
+            if (o->config.vidhd_slot < 1 || o->config.vidhd_slot > 7)
+                fail("--vidhd takes a slot, 1 to 7");
+        } else if (!strcmp(arg, "--vidhd-check"))
+            o->vidhd_check = value;
         else if (!strcmp(arg, "--lowest-s-in")) {
             o->lowest_s_in = value;
             o->lowest_s = 1;
@@ -580,6 +595,15 @@ static void parse(int argc, char **argv, options *o)
         fail("--pclog needs --pclog-pcs");
     if (!o->pclog_limit)
         fail("--pclog-limit takes a count from 1");
+    if (o->vidhd_check && !o->config.vidhd_slot)
+        fail("--vidhd-check needs --vidhd");
+    if (o->config.vidhd_slot &&
+        (o->config.vidhd_slot == o->config.phasor_slot ||
+         ((o->config.mouse || o->config.mouse_plain || o->config.mouse_apple ||
+           o->config.mouse_rom) &&
+          o->config.vidhd_slot == o->config.mouse_slot) ||
+         (o->config.amem && o->config.vidhd_slot == 7)))
+        fail("--vidhd: slot %d holds another card", o->config.vidhd_slot);
     if (!o->cycles_given)
         o->cycles = DEFAULT_CYCLES;
 }
@@ -915,6 +939,50 @@ static void json_list8(FILE *out, const uint8_t *values, size_t count)
     fputc(']', out);
 }
 
+/* --vidhd: its notes, as [pc, address, bank, count, clock] */
+static void vidhd_notes(FILE *out, const char *name,
+                        const a2vm_vidhd_note *notes, uint64_t total)
+{
+    fprintf(out, ", \"%s\": [", name);
+    for (uint64_t i = 0; i < total && i < A2VM_VIDHD_RECORDS; i++)
+        fprintf(out, "%s[%u, %u, %u, %" PRIu32 ", %" PRIu64 "]",
+                i ? ", " : "", notes[i].pc, notes[i].address, notes[i].bank,
+                notes[i].count, notes[i].clock);
+    fputc(']', out);
+}
+
+static void vidhd_json(FILE *out, const a2vm *m)
+{
+    const a2vm_vidhd *v = &m->vidhd;
+    uint32_t differ = 0;
+    for (unsigned i = 0; i < 0x8000; i++)
+        differ += v->copy[i] != m->aux_banks[0x2000 + i];
+    fprintf(out, "  \"vidhd\": {\"slot\": %d, \"shadow\": %u, "
+            "\"c035_writes\": %" PRIu64 ", \"fed\": %" PRIu64
+            ", \"foreign\": %" PRIu64 ", \"foreign_after\": %" PRIu64
+            ", \"unshadowed\": %" PRIu64
+            ", \"speaker\": %" PRIu64 ", \"pairs\": %" PRIu64
+            ", \"unpaired\": %" PRIu64 ", \"pending\": %d"
+            ", \"differ_now\": %" PRIu32 ", \"mismatches\": %" PRIu64,
+            v->slot, v->shadow, v->c035_writes, v->fed, v->foreign,
+            v->foreign_after, v->unshadowed, v->speaker, v->pairs, v->unpaired, v->pending,
+            differ, v->mismatch_total);
+    fputs(", \"checks\": {", out);
+    for (unsigned i = 0; i < v->check_count; i++)
+        fprintf(out, "%s\"%04X\": [%" PRIu64 ", %" PRIu64 "]", i ? ", " : "",
+                v->check_pcs[i], v->checks[i], v->mismatches[i]);
+    fputs("}, \"between\": [", out);
+    for (unsigned i = 0; i < 32; i++)
+        fprintf(out, "%s%" PRIu64, i ? ", " : "", v->between[i]);
+    fputc(']', out);
+    vidhd_notes(out, "foreign_notes", v->foreign_notes,
+                v->c035_writes ? v->foreign_after : v->foreign);
+    vidhd_notes(out, "unshadowed_notes", v->unshadowed_notes, v->unshadowed);
+    vidhd_notes(out, "unpaired_notes", v->unpaired_notes, v->unpaired);
+    vidhd_notes(out, "mismatch_notes", v->mismatch_notes, v->mismatch_total);
+    fputs("},\n", out);
+}
+
 static void write_state_body(FILE *out, a2vm *m)
 {
     static const char *cores[] = { "py65", "w65c02s" };
@@ -1051,6 +1119,8 @@ static void write_state_body(FILE *out, a2vm *m)
                 z->address, z->rd, z->wr, z->enables, z->loads, z->reads,
                 z->writes, z->firmware, z->amem);
     }
+    if (m->vidhd.slot)
+        vidhd_json(out, m);
     if (m->write_log)
         fprintf(out, "  \"write_logged\": %" PRIu64 ",\n", m->write_logged);
     if (m->via_timers) {
@@ -1262,6 +1332,20 @@ static void shot(a2vm *m, const char *directory, const char *name)
     memcpy(data + 9, m->aux_banks + 0x2000, SHOT_BYTES);
     memcpy(data + 9 + SHOT_BYTES, m->main + 0x2000, SHOT_BYTES);
     snprintf(path, sizeof path, "%s/%s.shr", directory, name);
+    write_file(path, data, sizeof data);
+}
+
+/* --vidhd: its SHR copy as a screen dump (shot's format, its copy in
+   aux 0's place), vidhd.shr */
+static void vidhd_shot(a2vm *m, const char *directory)
+{
+    static uint8_t data[9 + 2 * SHOT_BYTES];
+    char path[1200];
+    memcpy(data, "A2VMSHR1", 8);
+    data[8] = m->newvideo;
+    memcpy(data + 9, m->vidhd.copy, SHOT_BYTES);
+    memcpy(data + 9 + SHOT_BYTES, m->main + 0x2000, SHOT_BYTES);
+    snprintf(path, sizeof path, "%s/vidhd.shr", directory);
     write_file(path, data, sizeof data);
 }
 
@@ -1793,6 +1877,13 @@ int main(int argc, char **argv)
     }
     if (o.pclog)
         pclog_start(m, &o);
+    if (o.vidhd_check) {
+        uint16_t pcs[A2VM_VIDHD_CHECKS];
+        unsigned count = hex_list("--vidhd-check", o.vidhd_check, pcs,
+                                  A2VM_VIDHD_CHECKS);
+        if (!a2vm_vidhd_checks(m, pcs, count))
+            fail("--vidhd-check: out of memory");
+    }
     if (o.ay_log) {
         m->ay_log = fopen(o.ay_log, "w");
         if (!m->ay_log)
@@ -1952,6 +2043,8 @@ int main(int argc, char **argv)
                       low_count);
     if (o.final_snapshot)
         snapshot(m, o.snapshot_dir, "final", extra);
+    if (o.final_snapshot && o.snapshot_dir && m->vidhd.slot)
+        vidhd_shot(m, o.snapshot_dir);
     stream_end(reason);
     if (m->cost && m->cost->report) {
         fputs("{\"final\": true,\n", m->cost->report);

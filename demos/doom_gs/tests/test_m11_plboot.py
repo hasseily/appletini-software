@@ -101,7 +101,7 @@ class Pure(unittest.TestCase):
                                                  'mirror'][0])
         self.assertEqual(areas['PLAT'], (0xFF00, 0xFA))
         self.assertEqual(areas['VEC'], (0xFFFA, 6))
-        self.assertEqual(areas['BOOT'], (0x2000, 0x1400))
+        self.assertEqual(areas['BOOT'], (0x2000, 0x1600))
         for seg in ('PLBOOT', 'S2CODE', 'S2RODATA', 'SNDBOOT'):
             self.assertIn('%s:' % seg, text)
             self.assertRegex(text, r'%s:\s+load = BOOT' % seg)

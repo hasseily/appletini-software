@@ -212,11 +212,12 @@ SHARED: Tuple[Shared, ...] = (
     # wave 2); test_calib copies the game's routines out of its card and
     # tic links (calibdisk.play_parts); test_play_noamem runs the disk
     # without the memory API as test_play_bench runs it, and test_amcpu
-    # reads its tic link's CPU version (docs/PLAY.md 19)
+    # reads its tic link's CPU version (docs/PLAY.md 19); test_vidhd reads
+    # its links and bank files for the VidHD's records (docs/PLAY.md 22)
     Shared('build/native/play', ('test_play_runs', 'test_play_bench',
                                  'test_play_cardprof', 'test_play_noamem'),
            ('test_playtime', 'test_ticloads', 'test_play_glue',
-            'test_calib', 'test_amcpu')),
+            'test_calib', 'test_amcpu', 'test_vidhd')),
 )
 
 

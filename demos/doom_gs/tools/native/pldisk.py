@@ -133,7 +133,7 @@ DOOM_TOOLS = ROOT.parent / 'doom' / 'tools'
 
 VOLUME = 'DOOM'
 SYSTEM = 'DOOM.SYSTEM'
-BOOT_LO, BOOT_HI = 0x2000, 0x3400           # pl_boot.s BOOT_END
+BOOT_LO, BOOT_HI = 0x2000, 0x3600           # pl_boot.s BOOT_END
 STAGE, HALF = 0x6000, 0x4000                # pl_boot.s STAGE, STAGE_SIZE
 CAT_MAX, C_NAMES = 0x0100, 16               # pl_boot.s CATALOG
 MAX_FILES = (CAT_MAX - C_NAMES) // 16
@@ -211,6 +211,7 @@ def cfg_text() -> str:
         '    SNDBOOT:   load = BOOT,  type = ro, define = yes;',
         '    PLAMEM:    load = BOOT,  type = rw, define = yes;',
         '    PLMOUSE:   load = BOOT,  type = rw, define = yes;',
+        '    PLVIDHD:   load = BOOT,  type = rw, define = yes;',
         '    SNDZP:     load = SNDZP, type = zp;',
         '    SNDRING:   load = RING,  type = bss, align = $100;',
         '    SNDLIST:   load = LIST,  type = bss;',

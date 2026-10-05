@@ -65,12 +65,19 @@
 ;      ready loop pl_ready in the card, which the second half replaces
 ;      with the title loop.
 ;
-; Main memory while booting: this code $2000-$33FF (DOOM.SYSTEM; the
+; With a VidHD (and none of the Appletini's: PLVIDHD, docs/PLAY.md 22),
+; bt_init's end writes vh_patch's records (the SHR shadow windows: the
+; card's vh_go, the kernel's hook, each screen-writing image's windows),
+; turns the VidHD's shadowing on, copies aux 0's $2000-$9FFF onto itself
+; (its copy then the screen's), turns it off ($C035 = $18) and says so on
+; row 7.
+;
+; Main memory while booting: this code $2000-$35FF (DOOM.SYSTEM; the
 ; boot is discarded: nothing calls it after pl_ready), STAGE and DATABUF
 ; $6000-$9FFF, ProDOS's buffer $A000, the catalog $A400, a header $A500,
 ; the bounce page $A600, the CRC tables $A700-$AAFF, CRCLIST $AB00-$BEFF;
 ; page 1's routine at $0100. The boot's CPU stores in $2000-$5FFF are its
-; own variables and patched operands in $2000-$33FF, and none reaches
+; own variables and patched operands in $2000-$35FF, and none reaches
 ; $0878-$087F or $4078-$407F (MEMORY_MAP.md rule 8); an AppleMouse II's
 ; firmware writes slot 2's screen holes in the text page; the probe leaves
 ; each bank's number at its $0200 (aux 0's too: 0) where no file writes.
@@ -160,8 +167,9 @@ BANKS           = 126           ; the banks the game needs (NATIVE.md 15.1)
 ZP_PAIR         = $06           ; zp_rd, zp_wr (MEMORY_MAP.md 2)
 ZP_PLATFORM_END = $18           ; $00-$17: the platform's (cleared)
 
-BOOT_END        = $3400         ; this code (DOOM.SYSTEM) $2000-$33FF (to
-                                ;   $2FFF before PLMOUSE, 2026-10-04)
+BOOT_END        = $3600         ; this code (DOOM.SYSTEM) $2000-$35FF (to
+                                ;   $2FFF before PLMOUSE, 2026-10-04; to
+                                ;   $33FF before PLVIDHD, 2026-10-05)
 STAGE           = $6000         ; a card image, 16 KB
 STAGE_SIZE      = $4000
 DATABUF         = $6000         ; a bank file's bytes, 8 KB at a time
@@ -484,6 +492,7 @@ probe_amem:
         rts
 @bad:   lda #$FE
 @fail:  bit SP_RELEASE
+        sta bt_amans            ; (PLVIDHD's gate: $FF not the Appletini's)
         dec bt_amem             ; $FF: the CPU's copies
         jmp am_none             ; (PLAMEM: the message)
         .assert * - probe_amem <= PROBE_ROOM, error, "probe_amem's room"
@@ -1229,7 +1238,9 @@ am_none:
 ; bt_installed); without it mo_recs's records (the card's handler on
 ; VIA-B's timer 1, pl_init over the mouse's window, then playdisk.py's
 ; records in bt_mpatch: the frame images' polls without the mouse). Then
-; am_patch when probe_amem found no API, then pl_init.
+; am_patch when probe_amem found no API, then PLVIDHD's vh_boot (with
+; neither the API nor the Appletini's mouse card nor its slot-7 ROM: a
+; VidHD's records), then pl_init.
 bt_init:
         bit bt_mouse
         bmi @nomouse
@@ -1245,7 +1256,7 @@ bt_init:
 @amem:  bit bt_amem
         bpl :+
         jsr am_patch
-:       jmp pl_init
+:       jmp vh_boot             ; (was jmp pl_init: PLVIDHD goes on to it)
 
 ; am_patch: bt_patch's records (playdisk.py writes them: tools/native/
 ; amcpu.py's table), each a length (1-255; 0 ends them), a bank (0 the
@@ -1994,6 +2005,156 @@ ap_mpatch_end:
         .assert AH_N = 13, error, "pl_vbody's head"
         .assert pl_vnone - (pl_vbody + 5) < 128, lderror, "ap_vh's branch"
         .assert pl_detect = AP_IRQ, lderror, "pl_detect is not at AP_IRQ"
+        .assert * <= BOOT_END, error, "the boot passes BOOT_END"
+
+; ===========================================================================
+.segment "PLVIDHD"
+; ===========================================================================
+; The VidHD (docs/PLAY.md 22; MEMORY_MAP.md 22). A VidHD keeps its own
+; copy of the SHR screen, fed by every write it sees to aux $2000-$9FFF:
+; it follows RAMWRT, 80STORE and PAGE2, not RamWorks' $C073, so DOOM's
+; 4 MB in aux $2000-$9FFF of banks 1-126 would land on its picture. It
+; always honours the IIgs SHADOW register $C035 (John Brooks, via the
+; owner): DOOM keeps the shadowing off ($18: bit 3 the SHR, bit 4 the
+; aux hi-res pages, which the IIgs would shadow from aux $2000-$5FFF
+; otherwise) and turns it on ($00) only while it writes the screen with
+; bank 0 selected. On a //e any $C030-$C03F access toggles the speaker:
+; each value is written twice in a row (the owner's fix for the pop: the
+; register keeps it, the speaker is back within a microsecond), with
+; interrupts masked between the two.
+;
+; Only with a VidHD and nothing of the Appletini's (the memory API, its
+; mouse card, its slot-7 ROM: the Appletini shows SHR from aux bank 0
+; only and never answers the VidHD's ID): vh_boot, from bt_init's end,
+; scans slots 1-7 (not 4, the Phasor's: a 6522's registers there) for the
+; ID bytes $24 $EA $4C at $Cn00-$Cn02 (AppleWin's VidHD.cpp, GSSquared's
+; vidhd.cpp), each read twice (an empty slot reads the floating bus),
+; slot 3 with SLOTC3ROM on; then the records of vh_patch (playdisk.py's,
+; tools/native/vidhd.py: the card's vh_go and its two callers, the
+; kernel's hook after each K_CALL, each screen window of the 2D images
+; and the replay's group), the copy synced, the shadowing off. Without a
+; VidHD, or on the Appletini, it goes to pl_init at once: no $C035
+; access, no slot read, and the card and the images as they were.
+
+SHADOW          = $C035         ; the IIgs SHADOW register (a VidHD's)
+SH_ON           = $00           ; everything shadowed
+SH_OFF          = $18           ; SHR and the aux hi-res pages not
+RDC3ROM         = $C017         ; bit 7: slot 3's ROM is the card's
+SLOTC3ROMOFF    = $C00A
+SLOTC3ROMON     = $C00B
+VH_ROW          = 7             ; its message's row
+VHPATCH_SIZE    = 448           ; vh_patch (vidhd.PATCH_SIZE)
+
+vh_boot:
+        bit bt_amem             ; the memory API: the Appletini
+        bpl @out
+        lda bt_mouse            ; the Appletini's mouse card
+        beq @out
+        lda bt_amans            ; slot 7's ROM was not the Appletini's
+        cmp #$FF
+        bne @out
+        jsr vh_scan
+        bcc @out
+        stx vh_slot
+        lda #<vh_patch
+        ldx #>vh_patch
+        jsr am_records
+        jsr vh_sync
+        lda #VH_ROW
+        ldx #<s_vidhd
+        ldy #>s_vidhd
+        jsr say
+        lda vh_slot
+        ora #'0' | $80
+        jsr putc
+        ldx #<s_vidhd2
+        ldy #>s_vidhd2
+        jsr puts
+@out:   jmp pl_init
+
+; vh_scan: C set and X the slot of the first VidHD from slot 7 down (not
+; slot 4), else C clear. Slot 3's ROM is the card's while scanning
+; (SLOTC3ROM on, then as it was); the C8 space released at the end.
+vh_scan:
+        sta INTCXROMOFF
+        lda RDC3ROM
+        sta vh_c3
+        sta SLOTC3ROMON
+        stz tmp
+        ldx #7
+@slot:  cpx #4
+        beq @next
+        txa
+        ora #>$C000
+        sta tmp+1
+        lda #2                  ; each byte twice
+        sta wcount
+@twice: ldy #2
+@id:    lda (tmp),y
+        cmp vh_id,y
+        bne @next
+        dey
+        bpl @id
+        dec wcount
+        bne @twice
+        sec
+        bra @end
+@next:  dex
+        bne @slot
+        clc
+@end:   bit vh_c3               ; slot 3's ROM as it was
+        bmi :+
+        sta SLOTC3ROMOFF
+:       bit SP_RELEASE
+        rts
+
+; vh_sync: the shadowing on, aux 0's $2000-$9FFF read a page at a time
+; (page 1's routine, RAMRD on) and written back (RAMWRT on): the VidHD's
+; copy is then the screen's whatever it held; the shadowing off.
+; Interrupts masked (bt_init's).
+vh_sync:
+        lda #SH_ON
+        jsr vh_set
+        stz bdst
+        lda #>$2000
+        sta bdst+1
+@page:  lda #0
+        ldy bdst+1
+        ldx #0                  ; (256 bytes)
+        jsr P1CODE
+        sta RAMWRTON
+        ldy #0
+:       lda BOUNCE,y
+        sta (bdst),y
+        iny
+        bne :-
+        sta RAMWRTOFF
+        inc bdst+1
+        lda bdst+1
+        cmp #>$A000
+        bne @page
+        lda #SH_OFF
+vh_set: sta SHADOW              ; (twice in a row: the speaker back)
+        sta SHADOW
+        rts
+
+vh_id:  .byte $24, $EA, $4C     ; the VidHD's slot ROM, $Cn00-$Cn02
+bt_amans:
+        .byte 0                 ; probe_amem's answer when it found no API
+vh_slot:
+        .byte 0
+vh_c3:  .byte 0
+s_vidhd:
+        .byte "VIDHD IN SLOT ", 0
+s_vidhd2:
+        .byte ": SHR SHADOW IN WINDOWS", 0
+
+; the VidHD's records (am_records' form; playdisk.py writes them:
+; tools/native/vidhd.py), 0 ending them
+vh_patch:
+        .res VHPATCH_SIZE
+vh_patch_end:
+        .byte 0                 ; (the records' end when vh_patch is full)
         .assert * <= BOOT_END, error, "the boot passes BOOT_END"
 
 ; ===========================================================================

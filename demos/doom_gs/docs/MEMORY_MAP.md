@@ -57,6 +57,7 @@ Banks 1-126 are RamWorks PSRAM; 127 is never used [R `NATIVE.md` §4.4].
 | 8 | Nothing is ever written to main `$0878-$087F` or `$4078-$407F` by the CPU, except without the memory API (section 19), where the frame slot at page `$40` and colormap B's level 0 come by CPU stores: `playdisk.py` checks that no group pinned there holds `A2Li` at `$4078`; colormap B's bytes there (the level palette's) are not checked. | The firmware reads an `A2Li` signature and a load-hold byte there from its shadow of main memory, and treats writes there as immediate [R `appletini-one/hdl/apple/vtw_video_policy.sv:33-37`; `ps_sources/frontend/apple_cycle_renderer.c:2283-2336`]. PRIVATE writes emit no capture records, so a colormap loaded there by PRIVATE never reaches that shadow [R `README_MEMORY_API.md` §4]. |
 | 9 | Slot holes of main `$0400-$07FF` (`$x78-$x7F`, `$xF8-$xFF`) and `$07F8` are written by slot firmware and SmartPort calls. The pages there are reloaded after any firmware call; an AppleMouse II's calls in the interrupt (section 21) instead find their own bytes there and leave the colormaps' (`ap_swap`). | [R `NATIVE.md` §4.1, §10]. |
 | 10 | Aux 0 `$9DC8-$9DFF` stays zero. | Standard SHR. The bytes `"SHR4"`\|`$80` at `$9DFC-$9DFF` would switch the card to its PAL256 mode [R `demos/doom/docs/DESIGN.md:60-72`]. |
+| 11 | **With a VidHD** (2026-10-05, section 22, `PLAY.md` 22; nothing of it runs on the Appletini): the SHR shadowing (`$C035`) is off (`$18`) but in the shadow windows, each opened by a screen window's start (`vh_wa`: `$00`) and closed by the step's end (the kernel's hook after each K_CALL), by the replay's next scatter, or before the writes listed in section 22. Inside a shadow window no CPU store reaches aux `$2000-$9FFF` of a bank other than 0, and every store to aux 0's `$2000-$9FFF` comes inside one. Each value is written to `$C035` twice in a row, interrupts masked between the two writes, and only when it differs from the last one written (`vh_go`). | A VidHD copies every write it sees to aux `$2000-$9FFF` into its own SHR, whatever `$C073` selects, unless `$C035` inhibits it; any `$C030-$C03F` access toggles a //e's speaker, and the second write puts it back [R the owner and John Brooks; AppleWin `source/VidHD.cpp`]. a2vm `--vidhd` counts both breaches (`foreign`, `unshadowed`) and the pairs. |
 
 ## 2. Zero page and stack
 
@@ -136,7 +137,7 @@ page and aux stack; pair stores go through the trampoline [R `NATIVE.md`
 | `$0700-$07FF` | 256 | Colormap B, level 33 | same | same |
 | `$0800-$0821` | 34 | `CMPA`: page of colormap A by light level | boot, PRIVATE | A |
 | `$0822-$0843` | 34 | `CMPB`: page of colormap B by light level | boot, PRIVATE | A |
-| `$0844-$0877` | 52 | free (read-only data only); since 2026-10-02 the play build's benchmark timing puts `bt_ext` (36 B, `$0844-$0867`: part of the kernel's `bt_mark`) there with CPU stores at each benchmark's start, its only writes (`PLAY.md` 15) | the brain's `bt_start` | |
+| `$0844-$0877` | 52 | free (read-only data only); since 2026-10-02 the play build's benchmark timing puts `bt_ext` (36 B, `$0844-$0867`: part of the kernel's `bt_mark`) there with CPU stores at each benchmark's start, its only writes (`PLAY.md` 15); with a VidHD (section 22) `$0868-$0874` holds `vh_sc`, written once by the boot | the brain's `bt_start`; the boot | |
 | `$0878-$087F` | 8 | **forbidden** (rule 8) | never | R `vtw_video_policy.sv:36` |
 | `$0880-$08FF` | 128 | free (read-only data only) | | |
 | `$0900-$09A8` | 169 | `TEXLO`: low byte of the texture row block of row 0-168 | boot, PRIVATE | A |
@@ -354,10 +355,10 @@ runs):
 | `$E500-$E736` | 567 | Player state: voices, shadows, song tables | M: S2 |
 | `$E737-$E73F` | 9 | Milestone 11: `FX_ON`, `FX_HOLD`, `FX_INVAL`, the effects' tempo fraction, `fx_service`'s 4 temporaries (9 B) | M: milestone 11 |
 | `$E740-$E8BF` | 384 | Effect rings, 3 × 128 | A |
-| `$E8C0-$E8FF` | 64 | Milestone 11: the channel table (3 × 12 B), the channels' mailboxes (3 × 4 B), `LS_ON` and `SND_SFXVOL` (50 of 64 B) | M: milestone 11 |
+| `$E8C0-$E8FF` | 64 | Milestone 11: the channel table (3 × 12 B), the channels' mailboxes (3 × 4 B), `LS_ON` and `SND_SFXVOL` (50 of 64 B); with a VidHD (section 22) `$E8F2-$E8F9` holds `vh_kr` | M: milestone 11 |
 | `$E900-$F8FF` | 4,096 | Sound code and tables: music, bursts, refill, the IRQ entry `snd_vbl` (2,104 B [M: S2]), periods, bend, levels (973 B [M: S2]), effects player (about 800 B [A]), platform IRQ additions (about 64 B [A]). As built (milestone 11, section 18): S2's code and tables to `$F504`, then from `$F505` `fx.s`'s card part (`fx_step`, `fx_burst`, `fx_song`, `fx_init`, `fx_stopall`, `fx_isplaying`, `fx_copy`, `fx_volume`, chip 3's state: 739 B), `pl_vbl`, the clock and `pl_time` (116 B), `pl_clkset` and `pl_detect` (128 B, boot-time) | 4,060 used, 36 spare [M: milestone 11] |
 | `$F900-$FEFF` | 1,536 | Replay, `$E000` part: batches and strips, the F1.2.1 gather (walk, copies) or the pair bounce, the texture cut's `texStart`, the fill chains' set-up, calls to the aux-0 drawers, the covered-range clear | 1,079 B built [M: `make sizes`]; part A assumed about 1,390 B |
-| `$FF00-$FFF9` | 250 | Platform: phase switch (card bank, RAMWRT, `$C073` 0), BRK and crash stub, the aux card's IRQ bridge, the same 30 B in both cards (`pl_bridge.s`; pair build only); the ready loop `pl_ready` at `$FF00` (8 B, milestone 11 part `plboot`) | A |
+| `$FF00-$FFF9` | 250 | Platform: phase switch (card bank, RAMWRT, `$C073` 0), BRK and crash stub, the aux card's IRQ bridge, the same 30 B in both cards (`pl_bridge.s`; pair build only); the ready loop `pl_ready` at `$FF00` (8 B, milestone 11 part `plboot`); in the play build the kernel (`PLAY.md` 3), whose padding before `KLISTS`, `$FFA7-$FFB7`, holds `vh_go` with a VidHD (section 22) | A |
 | `$FFFA-$FFFF` | 6 | Vectors: NMI, reset (unused: reset selects the ROM), IRQ/BRK → `pl_vbl` (milestone 11: acknowledge, clock, `fx_step`, `snd_tick`, `fx_burst`; `src/native/pl_irq.s`) | |
 
 The S2 player's test map puts its ring, lists and state in bank 2 at
@@ -970,7 +971,7 @@ its time with the API is unchanged (`PLAY.md` 19).
 | card bank 1 | `$DB70-$DB7F` | the template's descriptor, kept (its callers patch it as before) |
 | card bank 1 | `$DB80-$DBFD` | `AMEMCPU` over `AMEMLC`, the entries at `AMEMLC`'s: `am_begin` an RTS, `am_push` (`cli`, the template's descriptor into `cq`, `cx_exec`), `am_runs` a JMP to `far_pload`, `am_fin` (`plp`, `rts`); `cx_exec`: RAMRD for the source's space, RAMWRT for the destination's, `$C073` their AUX bank, a part page at a time |
 | card bank 1 | `$DFE6-$DFFB` | `AMEMCPUD`: `cx_chunk`, the pages of a descriptor (after `MFAR`; `playdisk.amem_cpu_problems` checks the range free) |
-| card `$E000` part | `$FE45-$FE6F` | `AMEMCPUF`: the inner loops in one page, `cx_fast` (one bank), `cx_fill`, `cx_tog` (AUX to AUX of two banks: `$C073` switched at each byte, as RAMRD and RAMWRT share it) |
+| card `$E000` part | `$FE45-$FE6F` | `AMEMCPUF`: the inner loops in one page, `cx_fast` (one bank), `cx_fill`, `cx_tog` (AUX to AUX of two banks: `$C073` switched at each byte, as RAMRD and RAMWRT share it); its room's rest, `$FE70-$FE7A`, holds `vh_wa` with a VidHD (section 22, always without the API) |
 | LCODE (98) | `am_send` (53 of 92 B) | a walker of the request at `LW_REQ`: the far layer's zero page `$00-$05` kept on the stack (`run_list` reads `FA_SRC`, `FA_BANK` after), each descriptor into `cq` and `cx_exec`; the request's length word its count |
 | DLBANK (1) | DLINIT `dli_send` (59 of 90 B) | `jsr` the walker of the request at `$6E02`, then `jmp dli_screen` |
 | MENUW (108) | `mv_amem` (53 of 75 B) | the walker of `am_copy` (aux 0 `$2000-$9FFF` to `S2VIEW`) |
@@ -1074,6 +1075,48 @@ and goes to `bd_via` (the timer checked as without a mouse card, else
 the stop; row 5 `APPLEMOUSE NO VBL: PHASOR CLOCK,` and the standard).
 `ap_mpatch`'s poll records stay: the poll reads `AP_X` and `AP_SB`, now
 updated once a frame by VIA-B's handler.
+
+## 22. The VidHD (2026-10-05, `PLAY.md` 22)
+
+`DOOM.SYSTEM` (`pl_boot.s` `PLVIDHD`, `vh_boot`) looks for a VidHD only
+when it found nothing of the Appletini's (the memory API, its mouse card,
+its slot-7 ROM): slots 7 to 1 but 4, the ID bytes `$24 $EA $4C` at
+`$Cn00-$Cn02` read twice, slot 3 with SLOTC3ROM on. With one, after the
+install and the other records, interrupts masked, it writes `vh_patch`'s
+records (448 B in `DOOM.SYSTEM`, 352 used: `tools/native/vidhd.py`,
+written by `playdisk.py`), turns the shadowing on, copies aux 0's
+`$2000-$9FFF` onto itself (the VidHD's copy then equals it), and turns it
+off. Rule 11 holds from then on.
+
+| Space | Range | With a VidHD |
+| --- | --- | --- |
+| card `$E000` part | `$FFA7-$FFB7` (17 B, the kernel's padding before `KLISTS`; `vidhd.card_problems` checks it zero, with no label) | `vh_go`: `CMP #last`, `BEQ` to its `RTS`, `STA` its own operand (`$FFA8`, the last value, `$18` at the boot), `PHP`, `SEI`, `STA $C035` twice, `PLP`, `RTS`; A the value, A, X, Y kept |
+| card `$E000` part | `$E8F2-$E8F9` (8 of the channel block's 14 free bytes) | `vh_kr`: `STA DL_RES`, `LDA #$18`, `JMP vh_go` |
+| card `$E000` part | `$FE70-$FE78` (9 of `AMEMCPUF`'s 11 free bytes) | `vh_wa`: `LDA #$00`, `JSR vh_go`, `STA RAMWRTON`, `RTS` (A 0 after it) |
+| card `$E000` part | `k_call`'s `STA DL_RES` (`$FF9C`, 3 B) | `JSR vh_kr`: every K_CALL ends with the shadowing off |
+| main | `$0868-$0874` (13 of `BT_EXT`'s 16 bytes after `bt_ext`, below rule 8's `$0878`; no static copy or menu loop there) | `vh_sc`: the shadowing off, `JSR nb_scatter`, the shadowing on (the replay's group); called with RAMRD off |
+| MCODE (113), OVLW (93) | `nb_frame`'s `JSR nb_scatter` in `BKFAR`'s stored copy (3 B) | `JSR vh_sc` |
+| P2DW (107), MENUW (108), WIW (95), FINW (96) | `s2_publish`'s, `s2_begin`'s three and `s2_finish`'s `STA RAMWRTON` (3 B each) | `JSR vh_wa` |
+| AMAPW (94) | `s2_publish`'s and `pubents`' `STA RAMWRTON` | `JSR vh_wa` |
+| OVLW (93), DLINIT (1) | `titleband`'s, `dli_screen`'s `STA RAMWRTON` | `JSR vh_wa` |
+| P2DW `$7E52`, MENUW `$938A`, AMAPW `$8129` (8 B each, the last loaded page past the stored bytes) | `record`'s `JSR far_put` (`SS_HUDTXT`), `mv_open`'s `JSR mv_amem` (aux 0 to `S2VIEW` `$2000-$9FFF`), `am_frame`'s `JSR listsave` (`SS_AMOLD`) | their `JSR`s go through `LDA #$18`, `JSR vh_go`, `JMP` the routine |
+| OVLW `$8008` (8 B) | `am_ovl`'s `JSR titleband` | `JSR titleband`, `LDA #$18`, `JMP vh_go`: off before its records spill to RECSP |
+| DLINIT `$670D` (12 B) | `dli_quit`'s `JSR snd_stop` | `PHP`, `SEI`, `STZ $C035` twice, `PLP`, `JMP snd_stop`: the quit leaves `$00`; `vh_go`'s last value stays `$18`, so the hook after it writes nothing |
+
+The other writes to aux `$2000-$9FFF` of other banks all come with the
+shadowing off: before any screen window of their step (st_drawer's puts,
+`s2_picpal`'s nibble tables, the busy sign's save, FINW's and AMAPW's
+own blocks) or in steps that write no screen (the tic phase, the loads,
+the front end, the masked phase, PALW). `K_MENU`'s frames are not
+K_CALLs: the shadowing may stay on from one menu frame to the next, and
+MENUW's own writes meanwhile land outside `$2000-$9FFF` (`SS_SETTINGS`
+`$0D00`, `SS_MENUW` `$0600`, `SS_PALST` `$0200`) but its screen save,
+which goes through the off above; the list's next step, a K_CALL of
+`m_save`, ends it. a2vm `--vidhd` checks all of it in the runs of
+`PLAY.md` 22. Stack: a window goes 5 B deeper inside `vh_wa`,
+`nb_scatter` 2 B deeper under `vh_sc`; the replay itself and `far_put`
+are unchanged. Without a VidHD, or on the Appletini, none of these bytes
+is written: `LC.BIN` and every bank file are the same as before.
 
 ## Appendix: the measurements made for this map
 

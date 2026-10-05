@@ -40,7 +40,8 @@ files:
 --run boots the disk on a2vm (its MLI trap, the memory API unless
 --no-amem, the mouse card's VBL clock unless --mouse none or plain: then
 VIA-B's timer 1, a2vm --via-timers; --mouse apple: an AppleMouse II's
-VBL through its firmware, docs/PLAY.md 21), --cost-timed under the Doom profile, the interrupt
+VBL through its firmware, docs/PLAY.md 21; --vidhd SLOT: a VidHD there,
+docs/PLAY.md 22), --cost-timed under the Doom profile, the interrupt
 bounds of SCREENS.md 2.3) and plays SCRIPT: a2vm's input events (tools/
 a2vm/README.md "Input events"), with the names of the play link's labels
 for pc events (pc @dl_halt ...). Every run is bounded (bounded.run: its
@@ -935,6 +936,29 @@ def with_mouse_patches(system: bytes, boot: pldisk.Boot,
     at = lab['ap_mpatch'] - pldisk.BOOT_LO
     if any(system[at:at + size]):
         raise PlayError('ap_mpatch is not zero in the link')
+    system = system[:at] + data + system[at + size:]
+    return with_vidhd_patches(system, boot, play)
+
+
+def with_vidhd_patches(system: bytes, boot: pldisk.Boot,
+                       play: Path) -> bytes:
+    """DOOM.SYSTEM with a VidHD's records in vh_patch (vidhd.play_patches:
+    what pl_boot.s's vh_boot writes when it finds a VidHD and nothing of
+    the Appletini's; docs/PLAY.md 22). vidhd.py checks every place: the
+    bytes each record replaces, its rooms free and zero."""
+    from native import amcpu, vidhd
+    lab = boot.labels
+    size = lab['vh_patch_end'] - lab['vh_patch']
+    if size != vidhd.PATCH_SIZE:
+        raise PlayError('vh_patch is %d B, vidhd.PATCH_SIZE %d' % (
+            size, vidhd.PATCH_SIZE))
+    try:
+        data = amcpu.table(vidhd.play_patches(play), size)
+    except amcpu.PatchError as e:
+        raise PlayError('with a VidHD: %s' % e)
+    at = lab['vh_patch'] - pldisk.BOOT_LO
+    if any(system[at:at + size]):
+        raise PlayError('vh_patch is not zero in the link')
     return system[:at] + data + system[at + size:]
 
 
@@ -1026,13 +1050,14 @@ def run(disk: Disk, script: str, work: Path, profile: str = 'f121',
         snap_ranges: str = 'main:0000-BFFF,lc,lc1,aux0:2000-9FFF',
         extra: Sequence[str] = (), a2vm: Path = A2VM,
         idle: str = 'exact', amem: bool = True,
-        mouse: str = 'appletini') -> Run:
+        mouse: str = 'appletini', vidhd: int = 0) -> Run:
     """Boot the disk and play the script for at most `seconds` of model
     time; the run's state, its snapshots and shots. `extra`: more a2vm
     options (playtime.py's --pclog); `a2vm`: the machine to run; `amem`:
     the memory API in slot 7 (a2vm --amem), else a //e with none, where
     DOOM.SYSTEM's probe finds none and the CPU copies (docs/PLAY.md 19);
-    `mouse`: slot 2 (MICE; docs/PLAY.md 20).
+    `mouse`: slot 2 (MICE; docs/PLAY.md 20); `vidhd`: a VidHD in that
+    slot (a2vm --vidhd; docs/PLAY.md 22), 0 none.
 
     `idle`: how a2vm skips the two loops that wait for a tic, the
     kernel's menu wait (dl_mwait) and the brain's frame wait (dl_bwait).
@@ -1095,6 +1120,8 @@ def run(disk: Disk, script: str, work: Path, profile: str = 'f121',
     if amem:
         args.append('--amem')
     args += MICE[mouse]
+    if vidhd:
+        args += ['--vidhd', str(vidhd)]
     for spec in idles:
         args += ['--idle', spec]
     args += list(extra)
@@ -1166,6 +1193,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         'the clock), none or a plain AppleMouse ROM (the '
                         'clock VIA-B\'s timer 1), or an AppleMouse II (its '
                         'VBL the clock, through its firmware)')
+    parser.add_argument('--vidhd', type=int, default=0, metavar='SLOT',
+                        help='a VidHD in SLOT (a2vm --vidhd; docs/PLAY.md '
+                        '22)')
     args = parser.parse_args(argv)
     gone = missing()
     if gone:
@@ -1186,7 +1216,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             try:
                 r = run(disk, args.run.read_text(), work, args.profile,
                         args.seconds, amem=not args.no_amem,
-                        mouse=args.mouse)
+                        mouse=args.mouse, vidhd=args.vidhd)
                 print(json.dumps(r.state, indent=1)[:2000])
             finally:
                 if not args.keep:

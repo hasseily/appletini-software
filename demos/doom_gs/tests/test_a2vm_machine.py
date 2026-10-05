@@ -418,6 +418,88 @@ def control(descriptors, count=None, magic=b'AMEM', version=1, flags=0,
         struct.pack('<H', len(payload)) + payload
 
 
+@have_tools
+class VidHD(Workspace):
+    """--vidhd (tools/a2vm/README.md, "The VidHD", 2026-10-05): the ID
+    bytes, the SHADOW register's rules, the copy, the foreign and stale
+    writes, the speaker's pairs and the checks."""
+
+    def test_id_bytes(self):
+        rom = self.rom.read_bytes()
+        lines = self.bus(['read C500', 'read C501', 'read C502',
+                          'read C600', 'write C006 00'], '--vidhd', 5)
+        self.assertEqual(self.reads(lines), [0x24, 0xea, 0x4c, rom[0x600]])
+        # slot 3: the //e's own ROM unless SLOTC3ROM is on
+        lines = self.bus(['read C300', 'write C00B 00', 'read C300',
+                          'read C302', 'write C00A 00', 'read C300'],
+                         '--vidhd', 3)
+        self.assertEqual(self.reads(lines),
+                         [rom[0x300], 0x24, 0x4c, rom[0x300]])
+        lines = self.bus(['read C500'])
+        self.assertEqual(self.reads(lines), [rom[0x500]])
+
+    def test_shadow_rules(self):
+        # the IIgs rules: $2000-$3FFF when bit 3 is 0 or bits 1 and 4 are
+        # both 0; $4000-$5FFF the same with bit 2; $6000-$9FFF when bit 3
+        # is 0. Written from aux bank 0: fed, else stale.
+        expect = {0x00: (1, 1, 1, 1), 0x10: (1, 1, 1, 1),
+                  0x08: (1, 1, 0, 0), 0x0A: (0, 1, 0, 0),
+                  0x0C: (1, 0, 0, 0), 0x18: (0, 0, 0, 0),
+                  0x0E: (0, 0, 0, 0)}
+        for value, fed in sorted(expect.items()):
+            lines = ['write C035 %02X' % value, 'write C005 00']
+            lines += ['write %04X 5A' % a for a in (0x2000, 0x4000, 0x6000,
+                                                   0x9FFF)]
+            v = self.state(self.bus(lines + ['state'], '--vidhd', 1))['vidhd']
+            self.assertEqual((v['shadow'], v['fed'], v['unshadowed']),
+                             (value, sum(fed), 4 - sum(fed)), hex(value))
+
+    def test_a_program(self):
+        code = [0xa9, 0x18, 0x8d, 0x35, 0xc0, 0x8d, 0x35, 0xc0,  # $18 twice
+                0x8d, 0x05, 0xc0,                   # RAMWRT on (bank 0)
+                0xa9, 0x11, 0x8d, 0x00, 0x20,       # aux 0: not taken
+                0xa9, 0x05, 0x8d, 0x73, 0xc0,       # bank 5
+                0xa9, 0x22, 0x8d, 0x00, 0x40,       # off: nothing
+                0x9c, 0x35, 0xc0, 0x9c, 0x35, 0xc0,  # $00 twice
+                0xa9, 0x33, 0x8d, 0x00, 0x60,       # bank 5 taken: foreign
+                0x9c, 0x73, 0xc0,                   # bank 0
+                0xa9, 0x44, 0x8d, 0x00, 0x30,       # aux 0 taken
+                0x8d, 0x04, 0xc0,                   # RAMWRT off
+                0x8d, 0x30, 0xc0,                   # a lone speaker access
+                0xea,                               # (the check's PC)
+                0x4c, 0x34, 0x03]                   # JMP *
+        self.assertEqual(0x300 + len(code) - 3, 0x334)
+        lines = ['poke main 0 %04X %02X' % (0x300 + i, b)
+                 for i, b in enumerate(code)]
+        lines += ['reg pc=0300', 'run 40', 'state']
+        out = self.bus(lines, '--speed', 1, '--vidhd', 3, '--vidhd-check',
+                       '333,300')
+        v = self.state(out)['vidhd']
+        self.assertEqual((v['c035_writes'], v['speaker'], v['pairs'],
+                          v['unpaired'], v['pending']), (4, 5, 2, 0, 1))
+        self.assertEqual((v['fed'], v['foreign'], v['foreign_after'],
+                          v['unshadowed']), (2, 1, 1, 1))
+        self.assertEqual(v['foreign_notes'][0][:3], [0x322, 0x6000, 5])
+        self.assertEqual(v['unshadowed_notes'][0][:2], [0x30d, 0x2000])
+        # $0300 once, before anything differs; $0333 once: the stale
+        # $2000 and the foreign $6000
+        self.assertEqual(v['checks'], {'0333': [1, 1], '0300': [1, 0]})
+        self.assertEqual(v['mismatch_notes'][0][:4], [0x333, 0x2000, 0, 2])
+        self.assertEqual((v['differ_now'], v['mismatches']), (2, 1))
+        # a speaker access in a later instruction is not a pair
+        late = [0x8d, 0x30, 0xc0, 0xea, 0x8d, 0x30, 0xc0, 0x4c, 0x07, 0x03]
+        lines = ['poke main 0 %04X %02X' % (0x300 + i, b)
+                 for i, b in enumerate(late)]
+        lines += ['reg pc=0300', 'run 10', 'state']
+        v = self.state(self.bus(lines, '--vidhd', 3))['vidhd']
+        self.assertEqual((v['speaker'], v['pairs'], v['unpaired'],
+                          v['pending']), (2, 0, 1, 1))
+
+    def test_off_without_the_option(self):
+        state = self.state(self.bus(['write C035 00', 'state']))
+        self.assertNotIn('vidhd', state)
+
+
 STATUS = bytes([0, 3, 0, 0, 0, 0x80, 0, 0, 0, 0])
 MAIN, AUX = 0, 1
 

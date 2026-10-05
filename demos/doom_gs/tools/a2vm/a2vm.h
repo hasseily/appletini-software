@@ -202,6 +202,57 @@ typedef struct {
                                        wr nonzero */
 } a2vm_zpbank;
 
+/* --vidhd SLOT (README.md, "The VidHD"): a VidHD card as DOOM sees it on
+   a //e with RamWorks. Its slot ROM reads $24 $EA $4C at $Cn00-$Cn02
+   (AppleWin's VidHD.cpp IORead, GSSquared's vidhd.cpp); it keeps its own
+   copy of the SHR screen, fed by every CPU write that reaches aux memory
+   at $2000-$9FFF, whatever the $C073 bank (the card sees RAMWRT, 80STORE
+   and PAGE2 on the bus, not RamWorks' bank), gated by its copy of the
+   IIgs SHADOW register $C035 with the IIgs rules: $2000-$3FFF shadowed
+   when bit 3 is 0 or bits 1 and 4 are both 0, $4000-$5FFF the same with
+   bit 2, $6000-$9FFF when bit 3 is 0. Its counts: the writes it took from
+   a bank other than 0 (`foreign`: they corrupt its picture), aux 0's
+   writes it did not take (`unshadowed`: its picture goes stale), the
+   $C030-$C03F accesses (each one toggles a //e's speaker) and how many of
+   them came as back-to-back pairs (an access in the very next
+   instruction), and the checks at chosen PCs that its copy equals aux
+   bank 0's $2000-$9FFF. Off (slot 0) in every other run. */
+enum { A2VM_VIDHD_CHECKS = 64, A2VM_VIDHD_RECORDS = 8 };
+
+typedef struct {
+    uint16_t pc, address;
+    uint8_t bank;
+    uint32_t count;                 /* a check: the bytes that differ */
+    uint64_t clock;
+} a2vm_vidhd_note;
+
+typedef struct {
+    int slot;                       /* 1-7; 0: no VidHD */
+    uint8_t shadow;                 /* its copy of $C035 (0 at power-on) */
+    uint8_t *copy;                  /* 32 KB: its SHR, aux $2000-$9FFF */
+    uint64_t c035_writes, fed, foreign, unshadowed;
+    uint64_t foreign_after;         /* foreign writes after the first
+                                       $C035 write (a program's) */
+    a2vm_vidhd_note foreign_notes[A2VM_VIDHD_RECORDS];
+    a2vm_vidhd_note unshadowed_notes[A2VM_VIDHD_RECORDS];
+    /* the speaker: $C030-$C03F accesses */
+    uint64_t speaker, pairs, unpaired;
+    int pending;                    /* an access waiting for its pair */
+    uint64_t pending_instruction;
+    uint16_t pending_pc, pending_address;
+    a2vm_vidhd_note unpaired_notes[A2VM_VIDHD_RECORDS];
+    /* the checks: a bit a PC (8,192 bytes), the PCs and their counts */
+    uint8_t *check_map;
+    uint16_t check_pcs[A2VM_VIDHD_CHECKS];
+    uint64_t checks[A2VM_VIDHD_CHECKS], mismatches[A2VM_VIDHD_CHECKS];
+    unsigned check_count;
+    a2vm_vidhd_note mismatch_notes[A2VM_VIDHD_RECORDS];
+    uint64_t mismatch_total;
+    /* $C035 writes between two visits of the first check PC (a frame's,
+       when it is the kernel's K_END): a histogram, 31 and more last */
+    uint64_t c035_at_first, between[32];
+} a2vm_vidhd;
+
 /* The registers of the compatibility core (py65's MPU). P keeps bit 4 as
    py65 does: set by reset, PLP and RTI, cleared by an interrupt. */
 typedef struct {
@@ -241,6 +292,8 @@ typedef struct a2vm {
     const uint8_t *rpage[256];
     uint8_t *wpage[256];
     uint8_t wflag[256];
+    uint8_t vflag[256];             /* --vidhd: 1 for a page whose writes
+                                       reach aux $2000-$9FFF (any bank) */
 
     /* keyboard, game port, speaker */
     struct { uint64_t when; uint8_t key; } keys[A2VM_MAX_KEYS];
@@ -354,6 +407,10 @@ typedef struct a2vm {
        zpb.armed is 0 in every run without --zpbank or a pair profile
        (f121zp, fastzp): the machine is then F1.2.1's exactly. */
     a2vm_zpbank zpb;
+
+    /* --vidhd (README.md, "The VidHD"); vidhd.slot is 0 in every other
+       run, and the machine is then what it was. */
+    a2vm_vidhd vidhd;
 } a2vm;
 
 typedef struct {
@@ -373,6 +430,7 @@ typedef struct {
     int mouse_no_vbl;               /* that card's controller sees no VBL
                                        (GSSquared's at 33.3 MHz) */
     int amem;                       /* attach the memory API */
+    int vidhd_slot;                 /* a VidHD in this slot (1-7); 0 none */
 } a2vm_config;
 
 void a2vm_default_config(a2vm_config *config);
@@ -460,6 +518,14 @@ void a2vm_write_ea(a2vm *m, uint16_t address, uint8_t value);
    pair. The //e's own reset of the switches is not modelled (a2sim.py
    has none). */
 void a2vm_cpu_reset(a2vm *m);
+
+/* --vidhd-check: compare the VidHD's copy with aux bank 0's $2000-$9FFF
+   before each instruction at these PCs (at most A2VM_VIDHD_CHECKS); 0
+   when the machine has no VidHD or the list is too long. */
+int a2vm_vidhd_checks(a2vm *m, const uint16_t *pcs, unsigned count);
+/* The VidHD's check now, as at a check PC (pc the one noted): 1 when its
+   copy equals aux 0's $2000-$9FFF. */
+int a2vm_vidhd_check(a2vm *m, uint16_t pc);
 
 /* Where a storage byte is: its kind (A2VM_RANGE_MAIN ... LC1), bank
    and offset in that storage. 0 when `p` is not storage (the ROM). */

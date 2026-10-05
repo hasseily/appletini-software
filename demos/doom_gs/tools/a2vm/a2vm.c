@@ -1248,6 +1248,7 @@ void a2vm_remap(a2vm *m)
                              ? (page >= 0x20 ? 3 : 1) : 0;
         else
             m->wflag[page] = text || (page >= 0x20 && page < 0x60);
+        m->vflag[page] = (uint8_t)(write_aux && page >= 0x20 && page < 0xa0);
     }
     for (unsigned page = 0xc0; page < 0xd0; page++) {
         m->rpage[page] = NULL;
@@ -1430,10 +1431,149 @@ void a2vm_zpbank_reset(a2vm *m)
     m->zpb.address = m->zpb.rd = m->zpb.wr = 0;
 }
 
+/* ---- the VidHD (--vidhd; a2vm.h, README.md "The VidHD") ---- */
+
+static void vidhd_note(a2vm_vidhd_note *notes, uint64_t total, uint16_t pc,
+                       uint16_t address, uint8_t bank, uint32_t count,
+                       uint64_t clock)
+{
+    if (total > A2VM_VIDHD_RECORDS)
+        return;                     /* (total: this one included) */
+    a2vm_vidhd_note *n = &notes[total - 1];
+    n->pc = pc;
+    n->address = address;
+    n->bank = bank;
+    n->count = count;
+    n->clock = clock;
+}
+
+/* Does the SHADOW register's value `s` let a write of aux `address`
+   ($2000-$9FFF) into the copy? (the IIgs rules: bit 1 hi-res page 1,
+   bit 2 page 2, bit 3 SHR, bit 4 aux hi-res inhibited) */
+static int vidhd_shadowed(uint8_t s, uint16_t address)
+{
+    if (!(s & 0x08))
+        return 1;
+    if (address < 0x4000)
+        return !(s & 0x02) && !(s & 0x10);
+    if (address < 0x6000)
+        return !(s & 0x04) && !(s & 0x10);
+    return 0;
+}
+
+/* A CPU write that reaches aux $2000-$9FFF of the bank selected. */
+static void vidhd_write(a2vm *m, uint16_t address, uint8_t value)
+{
+    a2vm_vidhd *v = &m->vidhd;
+    if (vidhd_shadowed(v->shadow, address)) {
+        v->copy[address - 0x2000] = value;
+        v->fed++;
+        if (m->bank != 0) {
+            v->foreign++;
+            if (v->c035_writes)     /* (its notes then: a program's) */
+                v->foreign_after++;
+            vidhd_note(v->foreign_notes, v->c035_writes ? v->foreign_after
+                       : v->foreign, m->instruction_pc, address,
+                       (uint8_t)m->bank, 0, a2vm_now(m));
+        }
+    } else if (m->bank == 0) {
+        v->unshadowed++;
+        vidhd_note(v->unshadowed_notes, v->unshadowed, m->instruction_pc,
+                   address, 0, 0, a2vm_now(m));
+    }
+}
+
+/* An access of $C030-$C03F: a //e's speaker toggles. Two in a row (the
+   second in the very next instruction) leave it as it was within a few
+   cycles; any other is a click. */
+static void vidhd_speaker(a2vm *m, uint16_t address)
+{
+    a2vm_vidhd *v = &m->vidhd;
+    v->speaker++;
+    if (v->pending && m->instructions == v->pending_instruction + 1) {
+        v->pairs++;
+        v->pending = 0;
+        return;
+    }
+    if (v->pending) {
+        v->unpaired++;
+        vidhd_note(v->unpaired_notes, v->unpaired, v->pending_pc,
+                   v->pending_address, 0, 0, a2vm_now(m));
+    }
+    v->pending = 1;
+    v->pending_instruction = m->instructions;
+    v->pending_pc = m->instruction_pc;
+    v->pending_address = address;
+}
+
+static uint8_t vidhd_rom(unsigned offset)
+{
+    static const uint8_t id[3] = { 0x24, 0xea, 0x4c };
+    return offset < 3 ? id[offset] : 0x00;
+}
+
+int a2vm_vidhd_checks(a2vm *m, const uint16_t *pcs, unsigned count)
+{
+    a2vm_vidhd *v = &m->vidhd;
+    if (!v->slot || count > A2VM_VIDHD_CHECKS)
+        return 0;
+    if (!v->check_map) {
+        v->check_map = calloc(1, 8192);
+        if (!v->check_map)
+            return 0;
+    }
+    for (unsigned i = 0; i < count; i++) {
+        v->check_pcs[i] = pcs[i];
+        v->check_map[pcs[i] >> 3] |= (uint8_t)(1u << (pcs[i] & 7));
+    }
+    v->check_count = count;
+    return 1;
+}
+
+int a2vm_vidhd_check(a2vm *m, uint16_t pc)
+{
+    a2vm_vidhd *v = &m->vidhd;
+    const uint8_t *aux0 = m->aux_banks + 0x2000;
+    uint32_t differ = 0;
+    unsigned first = 0;
+    if (memcmp(v->copy, aux0, 0x8000))
+        for (unsigned i = 0x8000; i-- > 0;)
+            if (v->copy[i] != aux0[i]) {
+                differ++;
+                first = i;
+            }
+    if (v->check_count && pc == v->check_pcs[0]) {
+        uint64_t n = v->c035_writes - v->c035_at_first;
+        v->between[n < 31 ? n : 31]++;
+        v->c035_at_first = v->c035_writes;
+    }
+    for (unsigned i = 0; i < v->check_count; i++)
+        if (v->check_pcs[i] == pc) {
+            v->checks[i]++;
+            if (differ)
+                v->mismatches[i]++;
+        }
+    if (differ) {
+        v->mismatch_total++;
+        vidhd_note(v->mismatch_notes, v->mismatch_total, pc,
+                   (uint16_t)(0x2000 + first), 0, differ, a2vm_now(m));
+    }
+    return !differ;
+}
+
+static inline void vidhd_step_check(a2vm *m, uint16_t pc)
+{
+    if (m->vidhd.check_map &&
+        (m->vidhd.check_map[pc >> 3] & (1u << (pc & 7))))
+        a2vm_vidhd_check(m, pc);
+}
+
 static uint8_t io_read(a2vm *m, uint16_t address)
 {
     unsigned low = address & 0xff;
     m->io_accesses++;
+    if (m->vidhd.slot && (low & 0xf0) == 0x30)
+        vidhd_speaker(m, address);
     *m->clock += m->io_cycles;
     if (low == 0x00)
         return keyboard(m);
@@ -1478,6 +1618,13 @@ static void io_write(a2vm *m, uint16_t address, uint8_t value)
     unsigned low = address & 0xff;
     m->io_accesses++;
     *m->clock += m->io_cycles;
+    if (m->vidhd.slot && (low & 0xf0) == 0x30) {
+        vidhd_speaker(m, address);
+        if (low == 0x35) {
+            m->vidhd.shadow = value;
+            m->vidhd.c035_writes++;
+        }
+    }
     if (low <= 0x0f) {
         a2vm_switch s = (a2vm_switch)(low >> 1);
         m->sw[s] = low & 1;
@@ -1523,6 +1670,10 @@ static uint8_t slow_read(a2vm *m, uint16_t address)
             return (uint8_t)value;
     }
     int slot = (address >> 8) & 7;
+    if (m->vidhd.slot && slot == m->vidhd.slot && address < 0xc800 &&
+        !m->sw[SW_INTCXROM] && (slot != 3 || m->sw[SW_SLOTC3ROM]))
+        return vidhd_rom(address & 0xff);   /* (slot 3: the //e's own
+                                               ROM unless SLOTC3ROM) */
     if (!m->sw[SW_INTCXROM] && m->phasor_slot > 0 && slot == m->phasor_slot)
         return phasor_read(m, address);
     if (m->mouse_on && !m->sw[SW_INTCXROM] && address < 0xc800 &&
@@ -1675,6 +1826,8 @@ static inline void bus_write(a2vm *m, uint16_t address, uint8_t value,
     if (m->cost)
         a2vm_cost_write(m, address, value, page, kind);
     if (page) {
+        if (m->vidhd.slot && m->vflag[address >> 8])
+            vidhd_write(m, address, value);
         page[address & 0xff] = value;
         uint8_t flag = m->wflag[address >> 8];
         if (flag) {
@@ -2110,6 +2263,8 @@ void a2vm_step(a2vm *m)
         if (m->pc_hook && !m->r.waiting &&
             (m->pc_hook_map[pc >> 3] & (1u << (pc & 7))))
             m->pc_hook(m, pc);
+        if (!m->r.waiting)
+            vidhd_step_check(m, pc);
         if (m->cost && m->cost->timed && m->r.waiting)
             m->cost->t += m->cost->p.turbo_hit;     /* WAI takes time */
         int rti = (m->ay_log || m->irq_bound_count) && !m->r.waiting &&
@@ -2139,6 +2294,8 @@ void a2vm_step(a2vm *m)
     if (m->pc_hook && !taken && m->cpu.state == CPU65C02_RUNNING &&
         (m->pc_hook_map[pc >> 3] & (1u << (pc & 7))))
         m->pc_hook(m, pc);
+    if (!taken && m->cpu.state == CPU65C02_RUNNING)
+        vidhd_step_check(m, pc);
     if (m->prodos && m->cpu.state == CPU65C02_RUNNING &&
         !(irq && !(m->cpu.p & CPU65C02_I)) && native_mli(m))
         return;
@@ -2466,6 +2623,20 @@ a2vm *a2vm_new(const a2vm_config *config, char *error, size_t error_size)
     }
     m->phasor_slot = config->phasor_slot;
     m->mouse_slot = config->mouse_slot;
+    if (config->vidhd_slot) {
+        if (config->vidhd_slot < 1 || config->vidhd_slot > 7) {
+            snprintf(error, error_size, "the VidHD's slot must be 1..7");
+            a2vm_free(m);
+            return NULL;
+        }
+        m->vidhd.copy = calloc(1, 0x8000);
+        if (!m->vidhd.copy) {
+            snprintf(error, error_size, "out of memory");
+            a2vm_free(m);
+            return NULL;
+        }
+        m->vidhd.slot = config->vidhd_slot;
+    }
     m->amem_on = config->amem;
     amem_init(&m->amem);
     mouse_init(&m->mouse);
@@ -2531,5 +2702,7 @@ void a2vm_free(a2vm *m)
     prodos_free(m->prodos);
     free(m->aux_banks);
     free(m->amem.input);
+    free(m->vidhd.copy);
+    free(m->vidhd.check_map);
     free(m);
 }

@@ -409,6 +409,7 @@ rendered.
 | `--mouse-apple`, `--no-phasor` | Slot 2 an AppleMouse II ("The AppleMouse II", below; needs `--core w65c02s`); slot 4 empty |
 | `--mouse-rom FILE` | Slot 2 an AppleMouse II that runs Apple's ROM, FILE ("The AppleMouse II's ROM", below); it replaces the other slot-2 options |
 | `--mouse-no-vbl` | With `--mouse-rom`: the controller never sees a VBL, so mode `$09` never interrupts, as GSSquared's card at 33.3 MHz |
+| `--vidhd SLOT`, `--vidhd-check PCS` | A VidHD in SLOT ("The VidHD", below), and the PCs (hex, commas, at most 64) where its copy of the screen is compared with aux 0's |
 
 **Input events**, one a line, `WHEN ACTION`. `WHEN` is `start`,
 `boundary N` (after the Nth boundary's snapshot), `cycle N` (after the
@@ -522,6 +523,37 @@ changes. Both cores run it.
 the CPU's cycle count, and at 33.3 MHz the CPU count runs about 2.33
 times ahead, so the card's VBL is never re-scheduled after the first
 frame (DOOM GS's `docs/PLAY.md` 22).
+
+### The VidHD
+
+`--vidhd SLOT` (2026-10-05, for DOOM GS's `docs/PLAY.md` 22) puts in a
+slot (1-7, not the Phasor's, the mouse's or the memory API's) a VidHD as
+DOOM sees it on a //e with RamWorks: its slot ROM reads `$24 $EA $4C` at
+`$Cn00-$Cn02` and 0 after (AppleWin's `VidHD.cpp` `IORead`, GSSquared's
+`vidhd.cpp`; slot 3's only with SLOTC3ROM on, the //e's own ROM
+otherwise, with INTCXROM off), and it keeps its own 32 KB copy of the
+SHR screen. Every CPU write that reaches aux memory at `$2000-$9FFF`
+(RAMWRT, or 80STORE with PAGE2 and HIRES for `$2000-$3FFF`), whatever
+the RamWorks bank (the card sees the bus and the //e's switches, not
+`$C073`), goes into the copy when its copy of the IIgs SHADOW register
+`$C035` (0 at power-on, every write taken) lets it: `$2000-$3FFF` when
+bit 3 is 0 or bits 1 and 4 are both 0, `$4000-$5FFF` the same with bit
+2, `$6000-$9FFF` when bit 3 is 0. The final state's `vidhd` holds:
+`c035_writes`, `shadow`; `fed` (writes taken); `foreign` (taken from a
+bank other than 0: they corrupt the picture) and `foreign_after` (those
+after the first `$C035` write, a program's); `unshadowed` (aux 0's
+writes not taken: the picture goes stale); `speaker` (accesses of
+`$C030-$C03F`, each a //e speaker toggle), `pairs` (an access followed
+by another in the very next instruction: back to back, the speaker put
+back), `unpaired` and `pending` (one left at the end); with
+`--vidhd-check`, `checks` (each PC: its visits and those where the copy
+differed from aux 0's `$2000-$9FFF`), `mismatches`, `between` (a
+histogram of the `$C035` writes between two visits of the first PC,
+31 and more in the last), and `differ_now`; and the first eight of each
+kind as `[pc, address, bank, count, clock]` notes. A final snapshot also
+writes the copy as `vidhd.shr` (`shot.py`'s format). Without the option
+nothing of this exists and every run is what it was (the write path
+tests one more flag; the cost model's video-write flag is untouched).
 
 ### The AY log
 

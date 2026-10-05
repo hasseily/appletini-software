@@ -423,7 +423,20 @@ failures, each a check that assumed the old speed or layout (`SPEED.md`
      0's `$2000-$9FFF` (the pixels, the SCBs at `$9D00`, the 16 palettes
      at `$9E00`) as a IIgs shows bank `$E1` (a VidHD-style card), always
      bank 0's whatever `$C073` selects (the game pages other banks in
-     while the picture shows);
+     while the picture shows). **A VidHD** (since 2026-10-05, section 22)
+     does not: it keeps its own copy of the screen, fed by every write it
+     sees to aux `$2000-$9FFF`, whatever the RamWorks bank, and DOOM keeps
+     4 MB there in banks 1-126. It honours the IIgs SHADOW register
+     `$C035`, so with a VidHD in any slot but 4 (its slot ROM's ID bytes
+     `$24 $EA $4C` at `$Cn00-$Cn02`) and nothing of the Appletini's (no
+     memory API, no Appletini mouse card, no Appletini ROM in slot 7)
+     `DOOM.SYSTEM` says `VIDHD IN SLOT n: SHR SHADOW IN WINDOWS` on the
+     loading screen's eighth row, keeps the shadowing off (`$C035` =
+     `$18`) and turns it on (`$00`) only while the game writes the
+     screen; each value is written twice in a row, so the //e's speaker
+     (any `$C030-$C03F` access toggles it) is back before it can pop (the
+     owner's fix). The quit leaves `$C035` at `$00`. On your card none of
+     this runs and nothing of the game changes;
    - a Phasor in slot 4, in native mode, for the music and the effects
      (without native mode, or with a Mockingboard, the game says so and
      plays silent; with nothing in slot 4 too). Its two 6522s must be
@@ -1498,3 +1511,136 @@ from `515ec351`'s, from `$3038` (in `PLMOUSE`) on.
   decided once, at the boot.
 - `ap_wait` trusts `$C019` to change: a machine whose blanking flag
   never moves and whose mouse never interrupts would still wait.
+
+## 22. What changed: the VidHD (2026-10-05)
+
+For the owner, who saw DOOM's picture corrupted on a real //e with a
+VidHD and RamWorks: a VidHD keeps its own copy of the SHR screen, fed by
+every write it sees to aux `$2000-$9FFF` whatever the RamWorks bank (it
+follows RAMWRT, 80STORE and PAGE2 on the bus, not `$C073`), and DOOM keeps
+4 MB of data in aux `$2000-$9FFF` of banks 1-126. The VidHD always
+honours the IIgs SHADOW register `$C035` (John Brooks, via the owner).
+**With your card nothing changed**: the card's bytes and every image in
+RamWorks are the same, byte for byte (`LC.BIN` and all twelve bank files
+compared with the disk before); only `DOOM.SYSTEM` differs, and on the
+Appletini it reads no slot and never touches `$C035`; the benchmark reads
+6.519 FPS (551 frames, 2,958 realtics, `TIC 89.4 3D 18.0 MASK 11.6 DRAW
+31.3 REST 3.3`) on a2vm `f122-nod2`, as before.
+
+**What it does with a VidHD.** The shadowing stays off (`$C035` = `$18`:
+bit 3 the SHR; bit 4 the aux hi-res pages, which the IIgs rules would
+otherwise shadow from aux `$2000-$5FFF`) and comes on (`$00`) only while
+the game writes the screen with bank 0 selected, once a batch: the first
+screen window of a batch turns it on, the batch's end turns it off, and
+nothing toggles when the value is already right. Each value is written
+twice in a row, interrupts masked between the two: a //e's speaker
+toggles at any `$C030-$C03F` access, so the second write puts it back
+within a few cycles (the owner's fix for the pop). The quit leaves
+`$C035` at `$00`.
+
+**What was changed**
+
+1. **The detection** (`pl_boot.s`, a new segment `PLVIDHD` after
+   `PLMOUSE`: `DOOM.SYSTEM` now spans `$2000-$35FF`, 5.5 KB; `PLBOOT`,
+   `PLAMEM` and `PLMOUSE` keep every address). `bt_init`'s last jump goes
+   to `vh_boot`, which goes straight on to `pl_init` when the memory API
+   answered, when slot 2 is the Appletini's mouse card, or when slot 7's
+   ROM read as the Appletini's (`probe_amem` now keeps its answer in
+   `bt_amans`; `$FF` means not the Appletini's ROM). Otherwise it reads
+   `$Cn00-$Cn02` of slots 7 down to 1 (not 4: a Phasor's or
+   Mockingboard's 6522 has its registers there), each byte twice (an empty
+   slot reads the floating bus), slot 3 with SLOTC3ROM on (then as it
+   was), and releases the C8 space. The appletini-one firmware
+   (`d4d0499`) answers `$24 $EA $4C` nowhere: the old `vidhd_card.sv`
+   that did was removed by `7ea41d3` (F0.9.24), and its slot ROMs start
+   `A2 02`, `A9 20`, `A2 20`, `2C 58`; its `$C035` is only captured for the
+   renderer, which keeps showing aux bank 0. With a VidHD: the records of
+   `vh_patch` (below), then the shadowing on, aux 0's `$2000-$9FFF` copied
+   onto itself a page at a time (the VidHD's copy is then the screen
+   whatever it held), the shadowing off, and the loading screen's eighth
+   row `VIDHD IN SLOT 3: SHR SHADOW IN WINDOWS`.
+2. **The records** (`tools/native/vidhd.py`, written into `vh_patch`
+   (448 B, 352 used) by `playdisk.py`, which checks every place at each
+   build: the bytes each record replaces, each room free and zero in
+   `LC.BIN` and the bank files and in no link's segment or layout's
+   region; `MEMORY_MAP.md` 22 and rule 11):
+   - the card: `vh_go` (17 B in the kernel's padding before `KLISTS`,
+     `$FFA7-$FFB7`): A the value, compared with the last one written (its
+     own `CMP`'s operand); a new one written twice to `$C035` between
+     `PHP`, `SEI` and `PLP`; A, X and Y kept. `vh_kr` (8 B, `$E8F2`, the
+     channel block's unused tail): `STA DL_RES`, then the shadowing off;
+     `vh_wa` (9 B, `$FE70`, after the memory API's CPU version in
+     `AMEMCPUF`'s room): the shadowing on, then `STA RAMWRTON`;
+   - the kernel: `k_call`'s `STA DL_RES` a `JSR vh_kr`, so every step ends
+     with the shadowing off: the tic phase, the loads, the front end and
+     the masked phase (their far puts, record spills, the object API's
+     window, the CPU's copies) never write with it on;
+   - main `$0868` (13 B, after the benchmark's `bt_ext` in `BT_EXT`'s
+     room): `vh_sc`, the replay's group: the shadowing off, `nb_scatter`
+     (which parks the group's later batches in RECW `$8000-$BFFF`), the
+     shadowing on; `nb_frame`'s call of `nb_scatter` calls it, in MCODE's
+     `BKFAR` and in OVLW's copy;
+   - each screen window's `STA RAMWRTON` a `JSR vh_wa`: `s2_publish`,
+     `s2_begin`'s three and `s2_finish` in P2DW, MENUW, WIW and FINW;
+     AMAPW's `s2_publish` and `pubents`; OVLW's `titleband`; DLINIT's
+     `dli_screen` (24 windows);
+   - the shadowing off before the writes to other banks' aux
+     `$2000-$9FFF` that come after a screen window inside one step, from 8
+     bytes in the image's last loaded page past its code: P2DW's HUD record
+     (`record`'s `far_put` to `SS_HUDTXT`), MENUW's screen save (`mv_open`'s
+     call of `mv_amem`; MENUW stays in W through `K_MENU`, whose frames are
+     not K_CALLs), AMAPW's list (`am_frame`'s call of `listsave`,
+     `SS_AMOLD`), OVLW after its title band (its records then spill to
+     RECSP);
+   - the quit: `dli_quit` starts with `$00` written twice, `vh_go`'s last
+     value left at `$18`, so the kernel's hook after it writes nothing.
+3. **The tools**: a2vm `--vidhd SLOT` (its ID bytes, its own 32 KB SHR
+   copy fed by aux `$2000-$9FFF` writes of any bank and gated by its
+   `$C035` with the IIgs rules; the counts of foreign writes it took,
+   aux 0's writes it missed, `$C030-$C03F` accesses and their
+   back-to-back pairs; `vidhd.shr` at the final snapshot) and
+   `--vidhd-check PCS` (its copy against aux 0's `$2000-$9FFF` before each
+   instruction at those PCs; the `$C035` writes between two visits of the
+   first, a histogram); `playdisk.py --vidhd SLOT`; `tests/test_vidhd.py`
+   and four tests in `tests/test_a2vm_machine.py`.
+
+**How it was checked** (once each, a2vm `f122-nod2`, PAL: a //e with
+RamWorks, the Phasor, an AppleMouse II (`--mouse-apple`), no memory API,
+`--vidhd 3`; the copy checked at each frame's end (`k_end`), each K_CALL's
+return (`k_ret`, after the hook: every menu, picture and status-bar
+step) and each wait of the menu's loop (`dl_mwait`)):
+
+| Run | Checks (frame ends, K_CALL returns, menu waits) | Copy against aux 0 | Foreign writes after the boot, aux 0 writes missed | `$C035` writes | The rest |
+| --- | --- | --- | --- | --- | --- |
+| The BENCHMARK, 400 s | 581, 4,332, 14,010 | equal at every check | 0, 0 | 2,818: 1,409 pairs, none alone | 534 frames, 4.786 FPS, `TIC 137.0 3D 22.0 MASK 13.8 DRAW 31.4 REST 5.0`; between two frame ends 0 writes 46 times, 4 (one on/off) 387, 8 130, 12 17, 24 once |
+| The same without the VidHD (no records) | | | | | 534 frames, 4.787 FPS, the same rows; the timing's MASK sum 0.12% under the VidHD run's (the replay's toggles), the others within 0.07% |
+| The same, the disk before (`2a4d0dad`) | 582, 4,333, 14,011 | **differs at 534 frame ends and 4,283 K_CALL returns** (26,888 bytes at the first) | **4,969,708**, 0 | 0 | 534 frames, 4.787 FPS |
+| A tour, ended at the quit's halt at 65 s | 645, 2,059, 267 | equal at every check | 0, 0 | 2,482: 1,241 pairs, none alone; `$00` at the halt | a new game (E1M1's load, the busy sign), the menu open at 17 s, the full map at 23 s, the overlay at 26 s, a walk, `idclev`: the intermission at 44 s, SPACE twice: E1M2's load, at 60 s in E1M2; QUIT GAME, Y: `DOOM HAS ENDED` |
+| Your card's configuration (the API, the Appletini's mouse card) with a VidHD model in slot 3, 40 s | | its copy corrupt, as expected | | **0**, and no `$C030-$C03F` access | the gate: nothing of this runs on the Appletini |
+
+Then `playtime.py --scene bench --profile f122-nod2` with your card:
+6.519 FPS, as before; a2vm's tests that touch the changed code
+(`test_a2vm_machine`, `test_a2vm_harness`, `test_a2vm_pclog`,
+`test_a2vm_zpbank`, `test_a2vm`), `tests/test_m11_plboot.py` without its
+planted bugs (11 tests; its expected `BOOT` area is now `$1600` bytes),
+`tests/test_vidhd.py`, `tests/test_amcpu.py`, `tests/test_play_glue.py`:
+OK.
+
+**The disk**: `build/native/DOOM.hdv`, 4,031,488 bytes (512 more:
+`DOOM.SYSTEM`), SHA-1 `2c130cfa0c71d62faffd4a9c8d45558e98dd0299`; its
+other files are `2a4d0dad`'s, byte for byte.
+
+**Open problems**
+
+- Not run on a VidHD. The values (`$18` off, `$00` on), bit 4's effect
+  and the double write's silence come from the owner and John Brooks;
+  a2vm's model follows the IIgs rules and AppleWin's ID bytes (AppleWin
+  stores `$C035` and ignores it, so it cannot show the bug or the fix).
+- The VidHD's power-on `$C035` and what it does with the loading screen
+  are unknown: the boot writes its own values before it relies on them.
+- A //e reset or a crash stop (`pl_crash`, the BRK stops) leaves `$C035`
+  at `$18`: software started afterwards that expects the SHR shadowed
+  would show a stale picture until the next power cycle or a write of
+  `$00`.
+- The full suite (`tools/testpar.py`) was not run: the work's own checks
+  and the modules above were.
