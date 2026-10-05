@@ -8,8 +8,8 @@ It targets the native Phasor in **slot 4, firmware F1.2.4**, with four AY
 chips and both SSI-263s. A 65C02 is required.
 
 An unenhanced //e with its original 6502 cannot run this build. An original
-physical Phasor has not been validated: timing and vocal pitch have been
-checked against Appletini's F1.2.4 model. The same vocal is sent to both SSI-263s
+physical Phasor needs the separate physical profile described below: this
+default stream's vocal controls target Appletini's F1.2.4 model. The same vocal is sent to both SSI-263s
 without waiting for speech-chip replies, so one fitted SSI-263 should provide
 the complete vocal through its output; that configuration still needs a
 hardware audition. Two chips center the voice across both speech outputs.
@@ -37,6 +37,44 @@ framework and refuses any score whose rate is not 100 Hz or whose encoded
 size exceeds the demo's 34,816-byte buffer. `check.py` verifies the assembled
 SYS program, not a Python reimplementation of the player. Results are written
 to `build/validation.json`.
+
+## Physical Phasor test disk
+
+The first real Phasor recording exposed a mismatch between Appletini's
+provisional filter-frequency mapping and the SSI-263 datasheet. Use this
+separate build for a physical card; see the
+[diagnosis and remaining calibration work](../PHYSICAL_PHASOR.md).
+
+```sh
+make physical check-physical
+# Without make:
+python3 build_physical.py
+python3 check.py --physical
+```
+
+The output is `build/physical/RISING.SUN.hdv`, a standalone ProDOS block image
+for a bootable SmartPort-compatible device. It targets a **Phasor in slot 4**
+on an **enhanced //e with a 65C02 at normal 1 MHz** and starts in **PAL**.
+Both regional streams are included: **N** selects NTSC and **P** selects PAL;
+replay, stop and quit retain the controls above. The vocal is duplicated on
+both SSI sockets. A single fitted chip should provide the complete vocal from
+that chip's output, but still needs its own hardware test.
+
+This builder reads the current `../score.json` without regenerating it. Use
+`--score PATH` for another score, `CA65`/`LD65` for toolchain paths, or
+`--ssi-effective-clock-hz HZ` for a measured effective SSI clock (applied to
+both regional exports). Defaults are 1,015,625 Hz PAL / 1,020,484 Hz NTSC.
+The builder also creates `build/physical/RISING.SUN-Physical-SSI263.zip` with
+the disk, instructions, compiler reports and SHA-256 checksums.
+`build/physical/compile.json` records both profiles, clocks and theoretical
+quantization statistics; `validation.json` records assembled-player checks.
+No firmware render represents the corrected physical sound.
+
+The physical disk keeps the arrangement, amplitude controls and timing.
+Only speech pitch and filter mapping change; redundant register writes are
+removed after quantization. It leaves the Appletini disk and demo-disk variant
+unchanged. The same RAM preload and 100 Hz player are used, with no disk I/O
+during playback. Corrected real-hardware audio remains to be recorded.
 
 ## Appletini demo-disk variant
 

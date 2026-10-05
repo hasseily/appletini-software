@@ -10,7 +10,7 @@ import shutil
 import sys
 import time
 
-from .compiler import AY_CLOCKS, compile_score
+from .compiler import AY_CLOCKS, PROFILES, compile_score
 from .hardware import TARGET_SOURCE_COMMIT, firmware_info
 from .score import validate_score
 from .stream import decode, encode
@@ -34,10 +34,13 @@ def checked_firmware(path):
     return info
 
 
-def compile_files(score, out, clock, center=True, firmware=None):
-    firmware_metadata = checked_firmware(firmware) if firmware else {
-        "profile_commit": TARGET_SOURCE_COMMIT, "checkout_checked": False}
-    events, report = compile_score(score, clock=clock, center_voice=center)
+def compile_files(score, out, clock, center=True, firmware=None, *,
+                  profile="appletini-f1.2.4", ssi_effective_clock_hz=None):
+    events, report = compile_score(score, clock=clock, center_voice=center,
+                                   profile=profile, ssi_effective_clock_hz=ssi_effective_clock_hz)
+    if profile == "appletini-f1.2.4":
+        report["firmware"] = checked_firmware(firmware) if firmware else {
+            "profile_commit": TARGET_SOURCE_COMMIT, "checkout_checked": False}
     data = encode(events, score["tick_hz"], score["duration_ticks"])
     _, stream_info = decode(data)
     out = Path(out)
@@ -47,14 +50,13 @@ def compile_files(score, out, clock, center=True, firmware=None):
     save_json(out / "events.json", {"tick_hz": score["tick_hz"], "duration_ticks": score["duration_ticks"],
                                     "event_fields": ["tick", "target", "register", "value"], "events": events})
     report.update(stream_info)
-    report["firmware"] = firmware_metadata
     report["stream_sha256"] = hashlib.sha256(data).hexdigest()
     save_json(out / "report.json", report)
     return events, report
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Convert songs into vocal-first Appletini F1.2.4 Phasor streams")
+    parser = argparse.ArgumentParser(description="Convert songs into vocal-first Phasor streams")
     sub = parser.add_subparsers(dest="command", required=True)
     default_firmware = Path(__file__).resolve().parents[4] / "appletini-one"
 
@@ -68,6 +70,10 @@ def main(argv=None):
     def compile_options(p):
         p.add_argument("--clock", choices=("ntsc", "pal"), default="ntsc")
         p.add_argument("--no-center", action="store_true", help="keep a single vocal on its chosen SSI socket")
+        p.add_argument("--profile", choices=PROFILES, default="appletini-f1.2.4",
+                       help="SSI register equations: Appletini F1.2.4 model or physical SSI-263 datasheet")
+        p.add_argument("--ssi-effective-clock-hz", type=float,
+                       help="physical-ssi263 only: effective XCK after clock division; default regional AY clock / 2")
 
     def fit_options(p):
         p.add_argument("--filters", type=int, nargs="+", default=[96, 128, 160], help="FF values to compare in the model bank")
@@ -120,6 +126,12 @@ def main(argv=None):
     args = parser.parse_args(argv)
     started = time.perf_counter()
     try:
+        if hasattr(args, "profile"):
+            compile_kwargs = {"profile": args.profile,
+                              "ssi_effective_clock_hz": args.ssi_effective_clock_hz}
+            if args.profile == "physical-ssi263" and (
+                    args.command == "fit" or getattr(args, "fit", False) or getattr(args, "listen", False)):
+                raise ValueError("physical-ssi263 cannot use RTL fit/listen: the Appletini RTL is not a physical SSI-263 model")
         if args.command == "check-firmware":
             info = checked_firmware(args.firmware_root)
             print(json.dumps(info, indent=2))
@@ -128,9 +140,20 @@ def main(argv=None):
             info["register_writes"] = len(events)
             print(json.dumps(info, indent=2))
         elif args.command == "compile":
-            _, report = compile_files(read_json(args.score), args.out, args.clock, not args.no_center, args.firmware_root)
+            _, report = compile_files(read_json(args.score), args.out, args.clock, not args.no_center,
+                                      args.firmware_root, **compile_kwargs)
             print(json.dumps(report, indent=2))
         elif args.command == "render":
+            # PHS1 bytes do not identify their compiler profile. Preserve the
+            # adjacent report when sharing streams; a bare stream cannot be
+            # distinguished safely from Appletini register data.
+            report_path = args.stream.parent / "report.json"
+            if report_path.exists():
+                report = read_json(report_path)
+                if not isinstance(report, dict):
+                    raise ValueError(f"Invalid compilation report: {report_path}")
+                if report.get("profile") == "physical-ssi263":
+                    raise ValueError("Cannot render physical-ssi263 registers with the Appletini RTL; use a physical recording")
             events, info = decode(args.stream.read_bytes())
             if args.full:
                 from .full_render import render_full
@@ -161,7 +184,7 @@ def main(argv=None):
             score, fit_report = fit_score(read_json(args.score), args.vocals, args.firmware_root, args.cache,
                                           locked_phonemes=args.lock_phonemes, filters=tuple(args.filters),
                                           bank_pitch_hz=args.bank_pitch_hz)
-            compile_files(score, args.out, args.clock, not args.no_center, args.firmware_root)
+            compile_files(score, args.out, args.clock, not args.no_center, args.firmware_root, **compile_kwargs)
             save_json(args.out / "fit.json", fit_report)
             print(f"Fitted score and stream: {args.out}")
         else:
@@ -187,7 +210,7 @@ def main(argv=None):
                     save_json(args.out / "fit.json", fit_report)
                     save_json(args.out / "candidate.score.json", score)
                 events, report = compile_files(score, args.out, args.clock, not args.no_center,
-                                               args.firmware_root if args.fit or args.listen else None)
+                                               args.firmware_root if args.fit or args.listen else None, **compile_kwargs)
                 if args.listen:
                     from .rtl import render
                     from .compare import compare_audio, select_fit
@@ -198,14 +221,15 @@ def main(argv=None):
                     metrics = {"candidate": compare_audio(reference, candidate_path)}
                     if args.fit:
                         print("Rendering the baseline SSI vocal for the before/after comparison...", file=sys.stderr, flush=True)
-                        baseline, _ = compile_score(original, args.clock, not args.no_center)
+                        baseline, _ = compile_score(original, args.clock, not args.no_center, **compile_kwargs)
                         baseline_metadata = render(baseline, score["tick_hz"], score["duration_ticks"], args.firmware_root,
                                                    args.out / "baseline.rtl.wav", args.cache, xck_hz=AY_CLOCKS[args.clock])
                         metrics["baseline"] = compare_audio(reference, args.out / "baseline.rtl.wav")
                         metrics["selection"] = select_fit(metrics["baseline"], metrics["candidate"])
                         if metrics["selection"]["selected"] == "baseline":
                             score = original
-                            events, report = compile_files(score, args.out, args.clock, not args.no_center, args.firmware_root)
+                            events, report = compile_files(score, args.out, args.clock, not args.no_center,
+                                                           args.firmware_root, **compile_kwargs)
                             metadata = baseline_metadata
                             shutil.copyfile(args.out / "baseline.rtl.wav", args.out / "vocals.rtl.wav")
                         else:

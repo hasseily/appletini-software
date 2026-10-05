@@ -1,8 +1,8 @@
-"""Appletini F1.2.4 Phasor register and pitch contract.
+"""Appletini F1.2.4 and physical SSI-263 register and pitch contracts.
 
-The SSI voice uses the firmware's 20 kHz glottal counter. Its rounded period
-differs from the original chip's ideal XCK pitch equation; compile against the
-rendered period so vocals and AY accompaniment stay in tune.
+The Appletini profile uses the firmware's 20 kHz glottal counter. Its rounded
+period differs from the original chip's XCK pitch equation; each profile uses
+its own control law so vocals and AY accompaniment stay in tune.
 """
 
 from __future__ import annotations
@@ -127,6 +127,47 @@ def ssi_pitch(hz: float) -> tuple[int, float]:
     return _SSI_INFLECTIONS[best], _SSI_FREQUENCIES[best]
 
 
+def physical_ssi_pitch(hz: float, effective_clock_hz: float) -> tuple[int, float]:
+    """Nearest physical-chip inflection in cents, using the datasheet equation.
+
+    XCK is the effective clock after any external/divide-by-two selection.
+    f0 = XCK / (8 * (4096 - I)); no Appletini excitation model is assumed.
+    """
+    hz = _positive_finite(hz, "pitch")
+    clock = _positive_finite(effective_clock_hz, "effective SSI clock")
+    if hz <= clock / (8 * 4096):
+        return 0, clock / (8 * 4096)
+    if hz >= clock / 8:
+        return 4095, clock / 8
+    ideal = clock / (8 * hz)
+    candidates = {max(1, min(4096, math.floor(ideal))),
+                  max(1, min(4096, math.ceil(ideal)))}
+    period = min(candidates, key=lambda value: (
+        abs(math.log2(clock / (8 * value)) - math.log2(hz)), -value))
+    return 4096 - period, clock / (8 * period)
+
+
+def physical_ssi_filter(authored_filter: int, effective_clock_hz: float) -> tuple[int, float]:
+    """Map the score's normalized tract setting to a physical filter clock.
+
+    Authored f requests 20,000 * (128 + f) / 256 Hz. Choose the nearest
+    achievable XCK / (2 * (256 - FF)) in Hz. This preserves the intended
+    relative brightness; it is not a calibrated match of the two spectra.
+    """
+    authored_filter = _integer_in(authored_filter, 0, 255, "authored filter")
+    clock = _positive_finite(effective_clock_hz, "effective SSI clock")
+    desired = SSI_CONTROL_HZ * (128 + authored_filter) / 256
+    if desired <= clock / (2 * 256):
+        return 0, clock / (2 * 256)
+    if desired >= clock / 2:
+        return 255, clock / 2
+    ideal = clock / (2 * desired)
+    candidates = {max(1, min(256, math.floor(ideal))),
+                  max(1, min(256, math.ceil(ideal)))}
+    period = min(candidates, key=lambda value: (abs(clock / (2 * value) - desired), -value))
+    return 256 - period, clock / (2 * period)
+
+
 def pack_pitch(inflection: int, rate: int = 0) -> tuple[int, int]:
     """Return SSI INFLECT/RATEINF bytes without mixing rate into pitch."""
     inflection = _integer_in(inflection, 0, 4095, "inflection")
@@ -170,7 +211,7 @@ def fit_duration(seconds: float, clock_hz: int = NTSC_CPU_HZ) -> tuple[int, int,
     return min(candidates, key=lambda item: (abs(item[2] - seconds), item[0], item[1]))
 
 
-def ssi_initialize(chip: int) -> list[tuple[int, int, int]]:
+def ssi_initialize(chip: int, *, filter_byte: int = SSI_FILTER_NEUTRAL) -> list[tuple[int, int, int]]:
     """Set immediate inflection, then mask speech IRQs, ending muted/CTL low.
 
     Stream targets 4 and 5 are the left and right SSI sockets. Run this short
@@ -179,12 +220,13 @@ def ssi_initialize(chip: int) -> list[tuple[int, int, int]]:
     changing that mode, and live reg1/reg2/reg3 writes preserve the phone.
     """
     chip = _integer_in(chip, 0, 1, "SSI chip")
+    filter_byte = _integer_in(filter_byte, 0, 255, "SSI filter register")
     writes = (
         (3, 0x80),  # power down and mute before any mode setup
         (0, 0x80),  # mode 2: phoneme timing, immediate inflection, pause phone
         (1, 0x00),
         (2, 0x00),
-        (4, SSI_FILTER_NEUTRAL),  # neutral tract rate; power-on FF=0 is darker
+        (4, filter_byte),  # profile's neutral tract rate; power-on FF=0 is darker
         (3, 0x00),  # latch mode 2, start muted pause
         (3, 0x80),
         (0, 0x00),  # retain mode 2, disable its external IRQ

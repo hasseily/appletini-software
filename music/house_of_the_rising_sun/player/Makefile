@@ -7,7 +7,7 @@ COMPILER_SOURCES := $(wildcard ../../song_to_phasor/phasor/*.py)
 DOOM := ../../doom
 SCORE ?= ../score.json
 
-.PHONY: all showcase check check-showcase clean
+.PHONY: all showcase physical check check-showcase check-physical clean
 all: $(BUILD)/RISING.SUN.hdv
 
 $(BUILD)/demo.o: demo.s
@@ -39,6 +39,12 @@ showcase:
 
 check-showcase: showcase
 	$(PYTHON) check.py --showcase
+
+physical:
+	CA65="$(CA65)" LD65="$(LD65)" $(PYTHON) build_physical.py
+
+check-physical: physical
+	$(PYTHON) check.py --physical
 
 clean:
 	rm -rf $(BUILD)

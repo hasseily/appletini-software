@@ -1,4 +1,4 @@
-; ProDOS SYS entry, Appletini F1.2.4, Phasor native mode in slot 4.
+; ProDOS SYS entry, Appletini F1.2.4 or physical Phasor native mode in slot 4.
 ; The entire bounded song is loaded before the timer starts. Foreground
 ; polling leaves ProDOS's language-card image and vectors undisturbed.
         .setcpu "65C02"
@@ -27,6 +27,10 @@ IFR = $C48D
 IER = $C48E
 NTSC_LATCH = 10203          ; 1,020,484 / 100 rounded, minus 2
 PAL_LATCH = 10154           ; 1,015,625 / 100 rounded, minus 2
+        .ifndef DEFAULT_REGION
+DEFAULT_REGION = 0
+        .endif
+        .assert DEFAULT_REGION = 0 .or DEFAULT_REGION = 1, error, "region must be NTSC (0) or PAL (1)"
 
         .segment "ZEROPAGE"
 text_ptr: .res 2
@@ -56,7 +60,12 @@ start:
         sta $C054           ; page 1
         lda #1
         sta $C029           ; Appletini SHR off
+        .if DEFAULT_REGION
+        lda #1
+        sta region
+        .else
         stz region
+        .endif
         stz loaded
         stz error
         stz status
@@ -485,7 +494,11 @@ row_hi: .repeat 24, R
 hex: .byte "0123456789ABCDEF"
 s_title: .byte "HOUSE OF THE RISING SUN",0
 s_subtitle: .byte "A TRADITIONAL SONG FOR PHASOR",0
+        .ifdef PHYSICAL_SSI
+s_hardware: .byte "PHYSICAL PHASOR / SSI-263 / SLOT 4",0
+        .else
 s_hardware: .byte "APPLETINI F1.2.4 / NATIVE SLOT 4",0
+        .endif
         .ifdef SHOWCASE
 s_keys: .byte "R REPLAY   SPACE STOP   Q MENU",0
         .else

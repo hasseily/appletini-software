@@ -35,6 +35,44 @@ not a calibrated analog SSI-263 model; see the firmware's
 
 ## Install and try
 
+### Physical Phasor export
+
+The default `appletini-f1.2.4` profile preserves the firmware-targeted streams.
+For a physical Phasor with real SSI-263 chips, select a separate profile:
+
+```sh
+python3 -m phasor compile examples/phrase.json --out build/physical \
+  --profile physical-ssi263 --clock pal
+```
+
+This uses the datasheet pitch equation `XCK / (8 * (4096 - I))` and filter
+clock equation `XCK / (2 * (256 - FF))`. Effective XCK defaults to the regional
+bus clock: 1,015,625 Hz PAL or 1,020,484 Hz NTSC. A measured clock after any
+divider can be supplied with `--ssi-effective-clock-hz`. This is a Phasor
+clock assumption, supported by the first PAL recording, not automatic card
+detection. AY tuning still follows `--clock`.
+
+The score's `filter` field is a **normalized authoring value**, not a raw
+physical register byte. Its default 128 requests a nominal 20 kHz filter clock;
+other values request `20000 * (128 + filter) / 256` Hz. The physical compiler
+chooses the nearest realizable FF. For PAL, neutral becomes FF231, while this
+song's darker settings become FF229–230. Copying the Appletini bytes directly
+to the chip would instead make its vocal resonances dramatically too low.
+This mapping retains relative tract-rate intent; it is not a calibrated match
+between the analog chip and firmware spectra.
+
+`convert` also accepts the physical profile. RTL `fit` and `--listen` reject it:
+Appletini's provisional tract model cannot validate physical SSI audio. The
+CLI `render` command rejects streams whose adjacent `report.json` identifies
+this profile. **PHS1 itself contains no profile or clock identifier**; preserve
+the report and do not render a bare physical stream through Appletini RTL.
+Register equations and player tests establish correctness of the export, not
+the sound of the physical chip. Use a hardware recording for that comparison.
+
+See the [real-Phasor diagnosis and test disk](../house_of_the_rising_sun/PHYSICAL_PHASOR.md).
+
+### Appletini preview
+
 From this folder, Python 3.10+ can compile a score with only the standard library:
 
 ```sh
@@ -185,7 +223,7 @@ floating-point durations. See [`examples/phrase.json`](examples/phrase.json).
 | `voices[].frames[].tick` | Strictly increasing time; values hold until replaced |
 | `phoneme` | SSI code 0..63, **not** an SC-01 phone number |
 | `pitch_hz`, `amplitude` | Positive finite fundamental frequency; linear SSI amplitude 0..15 |
-| `filter`, `articulation` | Optional tract code 0..255 (default 128), articulation 0..7 (default 5) |
+| `filter`, `articulation` | Normalized tract code 0..255 (default 128; direct FF for Appletini, translated for physical SSI), articulation 0..7 (default 5) |
 | `rate`, `duration` | Optional SSI RATE 0..15 (default 8), DR 0..3 (default 0) |
 | `retrigger` | Explicitly restart a repeated phoneme for a new syllable; default false |
 | `notes[]` | `start_tick`, `end_tick`, fractional MIDI `midi`, `velocity` 0..15, `voice` 0..11 |
@@ -234,7 +272,7 @@ The PHS1 format is independent of the older Doom `.AY` format:
 - Same-tick records preserve order. At most 255 writes and 64 records may occur
   at one timestamp. The final timestamp equals the declared duration.
 
-The regional clock is in `report.json`, not in the PHS1 header. Keep the report
+The compiler profile and regional clock are in `report.json`, not in the PHS1 header. Keep the report
 with the stream and pass the same `--clock` when rendering; the playback caller
 must provide the header's tick rate using the regional VIA clock.
 
@@ -245,7 +283,7 @@ The generated report gives peak writes per tick; measure that burst on the
 target board, including the configured slot-access slowdown. There is no
 hardware realtime-performance claim from host conversion timings.
 
-SSI pitch is quantized by the firmware's `20,000 / floor((4096-I)*5/32)` counter
+With the default Appletini profile, SSI pitch is quantized by the firmware's `20,000 / floor((4096-I)*5/32)` counter
 (minimum period 1). The compiler searches its actual pitches, rather than the
 ideal analog equation. High singing notes have coarse pitch steps and a
 truncated glottal pulse; range representability does not imply useful timbre.

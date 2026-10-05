@@ -21,6 +21,13 @@ See the [player documentation](player/README.md) for memory layout and checks.
 
 ## Listen on a computer
 
+For a **physical Phasor**, use the separate
+[physical SSI-263 test disk](PHYSICAL_PHASOR.md). It corrects the filter-register
+and pitch mapping exposed by the first hardware recording. Build it with
+`make -C player physical check-physical`; `player/build/physical/RISING.SUN.hdv`
+starts in PAL and also includes NTSC. Its corrected sound still needs a hardware
+audition; the Appletini preview below does not simulate the real analog chip.
+
 `build/house-of-the-rising-sun.mp3` is the listening preview.
 `build/house-of-the-rising-sun.wav` preserves the unnormalized firmware-model
 mix; `build/vocals.wav` and `build/backing.wav` hold the separate stems.
