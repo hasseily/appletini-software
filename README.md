@@ -43,6 +43,13 @@ README at the commit that built it; the build directories themselves are not
 tracked. The Bilestoad image contains the converted upstream game, which has
 no licence: check its rights before you redistribute that image.
 
+## Music
+
+- [DOOM music](music/doom/README.md): thirteen songs on the Phasor's AY chips.
+- [Song to Phasor](music/song_to_phasor/README.md): a vocal-first song conversion
+  framework for F1.2.4, with SSI-263 pitch and phoneme control, firmware-rendered
+  audio comparisons, and a native Phasor stream player.
+
 ## Diagnostics and examples
 
 - [AUXSTRESS / AUXTOOLS](diagnostics/aux_memory/README.md): auxiliary-memory

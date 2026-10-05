@@ -1,0 +1,922 @@
+[
+  {
+    "start": 6.67,
+    "end": 6.74,
+    "phoneme": 53
+  },
+  {
+    "start": 6.74,
+    "end": 7.22,
+    "phoneme": 10
+  },
+  {
+    "start": 7.22,
+    "end": 7.27,
+    "phoneme": 29
+  },
+  {
+    "start": 7.27,
+    "end": 8.41,
+    "phoneme": 7
+  },
+  {
+    "start": 8.41,
+    "end": 8.48,
+    "phoneme": 47
+  },
+  {
+    "start": 8.48,
+    "end": 9.09,
+    "phoneme": 24
+  },
+  {
+    "start": 9.09,
+    "end": 9.16,
+    "phoneme": 44
+  },
+  {
+    "start": 9.16,
+    "end": 9.99,
+    "phoneme": 14
+  },
+  {
+    "start": 9.99,
+    "end": 10.23,
+    "phoneme": 22
+  },
+  {
+    "start": 10.23,
+    "end": 10.3,
+    "phoneme": 48
+  },
+  {
+    "start": 10.3,
+    "end": 10.86,
+    "phoneme": 7
+  },
+  {
+    "start": 10.86,
+    "end": 10.91,
+    "phoneme": 56
+  },
+  {
+    "start": 10.91,
+    "end": 10.96,
+    "phoneme": 56
+  },
+  {
+    "start": 10.96,
+    "end": 12.12,
+    "phoneme": 20
+  },
+  {
+    "start": 12.12,
+    "end": 12.68,
+    "phoneme": 16
+  },
+  {
+    "start": 12.68,
+    "end": 12.73,
+    "phoneme": 29
+  },
+  {
+    "start": 12.73,
+    "end": 12.78,
+    "phoneme": 32
+  },
+  {
+    "start": 12.78,
+    "end": 13.82,
+    "phoneme": 1
+  },
+  {
+    "start": 13.82,
+    "end": 13.87,
+    "phoneme": 56
+  },
+  {
+    "start": 13.87,
+    "end": 13.94,
+    "phoneme": 47
+  },
+  {
+    "start": 13.94,
+    "end": 14.01,
+    "phoneme": 53
+  },
+  {
+    "start": 14.01,
+    "end": 14.55,
+    "phoneme": 8
+  },
+  {
+    "start": 14.57,
+    "end": 14.62,
+    "phoneme": 41
+  },
+  {
+    "start": 14.62,
+    "end": 15.71,
+    "phoneme": 16
+  },
+  {
+    "start": 15.71,
+    "end": 15.76,
+    "phoneme": 34
+  },
+  {
+    "start": 15.76,
+    "end": 15.83,
+    "phoneme": 53
+  },
+  {
+    "start": 15.83,
+    "end": 16.36,
+    "phoneme": 24
+  },
+  {
+    "start": 16.36,
+    "end": 16.41,
+    "phoneme": 29
+  },
+  {
+    "start": 16.41,
+    "end": 17.32,
+    "phoneme": 14
+  },
+  {
+    "start": 17.32,
+    "end": 17.58,
+    "phoneme": 7
+  },
+  {
+    "start": 17.58,
+    "end": 17.65,
+    "phoneme": 47
+  },
+  {
+    "start": 17.65,
+    "end": 18.13,
+    "phoneme": 7
+  },
+  {
+    "start": 18.13,
+    "end": 18.18,
+    "phoneme": 57
+  },
+  {
+    "start": 18.2,
+    "end": 18.27,
+    "phoneme": 48
+  },
+  {
+    "start": 18.27,
+    "end": 20.48,
+    "phoneme": 25
+  },
+  {
+    "start": 20.48,
+    "end": 20.53,
+    "phoneme": 56
+  },
+  {
+    "start": 21.21,
+    "end": 21.7,
+    "phoneme": 7
+  },
+  {
+    "start": 21.7,
+    "end": 21.75,
+    "phoneme": 40
+  },
+  {
+    "start": 21.75,
+    "end": 21.82,
+    "phoneme": 48
+  },
+  {
+    "start": 21.82,
+    "end": 21.87,
+    "phoneme": 36
+  },
+  {
+    "start": 21.87,
+    "end": 22.98,
+    "phoneme": 7
+  },
+  {
+    "start": 22.98,
+    "end": 23.03,
+    "phoneme": 56
+  },
+  {
+    "start": 23.03,
+    "end": 23.1,
+    "phoneme": 53
+  },
+  {
+    "start": 23.1,
+    "end": 23.64,
+    "phoneme": 24
+  },
+  {
+    "start": 23.64,
+    "end": 23.69,
+    "phoneme": 29
+  },
+  {
+    "start": 23.69,
+    "end": 24.24,
+    "phoneme": 22
+  },
+  {
+    "start": 24.24,
+    "end": 24.8,
+    "phoneme": 7
+  },
+  {
+    "start": 24.8,
+    "end": 24.85,
+    "phoneme": 56
+  },
+  {
+    "start": 24.85,
+    "end": 25.4,
+    "phoneme": 24
+  },
+  {
+    "start": 25.4,
+    "end": 25.45,
+    "phoneme": 51
+  },
+  {
+    "start": 25.45,
+    "end": 25.5,
+    "phoneme": 55
+  },
+  {
+    "start": 25.5,
+    "end": 25.76,
+    "phoneme": 12
+  },
+  {
+    "start": 25.76,
+    "end": 25.81,
+    "phoneme": 56
+  },
+  {
+    "start": 25.81,
+    "end": 26.36,
+    "phoneme": 6
+  },
+  {
+    "start": 26.36,
+    "end": 26.67,
+    "phoneme": 24
+  },
+  {
+    "start": 26.67,
+    "end": 26.72,
+    "phoneme": 39
+  },
+  {
+    "start": 26.72,
+    "end": 27.22,
+    "phoneme": 17
+  },
+  {
+    "start": 27.22,
+    "end": 27.27,
+    "phoneme": 29
+  },
+  {
+    "start": 27.29,
+    "end": 27.34,
+    "phoneme": 38
+  },
+  {
+    "start": 27.34,
+    "end": 28.43,
+    "phoneme": 28
+  },
+  {
+    "start": 28.43,
+    "end": 28.48,
+    "phoneme": 34
+  },
+  {
+    "start": 28.48,
+    "end": 28.99,
+    "phoneme": 12
+  },
+  {
+    "start": 28.99,
+    "end": 29.04,
+    "phoneme": 56
+  },
+  {
+    "start": 29.04,
+    "end": 29.09,
+    "phoneme": 37
+  },
+  {
+    "start": 29.09,
+    "end": 29.14,
+    "phoneme": 55
+  },
+  {
+    "start": 29.14,
+    "end": 29.7,
+    "phoneme": 1
+  },
+  {
+    "start": 29.7,
+    "end": 30.3,
+    "phoneme": 18
+  },
+  {
+    "start": 30.3,
+    "end": 30.35,
+    "phoneme": 38
+  },
+  {
+    "start": 30.35,
+    "end": 30.86,
+    "phoneme": 14
+  },
+  {
+    "start": 30.86,
+    "end": 30.91,
+    "phoneme": 37
+  },
+  {
+    "start": 30.91,
+    "end": 30.98,
+    "phoneme": 52
+  },
+  {
+    "start": 30.98,
+    "end": 32.07,
+    "phoneme": 16
+  },
+  {
+    "start": 32.07,
+    "end": 32.12,
+    "phoneme": 29
+  },
+  {
+    "start": 32.14,
+    "end": 32.19,
+    "phoneme": 35
+  },
+  {
+    "start": 32.19,
+    "end": 35.63,
+    "phoneme": 25
+  },
+  {
+    "start": 35.63,
+    "end": 35.68,
+    "phoneme": 56
+  },
+  {
+    "start": 35.76,
+    "end": 35.81,
+    "phoneme": 38
+  },
+  {
+    "start": 35.81,
+    "end": 36.36,
+    "phoneme": 18
+  },
+  {
+    "start": 36.36,
+    "end": 36.41,
+    "phoneme": 40
+  },
+  {
+    "start": 36.41,
+    "end": 37.53,
+    "phoneme": 10
+  },
+  {
+    "start": 37.53,
+    "end": 37.58,
+    "phoneme": 34
+  },
+  {
+    "start": 37.58,
+    "end": 37.63,
+    "phoneme": 55
+  },
+  {
+    "start": 37.63,
+    "end": 38.06,
+    "phoneme": 14
+  },
+  {
+    "start": 38.06,
+    "end": 38.18,
+    "phoneme": 7
+  },
+  {
+    "start": 38.18,
+    "end": 38.23,
+    "phoneme": 36
+  },
+  {
+    "start": 38.23,
+    "end": 39.39,
+    "phoneme": 8
+  },
+  {
+    "start": 39.39,
+    "end": 40.0,
+    "phoneme": 6
+  },
+  {
+    "start": 40.0,
+    "end": 40.07,
+    "phoneme": 48
+  },
+  {
+    "start": 40.07,
+    "end": 41.14,
+    "phoneme": 7
+  },
+  {
+    "start": 41.14,
+    "end": 41.21,
+    "phoneme": 48
+  },
+  {
+    "start": 41.21,
+    "end": 41.26,
+    "phoneme": 40
+  },
+  {
+    "start": 41.26,
+    "end": 43.03,
+    "phoneme": 28
+  },
+  {
+    "start": 43.03,
+    "end": 43.08,
+    "phoneme": 56
+  },
+  {
+    "start": 43.08,
+    "end": 43.64,
+    "phoneme": 10
+  },
+  {
+    "start": 43.64,
+    "end": 43.69,
+    "phoneme": 51
+  },
+  {
+    "start": 43.69,
+    "end": 44.85,
+    "phoneme": 28
+  },
+  {
+    "start": 44.85,
+    "end": 44.9,
+    "phoneme": 37
+  },
+  {
+    "start": 44.9,
+    "end": 45.45,
+    "phoneme": 22
+  },
+  {
+    "start": 45.45,
+    "end": 45.5,
+    "phoneme": 32
+  },
+  {
+    "start": 45.5,
+    "end": 46.37,
+    "phoneme": 14
+  },
+  {
+    "start": 46.37,
+    "end": 46.62,
+    "phoneme": 7
+  },
+  {
+    "start": 46.62,
+    "end": 46.67,
+    "phoneme": 41
+  },
+  {
+    "start": 46.67,
+    "end": 47.14,
+    "phoneme": 14
+  },
+  {
+    "start": 47.14,
+    "end": 47.27,
+    "phoneme": 7
+  },
+  {
+    "start": 47.27,
+    "end": 47.34,
+    "phoneme": 44
+  },
+  {
+    "start": 47.34,
+    "end": 48.13,
+    "phoneme": 12
+  },
+  {
+    "start": 48.13,
+    "end": 48.18,
+    "phoneme": 51
+  },
+  {
+    "start": 48.2,
+    "end": 48.25,
+    "phoneme": 37
+  },
+  {
+    "start": 48.25,
+    "end": 49.57,
+    "phoneme": 25
+  },
+  {
+    "start": 49.57,
+    "end": 49.62,
+    "phoneme": 56
+  },
+  {
+    "start": 50.3,
+    "end": 50.35,
+    "phoneme": 40
+  },
+  {
+    "start": 50.35,
+    "end": 50.91,
+    "phoneme": 22
+  },
+  {
+    "start": 50.91,
+    "end": 50.98,
+    "phoneme": 50
+  },
+  {
+    "start": 50.98,
+    "end": 52.07,
+    "phoneme": 25
+  },
+  {
+    "start": 52.07,
+    "end": 52.12,
+    "phoneme": 56
+  },
+  {
+    "start": 52.12,
+    "end": 52.19,
+    "phoneme": 53
+  },
+  {
+    "start": 52.19,
+    "end": 52.68,
+    "phoneme": 12
+  },
+  {
+    "start": 52.68,
+    "end": 52.73,
+    "phoneme": 40
+  },
+  {
+    "start": 52.73,
+    "end": 52.8,
+    "phoneme": 44
+  },
+  {
+    "start": 52.8,
+    "end": 53.63,
+    "phoneme": 14
+  },
+  {
+    "start": 53.63,
+    "end": 53.87,
+    "phoneme": 22
+  },
+  {
+    "start": 53.87,
+    "end": 53.94,
+    "phoneme": 48
+  },
+  {
+    "start": 53.94,
+    "end": 54.5,
+    "phoneme": 7
+  },
+  {
+    "start": 54.5,
+    "end": 54.55,
+    "phoneme": 56
+  },
+  {
+    "start": 54.55,
+    "end": 54.6,
+    "phoneme": 56
+  },
+  {
+    "start": 54.6,
+    "end": 55.76,
+    "phoneme": 20
+  },
+  {
+    "start": 55.76,
+    "end": 56.31,
+    "phoneme": 16
+  },
+  {
+    "start": 56.31,
+    "end": 56.36,
+    "phoneme": 29
+  },
+  {
+    "start": 56.36,
+    "end": 56.41,
+    "phoneme": 32
+  },
+  {
+    "start": 56.41,
+    "end": 57.46,
+    "phoneme": 1
+  },
+  {
+    "start": 57.46,
+    "end": 57.51,
+    "phoneme": 56
+  },
+  {
+    "start": 57.51,
+    "end": 57.58,
+    "phoneme": 47
+  },
+  {
+    "start": 57.58,
+    "end": 57.65,
+    "phoneme": 53
+  },
+  {
+    "start": 57.65,
+    "end": 58.18,
+    "phoneme": 8
+  },
+  {
+    "start": 58.2,
+    "end": 58.25,
+    "phoneme": 41
+  },
+  {
+    "start": 58.25,
+    "end": 59.34,
+    "phoneme": 16
+  },
+  {
+    "start": 59.34,
+    "end": 59.39,
+    "phoneme": 34
+  },
+  {
+    "start": 59.39,
+    "end": 59.46,
+    "phoneme": 53
+  },
+  {
+    "start": 59.46,
+    "end": 60.0,
+    "phoneme": 24
+  },
+  {
+    "start": 60.0,
+    "end": 60.05,
+    "phoneme": 29
+  },
+  {
+    "start": 60.05,
+    "end": 60.95,
+    "phoneme": 14
+  },
+  {
+    "start": 60.95,
+    "end": 61.21,
+    "phoneme": 7
+  },
+  {
+    "start": 61.21,
+    "end": 61.28,
+    "phoneme": 47
+  },
+  {
+    "start": 61.28,
+    "end": 61.77,
+    "phoneme": 7
+  },
+  {
+    "start": 61.77,
+    "end": 61.82,
+    "phoneme": 57
+  },
+  {
+    "start": 61.84,
+    "end": 61.91,
+    "phoneme": 48
+  },
+  {
+    "start": 61.91,
+    "end": 64.72,
+    "phoneme": 25
+  },
+  {
+    "start": 64.72,
+    "end": 64.77,
+    "phoneme": 56
+  },
+  {
+    "start": 79.39,
+    "end": 79.46,
+    "phoneme": 53
+  },
+  {
+    "start": 79.46,
+    "end": 79.95,
+    "phoneme": 10
+  },
+  {
+    "start": 79.95,
+    "end": 80.0,
+    "phoneme": 29
+  },
+  {
+    "start": 80.0,
+    "end": 81.14,
+    "phoneme": 7
+  },
+  {
+    "start": 81.14,
+    "end": 81.21,
+    "phoneme": 47
+  },
+  {
+    "start": 81.21,
+    "end": 81.82,
+    "phoneme": 24
+  },
+  {
+    "start": 81.82,
+    "end": 81.89,
+    "phoneme": 44
+  },
+  {
+    "start": 81.89,
+    "end": 82.72,
+    "phoneme": 14
+  },
+  {
+    "start": 82.72,
+    "end": 82.96,
+    "phoneme": 22
+  },
+  {
+    "start": 82.96,
+    "end": 83.03,
+    "phoneme": 48
+  },
+  {
+    "start": 83.03,
+    "end": 83.59,
+    "phoneme": 7
+  },
+  {
+    "start": 83.59,
+    "end": 83.64,
+    "phoneme": 56
+  },
+  {
+    "start": 83.64,
+    "end": 83.69,
+    "phoneme": 56
+  },
+  {
+    "start": 83.69,
+    "end": 84.85,
+    "phoneme": 20
+  },
+  {
+    "start": 84.85,
+    "end": 85.4,
+    "phoneme": 16
+  },
+  {
+    "start": 85.4,
+    "end": 85.45,
+    "phoneme": 29
+  },
+  {
+    "start": 85.45,
+    "end": 85.5,
+    "phoneme": 32
+  },
+  {
+    "start": 85.5,
+    "end": 86.55,
+    "phoneme": 1
+  },
+  {
+    "start": 86.55,
+    "end": 86.6,
+    "phoneme": 56
+  },
+  {
+    "start": 86.6,
+    "end": 86.67,
+    "phoneme": 47
+  },
+  {
+    "start": 86.67,
+    "end": 86.74,
+    "phoneme": 53
+  },
+  {
+    "start": 86.74,
+    "end": 87.27,
+    "phoneme": 8
+  },
+  {
+    "start": 87.29,
+    "end": 87.34,
+    "phoneme": 41
+  },
+  {
+    "start": 87.34,
+    "end": 88.43,
+    "phoneme": 16
+  },
+  {
+    "start": 88.43,
+    "end": 88.48,
+    "phoneme": 34
+  },
+  {
+    "start": 88.48,
+    "end": 88.55,
+    "phoneme": 53
+  },
+  {
+    "start": 88.55,
+    "end": 89.09,
+    "phoneme": 24
+  },
+  {
+    "start": 89.09,
+    "end": 89.14,
+    "phoneme": 29
+  },
+  {
+    "start": 89.14,
+    "end": 90.04,
+    "phoneme": 14
+  },
+  {
+    "start": 90.04,
+    "end": 90.3,
+    "phoneme": 7
+  },
+  {
+    "start": 90.3,
+    "end": 90.37,
+    "phoneme": 47
+  },
+  {
+    "start": 90.37,
+    "end": 90.86,
+    "phoneme": 7
+  },
+  {
+    "start": 90.86,
+    "end": 90.91,
+    "phoneme": 57
+  },
+  {
+    "start": 90.93,
+    "end": 91.0,
+    "phoneme": 48
+  },
+  {
+    "start": 91.0,
+    "end": 93.2,
+    "phoneme": 25
+  },
+  {
+    "start": 93.2,
+    "end": 93.25,
+    "phoneme": 56
+  }
+]

@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "appletini-song-to-phasor"
+version = "0.1.0"
+description = "Vocal-first audio analysis, SSI-263 fitting and native Phasor compilation"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+audio = ["numpy>=1.24", "scipy>=1.10"]
+
+[project.scripts]
+song-to-phasor = "phasor.cli:main"
+
+[tool.setuptools]
+packages = ["phasor"]
