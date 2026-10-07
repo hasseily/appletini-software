@@ -37,6 +37,7 @@ altered.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shutil
@@ -44,6 +45,7 @@ import struct
 import subprocess
 import sys
 import time
+import zipfile
 from pathlib import Path
 
 
@@ -56,6 +58,13 @@ WEB_BUILD_SCRIPT = "build.bat" if os.name == "nt" else "build.sh"
 WEB_APP = WEB_DIR / "build" / "A2WEBSRV.SYSTEM"
 BROWSER_APP = WEB_DIR / "build" / "A2BROWSE.SYSTEM"
 IMG_APP = WEB_DIR / "build" / "A2IMG.SYSTEM"
+MUSIC_DIR = REPO.parents[1] / "music" / "house_of_the_rising_sun"
+MUSIC_PLAYER = MUSIC_DIR / "player"
+MUSIC_FILES = {
+    "MUSIC/SUN.SYSTEM": MUSIC_PLAYER / "build" / "showcase" / "SUN.SYSTEM",
+    "MUSIC/SUN.NTSC": MUSIC_PLAYER / "build" / "SUN.NTSC",
+    "MUSIC/SUN.PAL": MUSIC_PLAYER / "build" / "SUN.PAL",
+}
 AD8088_BASE = ASSETS / "AD8088 MSDOS.hdv"
 AD8088_RETURN_SRC = SOFTWARE / "ad8088_demo_return.a65"
 AD8088_RETURN_APP = BUILD / "ad8088_demo_return.bin"
@@ -82,6 +91,7 @@ VIEWER_SRC = SOFTWARE / "a2imgview.a65"
 VIEWER_DEMO_SRC = BUILD / "a2imgview_demo.a65"
 VIEWER_DEMO_APP = BUILD / "a2imgview_demo.bin"
 OUTPUT = BUILD / "Appletini_Demos.po"
+ZIP_OUTPUT = BUILD / "Appletini_Demos.zip"
 TEMP_OUTPUT = BUILD / "Appletini_Demos.tmp.po"
 
 AC_JAR = Path(os.environ.get(
@@ -103,6 +113,7 @@ STARTUP = """10 PRINT CHR$(4)"BRUN LAUNCHER"
 115 IF S = 9 THEN PRINT CHR$(4)"-A2IMG.SYSTEM"
 117 IF S = 10 THEN PRINT CHR$(4)"BRUN MSDOS.BRIDGE,A2048"
 118 IF S = 11 THEN PRINT CHR$(4)"BRUN TEXTOVERLAY"
+119 IF S = 12 THEN PRINT CHR$(4)"-MUSIC/SUN.SYSTEM"
 120 GOTO 10
 200 PRINT CHR$(4)"BLOAD SSDEMO"
 210 HOME : PRINT "ENABLE SUPERSPRITE IN CONFIG MENU"
@@ -392,13 +403,54 @@ def build_assembly_programs() -> None:
             "copies $2000-$27FF (2048 bytes)")
 
 
+def build_music_player() -> None:
+    """Build the shared score and the player variant that returns to this menu."""
+    subprocess.run([sys.executable, str(MUSIC_PLAYER / "build_showcase.py")],
+                   cwd=MUSIC_PLAYER, check=True)
+    missing = [str(path) for path in MUSIC_FILES.values() if not path.is_file()]
+    if missing:
+        raise RuntimeError("Music build did not create: " + ", ".join(missing))
+
+
+def package_disk(image: Path = OUTPUT, output: Path = ZIP_OUTPUT) -> None:
+    """Keep the verified 32 MB image intact inside the repository download."""
+    data = image.read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
+    temporary = output.with_suffix(".tmp.zip")
+    readme = (
+        "APPLETINI DEMOS\n\n"
+        "Extract Appletini_Demos.po and boot it from an Appletini SmartPort drive.\n"
+        "Select M: MUSIC - HOUSE OF THE RISING SUN, then press Return.\n"
+        "Music requires a 65C02, Appletini One F1.2.4 and native Phasor in slot 4.\n"
+        "P=PAL, N=NTSC, R=replay, Space=stop, Q/Escape=return to the menu.\n"
+        "Both regional songs preload into RAM; playback has no disk reads.\n\n"
+        "The image passed software checks; physical Appletini playback and\n"
+        "a complete ROM/BASIC boot have not been tested.\n"
+    )
+    try:
+        with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED,
+                             compresslevel=9) as archive:
+            archive.writestr("Appletini_Demos.po", data)
+            archive.writestr("README.txt", readme)
+            archive.writestr("SHA256SUMS.txt", digest + "  Appletini_Demos.po\n")
+        with zipfile.ZipFile(temporary) as archive:
+            if (archive.testzip() is not None or
+                    hashlib.sha256(archive.read("Appletini_Demos.po")).hexdigest() != digest):
+                raise RuntimeError("Compressed demo disk does not match the built image")
+        os.replace(temporary, output)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
 def main() -> int:
     required = [AC_JAR, AD8088_BASE, AD8088_RETURN_SRC,
                 SSDEMO_DISK, BORDER_SRC,
                 TEXT_OVERLAY_SRC,
                 MANDELBROT_SRC, WAVE_BASIC_SRC, WAVE_CODE_SRC,
                 LAUNCHER_SRC, SPEEDRACE_SRC, RASTER_SRC, GEN_ASSETS,
-                VIEWER_SRC, WEB_DIR / WEB_BUILD_SCRIPT]
+                VIEWER_SRC, WEB_DIR / WEB_BUILD_SCRIPT,
+                MUSIC_PLAYER / "build_showcase.py"]
     required += [source_path(d, s) for _, _, d, s, _, _, _ in IMAGE_FILES]
     missing = [str(path) for path in required if not path.is_file()]
     if shutil.which("java") is None:
@@ -418,6 +470,7 @@ def main() -> int:
             check_legacy_paged(src, data, fmt)
 
     build_assembly_programs()
+    build_music_player()
 
     if os.name == "nt":
         comspec = os.environ.get("COMSPEC", "cmd.exe")
@@ -449,6 +502,11 @@ def main() -> int:
 
     TEMP_OUTPUT.unlink(missing_ok=True)
     try:
+        # The music player's checked return loader expects this bundled
+        # BASIC.SYSTEM size before restoring STARTUP and the menu.
+        basic = ac("-g", str(AD8088_BASE), "BASIC.SYSTEM", capture=True)
+        if len(basic) != 0x2800:
+            raise RuntimeError("BASIC.SYSTEM size changed; update the music return loader")
         # Reboot Camp supplies a complete 32 MB ProDOS disk. It already has
         # PRODOS, BASIC.SYSTEM, the AD8088 bridge, and the DOS disk image.
         # Keep its MSDOS volume name because the bridge uses absolute paths.
@@ -507,6 +565,13 @@ def main() -> int:
         ac("-p", str(TEMP_OUTPUT), "TEXTOVERLAY", "BIN", "0x2000",
            stdin=TEXT_OVERLAY_APP.read_bytes())
 
+        # This SYS variant reads absolute /MSDOS/MUSIC paths and reloads
+        # BASIC.SYSTEM on exit so STARTUP returns to the HGR launcher.
+        for name, path in MUSIC_FILES.items():
+            kind, address = ("SYS", "0x2000") if name.endswith(".SYSTEM") else ("BIN", "0x0000")
+            ac("-p", str(TEMP_OUTPUT), name, kind, address,
+               stdin=path.read_bytes())
+
         # New Image Modes: the viewer SYS (dash-launched by type, so the
         # name needs no .SYSTEM suffix and boot order stays
         # STARTUP-first) plus the per-format image folders.
@@ -529,6 +594,7 @@ def main() -> int:
                      "BORDERDEMO", "LAUNCHER", "SPEEDRACE",
                      "RASTERDEMO", "TEXTOVERLAY", "A2IMGVIEW", "MSDOS.BRIDGE",
                      "MSDOS.HDD", "IO.SYS", "MSDOS.SYS",
+                     "SUN.SYSTEM", "SUN.NTSC", "SUN.PAL",
                      *(disk_name for _, disk_name, _, _, _, _, _
                        in IMAGE_FILES)):
             if name not in catalog:
@@ -539,13 +605,18 @@ def main() -> int:
             raise RuntimeError("AD8088 demo AUTOEXEC verification failed")
         if not read_fat12_root_file(built_hdd, b"HGRCUBE COM"):
             raise RuntimeError("AD8088 demo is missing HGRCUBE.COM")
+        for name, path in MUSIC_FILES.items():
+            if ac("-g", str(TEMP_OUTPUT), name, capture=True) != path.read_bytes():
+                raise RuntimeError(f"Music payload verification failed: {name}")
 
         os.replace(TEMP_OUTPUT, OUTPUT)
     except BaseException:
         TEMP_OUTPUT.unlink(missing_ok=True)
         raise
 
-    print(f"\nBuilt {OUTPUT} ({OUTPUT.stat().st_size} bytes)\n")
+    package_disk()
+    print(f"\nBuilt {OUTPUT} ({OUTPUT.stat().st_size} bytes)")
+    print(f"Packaged {ZIP_OUTPUT} ({ZIP_OUTPUT.stat().st_size} bytes)\n")
     print(catalog.replace(str(TEMP_OUTPUT), str(OUTPUT)))
     return 0
 

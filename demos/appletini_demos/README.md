@@ -1,14 +1,25 @@
 # Appletini Demos
 
-[Appletini_Demos.po](Appletini_Demos.po) is the bootable 32 MB
-ProDOS showcase disk, moved with its sources from `appletini-one/software`. Mount it on an
+[Appletini_Demos.zip](Appletini_Demos.zip) contains the bootable 32 MB
+ProDOS showcase disk, moved with its sources from `appletini-one/software`.
+Extract `Appletini_Demos.po`, then mount it on an
 Appletini SmartPort drive and boot it to enter the HGR launcher.
 
 The menu includes New Image Modes, Speed Race, raster bars, Mandelbrot,
 wave animation, SuperSprite, the network browser/server/image viewer,
-the AD8088 MS-DOS HGR cube, and Linear Text Overlay. Enable the relevant
+the AD8088 MS-DOS HGR cube, Linear Text Overlay, and
+**M: MUSIC - HOUSE OF THE RISING SUN**. Enable the relevant
 virtual cards in Appletini's configuration. The launcher probes for
 Appletini; a generic Apple II emulator does not supply all these features.
+
+Select **M** (or **m**) and press Return for the 102-second Phasor arrangement.
+Enable native Phasor in slot 4 on Appletini firmware F1.2.4; the music player
+requires a 65C02. It uses four AY chips and both SSI-263s for centered singing.
+NTSC starts automatically; **P** selects PAL, **N** selects NTSC, **R** replays,
+and **Space** stops. **Q** or **Escape** returns to this demo menu.
+The player and both regional song streams live in `/MSDOS/MUSIC`. Each
+28,333-byte song loads into RAM before playback, with no disk reads while
+playing. [Music source and listening preview](../../music/house_of_the_rising_sun/README.md).
 
 The menu no longer animates the HDMI border. That animation repeatedly
 accessed `$C034`, which also toggles the Apple //e speaker, causing a whine
@@ -31,20 +42,27 @@ python demos/appletini_demos/tools/test_appletini_webserver.py
 ```
 
 The builder requires Python 3.10+, Java, AppleCommander, ACME, and cc65's
-`cl65` on PATH. Set `APPLECOMMANDER` to the AppleCommander jar, `ACME_EXE`
+`cl65`, `ca65`, and `ld65` on PATH. Set `APPLECOMMANDER` to the AppleCommander jar, `ACME_EXE`
 to ACME, and `ACME` to its library directory when using other tool locations.
 The bundled network library and its licenses are in
 [appletini_webserver/ip65](appletini_webserver/ip65); see the
 [network app README](appletini_webserver/README.md) for runtime details.
-Install `py65` for the tests that execute assembled viewer code.
+Install `py65` for the tests that execute assembled viewer and launcher code.
+`CA65` and `LD65` can select the music assembler and linker explicitly. The
+builder regenerates the shared musical score and compiles both regional
+streams; it does not render audio or require Verilator.
 
-The fresh image is written to `build/Appletini_Demos.po`; the tracked disk
-beside this README includes the silent-menu fix. A rebuild from this checkout
-matches the tracked disk file for file, except that the three network apps
+The builder writes `build/Appletini_Demos.po` and packages that exact image in
+`build/Appletini_Demos.zip`. The tracked ZIP beside this README includes the
+silent-menu fix and the music player. It includes a SHA-256 checksum of the
+uncompressed image. ZIP packaging keeps the repository download around 6 MB.
+A rebuild from this checkout matches the disk file for file, except that the three network apps
 change by a few bytes with the cc65 snapshot used. Generated assembly, binaries, and
 logs also stay in `build/`. Network build output stays in
 `appletini_webserver/build/`. From this directory, the equivalent Make
 targets are `disk`, `verify`, and `verify-build`.
+The verification script accepts either the ZIP or an extracted `.po` image;
+by default it checks the tracked ZIP.
 
 The disk build needs no firmware checkout. Tests use a pinned SmartPort ROM
 fixture to check the launcher's detection bytes. Set `APPLETINI_ROOT` to an

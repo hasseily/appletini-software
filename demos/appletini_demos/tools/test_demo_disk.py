@@ -7,16 +7,18 @@ address. Does not require java/AppleCommander or the web toolchain.
 
 By default the launcher fingerprint is checked against the pinned ROM fixture.
 Set APPLETINI_ROOT to also check a firmware checkout's current SmartPort ROM.
-Use --disk to verify a rebuilt image instead of the tracked demo disk.
+Use --disk to verify a rebuilt ZIP or PO instead of the tracked demo ZIP.
 """
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +26,8 @@ SOFTWARE = ROOT
 BUILD = ROOT / "build"
 SCRIPT_ROOT = ROOT / "tools"
 ROM_NAME = "smartport_a2retronet_style_c700.mem"
+DISK_NAME = "Appletini_Demos.po"
+DISK_SIZE = 33554432
 ACME_EXE = os.environ.get("ACME_EXE", r"C:\Users\hasse\tools\acme\acme.exe")
 ACME_LIB = os.environ.get("ACME", r"C:\Users\hasse\tools\acme\ACME_Lib")
 AC_JAR = Path(os.environ.get(
@@ -59,6 +63,7 @@ def static_checks() -> None:
                   'BRUN MSDOS.BRIDGE,A2048',
                   'BRUN TEXTOVERLAY',
                   '40 IF S = 1 THEN PRINT CHR$(4)"-A2IMGVIEW"',
+                  '119 IF S = 12 THEN PRINT CHR$(4)"-MUSIC/SUN.SYSTEM"',
                   'PEEK(768)', '120 GOTO 10'):
         require(token in build, f"STARTUP must contain {token!r}")
     require('IMPOSSIBLE' not in build,
@@ -77,7 +82,8 @@ def static_checks() -> None:
                   'check_conformance', 'check_legacy_paged',
                   'AD8088_BASE', 'replace_fat12_root_file',
                   'b"AUTOEXECBAT"', 'b"HGRCUBE COM"',
-                  'add_ad8088_demo_return', 'AD8088_RETURN_SRC'):
+                  'add_ad8088_demo_return', 'AD8088_RETURN_SRC',
+                  'MUSIC_FILES', 'build_music_player'):
         require(token in build, f"disk build must wire {token!r}")
 
     # The Reboot Camp base already has BASIC.SYSTEM first. Add the viewer
@@ -90,14 +96,16 @@ def static_checks() -> None:
     require('item0: !text "1  New Image Modes"' in launcher and
             "Impossible" not in launcher,
             "launcher item 1 must be New Image Modes, Impossible gone")
-    require("ITEMS      = 11" in launcher and
+    require("ITEMS      = 12" in launcher and
             'item9: !text "0  AD8088 MS-DOS HGR Cube"' in launcher and
             'item10: !text "T  Linear Text Overlay"' in launcher and
+            'item11: !text "M: MUSIC - HOUSE OF THE RISING SUN"' in launcher and
             "select_ad8088:" in launcher and
-            "select_text_overlay:" in launcher,
-            "launcher must expose the AD8088 and text-overlay demos")
-    require("DESC_BAND  = 18" in launcher,
-            "launcher help must leave a blank row after item 0")
+            "select_text_overlay:" in launcher and
+            "select_music:" in launcher,
+            "launcher must expose the AD8088, text-overlay, and music demos")
+    require("FIRST_BAND = 6" in launcher and "DESC_BAND  = 19" in launcher,
+            "launcher help must leave blank band 18 after its twelve items")
 
     for token in ('* = $2000', 'signature: !text "LINTXT"',
                   'lda #CMD_ARM', 'lda #CMD_SHOW', 'lda #CMD_OFF',
@@ -478,8 +486,9 @@ def assembled_launcher_checks(binary: Path, symbol_list: Path) -> None:
 
         keys = [(0x0B, 0), (0x15, 1), (0x08, 0), (0x0A, 1)]
         keys += [(ord(str(index + 1)), index) for index in range(9)]
-        keys += [(ord("0"), 9), (ord("T"), 10), (0x0A, 10),
-                 (0x0B, 9), (ord("t"), 10), (ord(":"), 10)]
+        keys += [(ord("0"), 9), (ord("T"), 10), (0x0A, 11),
+                 (0x0A, 11), (0x15, 11), (0x0B, 10), (ord("t"), 10),
+                 (ord("m"), 11), (0x08, 10), (ord("M"), 11), (ord(":"), 11)]
         for key, selected in keys:
             memory.key = key | 0x80
             mpu.step()
@@ -487,10 +496,22 @@ def assembled_launcher_checks(binary: Path, symbol_list: Path) -> None:
             require(memory.data[symbols["selected"]] == selected and memory.key == 0,
                     f"launcher mishandled key ${key:02X}")
 
-        memory.key = 0x8D  # Return launches selected item 10 via STARTUP value 11.
+        memory.key = 0x8D  # Music is item 11, handed to STARTUP as selection 12.
+        run_to(return_pc)
+        require(memory.data[0x0300] == 12 and memory.text,
+                "launcher Return must hand off music selection 12 in text mode")
+
+        # Adding Music must leave the preceding text-overlay handoff unchanged.
+        mpu.pc = symbols["start"]
+        mpu.stPushWord(return_pc - 1)
+        run_to(symbols["main_loop"])
+        memory.key = ord("T") | 0x80
+        mpu.step()
+        run_to(symbols["main_loop"])
+        memory.key = 0x8D
         run_to(return_pc)
         require(memory.data[0x0300] == 11 and memory.text,
-                "launcher Return must hand off selection 11 in text mode")
+                "launcher must preserve text-overlay selection 11")
 
         # Re-enter as BASIC.SYSTEM would, then exercise Escape independently.
         mpu.pc = symbols["start"]
@@ -699,10 +720,82 @@ def assembly_checks(disk: Path) -> None:
                 print(f"PASS {disk} contains tested {disk_name}")
 
 
+def music_disk_checks(disk: Path) -> None:
+    """Check the installed SYS player and both complete regional song streams."""
+    if not AC_JAR.is_file() or not shutil.which("java"):
+        print("SKIP music payload checks (java/AppleCommander not found)")
+        return
+    sys.path.insert(0, str(SCRIPT_ROOT))
+    import build_appletini_demo_disk as demo_build
+
+    expected_names = {"MUSIC/SUN.SYSTEM", "MUSIC/SUN.NTSC", "MUSIC/SUN.PAL"}
+    require(set(demo_build.MUSIC_FILES) == expected_names,
+            "music folder must contain the player and both regional streams")
+    require(disk.is_file(), f"missing demo disk: {disk}")
+    sys.path.insert(0, str(ROOT.parents[1] / "music" / "song_to_phasor"))
+    from phasor.stream import decode
+
+    durations = set()
+    for disk_name, source in demo_build.MUSIC_FILES.items():
+        installed = subprocess.run(
+            ["java", "-jar", str(AC_JAR), "-g", str(disk), disk_name],
+            check=True, capture_output=True).stdout
+        require(bool(installed), f"demo disk {disk_name} must not be empty")
+        if source.is_file():
+            require(installed == source.read_bytes(),
+                    f"demo disk {disk_name} must match the current player build")
+        else:
+            print(f"SKIP {disk_name} byte comparison (build the player first)")
+        if disk_name.endswith((".NTSC", ".PAL")):
+            try:
+                events, header = decode(installed)
+            except ValueError as exc:
+                raise TestFailure(f"demo disk {disk_name}: {exc}") from exc
+            require(header["tick_hz"] == 100 and len(installed) <= 34816,
+                    f"demo disk {disk_name} must fit the RAM player's timing and buffer")
+            require({target for _, target, _, _ in events} == set(range(6)),
+                    f"demo disk {disk_name} must include all four AY and both SSI chips")
+            durations.add(header["duration_ticks"])
+        print(f"PASS {disk} contains music payload {disk_name} ({len(installed)} bytes)")
+    require(len(durations) == 1,
+            "NTSC and PAL music streams must describe the same song duration")
+
+
+@contextmanager
+def disk_image(path: Path):
+    """Open a raw PO or unpack only the expected image to a temporary path."""
+    require(path.is_file(), f"missing demo disk: {path}")
+    if path.suffix.lower() != ".zip":
+        require(path.stat().st_size == DISK_SIZE,
+                f"demo disk must be {DISK_SIZE} bytes: {path}")
+        yield path
+        return
+    try:
+        with zipfile.ZipFile(path) as archive:
+            entries = [entry for entry in archive.infolist()
+                       if entry.filename == DISK_NAME]
+            require(len(entries) == 1,
+                    f"demo ZIP must contain exactly one {DISK_NAME}")
+            entry = entries[0]
+            require(not entry.is_dir() and entry.file_size == DISK_SIZE,
+                    f"demo ZIP {DISK_NAME} must be {DISK_SIZE} bytes")
+            with archive.open(entry) as source:
+                data = source.read(DISK_SIZE + 1)
+            require(len(data) == DISK_SIZE,
+                    f"unpacked {DISK_NAME} must be {DISK_SIZE} bytes")
+    except (zipfile.BadZipFile, RuntimeError) as exc:
+        raise TestFailure(f"cannot read demo ZIP {path}: {exc}") from exc
+    with tempfile.TemporaryDirectory(prefix="appletini-demo-check-") as tmp:
+        image = Path(tmp) / DISK_NAME
+        image.write_bytes(data)
+        print(f"PASS {path} contains a {DISK_SIZE}-byte {DISK_NAME}")
+        yield image
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--disk", type=Path, default=ROOT / "Appletini_Demos.po",
-                        help="disk image to check (default: tracked demo disk)")
+    parser.add_argument("--disk", type=Path, default=ROOT / "Appletini_Demos.zip",
+                        help="ZIP or PO to check (default: tracked demo ZIP)")
     args = parser.parse_args()
     try:
         static_checks()
@@ -711,7 +804,9 @@ def main() -> int:
         print("PASS demo image manifest checks")
         fat_helper_checks()
         print("PASS AD8088 FAT12 helper checks")
-        assembly_checks(args.disk.expanduser().resolve())
+        with disk_image(args.disk.expanduser().resolve()) as disk:
+            assembly_checks(disk)
+            music_disk_checks(disk)
         print("demo disk checks passed")
         return 0
     except TestFailure as exc:

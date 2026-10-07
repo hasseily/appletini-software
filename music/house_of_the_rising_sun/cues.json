@@ -1,0 +1,4936 @@
+{
+  "title": "House of the Rising Sun — Phasor No. 1, Blues-rock revision",
+  "tick_hz": 100,
+  "duration_ticks": 10232,
+  "duration_seconds": 102.32,
+  "key": "C minor",
+  "meter": "6/8",
+  "dotted_quarter_bpm": 66,
+  "pickup_eighths": 2,
+  "sections": [
+    {
+      "name": "intro",
+      "start_bar": 0,
+      "end_bar": 4,
+      "start_tick": 0,
+      "end_tick": 727,
+      "start": 0.0,
+      "end": 7.27
+    },
+    {
+      "name": "verse_1",
+      "start_bar": 4,
+      "end_bar": 20,
+      "start_tick": 727,
+      "end_tick": 3636,
+      "start": 7.27,
+      "end": 36.36
+    },
+    {
+      "name": "verse_2",
+      "start_bar": 20,
+      "end_bar": 36,
+      "start_tick": 3636,
+      "end_tick": 6545,
+      "start": 36.36,
+      "end": 65.45
+    },
+    {
+      "name": "instrumental",
+      "start_bar": 36,
+      "end_bar": 44,
+      "start_tick": 6545,
+      "end_tick": 8000,
+      "start": 65.45,
+      "end": 80.0
+    },
+    {
+      "name": "reprise",
+      "start_bar": 44,
+      "end_bar": 52,
+      "start_tick": 8000,
+      "end_tick": 9455,
+      "start": 80.0,
+      "end": 94.55
+    },
+    {
+      "name": "coda",
+      "start_bar": 52,
+      "end_bar": 56,
+      "start_tick": 9455,
+      "end_tick": 10182,
+      "start": 94.55,
+      "end": 101.82
+    }
+  ],
+  "lyrics": {
+    "verse_1": [
+      "There is a house in New Orleans,",
+      "They call the Rising Sun.",
+      "It's been the ruin of many a poor girl,",
+      "And me, O God, for one."
+    ],
+    "verse_2": [
+      "Go tell my baby sister,",
+      "Never do like I have done.",
+      "To shun that house in New Orleans,",
+      "They call the Rising Sun."
+    ],
+    "reprise": [
+      "There is a house in New Orleans,",
+      "They call the Rising Sun."
+    ]
+  },
+  "syllables": [
+    {
+      "text": "There",
+      "section": "verse_1",
+      "start_tick": 667,
+      "end_tick": 727,
+      "start": 6.67,
+      "end": 7.27,
+      "spelling": "THV/EH/R",
+      "notes": [
+        {
+          "start_tick": 667,
+          "end_tick": 727,
+          "midi": 43,
+          "pitch_hz": 97.998859,
+          "section": "verse_1",
+          "syllable": "There"
+        }
+      ]
+    },
+    {
+      "text": "is",
+      "section": "verse_1",
+      "start_tick": 727,
+      "end_tick": 848,
+      "start": 7.27,
+      "end": 8.48,
+      "spelling": "/I/Z",
+      "notes": [
+        {
+          "start_tick": 727,
+          "end_tick": 848,
+          "midi": 48,
+          "pitch_hz": 130.812783,
+          "section": "verse_1",
+          "syllable": "is"
+        }
+      ]
+    },
+    {
+      "text": "a",
+      "section": "verse_1",
+      "start_tick": 848,
+      "end_tick": 909,
+      "start": 8.48,
+      "end": 9.09,
+      "spelling": "/UH/",
+      "notes": [
+        {
+          "start_tick": 848,
+          "end_tick": 879,
+          "midi": 50,
+          "pitch_hz": 146.832384,
+          "section": "verse_1",
+          "syllable": "a"
+        },
+        {
+          "start_tick": 879,
+          "end_tick": 909,
+          "midi": 48,
+          "pitch_hz": 130.812783,
+          "section": "verse_1",
+          "syllable": "a"
+        }
+      ]
+    },
+    {
+      "text": "house",
+      "section": "verse_1",
+      "start_tick": 909,
+      "end_tick": 1030,
+      "start": 9.09,
+      "end": 10.3,
+      "spelling": "HF/AH>U/S",
+      "notes": [
+        {
+          "start_tick": 909,
+          "end_tick": 1030,
+          "midi": 51,
+          "pitch_hz": 155.563492,
+          "section": "verse_1",
+          "syllable": "house"
+        }
+      ]
+    },
+    {
+      "text": "in",
+      "section": "verse_1",
+      "start_tick": 1030,
+      "end_tick": 1091,
+      "start": 10.3,
+      "end": 10.91,
+      "spelling": "/I/N",
+      "notes": [
+        {
+          "start_tick": 1030,
+          "end_tick": 1061,
+          "midi": 53,
+          "pitch_hz": 174.614116,
+          "section": "verse_1",
+          "syllable": "in"
+        },
+        {
+          "start_tick": 1061,
+          "end_tick": 1091,
+          "midi": 54,
+          "pitch_hz": 184.997211,
+          "section": "verse_1",
+          "syllable": "in"
+        }
+      ]
+    },
+    {
+      "text": "New",
+      "section": "verse_1",
+      "start_tick": 1091,
+      "end_tick": 1212,
+      "start": 10.91,
+      "end": 12.12,
+      "spelling": "N/IU/",
+      "notes": [
+        {
+          "start_tick": 1091,
+          "end_tick": 1212,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_1",
+          "syllable": "New"
+        }
+      ]
+    },
+    {
+      "text": "Or-",
+      "section": "verse_1",
+      "start_tick": 1212,
+      "end_tick": 1273,
+      "start": 12.12,
+      "end": 12.73,
+      "spelling": "/AW/R",
+      "notes": [
+        {
+          "start_tick": 1212,
+          "end_tick": 1242,
+          "midi": 51,
+          "pitch_hz": 155.563492,
+          "section": "verse_1",
+          "syllable": "Or-"
+        },
+        {
+          "start_tick": 1242,
+          "end_tick": 1273,
+          "midi": 50,
+          "pitch_hz": 146.832384,
+          "section": "verse_1",
+          "syllable": "Or-"
+        }
+      ]
+    },
+    {
+      "text": "-leans",
+      "section": "verse_1",
+      "start_tick": 1273,
+      "end_tick": 1394,
+      "start": 12.73,
+      "end": 13.94,
+      "spelling": "L/E/N Z",
+      "notes": [
+        {
+          "start_tick": 1273,
+          "end_tick": 1394,
+          "midi": 48,
+          "pitch_hz": 130.812783,
+          "section": "verse_1",
+          "syllable": "-leans"
+        }
+      ]
+    },
+    {
+      "text": "they",
+      "section": "verse_1",
+      "start_tick": 1394,
+      "end_tick": 1455,
+      "start": 13.94,
+      "end": 14.55,
+      "spelling": "THV/A/",
+      "notes": [
+        {
+          "start_tick": 1394,
+          "end_tick": 1455,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_1",
+          "syllable": "they"
+        }
+      ]
+    },
+    {
+      "text": "call",
+      "section": "verse_1",
+      "start_tick": 1457,
+      "end_tick": 1576,
+      "start": 14.57,
+      "end": 15.76,
+      "spelling": "K/AW/LF",
+      "notes": [
+        {
+          "start_tick": 1457,
+          "end_tick": 1576,
+          "midi": 60,
+          "pitch_hz": 261.625565,
+          "section": "verse_1",
+          "syllable": "call"
+        }
+      ]
+    },
+    {
+      "text": "the",
+      "section": "verse_1",
+      "start_tick": 1576,
+      "end_tick": 1636,
+      "start": 15.76,
+      "end": 16.36,
+      "spelling": "THV/UH/",
+      "notes": [
+        {
+          "start_tick": 1576,
+          "end_tick": 1636,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_1",
+          "syllable": "the"
+        }
+      ]
+    },
+    {
+      "text": "Ri-",
+      "section": "verse_1",
+      "start_tick": 1636,
+      "end_tick": 1758,
+      "start": 16.36,
+      "end": 17.58,
+      "spelling": "R/AH>I/",
+      "notes": [
+        {
+          "start_tick": 1636,
+          "end_tick": 1758,
+          "midi": 58,
+          "pitch_hz": 233.081881,
+          "section": "verse_1",
+          "syllable": "Ri-"
+        }
+      ]
+    },
+    {
+      "text": "-sing",
+      "section": "verse_1",
+      "start_tick": 1758,
+      "end_tick": 1818,
+      "start": 17.58,
+      "end": 18.18,
+      "spelling": "Z/I/NG",
+      "notes": [
+        {
+          "start_tick": 1758,
+          "end_tick": 1788,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_1",
+          "syllable": "-sing"
+        },
+        {
+          "start_tick": 1788,
+          "end_tick": 1818,
+          "midi": 53,
+          "pitch_hz": 174.614116,
+          "section": "verse_1",
+          "syllable": "-sing"
+        }
+      ]
+    },
+    {
+      "text": "Sun",
+      "section": "verse_1",
+      "start_tick": 1820,
+      "end_tick": 2053,
+      "start": 18.2,
+      "end": 20.53,
+      "spelling": "S/UH1/N",
+      "notes": [
+        {
+          "start_tick": 1820,
+          "end_tick": 1970,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_1",
+          "syllable": "Sun"
+        },
+        {
+          "start_tick": 1970,
+          "end_tick": 2000,
+          "midi": 53,
+          "pitch_hz": 174.614116,
+          "section": "verse_1",
+          "syllable": "Sun"
+        },
+        {
+          "start_tick": 2000,
+          "end_tick": 2053,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_1",
+          "syllable": "Sun"
+        }
+      ]
+    },
+    {
+      "text": "It's",
+      "section": "verse_1",
+      "start_tick": 2121,
+      "end_tick": 2182,
+      "start": 21.21,
+      "end": 21.82,
+      "spelling": "/I/T S",
+      "notes": [
+        {
+          "start_tick": 2121,
+          "end_tick": 2182,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_1",
+          "syllable": "It's"
+        }
+      ]
+    },
+    {
+      "text": "been",
+      "section": "verse_1",
+      "start_tick": 2182,
+      "end_tick": 2303,
+      "start": 21.82,
+      "end": 23.03,
+      "spelling": "B/I/N",
+      "notes": [
+        {
+          "start_tick": 2182,
+          "end_tick": 2303,
+          "midi": 60,
+          "pitch_hz": 261.625565,
+          "section": "verse_1",
+          "syllable": "been"
+        }
+      ]
+    },
+    {
+      "text": "the",
+      "section": "verse_1",
+      "start_tick": 2303,
+      "end_tick": 2364,
+      "start": 23.03,
+      "end": 23.64,
+      "spelling": "THV/UH/",
+      "notes": [
+        {
+          "start_tick": 2303,
+          "end_tick": 2364,
+          "midi": 48,
+          "pitch_hz": 130.812783,
+          "section": "verse_1",
+          "syllable": "the"
+        }
+      ]
+    },
+    {
+      "text": "ru-",
+      "section": "verse_1",
+      "start_tick": 2364,
+      "end_tick": 2424,
+      "start": 23.64,
+      "end": 24.24,
+      "spelling": "R/U/",
+      "notes": [
+        {
+          "start_tick": 2364,
+          "end_tick": 2424,
+          "midi": 51,
+          "pitch_hz": 155.563492,
+          "section": "verse_1",
+          "syllable": "ru-"
+        }
+      ]
+    },
+    {
+      "text": "-in",
+      "section": "verse_1",
+      "start_tick": 2424,
+      "end_tick": 2485,
+      "start": 24.24,
+      "end": 24.85,
+      "spelling": "/I/N",
+      "notes": [
+        {
+          "start_tick": 2424,
+          "end_tick": 2485,
+          "midi": 51,
+          "pitch_hz": 155.563492,
+          "section": "verse_1",
+          "syllable": "-in"
+        }
+      ]
+    },
+    {
+      "text": "of",
+      "section": "verse_1",
+      "start_tick": 2485,
+      "end_tick": 2545,
+      "start": 24.85,
+      "end": 25.45,
+      "spelling": "/UH/V",
+      "notes": [
+        {
+          "start_tick": 2485,
+          "end_tick": 2545,
+          "midi": 53,
+          "pitch_hz": 174.614116,
+          "section": "verse_1",
+          "syllable": "of"
+        }
+      ]
+    },
+    {
+      "text": "ma-",
+      "section": "verse_1",
+      "start_tick": 2545,
+      "end_tick": 2576,
+      "start": 25.45,
+      "end": 25.76,
+      "spelling": "M/AE/",
+      "notes": [
+        {
+          "start_tick": 2545,
+          "end_tick": 2576,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_1",
+          "syllable": "ma-"
+        }
+      ]
+    },
+    {
+      "text": "-ny",
+      "section": "verse_1",
+      "start_tick": 2576,
+      "end_tick": 2636,
+      "start": 25.76,
+      "end": 26.36,
+      "spelling": "N/IE/",
+      "notes": [
+        {
+          "start_tick": 2576,
+          "end_tick": 2636,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_1",
+          "syllable": "-ny"
+        }
+      ]
+    },
+    {
+      "text": "a",
+      "section": "verse_1",
+      "start_tick": 2636,
+      "end_tick": 2667,
+      "start": 26.36,
+      "end": 26.67,
+      "spelling": "/UH/",
+      "notes": [
+        {
+          "start_tick": 2636,
+          "end_tick": 2667,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_1",
+          "syllable": "a"
+        }
+      ]
+    },
+    {
+      "text": "poor",
+      "section": "verse_1",
+      "start_tick": 2667,
+      "end_tick": 2727,
+      "start": 26.67,
+      "end": 27.27,
+      "spelling": "P/O/R",
+      "notes": [
+        {
+          "start_tick": 2667,
+          "end_tick": 2697,
+          "midi": 51,
+          "pitch_hz": 155.563492,
+          "section": "verse_1",
+          "syllable": "poor"
+        },
+        {
+          "start_tick": 2697,
+          "end_tick": 2727,
+          "midi": 50,
+          "pitch_hz": 146.832384,
+          "section": "verse_1",
+          "syllable": "poor"
+        }
+      ]
+    },
+    {
+      "text": "girl",
+      "section": "verse_1",
+      "start_tick": 2729,
+      "end_tick": 2848,
+      "start": 27.29,
+      "end": 28.48,
+      "spelling": "KV/ER/LF",
+      "notes": [
+        {
+          "start_tick": 2729,
+          "end_tick": 2848,
+          "midi": 48,
+          "pitch_hz": 130.812783,
+          "section": "verse_1",
+          "syllable": "girl"
+        }
+      ]
+    },
+    {
+      "text": "and",
+      "section": "verse_1",
+      "start_tick": 2848,
+      "end_tick": 2909,
+      "start": 28.48,
+      "end": 29.09,
+      "spelling": "/AE/N D",
+      "notes": [
+        {
+          "start_tick": 2848,
+          "end_tick": 2909,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_1",
+          "syllable": "and"
+        }
+      ]
+    },
+    {
+      "text": "me",
+      "section": "verse_1",
+      "start_tick": 2909,
+      "end_tick": 2970,
+      "start": 29.09,
+      "end": 29.7,
+      "spelling": "M/E/",
+      "notes": [
+        {
+          "start_tick": 2909,
+          "end_tick": 2970,
+          "midi": 60,
+          "pitch_hz": 261.625565,
+          "section": "verse_1",
+          "syllable": "me"
+        }
+      ]
+    },
+    {
+      "text": "O",
+      "section": "verse_1",
+      "start_tick": 2970,
+      "end_tick": 3030,
+      "start": 29.7,
+      "end": 30.3,
+      "spelling": "/OU/",
+      "notes": [
+        {
+          "start_tick": 2970,
+          "end_tick": 3030,
+          "midi": 58,
+          "pitch_hz": 233.081881,
+          "section": "verse_1",
+          "syllable": "O"
+        }
+      ]
+    },
+    {
+      "text": "God",
+      "section": "verse_1",
+      "start_tick": 3030,
+      "end_tick": 3091,
+      "start": 30.3,
+      "end": 30.91,
+      "spelling": "KV/AH/D",
+      "notes": [
+        {
+          "start_tick": 3030,
+          "end_tick": 3091,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_1",
+          "syllable": "God"
+        }
+      ]
+    },
+    {
+      "text": "for",
+      "section": "verse_1",
+      "start_tick": 3091,
+      "end_tick": 3212,
+      "start": 30.91,
+      "end": 32.12,
+      "spelling": "F/AW/R",
+      "notes": [
+        {
+          "start_tick": 3091,
+          "end_tick": 3212,
+          "midi": 53,
+          "pitch_hz": 174.614116,
+          "section": "verse_1",
+          "syllable": "for"
+        }
+      ]
+    },
+    {
+      "text": "one",
+      "section": "verse_1",
+      "start_tick": 3214,
+      "end_tick": 3568,
+      "start": 32.14,
+      "end": 35.68,
+      "spelling": "W/UH1/N",
+      "notes": [
+        {
+          "start_tick": 3214,
+          "end_tick": 3242,
+          "midi": 51,
+          "pitch_hz": 155.563492,
+          "section": "verse_1",
+          "syllable": "one"
+        },
+        {
+          "start_tick": 3242,
+          "end_tick": 3273,
+          "midi": 50,
+          "pitch_hz": 146.832384,
+          "section": "verse_1",
+          "syllable": "one"
+        },
+        {
+          "start_tick": 3273,
+          "end_tick": 3568,
+          "midi": 48,
+          "pitch_hz": 130.812783,
+          "section": "verse_1",
+          "syllable": "one"
+        }
+      ]
+    },
+    {
+      "text": "Go",
+      "section": "verse_2",
+      "start_tick": 3576,
+      "end_tick": 3636,
+      "start": 35.76,
+      "end": 36.36,
+      "spelling": "KV/OU/",
+      "notes": [
+        {
+          "start_tick": 3576,
+          "end_tick": 3636,
+          "midi": 43,
+          "pitch_hz": 97.998859,
+          "section": "verse_2",
+          "syllable": "Go"
+        }
+      ]
+    },
+    {
+      "text": "tell",
+      "section": "verse_2",
+      "start_tick": 3636,
+      "end_tick": 3758,
+      "start": 36.36,
+      "end": 37.58,
+      "spelling": "T/EH/LF",
+      "notes": [
+        {
+          "start_tick": 3636,
+          "end_tick": 3758,
+          "midi": 48,
+          "pitch_hz": 130.812783,
+          "section": "verse_2",
+          "syllable": "tell"
+        }
+      ]
+    },
+    {
+      "text": "my",
+      "section": "verse_2",
+      "start_tick": 3758,
+      "end_tick": 3818,
+      "start": 37.58,
+      "end": 38.18,
+      "spelling": "M/AH>I/",
+      "notes": [
+        {
+          "start_tick": 3758,
+          "end_tick": 3788,
+          "midi": 50,
+          "pitch_hz": 146.832384,
+          "section": "verse_2",
+          "syllable": "my"
+        },
+        {
+          "start_tick": 3788,
+          "end_tick": 3818,
+          "midi": 48,
+          "pitch_hz": 130.812783,
+          "section": "verse_2",
+          "syllable": "my"
+        }
+      ]
+    },
+    {
+      "text": "ba-",
+      "section": "verse_2",
+      "start_tick": 3818,
+      "end_tick": 3939,
+      "start": 38.18,
+      "end": 39.39,
+      "spelling": "B/A/",
+      "notes": [
+        {
+          "start_tick": 3818,
+          "end_tick": 3939,
+          "midi": 51,
+          "pitch_hz": 155.563492,
+          "section": "verse_2",
+          "syllable": "ba-"
+        }
+      ]
+    },
+    {
+      "text": "-by",
+      "section": "verse_2",
+      "start_tick": 3939,
+      "end_tick": 4000,
+      "start": 39.39,
+      "end": 40.0,
+      "spelling": "/IE/",
+      "notes": [
+        {
+          "start_tick": 3939,
+          "end_tick": 3970,
+          "midi": 53,
+          "pitch_hz": 174.614116,
+          "section": "verse_2",
+          "syllable": "-by"
+        },
+        {
+          "start_tick": 3970,
+          "end_tick": 4000,
+          "midi": 54,
+          "pitch_hz": 184.997211,
+          "section": "verse_2",
+          "syllable": "-by"
+        }
+      ]
+    },
+    {
+      "text": "sis-",
+      "section": "verse_2",
+      "start_tick": 4000,
+      "end_tick": 4121,
+      "start": 40.0,
+      "end": 41.21,
+      "spelling": "S/I/S",
+      "notes": [
+        {
+          "start_tick": 4000,
+          "end_tick": 4076,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_2",
+          "syllable": "sis-"
+        },
+        {
+          "start_tick": 4076,
+          "end_tick": 4091,
+          "midi": 58,
+          "pitch_hz": 233.081881,
+          "section": "verse_2",
+          "syllable": "sis-"
+        },
+        {
+          "start_tick": 4091,
+          "end_tick": 4121,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_2",
+          "syllable": "sis-"
+        }
+      ]
+    },
+    {
+      "text": "-ter",
+      "section": "verse_2",
+      "start_tick": 4121,
+      "end_tick": 4303,
+      "start": 41.21,
+      "end": 43.03,
+      "spelling": "T/ER/",
+      "notes": [
+        {
+          "start_tick": 4121,
+          "end_tick": 4152,
+          "midi": 51,
+          "pitch_hz": 155.563492,
+          "section": "verse_2",
+          "syllable": "-ter"
+        },
+        {
+          "start_tick": 4152,
+          "end_tick": 4182,
+          "midi": 50,
+          "pitch_hz": 146.832384,
+          "section": "verse_2",
+          "syllable": "-ter"
+        },
+        {
+          "start_tick": 4182,
+          "end_tick": 4303,
+          "midi": 48,
+          "pitch_hz": 130.812783,
+          "section": "verse_2",
+          "syllable": "-ter"
+        }
+      ]
+    },
+    {
+      "text": "Ne-",
+      "section": "verse_2",
+      "start_tick": 4303,
+      "end_tick": 4364,
+      "start": 43.03,
+      "end": 43.64,
+      "spelling": "N/EH/",
+      "notes": [
+        {
+          "start_tick": 4303,
+          "end_tick": 4364,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_2",
+          "syllable": "Ne-"
+        }
+      ]
+    },
+    {
+      "text": "-ver",
+      "section": "verse_2",
+      "start_tick": 4364,
+      "end_tick": 4485,
+      "start": 43.64,
+      "end": 44.85,
+      "spelling": "V/ER/",
+      "notes": [
+        {
+          "start_tick": 4364,
+          "end_tick": 4485,
+          "midi": 60,
+          "pitch_hz": 261.625565,
+          "section": "verse_2",
+          "syllable": "-ver"
+        }
+      ]
+    },
+    {
+      "text": "do",
+      "section": "verse_2",
+      "start_tick": 4485,
+      "end_tick": 4545,
+      "start": 44.85,
+      "end": 45.45,
+      "spelling": "D/U/",
+      "notes": [
+        {
+          "start_tick": 4485,
+          "end_tick": 4545,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_2",
+          "syllable": "do"
+        }
+      ]
+    },
+    {
+      "text": "like",
+      "section": "verse_2",
+      "start_tick": 4545,
+      "end_tick": 4667,
+      "start": 45.45,
+      "end": 46.67,
+      "spelling": "L/AH>I/K",
+      "notes": [
+        {
+          "start_tick": 4545,
+          "end_tick": 4667,
+          "midi": 58,
+          "pitch_hz": 233.081881,
+          "section": "verse_2",
+          "syllable": "like"
+        }
+      ]
+    },
+    {
+      "text": "I",
+      "section": "verse_2",
+      "start_tick": 4667,
+      "end_tick": 4727,
+      "start": 46.67,
+      "end": 47.27,
+      "spelling": "/AH>I/",
+      "notes": [
+        {
+          "start_tick": 4667,
+          "end_tick": 4697,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_2",
+          "syllable": "I"
+        },
+        {
+          "start_tick": 4697,
+          "end_tick": 4727,
+          "midi": 53,
+          "pitch_hz": 174.614116,
+          "section": "verse_2",
+          "syllable": "I"
+        }
+      ]
+    },
+    {
+      "text": "have",
+      "section": "verse_2",
+      "start_tick": 4727,
+      "end_tick": 4818,
+      "start": 47.27,
+      "end": 48.18,
+      "spelling": "HF/AE/V",
+      "notes": [
+        {
+          "start_tick": 4727,
+          "end_tick": 4818,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_2",
+          "syllable": "have"
+        }
+      ]
+    },
+    {
+      "text": "done",
+      "section": "verse_2",
+      "start_tick": 4820,
+      "end_tick": 4962,
+      "start": 48.2,
+      "end": 49.62,
+      "spelling": "D/UH1/N",
+      "notes": [
+        {
+          "start_tick": 4820,
+          "end_tick": 4879,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_2",
+          "syllable": "done"
+        },
+        {
+          "start_tick": 4879,
+          "end_tick": 4909,
+          "midi": 58,
+          "pitch_hz": 233.081881,
+          "section": "verse_2",
+          "syllable": "done"
+        },
+        {
+          "start_tick": 4909,
+          "end_tick": 4939,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_2",
+          "syllable": "done"
+        },
+        {
+          "start_tick": 4939,
+          "end_tick": 4962,
+          "midi": 53,
+          "pitch_hz": 174.614116,
+          "section": "verse_2",
+          "syllable": "done"
+        }
+      ]
+    },
+    {
+      "text": "To",
+      "section": "verse_2",
+      "start_tick": 5030,
+      "end_tick": 5091,
+      "start": 50.3,
+      "end": 50.91,
+      "spelling": "T/U/",
+      "notes": [
+        {
+          "start_tick": 5030,
+          "end_tick": 5091,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_2",
+          "syllable": "To"
+        }
+      ]
+    },
+    {
+      "text": "shun",
+      "section": "verse_2",
+      "start_tick": 5091,
+      "end_tick": 5212,
+      "start": 50.91,
+      "end": 52.12,
+      "spelling": "SCH/UH1/N",
+      "notes": [
+        {
+          "start_tick": 5091,
+          "end_tick": 5212,
+          "midi": 60,
+          "pitch_hz": 261.625565,
+          "section": "verse_2",
+          "syllable": "shun"
+        }
+      ]
+    },
+    {
+      "text": "that",
+      "section": "verse_2",
+      "start_tick": 5212,
+      "end_tick": 5273,
+      "start": 52.12,
+      "end": 52.73,
+      "spelling": "THV/AE/T",
+      "notes": [
+        {
+          "start_tick": 5212,
+          "end_tick": 5273,
+          "midi": 48,
+          "pitch_hz": 130.812783,
+          "section": "verse_2",
+          "syllable": "that"
+        }
+      ]
+    },
+    {
+      "text": "house",
+      "section": "verse_2",
+      "start_tick": 5273,
+      "end_tick": 5394,
+      "start": 52.73,
+      "end": 53.94,
+      "spelling": "HF/AH>U/S",
+      "notes": [
+        {
+          "start_tick": 5273,
+          "end_tick": 5394,
+          "midi": 51,
+          "pitch_hz": 155.563492,
+          "section": "verse_2",
+          "syllable": "house"
+        }
+      ]
+    },
+    {
+      "text": "in",
+      "section": "verse_2",
+      "start_tick": 5394,
+      "end_tick": 5455,
+      "start": 53.94,
+      "end": 54.55,
+      "spelling": "/I/N",
+      "notes": [
+        {
+          "start_tick": 5394,
+          "end_tick": 5455,
+          "midi": 53,
+          "pitch_hz": 174.614116,
+          "section": "verse_2",
+          "syllable": "in"
+        }
+      ]
+    },
+    {
+      "text": "New",
+      "section": "verse_2",
+      "start_tick": 5455,
+      "end_tick": 5576,
+      "start": 54.55,
+      "end": 55.76,
+      "spelling": "N/IU/",
+      "notes": [
+        {
+          "start_tick": 5455,
+          "end_tick": 5545,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_2",
+          "syllable": "New"
+        },
+        {
+          "start_tick": 5545,
+          "end_tick": 5576,
+          "midi": 58,
+          "pitch_hz": 233.081881,
+          "section": "verse_2",
+          "syllable": "New"
+        }
+      ]
+    },
+    {
+      "text": "Or-",
+      "section": "verse_2",
+      "start_tick": 5576,
+      "end_tick": 5636,
+      "start": 55.76,
+      "end": 56.36,
+      "spelling": "/AW/R",
+      "notes": [
+        {
+          "start_tick": 5576,
+          "end_tick": 5606,
+          "midi": 51,
+          "pitch_hz": 155.563492,
+          "section": "verse_2",
+          "syllable": "Or-"
+        },
+        {
+          "start_tick": 5606,
+          "end_tick": 5636,
+          "midi": 50,
+          "pitch_hz": 146.832384,
+          "section": "verse_2",
+          "syllable": "Or-"
+        }
+      ]
+    },
+    {
+      "text": "-leans",
+      "section": "verse_2",
+      "start_tick": 5636,
+      "end_tick": 5758,
+      "start": 56.36,
+      "end": 57.58,
+      "spelling": "L/E/N Z",
+      "notes": [
+        {
+          "start_tick": 5636,
+          "end_tick": 5758,
+          "midi": 48,
+          "pitch_hz": 130.812783,
+          "section": "verse_2",
+          "syllable": "-leans"
+        }
+      ]
+    },
+    {
+      "text": "they",
+      "section": "verse_2",
+      "start_tick": 5758,
+      "end_tick": 5818,
+      "start": 57.58,
+      "end": 58.18,
+      "spelling": "THV/A/",
+      "notes": [
+        {
+          "start_tick": 5758,
+          "end_tick": 5818,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_2",
+          "syllable": "they"
+        }
+      ]
+    },
+    {
+      "text": "call",
+      "section": "verse_2",
+      "start_tick": 5820,
+      "end_tick": 5939,
+      "start": 58.2,
+      "end": 59.39,
+      "spelling": "K/AW/LF",
+      "notes": [
+        {
+          "start_tick": 5820,
+          "end_tick": 5909,
+          "midi": 60,
+          "pitch_hz": 261.625565,
+          "section": "verse_2",
+          "syllable": "call"
+        },
+        {
+          "start_tick": 5909,
+          "end_tick": 5939,
+          "midi": 58,
+          "pitch_hz": 233.081881,
+          "section": "verse_2",
+          "syllable": "call"
+        }
+      ]
+    },
+    {
+      "text": "the",
+      "section": "verse_2",
+      "start_tick": 5939,
+      "end_tick": 6000,
+      "start": 59.39,
+      "end": 60.0,
+      "spelling": "THV/UH/",
+      "notes": [
+        {
+          "start_tick": 5939,
+          "end_tick": 6000,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_2",
+          "syllable": "the"
+        }
+      ]
+    },
+    {
+      "text": "Ri-",
+      "section": "verse_2",
+      "start_tick": 6000,
+      "end_tick": 6121,
+      "start": 60.0,
+      "end": 61.21,
+      "spelling": "R/AH>I/",
+      "notes": [
+        {
+          "start_tick": 6000,
+          "end_tick": 6061,
+          "midi": 58,
+          "pitch_hz": 233.081881,
+          "section": "verse_2",
+          "syllable": "Ri-"
+        },
+        {
+          "start_tick": 6061,
+          "end_tick": 6121,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "verse_2",
+          "syllable": "Ri-"
+        }
+      ]
+    },
+    {
+      "text": "-sing",
+      "section": "verse_2",
+      "start_tick": 6121,
+      "end_tick": 6182,
+      "start": 61.21,
+      "end": 61.82,
+      "spelling": "Z/I/NG",
+      "notes": [
+        {
+          "start_tick": 6121,
+          "end_tick": 6152,
+          "midi": 51,
+          "pitch_hz": 155.563492,
+          "section": "verse_2",
+          "syllable": "-sing"
+        },
+        {
+          "start_tick": 6152,
+          "end_tick": 6182,
+          "midi": 50,
+          "pitch_hz": 146.832384,
+          "section": "verse_2",
+          "syllable": "-sing"
+        }
+      ]
+    },
+    {
+      "text": "Sun",
+      "section": "verse_2",
+      "start_tick": 6184,
+      "end_tick": 6477,
+      "start": 61.84,
+      "end": 64.77,
+      "spelling": "S/UH1/N",
+      "notes": [
+        {
+          "start_tick": 6184,
+          "end_tick": 6477,
+          "midi": 48,
+          "pitch_hz": 130.812783,
+          "section": "verse_2",
+          "syllable": "Sun"
+        }
+      ]
+    },
+    {
+      "text": "There",
+      "section": "reprise",
+      "start_tick": 7939,
+      "end_tick": 8000,
+      "start": 79.39,
+      "end": 80.0,
+      "spelling": "THV/EH/R",
+      "notes": [
+        {
+          "start_tick": 7939,
+          "end_tick": 8000,
+          "midi": 43,
+          "pitch_hz": 97.998859,
+          "section": "reprise",
+          "syllable": "There"
+        }
+      ]
+    },
+    {
+      "text": "is",
+      "section": "reprise",
+      "start_tick": 8000,
+      "end_tick": 8121,
+      "start": 80.0,
+      "end": 81.21,
+      "spelling": "/I/Z",
+      "notes": [
+        {
+          "start_tick": 8000,
+          "end_tick": 8121,
+          "midi": 48,
+          "pitch_hz": 130.812783,
+          "section": "reprise",
+          "syllable": "is"
+        }
+      ]
+    },
+    {
+      "text": "a",
+      "section": "reprise",
+      "start_tick": 8121,
+      "end_tick": 8182,
+      "start": 81.21,
+      "end": 81.82,
+      "spelling": "/UH/",
+      "notes": [
+        {
+          "start_tick": 8121,
+          "end_tick": 8152,
+          "midi": 50,
+          "pitch_hz": 146.832384,
+          "section": "reprise",
+          "syllable": "a"
+        },
+        {
+          "start_tick": 8152,
+          "end_tick": 8182,
+          "midi": 48,
+          "pitch_hz": 130.812783,
+          "section": "reprise",
+          "syllable": "a"
+        }
+      ]
+    },
+    {
+      "text": "house",
+      "section": "reprise",
+      "start_tick": 8182,
+      "end_tick": 8303,
+      "start": 81.82,
+      "end": 83.03,
+      "spelling": "HF/AH>U/S",
+      "notes": [
+        {
+          "start_tick": 8182,
+          "end_tick": 8303,
+          "midi": 51,
+          "pitch_hz": 155.563492,
+          "section": "reprise",
+          "syllable": "house"
+        }
+      ]
+    },
+    {
+      "text": "in",
+      "section": "reprise",
+      "start_tick": 8303,
+      "end_tick": 8364,
+      "start": 83.03,
+      "end": 83.64,
+      "spelling": "/I/N",
+      "notes": [
+        {
+          "start_tick": 8303,
+          "end_tick": 8333,
+          "midi": 53,
+          "pitch_hz": 174.614116,
+          "section": "reprise",
+          "syllable": "in"
+        },
+        {
+          "start_tick": 8333,
+          "end_tick": 8364,
+          "midi": 54,
+          "pitch_hz": 184.997211,
+          "section": "reprise",
+          "syllable": "in"
+        }
+      ]
+    },
+    {
+      "text": "New",
+      "section": "reprise",
+      "start_tick": 8364,
+      "end_tick": 8485,
+      "start": 83.64,
+      "end": 84.85,
+      "spelling": "N/IU/",
+      "notes": [
+        {
+          "start_tick": 8364,
+          "end_tick": 8485,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "reprise",
+          "syllable": "New"
+        }
+      ]
+    },
+    {
+      "text": "Or-",
+      "section": "reprise",
+      "start_tick": 8485,
+      "end_tick": 8545,
+      "start": 84.85,
+      "end": 85.45,
+      "spelling": "/AW/R",
+      "notes": [
+        {
+          "start_tick": 8485,
+          "end_tick": 8515,
+          "midi": 51,
+          "pitch_hz": 155.563492,
+          "section": "reprise",
+          "syllable": "Or-"
+        },
+        {
+          "start_tick": 8515,
+          "end_tick": 8545,
+          "midi": 50,
+          "pitch_hz": 146.832384,
+          "section": "reprise",
+          "syllable": "Or-"
+        }
+      ]
+    },
+    {
+      "text": "-leans",
+      "section": "reprise",
+      "start_tick": 8545,
+      "end_tick": 8667,
+      "start": 85.45,
+      "end": 86.67,
+      "spelling": "L/E/N Z",
+      "notes": [
+        {
+          "start_tick": 8545,
+          "end_tick": 8667,
+          "midi": 48,
+          "pitch_hz": 130.812783,
+          "section": "reprise",
+          "syllable": "-leans"
+        }
+      ]
+    },
+    {
+      "text": "they",
+      "section": "reprise",
+      "start_tick": 8667,
+      "end_tick": 8727,
+      "start": 86.67,
+      "end": 87.27,
+      "spelling": "THV/A/",
+      "notes": [
+        {
+          "start_tick": 8667,
+          "end_tick": 8727,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "reprise",
+          "syllable": "they"
+        }
+      ]
+    },
+    {
+      "text": "call",
+      "section": "reprise",
+      "start_tick": 8729,
+      "end_tick": 8848,
+      "start": 87.29,
+      "end": 88.48,
+      "spelling": "K/AW/LF",
+      "notes": [
+        {
+          "start_tick": 8729,
+          "end_tick": 8848,
+          "midi": 60,
+          "pitch_hz": 261.625565,
+          "section": "reprise",
+          "syllable": "call"
+        }
+      ]
+    },
+    {
+      "text": "the",
+      "section": "reprise",
+      "start_tick": 8848,
+      "end_tick": 8909,
+      "start": 88.48,
+      "end": 89.09,
+      "spelling": "THV/UH/",
+      "notes": [
+        {
+          "start_tick": 8848,
+          "end_tick": 8909,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "reprise",
+          "syllable": "the"
+        }
+      ]
+    },
+    {
+      "text": "Ri-",
+      "section": "reprise",
+      "start_tick": 8909,
+      "end_tick": 9030,
+      "start": 89.09,
+      "end": 90.3,
+      "spelling": "R/AH>I/",
+      "notes": [
+        {
+          "start_tick": 8909,
+          "end_tick": 9030,
+          "midi": 58,
+          "pitch_hz": 233.081881,
+          "section": "reprise",
+          "syllable": "Ri-"
+        }
+      ]
+    },
+    {
+      "text": "-sing",
+      "section": "reprise",
+      "start_tick": 9030,
+      "end_tick": 9091,
+      "start": 90.3,
+      "end": 90.91,
+      "spelling": "Z/I/NG",
+      "notes": [
+        {
+          "start_tick": 9030,
+          "end_tick": 9061,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "reprise",
+          "syllable": "-sing"
+        },
+        {
+          "start_tick": 9061,
+          "end_tick": 9091,
+          "midi": 53,
+          "pitch_hz": 174.614116,
+          "section": "reprise",
+          "syllable": "-sing"
+        }
+      ]
+    },
+    {
+      "text": "Sun",
+      "section": "reprise",
+      "start_tick": 9093,
+      "end_tick": 9325,
+      "start": 90.93,
+      "end": 93.25,
+      "spelling": "S/UH1/N",
+      "notes": [
+        {
+          "start_tick": 9093,
+          "end_tick": 9182,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "reprise",
+          "syllable": "Sun"
+        },
+        {
+          "start_tick": 9182,
+          "end_tick": 9212,
+          "midi": 58,
+          "pitch_hz": 233.081881,
+          "section": "reprise",
+          "syllable": "Sun"
+        },
+        {
+          "start_tick": 9212,
+          "end_tick": 9273,
+          "midi": 55,
+          "pitch_hz": 195.997718,
+          "section": "reprise",
+          "syllable": "Sun"
+        },
+        {
+          "start_tick": 9273,
+          "end_tick": 9303,
+          "midi": 53,
+          "pitch_hz": 174.614116,
+          "section": "reprise",
+          "syllable": "Sun"
+        },
+        {
+          "start_tick": 9303,
+          "end_tick": 9325,
+          "midi": 48,
+          "pitch_hz": 130.812783,
+          "section": "reprise",
+          "syllable": "Sun"
+        }
+      ]
+    }
+  ],
+  "melody": [
+    {
+      "start_tick": 667,
+      "end_tick": 727,
+      "midi": 43,
+      "pitch_hz": 97.998859,
+      "section": "verse_1",
+      "syllable": "There"
+    },
+    {
+      "start_tick": 727,
+      "end_tick": 848,
+      "midi": 48,
+      "pitch_hz": 130.812783,
+      "section": "verse_1",
+      "syllable": "is"
+    },
+    {
+      "start_tick": 848,
+      "end_tick": 879,
+      "midi": 50,
+      "pitch_hz": 146.832384,
+      "section": "verse_1",
+      "syllable": "a"
+    },
+    {
+      "start_tick": 879,
+      "end_tick": 909,
+      "midi": 48,
+      "pitch_hz": 130.812783,
+      "section": "verse_1",
+      "syllable": "a"
+    },
+    {
+      "start_tick": 909,
+      "end_tick": 1030,
+      "midi": 51,
+      "pitch_hz": 155.563492,
+      "section": "verse_1",
+      "syllable": "house"
+    },
+    {
+      "start_tick": 1030,
+      "end_tick": 1061,
+      "midi": 53,
+      "pitch_hz": 174.614116,
+      "section": "verse_1",
+      "syllable": "in"
+    },
+    {
+      "start_tick": 1061,
+      "end_tick": 1091,
+      "midi": 54,
+      "pitch_hz": 184.997211,
+      "section": "verse_1",
+      "syllable": "in"
+    },
+    {
+      "start_tick": 1091,
+      "end_tick": 1212,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_1",
+      "syllable": "New"
+    },
+    {
+      "start_tick": 1212,
+      "end_tick": 1242,
+      "midi": 51,
+      "pitch_hz": 155.563492,
+      "section": "verse_1",
+      "syllable": "Or-"
+    },
+    {
+      "start_tick": 1242,
+      "end_tick": 1273,
+      "midi": 50,
+      "pitch_hz": 146.832384,
+      "section": "verse_1",
+      "syllable": "Or-"
+    },
+    {
+      "start_tick": 1273,
+      "end_tick": 1394,
+      "midi": 48,
+      "pitch_hz": 130.812783,
+      "section": "verse_1",
+      "syllable": "-leans"
+    },
+    {
+      "start_tick": 1394,
+      "end_tick": 1455,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_1",
+      "syllable": "they"
+    },
+    {
+      "start_tick": 1457,
+      "end_tick": 1576,
+      "midi": 60,
+      "pitch_hz": 261.625565,
+      "section": "verse_1",
+      "syllable": "call"
+    },
+    {
+      "start_tick": 1576,
+      "end_tick": 1636,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_1",
+      "syllable": "the"
+    },
+    {
+      "start_tick": 1636,
+      "end_tick": 1758,
+      "midi": 58,
+      "pitch_hz": 233.081881,
+      "section": "verse_1",
+      "syllable": "Ri-"
+    },
+    {
+      "start_tick": 1758,
+      "end_tick": 1788,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_1",
+      "syllable": "-sing"
+    },
+    {
+      "start_tick": 1788,
+      "end_tick": 1818,
+      "midi": 53,
+      "pitch_hz": 174.614116,
+      "section": "verse_1",
+      "syllable": "-sing"
+    },
+    {
+      "start_tick": 1820,
+      "end_tick": 1970,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_1",
+      "syllable": "Sun"
+    },
+    {
+      "start_tick": 1970,
+      "end_tick": 2000,
+      "midi": 53,
+      "pitch_hz": 174.614116,
+      "section": "verse_1",
+      "syllable": "Sun"
+    },
+    {
+      "start_tick": 2000,
+      "end_tick": 2053,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_1",
+      "syllable": "Sun"
+    },
+    {
+      "start_tick": 2121,
+      "end_tick": 2182,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_1",
+      "syllable": "It's"
+    },
+    {
+      "start_tick": 2182,
+      "end_tick": 2303,
+      "midi": 60,
+      "pitch_hz": 261.625565,
+      "section": "verse_1",
+      "syllable": "been"
+    },
+    {
+      "start_tick": 2303,
+      "end_tick": 2364,
+      "midi": 48,
+      "pitch_hz": 130.812783,
+      "section": "verse_1",
+      "syllable": "the"
+    },
+    {
+      "start_tick": 2364,
+      "end_tick": 2424,
+      "midi": 51,
+      "pitch_hz": 155.563492,
+      "section": "verse_1",
+      "syllable": "ru-"
+    },
+    {
+      "start_tick": 2424,
+      "end_tick": 2485,
+      "midi": 51,
+      "pitch_hz": 155.563492,
+      "section": "verse_1",
+      "syllable": "-in"
+    },
+    {
+      "start_tick": 2485,
+      "end_tick": 2545,
+      "midi": 53,
+      "pitch_hz": 174.614116,
+      "section": "verse_1",
+      "syllable": "of"
+    },
+    {
+      "start_tick": 2545,
+      "end_tick": 2576,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_1",
+      "syllable": "ma-"
+    },
+    {
+      "start_tick": 2576,
+      "end_tick": 2636,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_1",
+      "syllable": "-ny"
+    },
+    {
+      "start_tick": 2636,
+      "end_tick": 2667,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_1",
+      "syllable": "a"
+    },
+    {
+      "start_tick": 2667,
+      "end_tick": 2697,
+      "midi": 51,
+      "pitch_hz": 155.563492,
+      "section": "verse_1",
+      "syllable": "poor"
+    },
+    {
+      "start_tick": 2697,
+      "end_tick": 2727,
+      "midi": 50,
+      "pitch_hz": 146.832384,
+      "section": "verse_1",
+      "syllable": "poor"
+    },
+    {
+      "start_tick": 2729,
+      "end_tick": 2848,
+      "midi": 48,
+      "pitch_hz": 130.812783,
+      "section": "verse_1",
+      "syllable": "girl"
+    },
+    {
+      "start_tick": 2848,
+      "end_tick": 2909,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_1",
+      "syllable": "and"
+    },
+    {
+      "start_tick": 2909,
+      "end_tick": 2970,
+      "midi": 60,
+      "pitch_hz": 261.625565,
+      "section": "verse_1",
+      "syllable": "me"
+    },
+    {
+      "start_tick": 2970,
+      "end_tick": 3030,
+      "midi": 58,
+      "pitch_hz": 233.081881,
+      "section": "verse_1",
+      "syllable": "O"
+    },
+    {
+      "start_tick": 3030,
+      "end_tick": 3091,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_1",
+      "syllable": "God"
+    },
+    {
+      "start_tick": 3091,
+      "end_tick": 3212,
+      "midi": 53,
+      "pitch_hz": 174.614116,
+      "section": "verse_1",
+      "syllable": "for"
+    },
+    {
+      "start_tick": 3214,
+      "end_tick": 3242,
+      "midi": 51,
+      "pitch_hz": 155.563492,
+      "section": "verse_1",
+      "syllable": "one"
+    },
+    {
+      "start_tick": 3242,
+      "end_tick": 3273,
+      "midi": 50,
+      "pitch_hz": 146.832384,
+      "section": "verse_1",
+      "syllable": "one"
+    },
+    {
+      "start_tick": 3273,
+      "end_tick": 3568,
+      "midi": 48,
+      "pitch_hz": 130.812783,
+      "section": "verse_1",
+      "syllable": "one"
+    },
+    {
+      "start_tick": 3576,
+      "end_tick": 3636,
+      "midi": 43,
+      "pitch_hz": 97.998859,
+      "section": "verse_2",
+      "syllable": "Go"
+    },
+    {
+      "start_tick": 3636,
+      "end_tick": 3758,
+      "midi": 48,
+      "pitch_hz": 130.812783,
+      "section": "verse_2",
+      "syllable": "tell"
+    },
+    {
+      "start_tick": 3758,
+      "end_tick": 3788,
+      "midi": 50,
+      "pitch_hz": 146.832384,
+      "section": "verse_2",
+      "syllable": "my"
+    },
+    {
+      "start_tick": 3788,
+      "end_tick": 3818,
+      "midi": 48,
+      "pitch_hz": 130.812783,
+      "section": "verse_2",
+      "syllable": "my"
+    },
+    {
+      "start_tick": 3818,
+      "end_tick": 3939,
+      "midi": 51,
+      "pitch_hz": 155.563492,
+      "section": "verse_2",
+      "syllable": "ba-"
+    },
+    {
+      "start_tick": 3939,
+      "end_tick": 3970,
+      "midi": 53,
+      "pitch_hz": 174.614116,
+      "section": "verse_2",
+      "syllable": "-by"
+    },
+    {
+      "start_tick": 3970,
+      "end_tick": 4000,
+      "midi": 54,
+      "pitch_hz": 184.997211,
+      "section": "verse_2",
+      "syllable": "-by"
+    },
+    {
+      "start_tick": 4000,
+      "end_tick": 4076,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_2",
+      "syllable": "sis-"
+    },
+    {
+      "start_tick": 4076,
+      "end_tick": 4091,
+      "midi": 58,
+      "pitch_hz": 233.081881,
+      "section": "verse_2",
+      "syllable": "sis-"
+    },
+    {
+      "start_tick": 4091,
+      "end_tick": 4121,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_2",
+      "syllable": "sis-"
+    },
+    {
+      "start_tick": 4121,
+      "end_tick": 4152,
+      "midi": 51,
+      "pitch_hz": 155.563492,
+      "section": "verse_2",
+      "syllable": "-ter"
+    },
+    {
+      "start_tick": 4152,
+      "end_tick": 4182,
+      "midi": 50,
+      "pitch_hz": 146.832384,
+      "section": "verse_2",
+      "syllable": "-ter"
+    },
+    {
+      "start_tick": 4182,
+      "end_tick": 4303,
+      "midi": 48,
+      "pitch_hz": 130.812783,
+      "section": "verse_2",
+      "syllable": "-ter"
+    },
+    {
+      "start_tick": 4303,
+      "end_tick": 4364,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_2",
+      "syllable": "Ne-"
+    },
+    {
+      "start_tick": 4364,
+      "end_tick": 4485,
+      "midi": 60,
+      "pitch_hz": 261.625565,
+      "section": "verse_2",
+      "syllable": "-ver"
+    },
+    {
+      "start_tick": 4485,
+      "end_tick": 4545,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_2",
+      "syllable": "do"
+    },
+    {
+      "start_tick": 4545,
+      "end_tick": 4667,
+      "midi": 58,
+      "pitch_hz": 233.081881,
+      "section": "verse_2",
+      "syllable": "like"
+    },
+    {
+      "start_tick": 4667,
+      "end_tick": 4697,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_2",
+      "syllable": "I"
+    },
+    {
+      "start_tick": 4697,
+      "end_tick": 4727,
+      "midi": 53,
+      "pitch_hz": 174.614116,
+      "section": "verse_2",
+      "syllable": "I"
+    },
+    {
+      "start_tick": 4727,
+      "end_tick": 4818,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_2",
+      "syllable": "have"
+    },
+    {
+      "start_tick": 4820,
+      "end_tick": 4879,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_2",
+      "syllable": "done"
+    },
+    {
+      "start_tick": 4879,
+      "end_tick": 4909,
+      "midi": 58,
+      "pitch_hz": 233.081881,
+      "section": "verse_2",
+      "syllable": "done"
+    },
+    {
+      "start_tick": 4909,
+      "end_tick": 4939,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_2",
+      "syllable": "done"
+    },
+    {
+      "start_tick": 4939,
+      "end_tick": 4962,
+      "midi": 53,
+      "pitch_hz": 174.614116,
+      "section": "verse_2",
+      "syllable": "done"
+    },
+    {
+      "start_tick": 5030,
+      "end_tick": 5091,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_2",
+      "syllable": "To"
+    },
+    {
+      "start_tick": 5091,
+      "end_tick": 5212,
+      "midi": 60,
+      "pitch_hz": 261.625565,
+      "section": "verse_2",
+      "syllable": "shun"
+    },
+    {
+      "start_tick": 5212,
+      "end_tick": 5273,
+      "midi": 48,
+      "pitch_hz": 130.812783,
+      "section": "verse_2",
+      "syllable": "that"
+    },
+    {
+      "start_tick": 5273,
+      "end_tick": 5394,
+      "midi": 51,
+      "pitch_hz": 155.563492,
+      "section": "verse_2",
+      "syllable": "house"
+    },
+    {
+      "start_tick": 5394,
+      "end_tick": 5455,
+      "midi": 53,
+      "pitch_hz": 174.614116,
+      "section": "verse_2",
+      "syllable": "in"
+    },
+    {
+      "start_tick": 5455,
+      "end_tick": 5545,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_2",
+      "syllable": "New"
+    },
+    {
+      "start_tick": 5545,
+      "end_tick": 5576,
+      "midi": 58,
+      "pitch_hz": 233.081881,
+      "section": "verse_2",
+      "syllable": "New"
+    },
+    {
+      "start_tick": 5576,
+      "end_tick": 5606,
+      "midi": 51,
+      "pitch_hz": 155.563492,
+      "section": "verse_2",
+      "syllable": "Or-"
+    },
+    {
+      "start_tick": 5606,
+      "end_tick": 5636,
+      "midi": 50,
+      "pitch_hz": 146.832384,
+      "section": "verse_2",
+      "syllable": "Or-"
+    },
+    {
+      "start_tick": 5636,
+      "end_tick": 5758,
+      "midi": 48,
+      "pitch_hz": 130.812783,
+      "section": "verse_2",
+      "syllable": "-leans"
+    },
+    {
+      "start_tick": 5758,
+      "end_tick": 5818,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_2",
+      "syllable": "they"
+    },
+    {
+      "start_tick": 5820,
+      "end_tick": 5909,
+      "midi": 60,
+      "pitch_hz": 261.625565,
+      "section": "verse_2",
+      "syllable": "call"
+    },
+    {
+      "start_tick": 5909,
+      "end_tick": 5939,
+      "midi": 58,
+      "pitch_hz": 233.081881,
+      "section": "verse_2",
+      "syllable": "call"
+    },
+    {
+      "start_tick": 5939,
+      "end_tick": 6000,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_2",
+      "syllable": "the"
+    },
+    {
+      "start_tick": 6000,
+      "end_tick": 6061,
+      "midi": 58,
+      "pitch_hz": 233.081881,
+      "section": "verse_2",
+      "syllable": "Ri-"
+    },
+    {
+      "start_tick": 6061,
+      "end_tick": 6121,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "verse_2",
+      "syllable": "Ri-"
+    },
+    {
+      "start_tick": 6121,
+      "end_tick": 6152,
+      "midi": 51,
+      "pitch_hz": 155.563492,
+      "section": "verse_2",
+      "syllable": "-sing"
+    },
+    {
+      "start_tick": 6152,
+      "end_tick": 6182,
+      "midi": 50,
+      "pitch_hz": 146.832384,
+      "section": "verse_2",
+      "syllable": "-sing"
+    },
+    {
+      "start_tick": 6184,
+      "end_tick": 6477,
+      "midi": 48,
+      "pitch_hz": 130.812783,
+      "section": "verse_2",
+      "syllable": "Sun"
+    },
+    {
+      "start_tick": 7939,
+      "end_tick": 8000,
+      "midi": 43,
+      "pitch_hz": 97.998859,
+      "section": "reprise",
+      "syllable": "There"
+    },
+    {
+      "start_tick": 8000,
+      "end_tick": 8121,
+      "midi": 48,
+      "pitch_hz": 130.812783,
+      "section": "reprise",
+      "syllable": "is"
+    },
+    {
+      "start_tick": 8121,
+      "end_tick": 8152,
+      "midi": 50,
+      "pitch_hz": 146.832384,
+      "section": "reprise",
+      "syllable": "a"
+    },
+    {
+      "start_tick": 8152,
+      "end_tick": 8182,
+      "midi": 48,
+      "pitch_hz": 130.812783,
+      "section": "reprise",
+      "syllable": "a"
+    },
+    {
+      "start_tick": 8182,
+      "end_tick": 8303,
+      "midi": 51,
+      "pitch_hz": 155.563492,
+      "section": "reprise",
+      "syllable": "house"
+    },
+    {
+      "start_tick": 8303,
+      "end_tick": 8333,
+      "midi": 53,
+      "pitch_hz": 174.614116,
+      "section": "reprise",
+      "syllable": "in"
+    },
+    {
+      "start_tick": 8333,
+      "end_tick": 8364,
+      "midi": 54,
+      "pitch_hz": 184.997211,
+      "section": "reprise",
+      "syllable": "in"
+    },
+    {
+      "start_tick": 8364,
+      "end_tick": 8485,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "reprise",
+      "syllable": "New"
+    },
+    {
+      "start_tick": 8485,
+      "end_tick": 8515,
+      "midi": 51,
+      "pitch_hz": 155.563492,
+      "section": "reprise",
+      "syllable": "Or-"
+    },
+    {
+      "start_tick": 8515,
+      "end_tick": 8545,
+      "midi": 50,
+      "pitch_hz": 146.832384,
+      "section": "reprise",
+      "syllable": "Or-"
+    },
+    {
+      "start_tick": 8545,
+      "end_tick": 8667,
+      "midi": 48,
+      "pitch_hz": 130.812783,
+      "section": "reprise",
+      "syllable": "-leans"
+    },
+    {
+      "start_tick": 8667,
+      "end_tick": 8727,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "reprise",
+      "syllable": "they"
+    },
+    {
+      "start_tick": 8729,
+      "end_tick": 8848,
+      "midi": 60,
+      "pitch_hz": 261.625565,
+      "section": "reprise",
+      "syllable": "call"
+    },
+    {
+      "start_tick": 8848,
+      "end_tick": 8909,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "reprise",
+      "syllable": "the"
+    },
+    {
+      "start_tick": 8909,
+      "end_tick": 9030,
+      "midi": 58,
+      "pitch_hz": 233.081881,
+      "section": "reprise",
+      "syllable": "Ri-"
+    },
+    {
+      "start_tick": 9030,
+      "end_tick": 9061,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "reprise",
+      "syllable": "-sing"
+    },
+    {
+      "start_tick": 9061,
+      "end_tick": 9091,
+      "midi": 53,
+      "pitch_hz": 174.614116,
+      "section": "reprise",
+      "syllable": "-sing"
+    },
+    {
+      "start_tick": 9093,
+      "end_tick": 9182,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "reprise",
+      "syllable": "Sun"
+    },
+    {
+      "start_tick": 9182,
+      "end_tick": 9212,
+      "midi": 58,
+      "pitch_hz": 233.081881,
+      "section": "reprise",
+      "syllable": "Sun"
+    },
+    {
+      "start_tick": 9212,
+      "end_tick": 9273,
+      "midi": 55,
+      "pitch_hz": 195.997718,
+      "section": "reprise",
+      "syllable": "Sun"
+    },
+    {
+      "start_tick": 9273,
+      "end_tick": 9303,
+      "midi": 53,
+      "pitch_hz": 174.614116,
+      "section": "reprise",
+      "syllable": "Sun"
+    },
+    {
+      "start_tick": 9303,
+      "end_tick": 9325,
+      "midi": 48,
+      "pitch_hz": 130.812783,
+      "section": "reprise",
+      "syllable": "Sun"
+    }
+  ],
+  "phones": [
+    {
+      "start_tick": 667,
+      "end_tick": 674,
+      "start": 6.67,
+      "end": 6.74,
+      "phoneme": 53,
+      "label": "THV",
+      "vowel": false,
+      "syllable": "There",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 674,
+      "end_tick": 722,
+      "start": 6.74,
+      "end": 7.22,
+      "phoneme": 10,
+      "label": "EH",
+      "vowel": true,
+      "syllable": "There",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 722,
+      "end_tick": 727,
+      "start": 7.22,
+      "end": 7.27,
+      "phoneme": 29,
+      "label": "R",
+      "vowel": false,
+      "syllable": "There",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 727,
+      "end_tick": 841,
+      "start": 7.27,
+      "end": 8.41,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "is",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 841,
+      "end_tick": 848,
+      "start": 8.41,
+      "end": 8.48,
+      "phoneme": 47,
+      "label": "Z",
+      "vowel": false,
+      "syllable": "is",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 848,
+      "end_tick": 909,
+      "start": 8.48,
+      "end": 9.09,
+      "phoneme": 24,
+      "label": "UH",
+      "vowel": true,
+      "syllable": "a",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 909,
+      "end_tick": 916,
+      "start": 9.09,
+      "end": 9.16,
+      "phoneme": 44,
+      "label": "HF",
+      "vowel": false,
+      "syllable": "house",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 916,
+      "end_tick": 999,
+      "start": 9.16,
+      "end": 9.99,
+      "phoneme": 14,
+      "label": "AH",
+      "vowel": true,
+      "syllable": "house",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 999,
+      "end_tick": 1023,
+      "start": 9.99,
+      "end": 10.23,
+      "phoneme": 22,
+      "label": "U",
+      "vowel": true,
+      "syllable": "house",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1023,
+      "end_tick": 1030,
+      "start": 10.23,
+      "end": 10.3,
+      "phoneme": 48,
+      "label": "S",
+      "vowel": false,
+      "syllable": "house",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1030,
+      "end_tick": 1086,
+      "start": 10.3,
+      "end": 10.86,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "in",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1086,
+      "end_tick": 1091,
+      "start": 10.86,
+      "end": 10.91,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "in",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1091,
+      "end_tick": 1096,
+      "start": 10.91,
+      "end": 10.96,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "New",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1096,
+      "end_tick": 1212,
+      "start": 10.96,
+      "end": 12.12,
+      "phoneme": 20,
+      "label": "IU",
+      "vowel": true,
+      "syllable": "New",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1212,
+      "end_tick": 1268,
+      "start": 12.12,
+      "end": 12.68,
+      "phoneme": 16,
+      "label": "AW",
+      "vowel": true,
+      "syllable": "Or-",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1268,
+      "end_tick": 1273,
+      "start": 12.68,
+      "end": 12.73,
+      "phoneme": 29,
+      "label": "R",
+      "vowel": false,
+      "syllable": "Or-",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1273,
+      "end_tick": 1278,
+      "start": 12.73,
+      "end": 12.78,
+      "phoneme": 32,
+      "label": "L",
+      "vowel": false,
+      "syllable": "-leans",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1278,
+      "end_tick": 1382,
+      "start": 12.78,
+      "end": 13.82,
+      "phoneme": 1,
+      "label": "E",
+      "vowel": true,
+      "syllable": "-leans",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1382,
+      "end_tick": 1387,
+      "start": 13.82,
+      "end": 13.87,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "-leans",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1387,
+      "end_tick": 1394,
+      "start": 13.87,
+      "end": 13.94,
+      "phoneme": 47,
+      "label": "Z",
+      "vowel": false,
+      "syllable": "-leans",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1394,
+      "end_tick": 1401,
+      "start": 13.94,
+      "end": 14.01,
+      "phoneme": 53,
+      "label": "THV",
+      "vowel": false,
+      "syllable": "they",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1401,
+      "end_tick": 1455,
+      "start": 14.01,
+      "end": 14.55,
+      "phoneme": 8,
+      "label": "A",
+      "vowel": true,
+      "syllable": "they",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1457,
+      "end_tick": 1462,
+      "start": 14.57,
+      "end": 14.62,
+      "phoneme": 41,
+      "label": "K",
+      "vowel": false,
+      "syllable": "call",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1462,
+      "end_tick": 1571,
+      "start": 14.62,
+      "end": 15.71,
+      "phoneme": 16,
+      "label": "AW",
+      "vowel": true,
+      "syllable": "call",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1571,
+      "end_tick": 1576,
+      "start": 15.71,
+      "end": 15.76,
+      "phoneme": 34,
+      "label": "LF",
+      "vowel": false,
+      "syllable": "call",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1576,
+      "end_tick": 1583,
+      "start": 15.76,
+      "end": 15.83,
+      "phoneme": 53,
+      "label": "THV",
+      "vowel": false,
+      "syllable": "the",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1583,
+      "end_tick": 1636,
+      "start": 15.83,
+      "end": 16.36,
+      "phoneme": 24,
+      "label": "UH",
+      "vowel": true,
+      "syllable": "the",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1636,
+      "end_tick": 1641,
+      "start": 16.36,
+      "end": 16.41,
+      "phoneme": 29,
+      "label": "R",
+      "vowel": false,
+      "syllable": "Ri-",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1641,
+      "end_tick": 1732,
+      "start": 16.41,
+      "end": 17.32,
+      "phoneme": 14,
+      "label": "AH",
+      "vowel": true,
+      "syllable": "Ri-",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1732,
+      "end_tick": 1758,
+      "start": 17.32,
+      "end": 17.58,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "Ri-",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1758,
+      "end_tick": 1765,
+      "start": 17.58,
+      "end": 17.65,
+      "phoneme": 47,
+      "label": "Z",
+      "vowel": false,
+      "syllable": "-sing",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1765,
+      "end_tick": 1813,
+      "start": 17.65,
+      "end": 18.13,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "-sing",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1813,
+      "end_tick": 1818,
+      "start": 18.13,
+      "end": 18.18,
+      "phoneme": 57,
+      "label": "NG",
+      "vowel": false,
+      "syllable": "-sing",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1820,
+      "end_tick": 1827,
+      "start": 18.2,
+      "end": 18.27,
+      "phoneme": 48,
+      "label": "S",
+      "vowel": false,
+      "syllable": "Sun",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 1827,
+      "end_tick": 2048,
+      "start": 18.27,
+      "end": 20.48,
+      "phoneme": 25,
+      "label": "UH1",
+      "vowel": true,
+      "syllable": "Sun",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2048,
+      "end_tick": 2053,
+      "start": 20.48,
+      "end": 20.53,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "Sun",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2121,
+      "end_tick": 2170,
+      "start": 21.21,
+      "end": 21.7,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "It's",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2170,
+      "end_tick": 2175,
+      "start": 21.7,
+      "end": 21.75,
+      "phoneme": 40,
+      "label": "T",
+      "vowel": false,
+      "syllable": "It's",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2175,
+      "end_tick": 2182,
+      "start": 21.75,
+      "end": 21.82,
+      "phoneme": 48,
+      "label": "S",
+      "vowel": false,
+      "syllable": "It's",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2182,
+      "end_tick": 2187,
+      "start": 21.82,
+      "end": 21.87,
+      "phoneme": 36,
+      "label": "B",
+      "vowel": false,
+      "syllable": "been",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2187,
+      "end_tick": 2298,
+      "start": 21.87,
+      "end": 22.98,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "been",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2298,
+      "end_tick": 2303,
+      "start": 22.98,
+      "end": 23.03,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "been",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2303,
+      "end_tick": 2310,
+      "start": 23.03,
+      "end": 23.1,
+      "phoneme": 53,
+      "label": "THV",
+      "vowel": false,
+      "syllable": "the",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2310,
+      "end_tick": 2364,
+      "start": 23.1,
+      "end": 23.64,
+      "phoneme": 24,
+      "label": "UH",
+      "vowel": true,
+      "syllable": "the",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2364,
+      "end_tick": 2369,
+      "start": 23.64,
+      "end": 23.69,
+      "phoneme": 29,
+      "label": "R",
+      "vowel": false,
+      "syllable": "ru-",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2369,
+      "end_tick": 2424,
+      "start": 23.69,
+      "end": 24.24,
+      "phoneme": 22,
+      "label": "U",
+      "vowel": true,
+      "syllable": "ru-",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2424,
+      "end_tick": 2480,
+      "start": 24.24,
+      "end": 24.8,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "-in",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2480,
+      "end_tick": 2485,
+      "start": 24.8,
+      "end": 24.85,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "-in",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2485,
+      "end_tick": 2540,
+      "start": 24.85,
+      "end": 25.4,
+      "phoneme": 24,
+      "label": "UH",
+      "vowel": true,
+      "syllable": "of",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2540,
+      "end_tick": 2545,
+      "start": 25.4,
+      "end": 25.45,
+      "phoneme": 51,
+      "label": "V",
+      "vowel": false,
+      "syllable": "of",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2545,
+      "end_tick": 2550,
+      "start": 25.45,
+      "end": 25.5,
+      "phoneme": 55,
+      "label": "M",
+      "vowel": false,
+      "syllable": "ma-",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2550,
+      "end_tick": 2576,
+      "start": 25.5,
+      "end": 25.76,
+      "phoneme": 12,
+      "label": "AE",
+      "vowel": true,
+      "syllable": "ma-",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2576,
+      "end_tick": 2581,
+      "start": 25.76,
+      "end": 25.81,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "-ny",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2581,
+      "end_tick": 2636,
+      "start": 25.81,
+      "end": 26.36,
+      "phoneme": 6,
+      "label": "IE",
+      "vowel": true,
+      "syllable": "-ny",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2636,
+      "end_tick": 2667,
+      "start": 26.36,
+      "end": 26.67,
+      "phoneme": 24,
+      "label": "UH",
+      "vowel": true,
+      "syllable": "a",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2667,
+      "end_tick": 2672,
+      "start": 26.67,
+      "end": 26.72,
+      "phoneme": 39,
+      "label": "P",
+      "vowel": false,
+      "syllable": "poor",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2672,
+      "end_tick": 2722,
+      "start": 26.72,
+      "end": 27.22,
+      "phoneme": 17,
+      "label": "O",
+      "vowel": true,
+      "syllable": "poor",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2722,
+      "end_tick": 2727,
+      "start": 27.22,
+      "end": 27.27,
+      "phoneme": 29,
+      "label": "R",
+      "vowel": false,
+      "syllable": "poor",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2729,
+      "end_tick": 2734,
+      "start": 27.29,
+      "end": 27.34,
+      "phoneme": 38,
+      "label": "KV",
+      "vowel": false,
+      "syllable": "girl",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2734,
+      "end_tick": 2843,
+      "start": 27.34,
+      "end": 28.43,
+      "phoneme": 28,
+      "label": "ER",
+      "vowel": true,
+      "syllable": "girl",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2843,
+      "end_tick": 2848,
+      "start": 28.43,
+      "end": 28.48,
+      "phoneme": 34,
+      "label": "LF",
+      "vowel": false,
+      "syllable": "girl",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2848,
+      "end_tick": 2899,
+      "start": 28.48,
+      "end": 28.99,
+      "phoneme": 12,
+      "label": "AE",
+      "vowel": true,
+      "syllable": "and",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2899,
+      "end_tick": 2904,
+      "start": 28.99,
+      "end": 29.04,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "and",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2904,
+      "end_tick": 2909,
+      "start": 29.04,
+      "end": 29.09,
+      "phoneme": 37,
+      "label": "D",
+      "vowel": false,
+      "syllable": "and",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2909,
+      "end_tick": 2914,
+      "start": 29.09,
+      "end": 29.14,
+      "phoneme": 55,
+      "label": "M",
+      "vowel": false,
+      "syllable": "me",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2914,
+      "end_tick": 2970,
+      "start": 29.14,
+      "end": 29.7,
+      "phoneme": 1,
+      "label": "E",
+      "vowel": true,
+      "syllable": "me",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 2970,
+      "end_tick": 3030,
+      "start": 29.7,
+      "end": 30.3,
+      "phoneme": 18,
+      "label": "OU",
+      "vowel": true,
+      "syllable": "O",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 3030,
+      "end_tick": 3035,
+      "start": 30.3,
+      "end": 30.35,
+      "phoneme": 38,
+      "label": "KV",
+      "vowel": false,
+      "syllable": "God",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 3035,
+      "end_tick": 3086,
+      "start": 30.35,
+      "end": 30.86,
+      "phoneme": 14,
+      "label": "AH",
+      "vowel": true,
+      "syllable": "God",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 3086,
+      "end_tick": 3091,
+      "start": 30.86,
+      "end": 30.91,
+      "phoneme": 37,
+      "label": "D",
+      "vowel": false,
+      "syllable": "God",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 3091,
+      "end_tick": 3098,
+      "start": 30.91,
+      "end": 30.98,
+      "phoneme": 52,
+      "label": "F",
+      "vowel": false,
+      "syllable": "for",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 3098,
+      "end_tick": 3207,
+      "start": 30.98,
+      "end": 32.07,
+      "phoneme": 16,
+      "label": "AW",
+      "vowel": true,
+      "syllable": "for",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 3207,
+      "end_tick": 3212,
+      "start": 32.07,
+      "end": 32.12,
+      "phoneme": 29,
+      "label": "R",
+      "vowel": false,
+      "syllable": "for",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 3214,
+      "end_tick": 3219,
+      "start": 32.14,
+      "end": 32.19,
+      "phoneme": 35,
+      "label": "W",
+      "vowel": false,
+      "syllable": "one",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 3219,
+      "end_tick": 3563,
+      "start": 32.19,
+      "end": 35.63,
+      "phoneme": 25,
+      "label": "UH1",
+      "vowel": true,
+      "syllable": "one",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 3563,
+      "end_tick": 3568,
+      "start": 35.63,
+      "end": 35.68,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "one",
+      "section": "verse_1"
+    },
+    {
+      "start_tick": 3576,
+      "end_tick": 3581,
+      "start": 35.76,
+      "end": 35.81,
+      "phoneme": 38,
+      "label": "KV",
+      "vowel": false,
+      "syllable": "Go",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 3581,
+      "end_tick": 3636,
+      "start": 35.81,
+      "end": 36.36,
+      "phoneme": 18,
+      "label": "OU",
+      "vowel": true,
+      "syllable": "Go",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 3636,
+      "end_tick": 3641,
+      "start": 36.36,
+      "end": 36.41,
+      "phoneme": 40,
+      "label": "T",
+      "vowel": false,
+      "syllable": "tell",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 3641,
+      "end_tick": 3753,
+      "start": 36.41,
+      "end": 37.53,
+      "phoneme": 10,
+      "label": "EH",
+      "vowel": true,
+      "syllable": "tell",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 3753,
+      "end_tick": 3758,
+      "start": 37.53,
+      "end": 37.58,
+      "phoneme": 34,
+      "label": "LF",
+      "vowel": false,
+      "syllable": "tell",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 3758,
+      "end_tick": 3763,
+      "start": 37.58,
+      "end": 37.63,
+      "phoneme": 55,
+      "label": "M",
+      "vowel": false,
+      "syllable": "my",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 3763,
+      "end_tick": 3806,
+      "start": 37.63,
+      "end": 38.06,
+      "phoneme": 14,
+      "label": "AH",
+      "vowel": true,
+      "syllable": "my",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 3806,
+      "end_tick": 3818,
+      "start": 38.06,
+      "end": 38.18,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "my",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 3818,
+      "end_tick": 3823,
+      "start": 38.18,
+      "end": 38.23,
+      "phoneme": 36,
+      "label": "B",
+      "vowel": false,
+      "syllable": "ba-",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 3823,
+      "end_tick": 3939,
+      "start": 38.23,
+      "end": 39.39,
+      "phoneme": 8,
+      "label": "A",
+      "vowel": true,
+      "syllable": "ba-",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 3939,
+      "end_tick": 4000,
+      "start": 39.39,
+      "end": 40.0,
+      "phoneme": 6,
+      "label": "IE",
+      "vowel": true,
+      "syllable": "-by",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4000,
+      "end_tick": 4007,
+      "start": 40.0,
+      "end": 40.07,
+      "phoneme": 48,
+      "label": "S",
+      "vowel": false,
+      "syllable": "sis-",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4007,
+      "end_tick": 4114,
+      "start": 40.07,
+      "end": 41.14,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "sis-",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4114,
+      "end_tick": 4121,
+      "start": 41.14,
+      "end": 41.21,
+      "phoneme": 48,
+      "label": "S",
+      "vowel": false,
+      "syllable": "sis-",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4121,
+      "end_tick": 4126,
+      "start": 41.21,
+      "end": 41.26,
+      "phoneme": 40,
+      "label": "T",
+      "vowel": false,
+      "syllable": "-ter",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4126,
+      "end_tick": 4303,
+      "start": 41.26,
+      "end": 43.03,
+      "phoneme": 28,
+      "label": "ER",
+      "vowel": true,
+      "syllable": "-ter",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4303,
+      "end_tick": 4308,
+      "start": 43.03,
+      "end": 43.08,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "Ne-",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4308,
+      "end_tick": 4364,
+      "start": 43.08,
+      "end": 43.64,
+      "phoneme": 10,
+      "label": "EH",
+      "vowel": true,
+      "syllable": "Ne-",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4364,
+      "end_tick": 4369,
+      "start": 43.64,
+      "end": 43.69,
+      "phoneme": 51,
+      "label": "V",
+      "vowel": false,
+      "syllable": "-ver",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4369,
+      "end_tick": 4485,
+      "start": 43.69,
+      "end": 44.85,
+      "phoneme": 28,
+      "label": "ER",
+      "vowel": true,
+      "syllable": "-ver",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4485,
+      "end_tick": 4490,
+      "start": 44.85,
+      "end": 44.9,
+      "phoneme": 37,
+      "label": "D",
+      "vowel": false,
+      "syllable": "do",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4490,
+      "end_tick": 4545,
+      "start": 44.9,
+      "end": 45.45,
+      "phoneme": 22,
+      "label": "U",
+      "vowel": true,
+      "syllable": "do",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4545,
+      "end_tick": 4550,
+      "start": 45.45,
+      "end": 45.5,
+      "phoneme": 32,
+      "label": "L",
+      "vowel": false,
+      "syllable": "like",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4550,
+      "end_tick": 4637,
+      "start": 45.5,
+      "end": 46.37,
+      "phoneme": 14,
+      "label": "AH",
+      "vowel": true,
+      "syllable": "like",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4637,
+      "end_tick": 4662,
+      "start": 46.37,
+      "end": 46.62,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "like",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4662,
+      "end_tick": 4667,
+      "start": 46.62,
+      "end": 46.67,
+      "phoneme": 41,
+      "label": "K",
+      "vowel": false,
+      "syllable": "like",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4667,
+      "end_tick": 4714,
+      "start": 46.67,
+      "end": 47.14,
+      "phoneme": 14,
+      "label": "AH",
+      "vowel": true,
+      "syllable": "I",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4714,
+      "end_tick": 4727,
+      "start": 47.14,
+      "end": 47.27,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "I",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4727,
+      "end_tick": 4734,
+      "start": 47.27,
+      "end": 47.34,
+      "phoneme": 44,
+      "label": "HF",
+      "vowel": false,
+      "syllable": "have",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4734,
+      "end_tick": 4813,
+      "start": 47.34,
+      "end": 48.13,
+      "phoneme": 12,
+      "label": "AE",
+      "vowel": true,
+      "syllable": "have",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4813,
+      "end_tick": 4818,
+      "start": 48.13,
+      "end": 48.18,
+      "phoneme": 51,
+      "label": "V",
+      "vowel": false,
+      "syllable": "have",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4820,
+      "end_tick": 4825,
+      "start": 48.2,
+      "end": 48.25,
+      "phoneme": 37,
+      "label": "D",
+      "vowel": false,
+      "syllable": "done",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4825,
+      "end_tick": 4957,
+      "start": 48.25,
+      "end": 49.57,
+      "phoneme": 25,
+      "label": "UH1",
+      "vowel": true,
+      "syllable": "done",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 4957,
+      "end_tick": 4962,
+      "start": 49.57,
+      "end": 49.62,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "done",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5030,
+      "end_tick": 5035,
+      "start": 50.3,
+      "end": 50.35,
+      "phoneme": 40,
+      "label": "T",
+      "vowel": false,
+      "syllable": "To",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5035,
+      "end_tick": 5091,
+      "start": 50.35,
+      "end": 50.91,
+      "phoneme": 22,
+      "label": "U",
+      "vowel": true,
+      "syllable": "To",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5091,
+      "end_tick": 5098,
+      "start": 50.91,
+      "end": 50.98,
+      "phoneme": 50,
+      "label": "SCH",
+      "vowel": false,
+      "syllable": "shun",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5098,
+      "end_tick": 5207,
+      "start": 50.98,
+      "end": 52.07,
+      "phoneme": 25,
+      "label": "UH1",
+      "vowel": true,
+      "syllable": "shun",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5207,
+      "end_tick": 5212,
+      "start": 52.07,
+      "end": 52.12,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "shun",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5212,
+      "end_tick": 5219,
+      "start": 52.12,
+      "end": 52.19,
+      "phoneme": 53,
+      "label": "THV",
+      "vowel": false,
+      "syllable": "that",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5219,
+      "end_tick": 5268,
+      "start": 52.19,
+      "end": 52.68,
+      "phoneme": 12,
+      "label": "AE",
+      "vowel": true,
+      "syllable": "that",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5268,
+      "end_tick": 5273,
+      "start": 52.68,
+      "end": 52.73,
+      "phoneme": 40,
+      "label": "T",
+      "vowel": false,
+      "syllable": "that",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5273,
+      "end_tick": 5280,
+      "start": 52.73,
+      "end": 52.8,
+      "phoneme": 44,
+      "label": "HF",
+      "vowel": false,
+      "syllable": "house",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5280,
+      "end_tick": 5363,
+      "start": 52.8,
+      "end": 53.63,
+      "phoneme": 14,
+      "label": "AH",
+      "vowel": true,
+      "syllable": "house",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5363,
+      "end_tick": 5387,
+      "start": 53.63,
+      "end": 53.87,
+      "phoneme": 22,
+      "label": "U",
+      "vowel": true,
+      "syllable": "house",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5387,
+      "end_tick": 5394,
+      "start": 53.87,
+      "end": 53.94,
+      "phoneme": 48,
+      "label": "S",
+      "vowel": false,
+      "syllable": "house",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5394,
+      "end_tick": 5450,
+      "start": 53.94,
+      "end": 54.5,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "in",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5450,
+      "end_tick": 5455,
+      "start": 54.5,
+      "end": 54.55,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "in",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5455,
+      "end_tick": 5460,
+      "start": 54.55,
+      "end": 54.6,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "New",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5460,
+      "end_tick": 5576,
+      "start": 54.6,
+      "end": 55.76,
+      "phoneme": 20,
+      "label": "IU",
+      "vowel": true,
+      "syllable": "New",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5576,
+      "end_tick": 5631,
+      "start": 55.76,
+      "end": 56.31,
+      "phoneme": 16,
+      "label": "AW",
+      "vowel": true,
+      "syllable": "Or-",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5631,
+      "end_tick": 5636,
+      "start": 56.31,
+      "end": 56.36,
+      "phoneme": 29,
+      "label": "R",
+      "vowel": false,
+      "syllable": "Or-",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5636,
+      "end_tick": 5641,
+      "start": 56.36,
+      "end": 56.41,
+      "phoneme": 32,
+      "label": "L",
+      "vowel": false,
+      "syllable": "-leans",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5641,
+      "end_tick": 5746,
+      "start": 56.41,
+      "end": 57.46,
+      "phoneme": 1,
+      "label": "E",
+      "vowel": true,
+      "syllable": "-leans",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5746,
+      "end_tick": 5751,
+      "start": 57.46,
+      "end": 57.51,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "-leans",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5751,
+      "end_tick": 5758,
+      "start": 57.51,
+      "end": 57.58,
+      "phoneme": 47,
+      "label": "Z",
+      "vowel": false,
+      "syllable": "-leans",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5758,
+      "end_tick": 5765,
+      "start": 57.58,
+      "end": 57.65,
+      "phoneme": 53,
+      "label": "THV",
+      "vowel": false,
+      "syllable": "they",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5765,
+      "end_tick": 5818,
+      "start": 57.65,
+      "end": 58.18,
+      "phoneme": 8,
+      "label": "A",
+      "vowel": true,
+      "syllable": "they",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5820,
+      "end_tick": 5825,
+      "start": 58.2,
+      "end": 58.25,
+      "phoneme": 41,
+      "label": "K",
+      "vowel": false,
+      "syllable": "call",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5825,
+      "end_tick": 5934,
+      "start": 58.25,
+      "end": 59.34,
+      "phoneme": 16,
+      "label": "AW",
+      "vowel": true,
+      "syllable": "call",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5934,
+      "end_tick": 5939,
+      "start": 59.34,
+      "end": 59.39,
+      "phoneme": 34,
+      "label": "LF",
+      "vowel": false,
+      "syllable": "call",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5939,
+      "end_tick": 5946,
+      "start": 59.39,
+      "end": 59.46,
+      "phoneme": 53,
+      "label": "THV",
+      "vowel": false,
+      "syllable": "the",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 5946,
+      "end_tick": 6000,
+      "start": 59.46,
+      "end": 60.0,
+      "phoneme": 24,
+      "label": "UH",
+      "vowel": true,
+      "syllable": "the",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 6000,
+      "end_tick": 6005,
+      "start": 60.0,
+      "end": 60.05,
+      "phoneme": 29,
+      "label": "R",
+      "vowel": false,
+      "syllable": "Ri-",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 6005,
+      "end_tick": 6095,
+      "start": 60.05,
+      "end": 60.95,
+      "phoneme": 14,
+      "label": "AH",
+      "vowel": true,
+      "syllable": "Ri-",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 6095,
+      "end_tick": 6121,
+      "start": 60.95,
+      "end": 61.21,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "Ri-",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 6121,
+      "end_tick": 6128,
+      "start": 61.21,
+      "end": 61.28,
+      "phoneme": 47,
+      "label": "Z",
+      "vowel": false,
+      "syllable": "-sing",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 6128,
+      "end_tick": 6177,
+      "start": 61.28,
+      "end": 61.77,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "-sing",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 6177,
+      "end_tick": 6182,
+      "start": 61.77,
+      "end": 61.82,
+      "phoneme": 57,
+      "label": "NG",
+      "vowel": false,
+      "syllable": "-sing",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 6184,
+      "end_tick": 6191,
+      "start": 61.84,
+      "end": 61.91,
+      "phoneme": 48,
+      "label": "S",
+      "vowel": false,
+      "syllable": "Sun",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 6191,
+      "end_tick": 6472,
+      "start": 61.91,
+      "end": 64.72,
+      "phoneme": 25,
+      "label": "UH1",
+      "vowel": true,
+      "syllable": "Sun",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 6472,
+      "end_tick": 6477,
+      "start": 64.72,
+      "end": 64.77,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "Sun",
+      "section": "verse_2"
+    },
+    {
+      "start_tick": 7939,
+      "end_tick": 7946,
+      "start": 79.39,
+      "end": 79.46,
+      "phoneme": 53,
+      "label": "THV",
+      "vowel": false,
+      "syllable": "There",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 7946,
+      "end_tick": 7995,
+      "start": 79.46,
+      "end": 79.95,
+      "phoneme": 10,
+      "label": "EH",
+      "vowel": true,
+      "syllable": "There",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 7995,
+      "end_tick": 8000,
+      "start": 79.95,
+      "end": 80.0,
+      "phoneme": 29,
+      "label": "R",
+      "vowel": false,
+      "syllable": "There",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8000,
+      "end_tick": 8114,
+      "start": 80.0,
+      "end": 81.14,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "is",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8114,
+      "end_tick": 8121,
+      "start": 81.14,
+      "end": 81.21,
+      "phoneme": 47,
+      "label": "Z",
+      "vowel": false,
+      "syllable": "is",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8121,
+      "end_tick": 8182,
+      "start": 81.21,
+      "end": 81.82,
+      "phoneme": 24,
+      "label": "UH",
+      "vowel": true,
+      "syllable": "a",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8182,
+      "end_tick": 8189,
+      "start": 81.82,
+      "end": 81.89,
+      "phoneme": 44,
+      "label": "HF",
+      "vowel": false,
+      "syllable": "house",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8189,
+      "end_tick": 8272,
+      "start": 81.89,
+      "end": 82.72,
+      "phoneme": 14,
+      "label": "AH",
+      "vowel": true,
+      "syllable": "house",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8272,
+      "end_tick": 8296,
+      "start": 82.72,
+      "end": 82.96,
+      "phoneme": 22,
+      "label": "U",
+      "vowel": true,
+      "syllable": "house",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8296,
+      "end_tick": 8303,
+      "start": 82.96,
+      "end": 83.03,
+      "phoneme": 48,
+      "label": "S",
+      "vowel": false,
+      "syllable": "house",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8303,
+      "end_tick": 8359,
+      "start": 83.03,
+      "end": 83.59,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "in",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8359,
+      "end_tick": 8364,
+      "start": 83.59,
+      "end": 83.64,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "in",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8364,
+      "end_tick": 8369,
+      "start": 83.64,
+      "end": 83.69,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "New",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8369,
+      "end_tick": 8485,
+      "start": 83.69,
+      "end": 84.85,
+      "phoneme": 20,
+      "label": "IU",
+      "vowel": true,
+      "syllable": "New",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8485,
+      "end_tick": 8540,
+      "start": 84.85,
+      "end": 85.4,
+      "phoneme": 16,
+      "label": "AW",
+      "vowel": true,
+      "syllable": "Or-",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8540,
+      "end_tick": 8545,
+      "start": 85.4,
+      "end": 85.45,
+      "phoneme": 29,
+      "label": "R",
+      "vowel": false,
+      "syllable": "Or-",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8545,
+      "end_tick": 8550,
+      "start": 85.45,
+      "end": 85.5,
+      "phoneme": 32,
+      "label": "L",
+      "vowel": false,
+      "syllable": "-leans",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8550,
+      "end_tick": 8655,
+      "start": 85.5,
+      "end": 86.55,
+      "phoneme": 1,
+      "label": "E",
+      "vowel": true,
+      "syllable": "-leans",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8655,
+      "end_tick": 8660,
+      "start": 86.55,
+      "end": 86.6,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "-leans",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8660,
+      "end_tick": 8667,
+      "start": 86.6,
+      "end": 86.67,
+      "phoneme": 47,
+      "label": "Z",
+      "vowel": false,
+      "syllable": "-leans",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8667,
+      "end_tick": 8674,
+      "start": 86.67,
+      "end": 86.74,
+      "phoneme": 53,
+      "label": "THV",
+      "vowel": false,
+      "syllable": "they",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8674,
+      "end_tick": 8727,
+      "start": 86.74,
+      "end": 87.27,
+      "phoneme": 8,
+      "label": "A",
+      "vowel": true,
+      "syllable": "they",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8729,
+      "end_tick": 8734,
+      "start": 87.29,
+      "end": 87.34,
+      "phoneme": 41,
+      "label": "K",
+      "vowel": false,
+      "syllable": "call",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8734,
+      "end_tick": 8843,
+      "start": 87.34,
+      "end": 88.43,
+      "phoneme": 16,
+      "label": "AW",
+      "vowel": true,
+      "syllable": "call",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8843,
+      "end_tick": 8848,
+      "start": 88.43,
+      "end": 88.48,
+      "phoneme": 34,
+      "label": "LF",
+      "vowel": false,
+      "syllable": "call",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8848,
+      "end_tick": 8855,
+      "start": 88.48,
+      "end": 88.55,
+      "phoneme": 53,
+      "label": "THV",
+      "vowel": false,
+      "syllable": "the",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8855,
+      "end_tick": 8909,
+      "start": 88.55,
+      "end": 89.09,
+      "phoneme": 24,
+      "label": "UH",
+      "vowel": true,
+      "syllable": "the",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8909,
+      "end_tick": 8914,
+      "start": 89.09,
+      "end": 89.14,
+      "phoneme": 29,
+      "label": "R",
+      "vowel": false,
+      "syllable": "Ri-",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 8914,
+      "end_tick": 9004,
+      "start": 89.14,
+      "end": 90.04,
+      "phoneme": 14,
+      "label": "AH",
+      "vowel": true,
+      "syllable": "Ri-",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 9004,
+      "end_tick": 9030,
+      "start": 90.04,
+      "end": 90.3,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "Ri-",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 9030,
+      "end_tick": 9037,
+      "start": 90.3,
+      "end": 90.37,
+      "phoneme": 47,
+      "label": "Z",
+      "vowel": false,
+      "syllable": "-sing",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 9037,
+      "end_tick": 9086,
+      "start": 90.37,
+      "end": 90.86,
+      "phoneme": 7,
+      "label": "I",
+      "vowel": true,
+      "syllable": "-sing",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 9086,
+      "end_tick": 9091,
+      "start": 90.86,
+      "end": 90.91,
+      "phoneme": 57,
+      "label": "NG",
+      "vowel": false,
+      "syllable": "-sing",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 9093,
+      "end_tick": 9100,
+      "start": 90.93,
+      "end": 91.0,
+      "phoneme": 48,
+      "label": "S",
+      "vowel": false,
+      "syllable": "Sun",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 9100,
+      "end_tick": 9320,
+      "start": 91.0,
+      "end": 93.2,
+      "phoneme": 25,
+      "label": "UH1",
+      "vowel": true,
+      "syllable": "Sun",
+      "section": "reprise"
+    },
+    {
+      "start_tick": 9320,
+      "end_tick": 9325,
+      "start": 93.2,
+      "end": 93.25,
+      "phoneme": 56,
+      "label": "N",
+      "vowel": false,
+      "syllable": "Sun",
+      "section": "reprise"
+    }
+  ],
+  "chords": [
+    {
+      "bar": 0,
+      "symbol": "Cm",
+      "start_tick": 0,
+      "end_tick": 182
+    },
+    {
+      "bar": 1,
+      "symbol": "Cm/Bb",
+      "start_tick": 182,
+      "end_tick": 364
+    },
+    {
+      "bar": 2,
+      "symbol": "Ab",
+      "start_tick": 364,
+      "end_tick": 545
+    },
+    {
+      "bar": 3,
+      "symbol": "G7",
+      "start_tick": 545,
+      "end_tick": 727
+    },
+    {
+      "bar": 4,
+      "symbol": "Cm",
+      "start_tick": 727,
+      "end_tick": 909
+    },
+    {
+      "bar": 5,
+      "symbol": "Eb",
+      "start_tick": 909,
+      "end_tick": 1091
+    },
+    {
+      "bar": 6,
+      "symbol": "F",
+      "start_tick": 1091,
+      "end_tick": 1273
+    },
+    {
+      "bar": 7,
+      "symbol": "Ab",
+      "start_tick": 1273,
+      "end_tick": 1455
+    },
+    {
+      "bar": 8,
+      "symbol": "Cm",
+      "start_tick": 1455,
+      "end_tick": 1636
+    },
+    {
+      "bar": 9,
+      "symbol": "Eb",
+      "start_tick": 1636,
+      "end_tick": 1818
+    },
+    {
+      "bar": 10,
+      "symbol": "G7",
+      "start_tick": 1818,
+      "end_tick": 2000
+    },
+    {
+      "bar": 11,
+      "symbol": "G7",
+      "start_tick": 2000,
+      "end_tick": 2182
+    },
+    {
+      "bar": 12,
+      "symbol": "Cm",
+      "start_tick": 2182,
+      "end_tick": 2364
+    },
+    {
+      "bar": 13,
+      "symbol": "Eb",
+      "start_tick": 2364,
+      "end_tick": 2545
+    },
+    {
+      "bar": 14,
+      "symbol": "F",
+      "start_tick": 2545,
+      "end_tick": 2727
+    },
+    {
+      "bar": 15,
+      "symbol": "Ab",
+      "start_tick": 2727,
+      "end_tick": 2909
+    },
+    {
+      "bar": 16,
+      "symbol": "Cm",
+      "start_tick": 2909,
+      "end_tick": 3091
+    },
+    {
+      "bar": 17,
+      "symbol": "G7",
+      "start_tick": 3091,
+      "end_tick": 3273
+    },
+    {
+      "bar": 18,
+      "symbol": "Cm",
+      "start_tick": 3273,
+      "end_tick": 3455
+    },
+    {
+      "bar": 19,
+      "symbol": "G7",
+      "start_tick": 3455,
+      "end_tick": 3636
+    },
+    {
+      "bar": 20,
+      "symbol": "Cm",
+      "start_tick": 3636,
+      "end_tick": 3818
+    },
+    {
+      "bar": 21,
+      "symbol": "Eb",
+      "start_tick": 3818,
+      "end_tick": 4000
+    },
+    {
+      "bar": 22,
+      "symbol": "F",
+      "start_tick": 4000,
+      "end_tick": 4182
+    },
+    {
+      "bar": 23,
+      "symbol": "Ab",
+      "start_tick": 4182,
+      "end_tick": 4364
+    },
+    {
+      "bar": 24,
+      "symbol": "Cm",
+      "start_tick": 4364,
+      "end_tick": 4545
+    },
+    {
+      "bar": 25,
+      "symbol": "Eb",
+      "start_tick": 4545,
+      "end_tick": 4727
+    },
+    {
+      "bar": 26,
+      "symbol": "G7",
+      "start_tick": 4727,
+      "end_tick": 4909
+    },
+    {
+      "bar": 27,
+      "symbol": "G7",
+      "start_tick": 4909,
+      "end_tick": 5091
+    },
+    {
+      "bar": 28,
+      "symbol": "Cm",
+      "start_tick": 5091,
+      "end_tick": 5273
+    },
+    {
+      "bar": 29,
+      "symbol": "Eb",
+      "start_tick": 5273,
+      "end_tick": 5455
+    },
+    {
+      "bar": 30,
+      "symbol": "F",
+      "start_tick": 5455,
+      "end_tick": 5636
+    },
+    {
+      "bar": 31,
+      "symbol": "Ab",
+      "start_tick": 5636,
+      "end_tick": 5818
+    },
+    {
+      "bar": 32,
+      "symbol": "Cm",
+      "start_tick": 5818,
+      "end_tick": 6000
+    },
+    {
+      "bar": 33,
+      "symbol": "G7",
+      "start_tick": 6000,
+      "end_tick": 6182
+    },
+    {
+      "bar": 34,
+      "symbol": "Cm",
+      "start_tick": 6182,
+      "end_tick": 6364
+    },
+    {
+      "bar": 35,
+      "symbol": "G7",
+      "start_tick": 6364,
+      "end_tick": 6545
+    },
+    {
+      "bar": 36,
+      "symbol": "Cm",
+      "start_tick": 6545,
+      "end_tick": 6727
+    },
+    {
+      "bar": 37,
+      "symbol": "Eb",
+      "start_tick": 6727,
+      "end_tick": 6909
+    },
+    {
+      "bar": 38,
+      "symbol": "F",
+      "start_tick": 6909,
+      "end_tick": 7091
+    },
+    {
+      "bar": 39,
+      "symbol": "Ab",
+      "start_tick": 7091,
+      "end_tick": 7273
+    },
+    {
+      "bar": 40,
+      "symbol": "Cm",
+      "start_tick": 7273,
+      "end_tick": 7455
+    },
+    {
+      "bar": 41,
+      "symbol": "Eb",
+      "start_tick": 7455,
+      "end_tick": 7636
+    },
+    {
+      "bar": 42,
+      "symbol": "G7",
+      "start_tick": 7636,
+      "end_tick": 7818
+    },
+    {
+      "bar": 43,
+      "symbol": "G7",
+      "start_tick": 7818,
+      "end_tick": 8000
+    },
+    {
+      "bar": 44,
+      "symbol": "Cm",
+      "start_tick": 8000,
+      "end_tick": 8182
+    },
+    {
+      "bar": 45,
+      "symbol": "Eb",
+      "start_tick": 8182,
+      "end_tick": 8364
+    },
+    {
+      "bar": 46,
+      "symbol": "F",
+      "start_tick": 8364,
+      "end_tick": 8545
+    },
+    {
+      "bar": 47,
+      "symbol": "Ab",
+      "start_tick": 8545,
+      "end_tick": 8727
+    },
+    {
+      "bar": 48,
+      "symbol": "Cm",
+      "start_tick": 8727,
+      "end_tick": 8909
+    },
+    {
+      "bar": 49,
+      "symbol": "Eb",
+      "start_tick": 8909,
+      "end_tick": 9091
+    },
+    {
+      "bar": 50,
+      "symbol": "G7",
+      "start_tick": 9091,
+      "end_tick": 9273
+    },
+    {
+      "bar": 51,
+      "symbol": "G7",
+      "start_tick": 9273,
+      "end_tick": 9455
+    },
+    {
+      "bar": 52,
+      "symbol": "Cm",
+      "start_tick": 9455,
+      "end_tick": 9636
+    },
+    {
+      "bar": 53,
+      "symbol": "Ab",
+      "start_tick": 9636,
+      "end_tick": 9818
+    },
+    {
+      "bar": 54,
+      "symbol": "G7",
+      "start_tick": 9818,
+      "end_tick": 10000
+    },
+    {
+      "bar": 55,
+      "symbol": "Cm",
+      "start_tick": 10000,
+      "end_tick": 10182
+    }
+  ],
+  "note": "The vocal pickup begins two eighth notes before each named vocal section; use syllable/phone timings for exact extraction."
+}

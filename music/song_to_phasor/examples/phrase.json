@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "title": "Three sung vowels with a pitch slide",
+  "tick_hz": 100,
+  "duration_ticks": 200,
+  "voices": [{
+    "chip": 0,
+    "frames": [
+      {"tick": 0, "phoneme": 14, "pitch_hz": 164.81, "amplitude": 0},
+      {"tick": 10, "phoneme": 14, "pitch_hz": 164.81, "amplitude": 12, "filter": 128},
+      {"tick": 45, "phoneme": 14, "pitch_hz": 174.61, "amplitude": 12, "filter": 128},
+      {"tick": 50, "phoneme": 14, "pitch_hz": 185.00, "amplitude": 12, "filter": 128},
+      {"tick": 55, "phoneme": 14, "pitch_hz": 196.00, "amplitude": 12, "filter": 128},
+      {"tick": 70, "phoneme": 1, "pitch_hz": 196.00, "amplitude": 12, "filter": 144},
+      {"tick": 120, "phoneme": 19, "pitch_hz": 220.00, "amplitude": 12, "filter": 112},
+      {"tick": 150, "phoneme": 19, "pitch_hz": 222.00, "amplitude": 11, "filter": 112},
+      {"tick": 155, "phoneme": 19, "pitch_hz": 218.00, "amplitude": 11, "filter": 112},
+      {"tick": 160, "phoneme": 19, "pitch_hz": 220.00, "amplitude": 11, "filter": 112},
+      {"tick": 180, "phoneme": 0, "pitch_hz": 220.00, "amplitude": 0}
+    ]
+  }],
+  "notes": [
+    {"start_tick": 10, "end_tick": 65, "midi": 48, "velocity": 7, "voice": 0},
+    {"start_tick": 70, "end_tick": 115, "midi": 55, "velocity": 7, "voice": 0},
+    {"start_tick": 120, "end_tick": 180, "midi": 57, "velocity": 7, "voice": 0}
+  ]
+}
