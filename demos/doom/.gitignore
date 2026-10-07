@@ -1,5 +1,0 @@
-build/
-dist/
-*.wad
-__pycache__/
-*.o
