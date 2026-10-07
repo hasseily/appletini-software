@@ -14,7 +14,7 @@ built from the ROM set and therefore contains the converted arcade
 graphics.
 
 Status: builds, passes its unit tests, and plays in GSSquared and in the
-project's py65 test machine. It is **not yet tested on hardware**.
+project's py65 test machine.
 
 ## What the game does
 

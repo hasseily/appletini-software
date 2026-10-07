@@ -5,7 +5,7 @@ an Apple //e with an Appletini card. It needs the vTW accelerator (33 MHz or
 TURBO), 8 MB RamWorks memory, and the Phasor in slot 4.
 
 Status: first version. It runs in the project's test machine (see Test) and
-it boots and runs in GSSquared. It is **not yet tested on hardware**.
+it boots and runs in GSSquared.
 
 ## What the port changes
 
