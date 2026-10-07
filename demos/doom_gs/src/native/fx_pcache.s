@@ -1,9 +1,9 @@
-; fx_pcache.s: MENUW's position callback for the channel logic (milestone
-; 11, part fxchan; docs/SCREENS.md 4.7). The port's own.
+; fx_pcache.s: MENUW's position callback for the channel logic
+; (docs/SCREENS.md). The port's own.
 ;
 ;   s2t_pos   A:X a handle (A the high byte): its x, y (and angle) into
 ;             GT+0-11 with carry clear, from what the channel logic kept
-;             when the tic image last asked milestone 10's s2t_pos: the
+;             when the tic image last asked its own s2t_pos: the
 ;             listener (FXC_LISTENER) from LS_X, LS_Y, LS_ANGLE while
 ;             LS_ON says there is one; a mobj from the first busy channel
 ;             whose origin it is (CH_X, CH_Y). Carry set: none.

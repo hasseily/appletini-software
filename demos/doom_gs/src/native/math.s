@@ -1,7 +1,7 @@
-; math.s: the native 65C02 math of the port (milestone 6; src/native/MATH.md).
+; math.s: the native 65C02 math of the port (src/native/MATH.md).
 ;
-; Bit-exact with upstream's routines (docs/NATIVE.md section 3.2 and 3.3),
-; checked against them on ref816 (tools/native/mathcheck.py): the multiply
+; Bit-exact with upstream's routines (checked against them on ref816
+; while the port was written): the multiply
 ; family of m_fixed65.s and r_wall65.s, the reciprocals of m_recip65.s,
 ; FixedApproxDiv, P_AproxDistance, R_PointToAngle3 and R_PointToAngle16 of
 ; r_iigs65.s and p_path65.s, the sines and cosines of tables65.s, P_Random
@@ -15,17 +15,17 @@
 ; touches memory outside the math block ($B0-$D7), the stack, mt_far's two
 ; operand bytes in the card and, for the random numbers, their two indexes.
 ;
-; Segments (src/native/math.cfg): MATHLC, the main card's bank 1
+; Segments: MATHLC, the main card's bank 1
 ; $D800-$DBFF (the products, hot); MATHFAR, the RamWorks table reads (they
 ; run with RAMRD on, so they live in the card: the far layer's $DC00-$DFFF);
 ; MATHW, the rest, in a code window of main memory (W); MATHRND, the
 ; random table, page aligned in W.
 ;
-; The render build (-D RENDER, src/native/render.mk; docs/RENDER.md 3.1):
+; The render build (-D RENDER, src/native/render.mk; docs/RENDER.md):
 ; the same file for the render window, with the subset of MATHW the
 ; renderer calls (no R_PointToAngle3, P_AproxDistance, game sine and
 ; cosine or random numbers), and pta16 reading tantoangle from the aux
-; card (ax_tanto of auxlc.s, MEMORY_MAP.md 4.3) instead of the tables
+; card (ax_tanto of auxlc.s, MEMORY_MAP.md) instead of the tables
 ; bank: only that table read changes (MATH.md, "Not the aux card").
 
         .setcpu "65C02"
@@ -35,7 +35,7 @@
 ; The game build (-D GAMEMATH): only mathgame.inc's routines, in the tic
 ; images' core (segment GCORE), beside the render build math-r.o, whose
 ; mt_far, udiv32 and octant table (pta_tab: OCTC, OCTMINUS) they use
-; (docs/GAME.md "Wave 2 as integrated"; docs/game-parts/damage.md R1)
+; (docs/GAME.md "Wave 2 as integrated")
         .global pta3, pta_oct, finesine, finecosine, cosexc, aproxdist
         .import mt_far, udiv32, pta_tab
 .else
@@ -56,7 +56,7 @@
 .else
         .import ax_tanto
 .endif
-        ; for the harness (tools/native/mathrun.py reads the label file)
+        ; the zero page's places, in the label files
         .exportzp MZ, M_A, M_B, M_R, M_T, MT, MT_E, MT_P
         .export MT_PRND, MT_MRND, SQL
 .endif

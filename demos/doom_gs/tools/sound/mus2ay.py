@@ -1,13 +1,9 @@
-#!/usr/bin/env python3
 """MUS to a song file of AY voice commands for the Phasor.
 
-Usage:  python3 tools/sound/mus2ay.py [SONG ...] [--out DIR] [--wad FILE]
-
-Writes DIR/SONG.native12.ay (default DIR: build/sound) and prints the
-converter's counts. native12 (tables.py) is the only voice layout: the
-music plays with the card in native mode, 12 voices on 4 AY chips. The
-design is docs/research/native-sound.md section 3; tools/sound/README.md
-has the file format and what departs from the design.
+convert(song, load_instruments(wad)) gives a song's file (songs.py packs
+the 13 songs for the disk). native12 (tables.py) is the only voice
+layout: the music plays with the card in native mode, 12 voices on 4 AY
+chips. tools/sound/README.md has the file format.
 
 What the converter decides on the host, so that the 65C02 player does
 not have to:
@@ -48,7 +44,6 @@ not have to:
   the level change sent to the held notes, and the bend to the centre.
 """
 
-import argparse
 import math
 import sys
 from collections import Counter
@@ -59,7 +54,6 @@ if __package__ in (None, ''):
 
 from sound import genmidi, mus, player, tables  # noqa: E402
 
-BUILD_SOUND = mus.ROOT / 'build' / 'sound'
 TICK_MS = 1000.0 / tables.TICK_HZ
 MAX_WAIT = 126
 PENDING_OFF_TICKS = 3      # a release can start up to one interrupt late
@@ -438,34 +432,5 @@ def convert(song, instruments):
     return Converter(song, instruments).convert()
 
 
-def song_file_name(name):
-    """The song file of a song: SONG.native12.ay."""
-    return '%s.%s.ay' % (name, tables.NATIVE12.name)
-
-
 def load_instruments(wad):
     return genmidi.read(wad.lump('GENMIDI'))
-
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    parser.add_argument('songs', nargs='*')
-    parser.add_argument('--out', default=str(BUILD_SOUND))
-    parser.add_argument('--wad', default=str(mus.WAD_PATH))
-    args = parser.parse_args(argv)
-    wad = mus.Wad.open(args.wad)
-    instruments = load_instruments(wad)
-    out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
-    for name in args.songs or wad.songs():
-        song_file, stats = convert(wad.song(name), instruments)
-        data = song_file.to_bytes()
-        path = out / song_file_name(name)
-        path.write_bytes(data)
-        print('%-9s %6d bytes  %s' % (name, len(data), ', '.join(
-            '%s %d' % item for item in sorted(stats.items()))))
-    return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

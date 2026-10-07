@@ -1,11 +1,10 @@
-; lsetup.s: the native P_SetupLevel (milestone 9, stage C; docs/LEVELS.md
-; 2.1). A GPL-2 derivative of upstream's p_setup65.s (P_SetupLevel) and
+; lsetup.s: the native P_SetupLevel (docs/LEVELS.md). A GPL-2 derivative of upstream's p_setup65.s (P_SetupLevel) and
 ; p_map65.s (P_MapEnd).
 ;
 ;   nl_setup    P_SetupLevel(map A): upstream's order where it is
-;               observable (2.1): the totals 0, wminfo.partime 180, the
+;               observable: the totals 0, wminfo.partime 180, the
 ;               player's counts 0 and viewz 1 (step 3); no sound here
-;               (S_Start: milestone S4 and 11); the thinker list empty and
+;               (S_Start: dl_hook.s h_sstart); the thinker list empty and
 ;               the pools free (Z_FreeTags, P_InitThinkers), leveltime 0
 ;               (step 4); the math's product tables' pointers (mt_init: the
 ;               load phase has used no product before); then the map's
@@ -17,7 +16,7 @@
 ;               new life on the same map (upstream's RL_ON) runs it all
 ;               too.
 ;
-; Milestone 10's skeleton (docs/GAME.md 3.1, 3.4): the object API's caches
+; The game core (docs/GAME.md): the object API's caches
 ; are empty at the entry (the tic phase flushed them before the load; the
 ; RAM of their tags may be anything here, so go_reset, never a flush) and
 ; flushed and emptied at the end; the line record of lineBlocks is the old
@@ -75,4 +74,4 @@ nl_setup:
         jmp go_flush            ; the caches back and empty; P_MapEnd's
                                 ;   tmthing (GM_TMTHING) is left as it
                                 ;   is: nothing reads it before checkpos
-                                ;   writes it (tic.md R6 (c))
+                                ;   writes it

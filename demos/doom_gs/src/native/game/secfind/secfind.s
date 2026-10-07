@@ -1,5 +1,5 @@
-; game/secfind/secfind.s: part secfind of milestone 10 (docs/GAME.md 2.4,
-; wave 1): the sector finders, the tag search, the animated textures and
+; game/secfind/secfind.s: part secfind of the game's tic code
+; (docs/GAME.md): the sector finders, the tag search, the animated textures and
 ; flats, the switch timers, the scrolling walls and the light thinkers.
 ; A GPL-2 derivative of upstream's p_spec65.s (getNextSector, the
 ; P_Find*Surrounding finders and their `around`, P_FindSectorFromLineTag,
@@ -8,7 +8,7 @@
 ; T_StrobeFlash, T_Glow, EV_LightTurnOn), r_data65.s (P_UpdateAnimatedFlat)
 ; and p_switch65.s (lnLight, LSTAB's light entry).
 ;
-; The native interfaces (docs/game-parts/secfind.md, "Interfaces"):
+; The native interfaces:
 ;
 ;   getNextSector   A:X = a line, Y = a sector -> A = the line's other
 ;                   sector, NO_SECTOR ($FF) when there is none (a one-sided
@@ -40,7 +40,7 @@
 ; 16-bit signed compares of a light with another light are unsigned byte
 ; compares; with a special's word (min, max) they stay 16-bit signed.
 ;
-; Wave 1 as integrated (docs/game-parts/secfind.md, requests 1-3, 5): a
+; As integrated: a
 ; side's record and a sector's line table through the object API (sd_get,
 ; sd_put, lt_get); GTAB's animated_texture_basepic at ggame.inc's
 ; GT_BASEPIC, read with g_get (GTAB: no cache holds it); p_lights65.s's
@@ -99,7 +99,7 @@ SB_END   = SB_SECFIND + 19
 SB_SD    = SD_BUF               ; the object API's side record (sd_get)
 
 ; around is upstream's label of P_FindLowestCeilingSurrounding's head
-; (p_spec65.s:around): the part table names it (request 4), so its group
+; (p_spec65.s:around): the part table names it, so its group
 ; is the placement's
 
 ; GNS: A = getNextSector(the line at GC_LP, sector Q0)
@@ -161,7 +161,7 @@ SB_SD    = SD_BUF               ; the object API's side record (sd_get)
 ; nextSector: A = a sector, X:Y = i -> X = 1 (and C set) past its lines;
 ; else X = 0 (C clear), A = the other sector of its line i ($FF none). The
 ; callers test X: fc_call does not keep P when it restores a group on the
-; return (gcall.s, request 11)
+; return (gcall.s)
         ROUTINE nextSector
         sta Q0
         stx Q1

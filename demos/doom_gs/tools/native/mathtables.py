@@ -1,11 +1,8 @@
-#!/usr/bin/env python3
 """The native math's tables, from the reference's RAM and from formulas.
 
-Usage:  python3 tools/native/mathtables.py [--ram FILE] [--out DIR]
-
-Reads upstream's tables from a RAM of the running game (a base.ram of
-tools/native/mathcap.py: banks $00-$7F then $E0-$E1), checks them, and
-writes the native layouts into build/native/math/tables/ (the tables are
+build(load(RAM), OUT) (rtables.py: OUT is build/native/render/tables/
+math) reads upstream's tables from a RAM of the running game (banks
+$00-$7F), checks them, and writes the native layouts (the tables are
 Doom's and upstream's data, so they stay in build/, like the WAD):
 
     squares.bin    the quarter squares of $D000-$D7FF (main card, bank 1):
@@ -27,15 +24,11 @@ Doom's and upstream's data, so they stay in build/, like the WAD):
                    i)), our formula, checked against the reference's table
     rndtable.bin   P_Random's 256 bytes
     tables.json    the counts and checks
-
-The same RAM gives the models' tables (mathdefs.Tables) through load().
 """
 
-import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Optional, Sequence
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
@@ -43,8 +36,6 @@ sys.path.insert(0, str(HERE.parent))
 from native import mathdefs  # noqa: E402
 from native.mathdefs import M32, Tables, le  # noqa: E402
 
-TABLES = mathdefs.MATH / 'tables'
-DEFAULT_RAM = mathdefs.MATH / 'captures' / 'newgame' / 'base.ram'
 SINE = 0x200000
 COSINE = SINE + 0x8000
 RECIP = 0x1E0000
@@ -57,7 +48,7 @@ def peek(ram: bytes, address: int, length: int) -> bytes:
     return ram[address:address + length]
 
 
-def load(ram_path: Path = DEFAULT_RAM) -> Tables:
+def load(ram_path: Path) -> Tables:
     ram = Path(ram_path).read_bytes()
     sym = mathdefs.symbols()
     words = lambda at, n, size: [le(ram, at + size * i, size)  # noqa: E731
@@ -140,23 +131,3 @@ def build(tables: Tables, out: Path) -> dict:
                                        for i in range(8192))
     (out / 'tables.json').write_text(json.dumps(report, indent=1) + '\n')
     return report
-
-
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    parser.add_argument('--ram', type=Path, default=DEFAULT_RAM)
-    parser.add_argument('--out', type=Path, default=TABLES)
-    args = parser.parse_args(argv)
-    if not args.ram.exists():
-        print('%s is missing: run python3 tools/native/mathcap.py first'
-              % args.ram, file=sys.stderr)
-        return 1
-    report = build(load(args.ram), args.out)
-    print('cosine exceptions: %d; sine magnitude at most %d; RECIP_TABLE '
-          'equals the formula' % (len(report['cosine_exceptions']),
-                                  report['sine_magnitude_max']))
-    return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

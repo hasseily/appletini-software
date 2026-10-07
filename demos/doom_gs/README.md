@@ -1,123 +1,46 @@
 # DOOM GS: the Apple IIgs DOOM on the Appletini 65C02
 
-This is a port in progress of [Webifi's Apple IIgs DOOM](https://github.com/Webifi/iigs-doom)
+This is a port of [Webifi's Apple IIgs DOOM](https://github.com/Webifi/iigs-doom)
 to an enhanced Apple //e with an Appletini card. Upstream is a complete game,
-about 82,000 lines of 65816 assembly. The Appletini's accelerator is a W65C02S,
-so every instruction has to be translated, interpreted or rewritten.
+about 82,000 lines of 65816 assembly. The Appletini's accelerator is a
+W65C02S, so the game is rewritten in native 65C02 code. It keeps upstream's
+Super Hi-Res renderer techniques and game logic, and plays the WAD's MUS
+music on the Phasor.
 
-**Status: planning and tooling. Nothing runs on the Apple yet.** Since
-2026-09-30 the plan is a native 65C02 rewrite that keeps upstream's SHR
-techniques, with music from the WAD's MUS songs on the Phasor. Progress and
-the next steps are in [`docs/MILESTONES.md`](docs/MILESTONES.md).
-
-It is separate from the existing port in [`demos/doom`](../doom/README.md),
-which is a different engine written for cc65.
-
-## What is here
-
-| Path | Contents |
-| --- | --- |
-| `docs/MILESTONES.md` | The handoff brief: status, ground rules, results of each milestone, the next steps |
-| `docs/NATIVE.md` | The architecture of the native rewrite: strategy by subsystem, memory map, verification, expected frame rates, milestones, risks and questions for the owner. Awaits the owner's review. |
-| `docs/ARCHITECTURE.md` | The earlier draft architecture: a virtual 65816 machine on the 65C02. Superseded as the end state by the native rewrite; its facts and verification sections still hold. |
-| `docs/INTERPRETER.md` | Measured cost of the 65816 interpreter of milestone 3, by opcode and by game phase |
-| `docs/PROFILE.md` | Measured profiles of the game on the reference machine: instructions and cycles by phase, memory accesses by kind and bank, code heat, register widths, self-modification, stack and screen, and the architecture's performance assumptions measured. Written by `tools/ref816/profile816.py`. |
-| `docs/design-proposals/` | The three independent proposals the architecture was drawn from, each with a correctness critique and a hardware critique |
-| `docs/research/` | Reports on upstream's renderer and platform layer, on the Appletini hardware, and on the existing port |
-| `docs/firmware/` | Plans and adversarial reviews for Appletini firmware changes that would speed up software like this. They are proposals; none is implemented. |
-| `tools/` | Host tools (Python 3, standard library only): the fetch script, the front end and the assembler and linker for upstream's sources (`tools/v816/`) |
-| `tools/ref816/` | The reference machine (C11): a 65816 core and its test harness, and a minimal IIgs that runs the release image |
-| `tools/a2vm/` | The target model (C11): a W65C02S core, the //e with 128 RamWorks banks, the memory API, and a cost model of the Appletini's TURBO mode for F1.2.1 and for the firmware design, checked against a hardware capture |
-| `src/vm/` | A 65816 interpreter in 65C02 assembly (ca65), measured in milestone 3; kept as a tool, not part of the game |
-| `tests/` | Unit tests: `python3 -m unittest discover -s tests` |
-
-## Image match
-
-`python3 tools/fetch_upstream.py` fills `build/`. Then
-`python3 tools/v816/imgmatch.py` assembles upstream's sources with the tools of
-this port, recovers from the release image where the vendor's linker placed
-each section fragment, links, and compares the result with the release byte
-by byte. It writes `build/match-report.json` and `build/linkmap.json` (the
-address of every fragment and the value of every symbol). Each placed
-fragment in the link map has a `support` count, the number of independent
-things in the image that give its address. The report's `single_evidence`
-list names every number that rests on one reference only.
-
-The research and firmware notes were written against Appletini firmware
-F1.1.4 to F1.2.1 and upstream commit `8ea2eac`. Paths shown as `<upstream>`,
-`<appletini-one>` and `<scratch>` refer to local checkouts, not to this
-repository.
-
-## Reference 65816 core
-
-`tools/ref816/cpu816.c` is a 65816 core that makes the chip's valid bus
-cycles in the chip's order and counts every cycle. It is checked against the
-[SingleStepTests 65816 vectors](https://github.com/SingleStepTests/65816):
-
-    python3 tools/ref816/fetch_vectors.py   # about 500 MB into build/vectors
-    make -C tools/ref816 vectors            # all 5,120,000 cases
-    make -C tools/ref816 selftest           # interrupts, WAI, STP, reset
-
-The harness compares registers and memory, the cycle count and the sequence
-of bus cycles. It lists by opcode the 44 cases where the vectors disagree
-with the documented chip, with the evidence (`known_issues` in
-`tools/ref816/vectors.c`).
-
-## Reference machine
-
-`tools/ref816/` also holds a minimal Apple IIgs around the core, with only
-what upstream's game uses: 8 MB of RAM and banks `$E0`-`$E1`, the shadow
-register, the soft switches the game writes, the vertical blank flag, the
-Ensoniq DOC and its sound GLU (the game's clock), the ADB keyboard and mouse,
-and traps for the slot firmware's block driver and SmartPort calls. It is
-deterministic: the same image, disk and input give the same run. The game
-starts at its entry point from the memory that upstream's loader would leave:
-
-    python3 tools/ref816/make_image.py      # build/ref816/memory.img, disk.hdv
-    make -C tools/ref816                    # build/ref816/ref816
-    build/ref816/ref816 build/ref816/memory.img --disk build/ref816/disk.hdv \
-        --frames 2401 --shot-frame 2400 --shot-dir build/ref816/shots
-    python3 tools/ref816/shot.py build/ref816/shots/frame-002400.shr
-
-`python3 tools/ref816/title.py` does all of this and reports the title
-picture's statistics and the game clock's rate (about 35 tics per second of
-machine time). The options of the machine (scripted keys and mouse, screen
-dumps by frame or cycle, memory peeks, the final state with a hash of all
-RAM) are at the top of `tools/ref816/main.c`, and the list of what the model
-leaves out is in the headers (`iigs.h`, `doc.h`, `adb.h`). Tests:
-`make -C tools/ref816 machinetest`, and `tests/test_ref816_machine.py`.
-
-The game plays under script: `python3 tools/ref816/run_script.py SCRIPT`
-runs an input script (keys, mouse, waits on the game's memory, shots) and
-writes its shots to `build/ref816/shots/SCRIPT/`, with a report of the run
-and of the game's frame rate. The format, the checks made on a run and the
-CPU rate model are in [tools/ref816/README.md](tools/ref816/README.md); the
-scripts that cover the title demo, a new game, the view sizes and the nine
-maps are in `coverage/`.
-
-`python3 tools/ref816/profile816.py` traces two of those runs (standing
-still in E1M1, and the title demo) and writes
-[docs/PROFILE.md](docs/PROFILE.md) from the traces, with the register
-widths of every executed instruction in `build/ref816/widths.json`.
-
-## Playing the game
-
-`build/native/DOOM.hdv` is the whole game on one ProDOS volume: the title
-loop with its music and demo, the menus, episode 1 from E1M1 with the
+`build/native/DOOM.hdv` is the whole game on one 4 MB ProDOS volume: the
+title loop with its music and demo, the menus, episode 1 from E1M1 with the
 keyboard and the mouse, the status bar, the HUD, the automap, the
-intermission, the music and the sound effects. Saving and loading say
-"not in this version". It has been played on a2vm only; the owner's guide
-for the card (the profile, the keys, the frame rates, the known problems)
-is [`docs/PLAY.md`](docs/PLAY.md) section 12.
+intermission, the music and the sound effects. It has been played on the
+card.
 
-    python3 tools/fetch_upstream.py            # build/: upstream, the release, DOOM1.WAD
-    # the other milestones' builds the disk takes (playdisk.py names any missing)
-    python3 tools/native/playdisk.py           # build/native/DOOM.hdv (4.0 MB)
+## The machine
 
-The machine: an Apple //e (PAL or NTSC) with the Appletini in TURBO mode,
-8 MB RamWorks, the mouse card in slot 2, the Phasor in slot 4, and the
-Doom profile (`vtw.slowdown.cycles=32`). Boot the `.hdv` as a ProDOS
-volume: `DOOM.SYSTEM` loads everything from it and starts the title loop.
+- An enhanced Apple //e (PAL or NTSC) with 8 MB of RamWorks.
+- The Appletini in TURBO mode.
+- The Phasor in slot 4, in native mode (not "Mockingboard only"), for the
+  music and the effects. Without it the game plays silent.
+- In slot 2, the Appletini's mouse card or a standard AppleMouse II. The
+  mouse card is optional: with none, the clock is the Phasor's timer and the
+  game is played from the keyboard.
+- The memory API (the Appletini in slot 7) is optional. Without it the CPU
+  makes the same copies, more slowly.
+- A VidHD also works (`docs/PLAY.md`, "With a VidHD").
+
+Load the Doom profile: the working setup saved as a profile `DOOM`, with
+`vtw.slowdown.cycles=32` in its `appletini_cfg.txt` (and
+`phasor.slot4.enabled=ON`, `phasor.mockingboard.only=OFF`,
+`slot2.card=MOUSE`, `vtw.turbo.enabled=ON`, `phasor.pan.10=5`,
+`phasor.pan.11=11`, `phasor.pan.12=8`). How to make it is in
+[`tools/sound/README.md`](tools/sound/README.md), "The Doom configuration
+profile". For speed, add `vtw.disk2.acceleration.disabled=on`: with the
+virtual Disk II active, every TURBO cycle is replayed to it and the CPU
+runs at about 67 MHz instead of 110.
+
+Copy `DOOM.hdv` to the card's SD volume and boot it as the boot volume.
+`DOOM.SYSTEM` loads everything into RamWorks and the card, checks every
+CRC and starts the title loop.
+
+## Playing
 
 | Key | Does |
 | --- | --- |
@@ -125,15 +48,70 @@ volume: `DOOM.SYSTEM` loads everything from it and starts the title loop.
 | Left, right arrows | turn |
 | `A` `D`, `,` `.` | strafe |
 | Open Apple, mouse button | fire |
-| `E`, `SPACE`, `RETURN`, Solid Apple | use (`RETURN` also selects in the menus) |
+| `E`, `SPACE`, `RETURN`, Solid Apple | use: doors, switches, lifts (`RETURN` also selects in the menus) |
 | mouse left and right | turn |
 | `1`-`7` | weapons |
 | `TAB` | the automap, then its overlay, then off; `-` `=` zoom |
 | `ESC` | the menu |
 
 Run is the menu's OPTIONS, CONTROLS, ALWAYS RUN (the //e cannot see Shift
-alone). The menu's KEY SETUP changes the keys. QUIT GAME ends on a text
-screen.
+alone). KEY SETUP changes the keys. OPTIONS, BENCHMARK plays demo3 timed
+and shows its frame rate. The cheats are upstream's IIgs set (`iddqd`,
+`idkfa`, `idclev`, ...). OPTIONS, SAVE SETTINGS writes the settings
+(the keys, the mouse, gamma, the volumes, always run, messages) to the
+disk's `DOOM.SETTINGS`, and the next boot starts with them; saving and
+loading games say "not in this version". QUIT GAME ends on a text screen.
+
+## Building
+
+    ./build.sh
+
+writes `build/native/DOOM.hdv` from nothing in about a minute. It needs
+`python3` (standard library only), `cc`, `make`, cc65 (`ca65`, `ld65`), the
+network once (to fetch upstream), and appletini-one's
+`software/ProDOS_2_4_3.po` beside this repository (or set `APPLETINI_ROOT`
+to the appletini-one checkout). The steps:
+
+1. `tools/fetch_upstream.py` puts a pinned clone of upstream and its v1.0
+   release image in `build/` and checks them. The WAD is the shareware
+   `DOOM1.WAD` in that clone.
+2. `tools/v816/imgmatch.py` assembles upstream's sources and links them to
+   match the release byte for byte, and writes `build/linkmap.json`: the
+   address of every symbol of the release.
+3. `tools/ref816` is the reference machine, a 65816 core and a minimal IIgs.
+   `tools/native/rendercap.py` runs the release on it under script, and
+   `tools/native/rtables.py` takes the renderer's constant tables from its
+   memory and checks them against their formulas.
+4. `make` builds the native code in `src/native` (ca65 and ld65): the
+   renderer (`render.mk`), the level load (`level.mk`, with
+   `tools/native/wadconv.py`, which converts the WAD's levels, textures and
+   sprites), the 2D screens and the effects (`m11.mk`), and the music
+   player (`src/sound`).
+5. `tools/native/playdisk.py` links the main loop and the game logic
+   (`play.mk`, the parts in `src/native/game`, placed by
+   `tools/native/gplace-f122.json`) and writes the disk.
+
+A clean build gives the disk that was tested on the card, byte for byte.
+
+`python3 tools/native/playdisk.py --run SCRIPT` plays the disk on `a2vm`
+(`tools/a2vm`), the model of the //e with the Appletini, under scripted
+input; the script format is in [`tools/a2vm/README.md`](tools/a2vm/README.md),
+"Input events".
+
+## What is here
+
+| Path | Contents |
+| --- | --- |
+| `src/native/` | The game in 65C02 assembly: the renderer, the level load, the game logic (`game/`), the 2D screens, the effects, the main loop and the boot |
+| `src/sound/` | The music player for the Phasor |
+| `tools/native/` | The host tools that generate the layouts and tables, convert the WAD, and link and write the disk |
+| `tools/sound/` | MUS to AY song conversion and the sound effects' conversion |
+| `tools/v816/` | Assembler and linker for upstream's 65816 sources |
+| `tools/ref816/` | The reference machine that runs upstream's release |
+| `tools/bridge/` | Upstream's data structures and symbols, for the tools |
+| `tools/a2vm/` | The model of the target machine, to run the disk on the host |
+| `coverage/` | The input scripts of the reference machine's runs |
+| `docs/` | The design as built: `PLAY.md` (the main loop, the boot disk, the machine), `MEMORY_MAP.md`, `RENDER.md` and `RENDER-MASKED.md` (the renderer), `LEVELS.md` (the level load), `GAME.md` (the game logic), `SCREENS.md` (the 2D screens, the platform, the effects), `SPEED.md` (the speed work) |
 
 ## Licence
 
@@ -147,13 +125,11 @@ which the header reproduces.
 
 ## What stays out of the repository
 
-The build fetches a pinned clone of upstream and the v1.0 release image into
-`build/`, which is ignored by git, and converts them there, as
-[The Bilestoad](../bilestoad/README.md) does. Upstream's own files, the
-release image, the shareware `DOOM1.WAD` (id Software's licence), ROM images
-and third-party test vectors are never committed.
+The build fetches upstream and its release image into `build/`, which git
+ignores, and converts them there. Upstream's own files, the release image,
+the shareware `DOOM1.WAD` (id Software's licence) and ROM images are never
+committed.
 
-- `src/iigs/cal_integer.s` in upstream is a copy of the Calypsi vendor runtime.
-  Its licence restricts it to that toolchain, so the port uses its own
-  routines and keeps nothing derived from that file.
-- The research notes quote short passages of upstream source for analysis.
+- `src/iigs/cal_integer.s` in upstream is a copy of the Calypsi vendor
+  runtime. Its licence restricts it to that toolchain, so the port uses its
+  own routines and keeps nothing derived from that file.

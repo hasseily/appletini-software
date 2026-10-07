@@ -1,5 +1,5 @@
 ; mproj.s: the sprite projection and sort of the native renderer's masked
-; phase (docs/RENDER-MASKED.md 0.3, 1.6-1.8, 3.3; milestone 8, stage A).
+; phase (docs/RENDER-MASKED.md).
 ; A GPL-2 derivative of Webifi's IIgs DOOM (build/upstream/src/iigs/
 ; r_thing65.s: R_AddSprites and R_ProjectSprite, :155-707, the G parts,
 ; gTZ, gTX, labsTZ, :713-821, :999-1245; r_wall65.s R_WallFrame's G parts,
@@ -12,7 +12,7 @@
 ; The walk does not call R_AddSprites: it lists the sector (rbsp.s,
 ; nr_addsprites: SPRSEC), and nm_project projects the listed sectors'
 ; things here, in the walk's order. Nothing of the walk reads what the
-; projection makes (RENDER-MASKED.md 0.3 row 1), so the vissprites, their
+; projection makes (RENDER-MASKED.md), so the vissprites, their
 ; order and the MAXVISSPRITES cut are upstream's.
 ;
 ;   nm_project  the frame block's view (VIEWX, VIEWY, VIEWZ, VIEWSIN,
@@ -29,7 +29,7 @@
 ;               skips the weapon rows (FR_SKIP) and has a shadow among its
 ;               vissprites does not (FR_SKIP = 0, W_WSK = 0).
 ;
-; The arithmetic is upstream's, bit for bit (NATIVE.md 15.1 row 3): tz =
+; The arithmetic is upstream's, bit for bit: tz =
 ; TXH c + TYH s + G, tx = TXH s - TYH c + G, each product of a signed
 ; 16-bit high word and the view's sine or cosine (high word 0 or -1)
 ; modulo 2^32 (upstream's gTZ and gTX by Gauss's three products: the same

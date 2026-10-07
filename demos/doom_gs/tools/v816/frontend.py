@@ -1,8 +1,4 @@
-#!/usr/bin/env python3
 """Front end driver: every source of upstream's default build, to IR.
-
-Usage:  python3 tools/v816/frontend.py [--stats FILE] [--json DIR]
-                                       [--no-generate] [--with-restricted]
 
 Reads the fetched clone in build/upstream (tools/fetch_upstream.py) and
 does what upstream's Makefile does before it links:
@@ -19,16 +15,8 @@ clone, and written to build/gen of this port.
 The Makefile's "-I tools/calypsi/src/lib/lowlevel" is the directory of a
 header of the Calypsi installation. The port has tools/v816/include in
 its place (see macros.h there).
-
-Prints the statistics. --stats also writes them as a Markdown report
-(docs/FRONTEND_STATS.md is that file). --json writes the IR of each
-unit as JSON; the directory must be inside build/, because the IR holds
-upstream's code. --with-restricted counts the file that the report
-leaves out for its licence (tools/v816/report.py); it cannot be used
-with --stats. The exit status is 1 when a source has errors.
 """
 
-import argparse
 import re
 import subprocess
 import sys
@@ -38,7 +26,7 @@ from pathlib import Path
 if __package__ in (None, ''):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from v816 import cpp, ir, parse, report  # noqa: E402
+from v816 import cpp, ir, parse  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 BUILD = ROOT / 'build'
@@ -139,51 +127,3 @@ def process(source):
 def run(upstream=UPSTREAM, gen=GEN):
     """The Results of all sources of the default build."""
     return [process(source) for source in sources(upstream, gen)]
-
-
-def _inside_build(path):
-    resolved = path.resolve()
-    return resolved == BUILD or BUILD in resolved.parents
-
-
-def main(arguments=None):
-    parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    parser.add_argument('--stats', type=Path, metavar='FILE',
-                        help='write the statistics as Markdown')
-    parser.add_argument('--json', type=Path, metavar='DIR',
-                        help='write the IR of each unit (inside build/)')
-    parser.add_argument('--no-generate', action='store_true',
-                        help='use the generated files that are there')
-    parser.add_argument('--with-restricted', action='store_true',
-                        help='count the restricted file too (console only)')
-    options = parser.parse_args(arguments)
-    if options.stats and options.with_restricted:
-        parser.error('--with-restricted: these counts must not be written '
-                     'to a file')
-    if options.json and not _inside_build(options.json):
-        parser.error('--json: the directory must be inside %s' % BUILD)
-    try:
-        if not options.no_generate:
-            generate()
-        results = run()
-    except BuildError as error:
-        print('frontend: %s' % error, file=sys.stderr)
-        return 1
-    text = report.markdown(results, ROOT, options.with_restricted)
-    print(text)
-    if options.stats:
-        options.stats.write_text(text + '\n')
-    if options.json:
-        options.json.mkdir(parents=True, exist_ok=True)
-        for result in results:
-            name = result.source.path.stem + '.json'
-            with open(options.json / name, 'w') as stream:
-                ir.dump_json(result.unit, stream)
-    errors = [error for result in results for error in result.unit.errors]
-    for error in errors:
-        print(error, file=sys.stderr)
-    return 1 if errors else 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

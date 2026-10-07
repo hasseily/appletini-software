@@ -1,9 +1,8 @@
 ; pl_input.inc: the places and constants of src/native/pl_input.s and
-; pl_keys.s (milestone 11, part plinput; docs/m11-parts/plinput.md).
+; pl_keys.s (part plinput; docs/SCREENS.md).
 ; GPL-2, the port's own. Needs s2.inc.
 
-; From s2.inc (requests PLINPUT-1 to -4, applied in wave 5's
-; integration): PL_KEYTAB, the //e key table's Doom keys at main
+; From s2.inc: PL_KEYTAB, the //e key table's Doom keys at main
 ; $1F80-$1FFF; PL_MLX, the mouse's last X (a word); PL_BIND, the key
 ; setup's byte ($FF waits, a code taken, $80 idle); PLZ, the poll's 16
 ; bytes of zero page over the drawers' temporaries S2_W .. S2_O.

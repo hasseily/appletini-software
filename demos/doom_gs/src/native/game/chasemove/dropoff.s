@@ -1,6 +1,5 @@
 ; game/chasemove/dropoff.s: part chasemove's drop-off avoidance
-; (milestone 10, docs/GAME.md 2.4 row chasemove, 2.2 ITTAB;
-; docs/game-parts/chasemove.md). A GPL-2 derivative of upstream's
+; (docs/GAME.md: the parts, ITTAB). A GPL-2 derivative of upstream's
 ; p_enemy65.s (avoidDropoff with boxPlus, boxMinus, blockOf;
 ; PIT_AvoidDropoff with boxAbove, boxBelow, sideFloor, signed, times32).
 ;
@@ -26,11 +25,11 @@
 ;                     32, dropoff_deltay += finecosine(angle >> 19) * 32. C
 ;                     set (go on), always
 ;
-; The helpers have no code of their own (docs/game-parts/chasemove.md R1):
+; The helpers have no code of their own:
 ; cm_boxplus, cm_boxminus, cm_blockof, cm_above, cm_below, cm_signed,
 ; cm_times32; sideFloor is the line's front and back sectors of the line
 ; cache (LVS's LNSECF, LNSECB: side 0's and side 1's sectors). The angle and
-; the sines are milestone 6's (pta3, finesine, finecosine). A routine
+; the sines are math.s's (pta3, finesine, finecosine). A routine
 ; changes A, X, Y, GA_*, GT_*, the math block, the API's temporaries and
 ; what its callees change.
 

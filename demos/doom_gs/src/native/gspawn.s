@@ -1,6 +1,5 @@
-; gspawn.s: the game core's spawn (milestone 9, stage C; docs/LEVELS.md
-; 2.1 steps 5 and 12, 2.4; milestone 10's skeleton: P_SpawnMobj in play,
-; the object API, docs/GAME.md 3.1). A GPL-2 derivative of upstream's
+; gspawn.s: the game core's spawn (docs/LEVELS.md; in play: P_SpawnMobj,
+; the object API, docs/GAME.md). A GPL-2 derivative of upstream's
 ; p_setup65.s (loadThings, loadBlockMap's globals, loadThings2),
 ; p_spawn65.s (P_SpawnMapThing, spawnPlayer, P_SpawnMobj, newMobj,
 ; clearMo), r_list65.s (addIfFunc) and g_game65.s (G_PlayerReborn).

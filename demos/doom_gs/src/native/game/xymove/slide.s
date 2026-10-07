@@ -1,9 +1,9 @@
-; game/xymove/slide.s: part xymove's wall slide (milestone 10, docs/GAME.md
-; 2.4 row xymove, 2.2 TRVTAB; docs/game-parts/xymove.md). A GPL-2
+; game/xymove/slide.s: part xymove's wall slide (docs/GAME.md, TRVTAB). A
+; GPL-2
 ; derivative of upstream's p_mobj65.s (slideMove with stairstep, corners,
 ; slideTrace, bestMul, addCoord, bobClip, labs; PTR_SlideTraverse with
 ; blocking; hitSlideLine), Doom8088: Apple IIgs Edition. The products, the
-; angles and the distance are milestone 6's (fixmul, fixmulang, pta3,
+; angles and the distance are the native math's (fixmul, fixmulang, pta3,
 ; aproxdist, finesine, finecosine).
 ;
 ;   slideMove   A:X = the mobj (P_SlideMove: upstream's AP). At most two

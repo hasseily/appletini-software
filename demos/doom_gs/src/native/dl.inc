@@ -1,4 +1,4 @@
-; dl.inc: the playable game's glue in the tic image (docs/PLAY.md 2-4):
+; dl.inc: the playable game's glue in the tic image (docs/PLAY.md):
 ; its groups' numbers, after glayout's GROUPS (gplace.inc), and the call
 ; between them. GPL-2, the port's own.
 ;
@@ -7,7 +7,7 @@
 ; the hooks' bodies DLG_HOOK, the status bar's ticker and the songs DLG_SND
 ; (play.inc: DLG_B .. DLG_S, their offsets and slots). A call to another
 ; group goes through gcall.s's fc_call (the target's slot's group saved and
-; restored, 5 bytes of stack), as FCALL does for milestone 10's routines.
+; restored, 5 bytes of stack), as FCALL does for the game's routines.
 
 DLG_BRAIN = GROUPS + DLG_B
 DLG_CMD   = GROUPS + DLG_C
@@ -54,7 +54,7 @@ DLG_SND   = GROUPS + DLG_S
 .endmacro
 
 ; The menu benchmark's bytes in DLM (DL_BENCH, DL_BVIEW, DL_BRT) are
-; playlayout.py's DLM_FIELDS, in play.inc (docs/speed-parts/bench.md)
+; playlayout.py's DLM_FIELDS, in play.inc (docs/PLAY.md, the benchmark)
 MSG_BENCH  = 16                 ; MENUW's messageKind of the result page
                                 ;   (s2_menu.s MSG_BENCH)
 

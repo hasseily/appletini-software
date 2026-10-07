@@ -1,16 +1,15 @@
-; fx_chan.s: the sound channel logic (milestone 11, part fxchan; sound
-; track S4). A GPL-2 derivative of upstream's s_sound65.s: S_StartSound,
+; fx_chan.s: the sound channel logic (sound track S4). A GPL-2 derivative of upstream's s_sound65.s: S_StartSound,
 ; S_StartSound2, sameOrigin, getChannel, priority, stopChannel,
 ; S_StopSound, S_UpdateSounds and S_AdjustSoundParams with units,
 ; mulLong, divAtt and absDelta [R build/upstream/src/iigs/s_sound65.s:
 ; 177-670], the priority table read from its sfxPriority [R :1274-1285]
 ; by tools/sound/fxchan.py into the generated fxchan.inc. The DOC is gone:
 ; every decision lands in its channel's mailbox, latest wins (docs/
-; SCREENS.md 3; tools/sound/README.md "The game side"), and fxplay's
+; SCREENS.md; tools/sound/README.md "The game side"), and fxplay's
 ; fx_isplaying answers isPlaying (the channel's voice active or a start in
 ; its mailbox). tools/sound/fxchan.py is the host model.
 ;
-; A tic-side module (docs/SCREENS.md 4.7; GAME.md 4.4's conventions):
+; A tic-side module (docs/SCREENS.md; GAME.md's conventions):
 ;
 ;   sc_start    S_StartSound. GA+0-1 the sound (upstream's word, with
 ;               PICKUP_SOUND $8000), GA+2 the origin's kind (ORG_NONE,
@@ -38,7 +37,7 @@
 ; separation. MENUW's starts have no origin (the menu's sounds) and an
 ; update's separation reaches no mailbox (the side is chosen at the start:
 ; fx_service uses only a volume), so MENUW links neither pta3 nor
-; sineapprox, which its W block does not hold (docs/m11-parts/fxchan.md).
+; sineapprox, which its W block does not hold.
 
         .setcpu "65C02"
         .include "s2.inc"
@@ -58,7 +57,7 @@
 
 NORM_SEP = 128
 
-; -D FXC_TRACE (the test machines only): each adjust's channel, SS_VOL,
+; -D FXC_TRACE (no current build defines it): each adjust's channel, SS_VOL,
 ; SS_SEP and audibility to the driver's trace (fxc_trace keeps A, X, Y, P)
 .macro TRACE
 .ifdef FXC_TRACE

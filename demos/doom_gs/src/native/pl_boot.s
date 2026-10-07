@@ -1,13 +1,13 @@
-; pl_boot.s: DOOM.SYSTEM, the game's boot (milestone 11, part plboot;
-; docs/SCREENS.md 2.5, 4.5, 6.5; docs/m11-parts/plboot.md). GPL-2, the
+; pl_boot.s: DOOM.SYSTEM, the game's boot (part plboot; docs/SCREENS.md,
+; docs/PLAY.md). GPL-2, the
 ; port's own: written from the design and LEVELS.SYSTEM's boot
 ; (src/native/lboot.s, read only, whose bank-file loader, RamWorks probe,
-; memory-API probe, mouse-card probe and CRC-32 it follows), the //e
-; kernel's loader (demos/doom/src/kernel/loader.s: the A2DM bank files)
-; and SOUNDS.SYSTEM's boot order (src/sound/sounds.s). Nothing of
-; upstream's. tools/native/pldisk.py builds DOOM.hdv and checks it on a2vm.
+; memory-API probe, mouse-card probe and CRC-32 it follows), the loader
+; of the earlier Appletini Doom port (its A2DM bank files) and the sound
+; demo disk's boot order. Nothing of upstream's. tools/native/playdisk.py
+; builds DOOM.hdv (with tools/native/pldisk.py's pieces).
 ;
-; Under ProDOS, at $2000, interrupts masked (SCREENS.md 2.5):
+; Under ProDOS, at $2000, interrupts masked (docs/SCREENS.md):
 ;   1. the text screen; the probes, each a stop with its message and its
 ;      code in PL_STATUS (s2layout.PL): RamWorks banks 1-126 (each bank's
 ;      number written to its $0200, from 126 down to 0, then each read
@@ -15,14 +15,17 @@
 ;      first missing, PL_BANKS); the mouse card in slot 2 (its ROM's ID
 ;      bytes and the Appletini's own: probe_mouse, mo_check; with the ID
 ;      bytes alone an AppleMouse II, INITMOUSE'd, whose VBL is then the
-;      clock: PLMOUSE, docs/PLAY.md 21; with no mouse card the clock is
+;      clock: PLMOUSE, docs/PLAY.md, the AppleMouse II; with no mouse card the clock is
 ;      the Phasor's VIA-B timer 1, and without that either the stop
-;      PL_NOMOUSE, docs/PLAY.md 20); the
+;      PL_NOMOUSE, docs/PLAY.md, the mouse card); the
 ;      memory API in slot 7 (COPY, FILL,
 ;      PRIVATE: probe_amem; without it a message, and the game goes on
-;      with the CPU's copies: step 4's am_patch; docs/PLAY.md 19);
+;      with the CPU's copies: step 4's am_patch; docs/PLAY.md, without the memory API);
 ;      snd_probe (no native mode: a message, the game goes on without
 ;      music or effects, the effect player off);
+;   1b. set_boot (PLSET): DOOM.SETTINGS through the MLI, the boot
+;      device's block driver and the file's block (docs/PLAY.md, "The
+;      settings file"), both into SET_BANK; never a stop;
 ;   2. CATALOG (the bank files' names), then every bank file through the
 ;      MLI ("A2DM", version 1, a segment count, 5 bytes a segment: bank,
 ;      address, length; zero padding to 256 bytes; the bytes): each
@@ -41,11 +44,11 @@
 ;      card); then the main card's read into STAGE and checked; the file
 ;      closed (the last MLI call); then the install: the main card by CPU
 ;      copy (ProDOS's card overwritten, the vector pl_vbl), LC bank 1
-;      selected (MEMORY_MAP.md rule 1), main $0200-$03EF, $0C00-$1FFF
+;      selected (docs/MEMORY_MAP.md's rules), main $0200-$03EF, $0C00-$1FFF
 ;      (the persistent state: the globals, the renderer's persistent rows,
 ;      the game's globals, the key table) and ProDOS's global page
 ;      $BF00-$BFFF cleared, zero page $00-$17 cleared and the pair
-;      $06-$07 zeroed [R NATIVE.md 10; MEMORY_MAP.md 2];
+;      $06-$07 zeroed (docs/MEMORY_MAP.md, the zero page);
 ;   5. bt_init: the mouse card's VBL on (mode $09, masked), or without
 ;      the Appletini's card mo_recs and bt_mpatch's records (the handler
 ;      on VIA-B's timer 1, no mouse read: tools/native/nomouse.py), and
@@ -65,26 +68,26 @@
 ;      ready loop pl_ready in the card, which the second half replaces
 ;      with the title loop.
 ;
-; With a VidHD (and none of the Appletini's: PLVIDHD, docs/PLAY.md 22),
+; With a VidHD (and none of the Appletini's: PLVIDHD, docs/PLAY.md, the VidHD),
 ; bt_init's end writes vh_patch's records (the SHR shadow windows: the
 ; card's vh_go, the kernel's hook, each screen-writing image's windows),
 ; turns the VidHD's shadowing on, copies aux 0's $2000-$9FFF onto itself
 ; (its copy then the screen's), turns it off ($C035 = $18) and says so on
 ; row 7.
 ;
-; Main memory while booting: this code $2000-$35FF (DOOM.SYSTEM; the
+; Main memory while booting: this code $2000-$37FF (DOOM.SYSTEM; the
 ; boot is discarded: nothing calls it after pl_ready), STAGE and DATABUF
 ; $6000-$9FFF, ProDOS's buffer $A000, the catalog $A400, a header $A500,
 ; the bounce page $A600, the CRC tables $A700-$AAFF, CRCLIST $AB00-$BEFF;
 ; page 1's routine at $0100. The boot's CPU stores in $2000-$5FFF are its
-; own variables and patched operands in $2000-$35FF, and none reaches
-; $0878-$087F or $4078-$407F (MEMORY_MAP.md rule 8); an AppleMouse II's
+; own variables and patched operands in $2000-$37FF, and none reaches
+; $0878-$087F or $4078-$407F (docs/MEMORY_MAP.md's rules); an AppleMouse II's
 ; firmware writes slot 2's screen holes in the text page; the probe leaves
 ; each bank's number at its $0200 (aux 0's too: 0) where no file writes.
 ; Its zero page is $18-$3F (overlay 1).
 ;
-; The card part (segment PLRES, $FF00-$FFF9 "platform": MEMORY_MAP.md
-; 4.2): pl_ready, a loop that waits for each VBL (pl_ridle the wait,
+; The card part (segment PLRES, $FF00-$FFF9 "platform": docs/MEMORY_MAP.md):
+; pl_ready, a loop that waits for each VBL (pl_ridle the wait,
 ; pl_rvbl each VBL's visit: a2vm's idle skip and its count of VBLs).
 
         .setcpu "65C02"
@@ -98,7 +101,7 @@
         .export pl_ready, pl_ridle, pl_rvbl
         .exportzp bt_music, bt_nseg
 
-; PL_DISK (s2.inc, request PLBOOT-1 applied in wave 8): a stop of the
+; PL_DISK (s2.inc): a stop of the
 ; disk (a ProDOS error, a file that is not a bank file, a segment outside
 ; its room)
 
@@ -163,13 +166,14 @@ MPATCH_SIZE     = 52            ; bt_mpatch (nomouse.MPATCH_SIZE)
 SND_MUSIC       = 0             ; snd_probe's answer: native mode
 STD_PAL         = 0             ; pl_clkset's standard
 STD_NTSC        = $80
-BANKS           = 126           ; the banks the game needs (NATIVE.md 15.1)
-ZP_PAIR         = $06           ; zp_rd, zp_wr (MEMORY_MAP.md 2)
+BANKS           = 126           ; the banks the game needs
+ZP_PAIR         = $06           ; zp_rd, zp_wr (docs/MEMORY_MAP.md)
 ZP_PLATFORM_END = $18           ; $00-$17: the platform's (cleared)
 
-BOOT_END        = $3600         ; this code (DOOM.SYSTEM) $2000-$35FF (to
+BOOT_END        = $3800         ; this code (DOOM.SYSTEM) $2000-$37FF (to
                                 ;   $2FFF before PLMOUSE, 2026-10-04; to
-                                ;   $33FF before PLVIDHD, 2026-10-05)
+                                ;   $33FF before PLVIDHD, 2026-10-05; to
+                                ;   $35FF before PLSET, 2026-10-07)
 STAGE           = $6000         ; a card image, 16 KB
 STAGE_SIZE      = $4000
 DATABUF         = $6000         ; a bank file's bytes, 8 KB at a time
@@ -256,8 +260,9 @@ boot:   sei
         ldx #<s_nomusic
         ldy #>s_nomusic
         jsr say
-:       lda #1
-        jsr row
+:       jsr set_boot            ; (PLSET: DOOM.SETTINGS, then row 1, in
+        nop                     ;   this call's 5 bytes: every address
+        nop                     ;   after it stays where it was)
         jsr load_files
         jsr crc_tables
         jsr check_files
@@ -265,7 +270,7 @@ boot:   sei
 ; ---- the install: ProDOS goes ----
         lda #0
         jsr lc_put              ; the main card
-        bit LCBANK1             ; bank 1 selected (MEMORY_MAP.md rule 1)
+        bit LCBANK1             ; bank 1 selected (docs/MEMORY_MAP.md)
         bit LCBANK1
         ldx #0                  ; the persistent state cleared:
 :       stz $0200,x             ;   $0200-$03EF,
@@ -296,7 +301,7 @@ boot:   sei
 :       stz $00,x
         dex
         bpl :-
-        stz ZP_PAIR             ; the pair zeroed [R NATIVE.md 10]
+        stz ZP_PAIR             ; the pair zeroed
         stz ZP_PAIR + 1
 bt_installed:                   ; (a2vm's snapshot: the card as the image)
         bra :+                  ; (bt_init: the mouse card's VBL on, still
@@ -405,7 +410,7 @@ probe_mouse:
 ; not answer holds the boot that long, not the 33 s of a CONTROL's wait.
 ; At A's place in PLBOOT, in A's room (PROBE_ROOM): everything after it in
 ; DOOM.SYSTEM stays where it was, so the boot's time with the API is A's
-; (docs/PLAY.md 19: the CRC loop's TURBO read-cache sets).
+; (docs/PLAY.md: the CRC loop's TURBO read-cache sets).
 probe_amem:
         sta INTCXROMOFF
         bit SP_RELEASE          ; (no card's C8 space selected)
@@ -1219,7 +1224,7 @@ s_at:
 ; ===========================================================================
 .segment "PLAMEM"
 ; ===========================================================================
-; Without the memory API, the CPU's copies (docs/PLAY.md 19): the message
+; Without the memory API, the CPU's copies (docs/PLAY.md): the message
 ; and the patch, in a segment of their own after the boot's (pl_boot.s's
 ; own code, PLBOOT, keeps its 2 KB budget and A's layout: probe_amem).
 
@@ -1315,7 +1320,7 @@ bt_mouse:
                                 ;   clock ($C0), else VIA-B's timer 1 ($80)
 
 ; ---------------------------------------------------------------------------
-; The mouse card optional (docs/PLAY.md 20): with the Appletini's mouse
+; The mouse card optional (docs/PLAY.md): with the Appletini's mouse
 ; card in slot 2 the boot and the game are A's; without it (an emulator's
 ; AppleMouse II, or no card) the clock is the Phasor's VIA-B timer 1 at a
 ; frame's period, as MUSIC.SYSTEM's (music/doom), and the game reads no
@@ -1336,7 +1341,7 @@ mo_check:
         bpl :-
         rts                     ; bt_mouse 0: the Appletini's
 ; mo_none: the AppleMouse ID bytes but not the Appletini's: an AppleMouse
-; II, its VBL the clock (PLMOUSE's mo_apple; docs/PLAY.md 21). mo_via:
+; II, its VBL the clock (PLMOUSE's mo_apple; docs/PLAY.md). mo_via:
 ; no mouse card (PLMOUSE's mo_absent, from probe_mouse): VIA-B's timer 1
 ; must be there (its latch holds what is written, MUSIC.SYSTEM's
 ; timer_check), else the stop
@@ -1587,7 +1592,7 @@ bt_patch_end:
 ; ===========================================================================
 .segment "PLMOUSE"
 ; ===========================================================================
-; The AppleMouse II (docs/PLAY.md 21; MEMORY_MAP.md 21): slot 2 with the
+; The AppleMouse II (docs/PLAY.md, docs/MEMORY_MAP.md): slot 2 with the
 ; AppleMouse ID bytes but not the Appletini's own (mo_check) is a standard
 ; AppleMouse II, as GSSquared and AppleWin emulate it, used through its
 ; firmware (the entry table at $C212-$C219; X = $C2, Y = $20 at each
@@ -1617,16 +1622,16 @@ bt_patch_end:
 ; The interrupt (ap_irq, from pl_vbody): RAMRD, RAMWRT and 80STORE read
 ; ($C013, $C014, $C018) and turned off, so that the firmware's screen
 ; holes are main's (PAGE2 then maps nothing: it is left as it is; ALTZP
-; is off in every handler, MEMORY_MAP.md rule 7; INTCXROM is never on
+; is off in every handler, docs/MEMORY_MAP.md's rules; INTCXROM is never on
 ; after the boot); ap_swap exchanges slot 2's eight holes, main $047A,
 ; $04FA ... $07FA (colormaps A and B, levels 32 and 33, at $7A and $FA:
-; MEMORY_MAP.md 3.2), with ap_hb, which keeps the firmware's between
+; docs/MEMORY_MAP.md), with ap_hb, which keeps the firmware's between
 ; calls; SERVEMOUSE (C set: not the mouse's interrupt, nothing counts),
 ; READMOUSE (X less 512 added to AP_X, button 0 into AP_SB with its
 ; sequence), POSMOUSE back to 512; ap_swap again; the switches back as
 ; they were; C clear for a VBL. The firmware also borrows zero page $06
 ; (SERVEMOUSE's RTS there, given back) and the stack (about 8 bytes):
-; MEMORY_MAP.md rule 2 as amended.
+; docs/MEMORY_MAP.md's IRQ contract, as amended for the AppleMouse.
 
 RD80STORE       = $C018         ; bit 7: 80STORE on
 RDRAMRD         = $C013
@@ -1823,7 +1828,7 @@ ap_count:
 ; ap_wait: to vbl_count's next change (the mouse's VBL interrupt), C
 ; clear; C set when RDVBLBAR's bit 7 changed AP_EDGES times first (10
 ; frames on any CPU's speed: no VBL interrupt; GSSquared's AppleMouse at
-; 33.3 MHz, whose event timer drops the card's VBL: docs/PLAY.md 21)
+; 33.3 MHz, whose event timer drops the card's VBL: docs/PLAY.md)
 AP_EDGES        = 20
 AW              = hdr           ; RDVBLBAR's bit 7 as last seen
 ap_wait:
@@ -2010,7 +2015,7 @@ ap_mpatch_end:
 ; ===========================================================================
 .segment "PLVIDHD"
 ; ===========================================================================
-; The VidHD (docs/PLAY.md 22; MEMORY_MAP.md 22). A VidHD keeps its own
+; The VidHD (docs/PLAY.md, docs/MEMORY_MAP.md). A VidHD keeps its own
 ; copy of the SHR screen, fed by every write it sees to aux $2000-$9FFF:
 ; it follows RAMWRT, 80STORE and PAGE2, not RamWorks' $C073, so DOOM's
 ; 4 MB in aux $2000-$9FFF of banks 1-126 would land on its picture. It
@@ -2158,9 +2163,267 @@ vh_patch_end:
         .assert * <= BOOT_END, error, "the boot passes BOOT_END"
 
 ; ===========================================================================
+.segment "PLSET"
+; ===========================================================================
+; set_boot: DOOM.SETTINGS while ProDOS lives (docs/PLAY.md, "The settings
+; file"), before the bank files, interrupts masked; it never stops the
+; boot. The file (one block) through the MLI into SETBUF: read whole, the
+; flag SIF_FILE (a missing or short file: the defaults, DLINIT's). Then
+; what SAVE SETTINGS needs once ProDOS is gone (set_driver): the boot
+; device's ProDOS block driver, found from ProDOS's last unit DEVNUM and
+; its entry in DEVADR, usable only in its slot's ROM ($Cnxx with the block
+; device's ID bytes and $CnFF its offset: an entry in ProDOS's own memory,
+; a remapped SmartPort unit or the Disk II driver, goes with the install);
+; the file's data block from the volume directory, which that driver reads
+; (a seedling of 512 bytes, one block, write enabled); and that block as
+; the driver reads it must be the bytes the MLI read: then SIF_SAVE. Both
+; into SET_BANK (DLBANK, which no bank file's segment reaches): the file
+; at SET_FILE, SI_FLAGS, SI_UNIT, SI_DRIVER, SI_BLOCK at SET_INFO. The
+; driver's protocol: zero page $42 the command (1 READ), $43 the unit,
+; $44-$45 the buffer, $46-$47 the block; C set an error. Then row 1 (the
+; files' dots), as the call site did.
+; ---------------------------------------------------------------------------
+DEVADR          = $BF10         ; ProDOS's global page: the drivers by
+DEVNUM          = $BF30         ;   unit (DSSS0000 / 8), the last unit
+SETBUF          = $6000         ; the file as the MLI reads it (DATABUF:
+DIRBUF          = $6200         ;   the bank files come after), a
+CHKBUF          = $6400         ;   directory block, the file's block
+PD_CMD          = $42           ; the block driver's parameters
+PD_UNIT         = $43
+PD_BUF          = $44
+PD_BLOCK        = $46
+PD_READ         = 1
+C8_OFF          = $CFFF         ; every card's $C800 space off
+DIR_MAX         = 16            ; directory blocks followed, at most
+DIR_ENTRIES     = 13            ; a block's entries ($27 bytes from +4)
+DIR_ENTRY       = $27
+
+set_boot:
+        stz si_flags
+        jsr MLI                 ; OPEN
+        .byte $C8
+        .word so_parms
+        bcs @drv
+        lda so_ref
+        sta sr_ref
+        sta sc_ref
+        jsr MLI                 ; READ 512
+        .byte $CA
+        .word sr_parms
+        php
+        jsr MLI                 ; CLOSE
+        .byte $CC
+        .word sc_parms
+        plp
+        bcs @drv
+        lda sr_trans            ; the whole block
+        bne @drv
+        lda sr_trans+1
+        cmp #>SET_SIZE
+        bne @drv
+        lda #SIF_FILE
+        sta si_flags
+@drv:   jsr set_driver
+        bcs @put
+        lda #SIF_SAVE
+        tsb si_flags
+@put:   lda #SET_BANK           ; into SET_BANK (RAMWRT on)
+        sta RWBANK
+        sta RAMWRTON
+        ldx #0
+:       lda SETBUF,x
+        sta SET_FILE,x
+        lda SETBUF+$100,x
+        sta SET_FILE+$100,x
+        inx
+        bne :-
+        ldx #SI_SIZE - 1
+:       lda si_flags,x
+        sta SET_INFO,x
+        dex
+        bpl :-
+        sta RAMWRTOFF
+        stz RWBANK
+        lda #1                  ; (the call site's: row 1)
+        jmp row
+
+; set_driver: C clear with si_unit, si_driver and si_block for the save
+set_driver:
+        lda si_flags            ; (only a file the MLI read can be
+        jpl @no                 ;   checked against its block)
+        lda DEVNUM
+        sta si_unit
+        and #$70                ; the slot
+        jeq @no
+        lsr a
+        lsr a
+        lsr a
+        lsr a
+        ora #$C0
+        sta tmp+1               ; $Cn
+        stz tmp
+        lda si_unit
+        lsr a                   ; its DEVADR entry
+        lsr a
+        lsr a
+        tax
+        lda DEVADR+1,x
+        cmp tmp+1
+        jne @no                 ; not in its slot's ROM
+        sta si_driver+1
+        lda DEVADR,x
+        sta si_driver
+        ldy #$FF                ; the ROM: $CnFF the entry's offset, the
+        lda (tmp),y             ;   block device's ID bytes
+        cmp si_driver
+        jne @no
+        ldx #2
+:       ldy sd_at,x
+        lda (tmp),y
+        cmp sd_is,x
+        jne @no
+        dex
+        bpl :-
+        lda #DIR_MAX
+        sta wcount
+        lda #2                  ; the volume directory's key block
+        ldx #0
+@block: ldy #>DIRBUF
+        jsr sd_read
+        jcs @no
+        lda #<(DIRBUF + 4)
+        sta eptr
+        lda #>(DIRBUF + 4)
+        sta eptr+1
+        lda #DIR_ENTRIES
+        sta ecnt
+@entry: ldy #sd_name_n - 1      ; storage 1 and the name's length, the name
+:       lda (eptr),y
+        cmp sd_name,y
+        bne @next
+        dey
+        bpl :-
+        ldy #$13                ; one block used
+        lda (eptr),y
+        cmp #1
+        jne @no
+        iny
+        lda (eptr),y
+        jne @no
+        iny                     ; EOF 512
+        lda (eptr),y
+        jne @no
+        iny
+        lda (eptr),y
+        cmp #>SET_SIZE
+        jne @no
+        iny
+        lda (eptr),y
+        jne @no
+        ldy #$1E                ; write enabled
+        lda (eptr),y
+        and #$02
+        jeq @no
+        ldy #$11                ; its key block: the data
+        lda (eptr),y
+        sta si_block
+        iny
+        lda (eptr),y
+        sta si_block+1
+        tax
+        lda si_block
+        ora si_block+1
+        jeq @no
+        lda si_block
+        ldy #>CHKBUF
+        jsr sd_read
+        jcs @no
+        ldx #0                  ; the bytes the MLI read
+:       lda SETBUF,x
+        cmp CHKBUF,x
+        jne @no
+        lda SETBUF+$100,x
+        cmp CHKBUF+$100,x
+        jne @no
+        inx
+        bne :-
+        clc
+        rts
+@next:  clc
+        lda eptr
+        adc #DIR_ENTRY
+        sta eptr
+        bcc :+
+        inc eptr+1
+:       dec ecnt
+        jne @entry
+        dec wcount              ; the next directory block
+        jeq @no
+        lda DIRBUF+2
+        ldx DIRBUF+3
+        jne @block
+        cmp #0
+        jne @block
+@no:    sec
+        rts
+
+; sd_read: block X:A (high, low) into the page pair from Y by the driver
+; (bit $CFFF before and after: no card's $C800 space left selected)
+sd_read:
+        sta PD_BLOCK
+        stx PD_BLOCK+1
+        sty PD_BUF+1
+        stz PD_BUF
+        lda #PD_READ
+        sta PD_CMD
+        lda si_unit
+        sta PD_UNIT
+        bit C8_OFF
+        jsr @call
+        php
+        bit C8_OFF
+        plp
+        rts
+@call:  jmp (si_driver)
+
+sd_at:  .byte $01, $03, $05     ; a ProDOS block device's ID bytes
+sd_is:  .byte $20, $00, $03
+sd_name:
+        .byte $10 | 13, "DOOM.SETTINGS"
+sd_name_n = * - sd_name
+so_parms:
+        .byte 3
+        .word p_settings
+        .word IOBUF
+so_ref: .byte 0
+sr_parms:
+        .byte 4
+sr_ref: .byte 0
+        .word SETBUF
+        .word SET_SIZE
+sr_trans:
+        .word 0
+sc_parms:
+        .byte 1
+sc_ref: .byte 0
+p_settings:
+        .byte 13, "DOOM.SETTINGS"
+si_flags:                       ; SET_INFO's bytes (s2layout SI_*)
+        .byte 0
+si_unit:
+        .byte 0
+si_driver:
+        .word 0
+si_block:
+        .word 0
+        .assert si_unit - si_flags = SI_UNIT && si_driver - si_flags = SI_DRIVER && si_block - si_flags = SI_BLOCK && * - si_flags = SI_SIZE, error, "SET_INFO's bytes"
+        .assert SETBUF + SET_SIZE <= DIRBUF && DIRBUF + 512 <= CHKBUF && CHKBUF + 512 <= IOBUF, error, "the settings' buffers"
+        .assert * <= BOOT_END, error, "the boot passes BOOT_END"
+
+; ===========================================================================
 .segment "PLRES"
 ; ===========================================================================
-; pl_ready: the ready state's loop (SCREENS.md 2.5 step 5); the second half
+; pl_ready: the ready state's loop (docs/SCREENS.md, the boot's last step); the second half
 ; replaces it with the title loop. Each VBL's visit is pl_rvbl.
 pl_ready:
         lda vbl_count

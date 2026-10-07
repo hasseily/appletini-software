@@ -1,25 +1,24 @@
-; s2t_fin.s: the finale's tic side (docs/SCREENS.md 1.5.6, 4.7; part
-; s2fin, docs/m11-parts/s2fin.md). A tic-side module: milestone 10's tic
-; image links it and its hooks call it (request R4; GAME.md 4.4's
-; conventions: no zero page, A, X, Y changed). Written from upstream's
-; src/iigs/f_finale65.s (F_StartFinale, F_Ticker, textSpeed [R
-; f_finale65.s:74-148]).
+; s2t_fin.s: the finale's tic side (docs/SCREENS.md, the finale; part
+; s2fin). A tic-side module: the game's tic image links it and its hooks
+; call it (docs/GAME.md's conventions: no zero page, A, X, Y changed).
+; Written from upstream's src/iigs/f_finale65.s (F_StartFinale, F_Ticker,
+; textSpeed [R f_finale65.s:74-148]).
 ;
 ;   f_start     F_StartFinale [R :74-86]: gameaction ga_nothing, gamestate
 ;               GS_FINALE, the automap's AM_ACTIVE off (the frame block's
-;               AUTOMAP byte, as request R6's AM_Stop clears it for the
+;               AUTOMAP byte, as the game's AM_Stop clears it for the
 ;               renderer), acceleratestage, midstage, finalestage and
 ;               finalecount 0. The W_StartFinale hook calls it.
 ;   f_ticker    F_Ticker [R :111-148] after its first call: the F_Ticker
-;               hook calls milestone 10's WI_checkForAccelerate (flow's,
-;               gwi.s), then f_ticker (request S2FIN-4). finalecount + 1;
+;               hook calls the game's WI_checkForAccelerate (flow's,
+;               gwi.s), then f_ticker. finalecount + 1;
 ;               in the text stage the text's time (its length * speed /
 ;               100 + the wait) passed, or in the mid stage a new request:
 ;               the picture (finalestage 1, finalecount 0)
 ;
 ; The finale's state is the card's (s2layout's S2T block: F_STAGE, a byte;
 ; F_COUNT, upstream's int32; F_MID, a byte), so FINW's drawer reads what
-; the tic left; acceleratestage is milestone 10's WI_ACCEL (a word).
+; the tic left; acceleratestage is the game's WI_ACCEL (a word).
 ; Upstream's F_Ticker also sets display's wipegamestate to -1 (a wipe):
 ; natively the new picture's black step comes from s2_picpal's picturenum
 ; (s2_pal.s, part s2pal), so nothing is written for it.

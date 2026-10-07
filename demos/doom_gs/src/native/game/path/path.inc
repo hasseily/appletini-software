@@ -1,5 +1,5 @@
-; game/path/path.inc: part path's places (milestone 10, docs/GAME.md 1.9,
-; 2.4 row path, 4.4; docs/game-parts/path.md). GPL-2, the port's own.
+; game/path/path.inc: part path's places (docs/GAME.md: the trace, the
+; parts' places). GPL-2, the port's own.
 ; Included after ggame.inc.
 ;
 ; The walk's state of P_PathTraverse: upstream's near scratch of
@@ -7,12 +7,12 @@
 ; of the block steps (traceLines, traceThings, P_BlockLinesIterator) and of
 ; the traverser (any game logic), so it is in the part's scratch block.
 ; The trace itself (x1, y1 moved off a block line, dx, dy) is the shared
-; GM_TRACE (tracel.md R1); the ends and the starts from the block map's
+; GM_TRACE (part tracel's); the ends and the starts from the block map's
 ; origin are made from it and G_BMORGX, G_BMORGY when needed, so no copy
 ; of x1 .. y2 is kept.
 ;
 ; 44 bytes: the default block is 32; glayout.SCRATCH_REQUESTS['path']
-; gives the part 44 (request R1, wave 4 as integrated).
+; gives the part 44.
 ;
 ;   PT_FLAGS  the flags (UC_PT_ADDLINES, UC_PT_ADDTHINGS)
 ;   PT_TRAV   the traverser: its TRVTAB number

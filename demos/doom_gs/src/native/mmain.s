@@ -1,6 +1,6 @@
-; mmain.s: the masked phase's driver (docs/RENDER-MASKED.md 3.2, 3.3;
-; milestone 8). A GPL-2 derivative of Webifi's IIgs DOOM
-; (build/upstream/src/iigs/r_frame65.s drawMasked, :180-212).
+; mmain.s: the masked phase's driver (docs/RENDER-MASKED.md). A GPL-2
+; derivative of Webifi's IIgs DOOM (build/upstream/src/iigs/r_frame65.s
+; drawMasked, :180-212).
 ;
 ; The phase's image is in W (the caller loaded it with mfar.s's far_mload
 ; after the front end), then
@@ -10,11 +10,11 @@
 ;               them in index order into W's DSW, one read window),
 ;               SPRBOUND into W (SPRB), the projection of the listed
 ;               sectors' things (mproj.s nm_project), the sort (nm_sort);
-;               stage B: the sprites back to front (the sort's order from
+;               the sprites back to front (the sort's order from
 ;               its end: msprite.s nm_drawsprite, with the masked ranges
 ;               they uncover), then the drawsegs' masked columns not drawn
 ;               yet, the last drawseg first (mwall.s nm_mwall), and the
-;               last batch of records into the staging; stage C: the weapon
+;               last batch of records into the staging; the weapon
 ;               and its flash between them (mpsp.s nm_psp: playerSkip).
 ;               Speed wave 1, part bucket: first the front end's column
 ;               counts (FCNT, which the masked image's load leaves and
@@ -48,7 +48,7 @@
         .segment "MASKW"
 
 nm_masked:
-        MARK 14                 ; the drawseg copy (RENDER-MASKED.md 4.4)
+        MARK 14                 ; the drawseg copy (RENDER-MASKED.md)
         ldx #VIEWWIDTH          ; (the front end's column counts first)
 :       lda FCNTLO-1,x
         sta MCNTLO-1,x
@@ -131,9 +131,9 @@ nm_masked:
         sta MW_X2
         jsr nm_mwall
         bra @seg
-@done:  MARK 16                 ; the weapon (RENDER-MASKED.md 4.4: 16)
+@done:  MARK 16                 ; the weapon (RENDER-MASKED.md: 16)
 .ifdef CLIPLOG
-        jsr m_hook              ; (test builds: the harness's snapshot)
+        jsr m_hook              ; (a host run's snapshot)
 .endif
         jsr nm_psp
         jsr mrec_flush          ; the last batch

@@ -1,28 +1,25 @@
 #!/usr/bin/env python3
-"""The places of milestone 11's first half (docs/SCREENS.md 4): the 2D
+"""The places of the screens' first half (docs/SCREENS.md): the 2D
 images in W and their rooms, the size table, the packing of the images'
 stored pages into banks, main's input block, the zero page, the card's
 blocks (with their per-build addresses), the RamWorks banks, the cost
-phases, the regions of the screen and the field map of 6.2; check(), and
+phases, the regions of the screen and the field map; check(), and
 the generated include s2.inc and the images' ld65 maps.
 
-Every address is a starting allocation [A] of docs/SCREENS.md 4, held
+Every address is a starting allocation [A] of docs/SCREENS.md, held
 here and checked against tools/native/rlayout.py, llayout.py and, when it
-exists, glayout.py (milestone 10's; all three read only). Where the
-design could not be held as written, part s2lay's requests
-(docs/m11-parts/s2lay.md S2LAY-1 to -3) changed it; the wave 1
-integration applied them to docs/SCREENS.md 4 (its "Wave 1 as
-integrated").
+exists, glayout.py (the game's; all three read only). Where the
+design could not be held as written, this file changed it and
+docs/SCREENS.md records the result.
 
 Usage:  python3 tools/native/s2layout.py --check
         python3 tools/native/s2layout.py --inc [--build B] OUT/s2.inc
         python3 tools/native/s2layout.py --cfg IMAGE [--build B] OUT.cfg
         python3 tools/native/s2layout.py --check-map IMAGE MAP [MAP...]
-        python3 tools/native/s2layout.py --report
         python3 tools/native/s2layout.py --rlayout-inc OUT/rlayout.inc
 
 --check-map fails (status 1) when an image's stored bytes pass its room
-(docs/SCREENS.md 4.1: "an image over its room fails the build") and
+(docs/SCREENS.md: "an image over its room fails the build") and
 prints the size table's rows for that image (an object over its budget
 is reported, not fatal: the budgets are [A]).
 """
@@ -47,7 +44,7 @@ GLAYOUT = HERE / 'glayout.py'
 
 
 def glayout_module():
-    """Milestone 10's layout when its file exists (imported read only; an
+    """The game's layout when its file exists (imported read only; an
     import error is an error, not a skip)."""
     if not GLAYOUT.exists():
         return None
@@ -56,12 +53,12 @@ def glayout_module():
 
 
 # ---------------------------------------------------------------------------
-# W: the images (4.1)
+# W: the images
 # ---------------------------------------------------------------------------
 
 W_LO, W_HI = 0x6000, 0xC000
 # MATHW then AUXW, the render images' shared bytes, linked into every 2D
-# image and stored once a bank [R MEMORY_MAP.md 13: $6000-$6592]
+# image and stored once a bank [R MEMORY_MAP.md: $6000-$6592]
 MATHW_LO, MATHW_END = 0x6000, 0x6593
 IMAGE_LO = 0x6600
 
@@ -82,14 +79,14 @@ class Image(NamedTuple):
 # patch drawer and the publish have one budget, AMAPW links s2_pub alone
 SHARED_BUDGETS = {'s2_draw+s2_pub': 1200, 's2_pub': 200, 's2_pal': 800,
                   's2_nib': 400, 'pl_poll': 600, 'fx_service': 400,
-                  'fx_chan': 1100,   # (700 until wave 4: FXCHAN-5)
+                  'fx_chan': 1100,   # (700 at first)
                   # the boot's and the key setup's input routines
                   # (pl_init, pl_defaults, pl_bind, pl_action; part
-                  # plinput, request PLINPUT-5: 228 B [M])
+                  # plinput: 228 B [M])
                   'pl_keys': 300}
 # an object file's stem (its module in ld65's map) to its row of the table;
 # MATHW's modules are not counted (stored once a bank, outside the room).
-# fx_pcache (the channels' sound cache, 85 B) is fx_chan's (S2MENU1-2).
+# fx_pcache (the channels' sound cache, 85 B) is fx_chan's.
 MODULE_ROW = {'s2_draw': 's2_draw+s2_pub', 's2_pub': 's2_draw+s2_pub',
               's2_pal': 's2_pal', 's2_nib': 's2_nib',
               'pl_input': 'pl_poll', 'fx': 'fx_service',
@@ -106,12 +103,12 @@ IMAGES: Tuple[Image, ...] = (
            (0xBC00, 0xC000, 'the state block')),
           (0xBC00, 0xC000),
           ('s2_draw+s2_pub', 's2_pal', 'pl_poll', 'fx_service'), 3900,
-          's2stbar 2,000, s2hud 1,700 (its texts in S2STATE since wave 4: '
+          's2stbar 2,000, s2hud 1,700 (its texts in S2STATE: '
           '1,411 B), glue 200', True, True),
-    # (request S2MENU1-2, wave 5: the room shrinks to $A4FF for PALST,
+    # (the room shrinks to $A4FF for PALST,
     # which s2_pal's s2_begin and s2_finish need in W; the drawers' marks
     # page; fx_chan's scratch fxc_scr is the fetch buffer's last 32 B,
-    # never live during a draw: FXCHAN-4)
+    # never live during a draw)
     Image('MENUW', (0x6600, 0xA500),
           ((0xA500, 0xA800, 'PALST'),
            (0xA800, 0xB700, 'a 24-row band'),
@@ -124,7 +121,7 @@ IMAGES: Tuple[Image, ...] = (
           ('s2_draw+s2_pub', 's2_pal', 's2_nib', 'pl_poll', 'fx_service',
            'fx_chan', 'pl_keys'), 11328,
           's2menu1 5,000, s2menu2 4,000, names and strings 2,328 (2,500 '
-          'until wave 5: the room of S2MENU1-2 with PLINPUT-5\'s pl_keys)',
+          'at first: the room before PALST and pl_keys)',
           True, True),
     Image('AMAPW', (0x6600, 0x8E00),
           ((0x8E00, 0xA840, 'a 42-row band'),
@@ -133,7 +130,7 @@ IMAGES: Tuple[Image, ...] = (
            (0xB000, 0xC000, 'the new byte list (2,048 entries)')),
           (0xAC00, 0xB000),
           ('s2_pub',), 7000, 's2amap', True, False),
-    # (requests S2WI-2 and S2WI-6, wave 5: the own budget 1,950; the
+    # (the own budget 1,950; the
     # nibble tables as 16 units of 2 pages, a palette and a parity)
     Image('WIW', (0x6600, 0x8000),
           ((0x8000, 0x9900, 'a 40-row band'),
@@ -152,39 +149,40 @@ IMAGES: Tuple[Image, ...] = (
            (0xBC00, 0xC000, 'the state block')),
           (0xBC00, 0xC000),
           ('s2_draw+s2_pub', 's2_pal', 's2_nib', 'pl_poll', 'fx_service'),
-          # (requests S2FIN-3 and S2FIN-6, wave 6: the own budget 2,300 with
+          # (the own budget 2,300 with
           # the end text and the font's table; the units as WIW's)
           2300, 's2fin 1,600, data 700', True, True),
     Image('PALW', (0x6600, 0x8000),
           ((0x8000, 0xC000, 'the build\'s buffers'),),
           None, ('s2_nib',), 1500, 's2pal', True, False),
     # the automap overlay's producer, in MASKW's code room, loaded by
-    # far_pload of its page runs from its own bank (not packed); milestone
-    # 8's W ranges outside it are untouched [R MEMORY_MAP.md 13]. Its run
-    # time places are inside its room, above its stored bytes (request
-    # S2OVL-3, wave 7: problems_of and size_rows check both)
+    # far_pload of its page runs from its own bank (not packed); the masked
+    # phase's W ranges outside it are untouched [R MEMORY_MAP.md]. Its run
+    # time places are inside its room, above its stored bytes
+    # (problems_of and size_rows check both)
     Image('OVLW', (R.MCODE, R.MCODE_END),
           ((0x9400, 0x9C00, 'the nibble pages, NCACHE, RBASE, the '
             'variables, s2_amline\'s W variables (AMW $9A00), the state '
             'block (AMST $9B00)'),),
           None, (), 5500,
           's2_ovl 1,214 [M] and s2_amline 3,708 [M] (part s2amap\'s, with '
-          'S2OVL-1\'s hook): 4,919 [M]; rrec.s 198, nm_bkload 48, '
+          'the overlay\'s hook): 4,919 [M]; rrec.s 198, nm_bkload 48, '
           'BKFAR/BKFAR2 947 [M] (not in the S2 segments): 6,115 of 13,312 B '
           'stored',
           False, False),
 )
 IMAGE = {im.name: im for im in IMAGES}
-# the design's totals (4.1's last row), checked against the sums above
+# the design's totals (SCREENS.md's image table), checked against the sums
+# above
 DESIGN_TOTALS = {'P2DW': 6900, 'MENUW': 16128, 'AMAPW': 7200, 'WIW': 5350,
                  'FINW': 5700, 'PALW': 1900}
 
 
-# each drawing image's places for the drawers (part s2draw, request
-# S2DRAW-1), exported by the image's glue as s2_marks, s2_fbuf and
+# each drawing image's places for the drawers (part s2draw), exported by the
+# image's glue as s2_marks, s2_fbuf and
 # s2_fbpages: (the marks page: DRB, DRE, ROWL, ROWR; the fetch buffer or
 # None; its pages). MENUW's marks page has no room yet (its runtime
-# ranges were full): part s2menu1 placed them (request S2MENU1-2, wave 5).
+# ranges were full): part s2menu1 placed them.
 DRAW_PLACES = {'P2DW': (0x9700, 0xB800, 4),
                'MENUW': (0xB800, 0xBD00, 2),
                'AMAPW': (0xA900, None, 0),
@@ -197,11 +195,11 @@ def budget_total(im: Image) -> int:
 
 
 # ---------------------------------------------------------------------------
-# RamWorks banks (4.5)
+# RamWorks banks
 # ---------------------------------------------------------------------------
 
 SONGS = (100, 101, 102)
-# the songs' directory (part plboot, PLBOOT-2): at bank SONGS[0] $0200,
+# the songs' directory (part plboot): at bank SONGS[0] $0200,
 # 3 bytes a song in tools/sound/mus.py UPSTREAM_SONGS' order (D_E1M1
 # .. D_E1M9, D_INTER, D_INTRO, D_VICTOR, D_INTROA): its bank, its
 # address; the songs after it, first-fit, largest first, never across
@@ -217,23 +215,22 @@ S2CODE0, S2CODE1 = 107, 108
 GFX = (109, 110, 114, 115)
 OVLW_BANK = 93
 S2CODE2 = 94
-# the first design's three code banks (SCREENS.md 4.1 before wave 1)
+# the first design's three code banks
 FIRST_CODE_BANKS = (S2CODE0, S2CODE1, S2CODE2)
-# Request S2LAY-1, applied (SCREENS.md 4.1 "Packing", 4.5): every packed
+# The packing (SCREENS.md, "Packing"): every packed
 # image's stored pages start at $6600, and far_pload copies a bank's pages
 # to the same addresses, so no two images can share a bank and the first
 # design's three code banks hold three of the six; three of the spare banks
-# of GAME.md 1.10 take the other three, one image a bank.
+# of GAME.md take the other three, one image a bank.
 S2CODE3_5 = (95, 96, 97)
 CODE_BANKS = FIRST_CODE_BANKS + S2CODE3_5
-# the banks milestones 9 and 10 left spare (GAME.md 1.10: 1-3, 93-97, 125,
-# 126; 4 and 5 hold milestone 9's test data: ldisk.py's CRC_BANK and
-# PRE_BANK)
+# the banks the level part and the game left spare (GAME.md: 1-3, 93-97,
+# 125, 126; 4 and 5 keep the names CRC_BANK and PRE_BANK, llayout.py's)
 SPARE_FREE = (1, 2, 3, 93, 94, 95, 96, 97, 125, 126)
 # rlayout's CODE banks 114 and 115: the release uses 112 (WCODE_BANK) and
-# 113 (MCODE_BANK) only; 114 is MRTN_BANK, written by milestone 8's
-# routine-mode harness alone (never in a 2D run), 115 is unused
-CODE_REUSED = {114: 'MRTN_BANK (milestone 8\'s routine-mode harness only)',
+# 113 (MCODE_BANK) only; 114 is MRTN_BANK, which only the masked phase's
+# former routine mode wrote (never in a 2D run), 115 is unused
+CODE_REUSED = {114: 'MRTN_BANK (the masked phase\'s routine mode only)',
                115: 'unused'}
 
 
@@ -247,12 +244,11 @@ def banks() -> List[Tuple[int, str]]:
     return out
 
 
-# ---- S2STATE (bank 104): the 2D state between frames (4.6) ----------------
+# ---- S2STATE (bank 104): the 2D state between frames ----------------
 # The state blocks are NOT at their W addresses in the bank (P2DW's, WIW's
 # and FINW's are all at W $BC00): they are fetched with far_get and written
-# back with far_put, 256 bytes a call (request S2LAY-2, applied: SCREENS.md
-# 4.6).
-PALST_SIZE = 768                # the palette state (1.3: scb, palette, flags)
+# back with far_put, 256 bytes a call (SCREENS.md).
+PALST_SIZE = 768                # the palette state (scb, palette, flags)
 S2STATE_FIELDS = [
     ('SS_PALST', PALST_SIZE),   # shared by every image that publishes
     ('SS_P2DW', 0x0100),        # P2DW's own (its W block: PALST, then this)
@@ -262,27 +258,27 @@ S2STATE_FIELDS = [
     ('SS_FINW', 0x0100),
     ('SS_SETTINGS', 0x0020),    # the menu's settings that persist
     ('SS_STCACHE', 5120),       # STCACHE: rows 168-199 of the status bar
-    ('SS_HUDTXT', 2 * 4096),    # the HUD's two text slots' records (1.4)
+    ('SS_HUDTXT', 2 * 4096),    # the HUD's two text slots' records
     ('SS_AMOLD', 2 * 2048),     # the automap's old byte list
     ('SS_SIGN', 4096),          # the busy sign's saved rows
     # the status bar's rows 168-199 as published, upstream's back buffer's
-    # (part s2stbar, request S2STBAR-2)
+    # (part s2stbar)
     ('SS_STBUF', 5120),
     # the HUD's texts, an index of 256 words then 36-byte entries (part
-    # s2hud, request S2HUD-3: the bank file HUDTXT.1, 2,672 B)
+    # s2hud: the bank file HUDTXT.1, 2,672 B)
     ('SS_HUDMSG', 0x0C00),
     # the full map's lines clipped on the screen, 8 bytes each (part
-    # s2amap, request S2AMAP-2)
+    # s2amap)
     ('SS_AMSEG', 0x3000),
 ]
 SS = R.allocate(S2STATE_FIELDS, LL.ROOM[0], LL.ROOM[1])
 SS_SIZE = dict(S2STATE_FIELDS)
 
-# S2PAL (bank 106, SCREENS.md 4.5): part s2pal's places (request
-# S2PAL-1); each in the bank's $0200-$BFFF (a RAMRD window reaches nothing
+# S2PAL (bank 106, SCREENS.md): part s2pal's places; each in the bank's
+# $0200-$BFFF (a RAMRD window reaches nothing
 # else), S2P_NIB page aligned (a palette's table at S2P_NIB + p * $400).
 # GSSTAT and GSOVL are the 2D store's lumps put at these places by part
-# s2data's GFX.1 (their handles name them here; S2DATA-3 as integrated).
+# s2data's GFX.1 (their handles name them here).
 S2PAL_PLACES = [('S2P_TINTPAL', 0x0200, 14 * 384),
                 ('S2P_NIB', 0x1800, 16 * 0x400),
                 ('S2P_GSSTAT', 0x5800, 5664),
@@ -292,9 +288,9 @@ S2PAL_AT = {n: a for n, a, _ in S2PAL_PLACES}
 S2PAL_SIZE = {n: z for n, _, z in S2PAL_PLACES}
 
 # bank 103: SFX.1 at $0200 (part fxconv: 11,385 B; its room about 15 KB);
-# the 2D store takes the rest (part s2data; request S2DATA-1)
+# the 2D store takes the rest (part s2data)
 SFX_ROOM = (0x0200, 0x4000)
-# bank 105: the menu's saved screen (SCREENS.md 1.5.3); the 2D store
+# bank 105: the menu's saved screen (SCREENS.md); the 2D store
 # takes $0200-$1FFF and $A000-$BFFF around it (part s2data)
 S2VIEW_SAVE = (0x2000, 0xA000)
 # the 2D store's handles table (part s2data)
@@ -302,7 +298,7 @@ GFXDIR_PLACE = (GFX[0], 0x0200)
 
 
 # ---------------------------------------------------------------------------
-# Main memory (4.2)
+# Main memory
 # ---------------------------------------------------------------------------
 
 PL_STATUS = 0x03AE              # LV_STATUS's byte (llayout), the stops
@@ -313,24 +309,51 @@ INPUT_FIELDS = [
     ('PL_BUTTONS', 1),          # the Apple keys' and the buttons' state
     ('PL_MDX', 2),              # upstream's iigs_mousedx
     # the mouse's last X (low, high); the sequence byte needs no
-    # persistent byte (part plinput, request PLINPUT-2)
+    # persistent byte (part plinput)
     ('PL_MLX', 2),
     ('PL_REPKEY', 1), ('PL_REPCH', 1), ('PL_REPTIC', 2),   # the repeat
     ('PL_DEFER', 1),            # the deferred polls' count
     # the key setup: $FF waits, a //e code taken, $80 idle (upstream's
-    # iigs_bindwait and iigs_bindcode; part plinput, request PLINPUT-3)
+    # iigs_bindwait and iigs_bindcode; part plinput)
     ('PL_BIND', 1),
 ]
+# DOOM.SETTINGS (docs/PLAY.md, "The settings file"): one block in
+# upstream's layout (m_config65.s: "DOOMSET", version 1, the sum of bytes
+# 12-511, the settings a byte each, the Doom key of each key code from 32)
+# with the //e's key codes 0-127 (PL_KEYTAB's) in place of the ADB codes.
+# DOOM.SYSTEM reads it while ProDOS lives and puts it, with what the save
+# needs, into the spare bank SET_BANK (playlayout's DLBANK, which checks
+# the places): the file at SET_FILE, then DLINIT validates and applies it
+# there and keeps the settings as the disk has them (upstream's
+# settingsKnown); SET_INFO: SI_FLAGS (SIF_FILE the file was read, SIF_SAVE
+# the boot device's driver and the file's block were found), SI_UNIT the
+# ProDOS unit, SI_DRIVER its block driver's entry ($Cnxx), SI_BLOCK the
+# file's data block
+SET_BANK = 1
+SET_FILE = 0x3000
+SET_INFO = 0x3200
+SET_SIZE = 512
+SETTINGS_LAYOUT = (('SETF_VERSION', 7), ('SETF_SUM', 8), ('SETF_GAMMA', 12),
+                   ('SETF_RUN', 13), ('SETF_MESSAGES', 14),
+                   ('SETF_SFXVOL', 15), ('SETF_MUSICVOL', 16),
+                   ('SETF_MOUSE', 17), ('SETF_MSPEED', 18),
+                   ('SETF_MMOVE', 19), ('SETF_DETAIL', 20),
+                   ('SETF_VSIZE', 21), ('SETF_KEYS', 32),
+                   ('SET_VERSION', 1), ('SET_FULLVIEW', 10),
+                   ('SI_FLAGS', 0), ('SI_UNIT', 1), ('SI_DRIVER', 2),
+                   ('SI_BLOCK', 4), ('SI_SIZE', 6),
+                   ('SIF_FILE', 0x80), ('SIF_SAVE', 0x40))
+SET_MAGIC = b'DOOMSET'
 # PL_BIND's values (pl_input.inc's BIND_WAIT, BIND_IDLE; the menu's key
 # setup writes PLB_WAIT and, once it has bound the code, PLB_IDLE)
 PL_BIND_VALUES = (('PLB_WAIT', 0xFF), ('PLB_IDLE', 0x80))
-# Request S2LAY-3, applied (SCREENS.md 2.4, 4.2): the first design's $03B2
-# met milestone 10's GS_ARG, a word at $03B1-$03B2 (glayout.regions():
+# The input block (SCREENS.md): the first design's $03B2
+# met the game's GS_ARG, a word at $03B1-$03B2 (glayout.regions():
 # $03B0-$03B2; gcall.s stores GS_ARG and GS_ARG+1), so the block starts at
-# $03B3 (59 bytes used since wave 5's PLINPUT-3)
+# $03B3 (59 bytes used)
 INPUT_LO, INPUT_END = 0x03B3, 0x03EE
 INPUT = R.allocate(INPUT_FIELDS, INPUT_LO, INPUT_END)
-# the //e key table's Doom keys, 128 B (part plinput, request PLINPUT-1):
+# the //e key table's Doom keys, 128 B (part plinput):
 # persistent, written by pl_keys.s only (the boot, the key setup), read by
 # every poll
 KEYTAB_PLACE = (0x1F80, 0x2000)
@@ -339,7 +362,7 @@ QUEUE_EVENTS, EVENT_SIZE = 15, 3
 # replay; the stack stays at or above $01C0 [A, as the replay's gather]
 PAGE1_DESC = (0x0100, 0x01B5)
 STACK_FLOOR = 0x01C0
-STACK_2D = 64                   # MEMORY_MAP.md 2: 2D phases
+STACK_2D = 64                   # MEMORY_MAP.md: 2D phases
 IRQ_STACK = R.IRQ_STACK         # 24
 
 # The stop codes in PL_STATUS: the test driver's (S2S_*) and the boot's
@@ -347,37 +370,37 @@ IRQ_STACK = R.IRQ_STACK         # 24
 S2S = {'RUN': 0x80, 'DONE': 0x81, 'BRK': 0x82}
 PL = {'READY': 0xC0, 'NOMOUSE': 0xC1, 'BANKS': 0xC2, 'NOAMEM': 0xC3,
       'CRC': 0xC4,
-      'MENUAMEM': 0xC5,         # the menu's save failed (S2MENU1-2)
-      'SIGNAMEM': 0xC6,         # the busy sign's save failed (S2FIN-1)
+      'MENUAMEM': 0xC5,         # the menu's save failed
+      'SIGNAMEM': 0xC6,         # the busy sign's save failed
       'DISK': 0xC7,             # DOOM.SYSTEM: a ProDOS error, not a bank
                                 #   file, a segment outside banks 1-126 or
-                                #   $0200-$BFFF (part plboot, PLBOOT-1)
+                                #   $0200-$BFFF (part plboot)
       # a full-map frame whose lines' rows use more than 4 palettes, or
       # more clipped lines than SS_AMSEG holds (both impossible upstream;
-      # part s2amap, request S2AMAP-4)
+      # part s2amap)
       'AMPALS': 0xD1, 'AMSEGS': 0xD2}
 
 # ---------------------------------------------------------------------------
-# Zero page (4.3)
+# Zero page
 # ---------------------------------------------------------------------------
 
 ZP_S2 = (0x48, 0x80)            # S2_*: the band, the patch, the publish
 ZP_S2M = (0x80, 0xB0)           # S2M_*, S2A_*: the menu's, the automap's
-                                #   ($80-$AE, S2AMAP-5);
+                                #   ($80-$AE);
                                 #   S2W_* $80-$AD, WIW's temporaries
-                                #   (S2WI-1; nothing kept between frames);
-                                #   FZ_* $80-$A4, FINW's (S2FIN-2; nothing
+                                #   (nothing kept between frames);
+                                #   FZ_* $80-$A4, FINW's (nothing
                                 #   kept between calls)
-# pl_poll's temporaries PLZ (part plinput, request PLINPUT-4): the
+# pl_poll's temporaries PLZ (part plinput): the
 # drawers' S2_W .. S2_O, never live across a drawer's call; the poll runs
-# first in a frame, before any drawer (2.1)
+# first in a frame, before any drawer
 PL_ZP = (0x5A, 0x6A)
 ZP_MATH = (0xB0, 0xD8)          # the math block [R src/native/MATH.md]
 ZP_MUSIC = (0xD8, 0xD8 + 31)    # S2's player [R src/sound/README.md]
 # the effect player's interrupt: the ring of the voice it runs and four
-# temporaries (part fxplay, request FXPLAY-1)
+# temporaries (part fxplay)
 ZP_FXRING = (0xF7, 0xFD)
-# with an AppleMouse II (docs/PLAY.md 21) the spare bytes are the
+# with an AppleMouse II (docs/PLAY.md) the spare bytes are the
 # handler's: AP_X at $FD-$FE, AP_SB at $FF (pl_boot.s PLMOUSE), read by
 # the poll; the effect player's temporaries $F7-$FB serve its handler
 # before fx_step
@@ -386,7 +409,7 @@ ZP_IRQ = (0xD8, 0x100)          # MEMORY_MAP.md rule 2
 FX_ZP = {'FXZ_RING': 0xF7, 'FXZ_N': 0xF9, 'FXZ_T': 0xFA, 'FXZ_AV': 0xFB,
          'FXZ_OP': 0xFC}
 # the 2D drawers' zero page in ZP_S2 (src/native/s2_draw.s, s2_pub.s; part
-# s2draw, request S2DRAW-1): (name, address, bytes). The arguments and the
+# s2draw): (name, address, bytes). The arguments and the
 # band's state, kept between calls, then the temporaries, free between
 # calls. S2_RY0..S2_RB1 (s2_rect, s2_raw) share S2_X and S2_Y's bytes.
 S2_ZP = [
@@ -425,7 +448,7 @@ S2_ZP = [
     ('S2_M', 0x74, 2),          # s2_mul160
     ('S2_MB0', 0x76, 1),        # s2_mark: the first byte,
     ('S2_MB1', 0x77, 1),        #   the last
-    # s2_pal's and s2_nib's temporaries (part s2pal, request S2PAL-3),
+    # s2_pal's and s2_nib's temporaries (part s2pal),
     # never live across a drawer's call (s2_begin keeps S2_BAND..S2_DRY1)
     ('S2P_A', 0x78, 2),
     ('S2P_B', 0x7A, 2),
@@ -438,11 +461,11 @@ S2_ZP_ALIASES = {'S2_RY0': 'S2_X', 'S2_RY1': 'S2_X', 'S2_RB0': 'S2_Y',
                  'S2_RB1': 'S2_Y'}
 
 # ---------------------------------------------------------------------------
-# The main card (4.4)
+# The main card
 # ---------------------------------------------------------------------------
 
 CARD_LO = 0xE000
-# what is not ours there [R MEMORY_MAP.md 4.2; tools/sound/README.md
+# what is not ours there [R MEMORY_MAP.md; tools/sound/README.md
 # "MUSIC.SYSTEM"]
 S2_CARD = (('the song ring and its mirror', 0xE000, 0xE403),
            ('the player\'s write lists', 0xE480, 0xE500),
@@ -453,8 +476,8 @@ PLATFORM_CARD = ('platform: phase switch, crash stub, bridge', 0xFF00,
                  0xFFFA)
 VECTORS = ('the vectors', 0xFFFA, 0x10000)
 
-# the VBL count is S2's vbl_count in the IRQ's zero page (part plclock,
-# request PLCLOCK-1); CLK_STEP the fraction a VBL (45,743 PAL, 38,229
+# the VBL count is S2's vbl_count in the IRQ's zero page (part
+# plclock); CLK_STEP the fraction a VBL (45,743 PAL, 38,229
 # NTSC), CLK_STD 0 PAL or $80 NTSC (S2's SONG_NTSC), CLK_TIME3 pl_time's
 # bits 24-31
 CLOCK_FIELDS = [('CLK_STEP', 2), ('CLK_FRAC', 2), ('CLK_TICS', 4),
@@ -463,7 +486,7 @@ CLOCK = R.allocate(CLOCK_FIELDS, 0xE403, 0xE413)
 # the effect voices, 16 bytes each (part fxplay, src/sound/fx.s: V_WPOS
 # the main loop's bytes put in the ring and V_RPOS the interrupt's taken
 # from it, both mod 256; V_LEVEL the step's attenuation; V_ATT the
-# volume's, VATT[volume]; request FXPLAY-1)
+# volume's, VATT[volume])
 VOICE_FIELDS = [('V_FLAGS', 1), ('V_HEAD', 2), ('V_LEFT', 2), ('V_WPOS', 1),
                 ('V_RUN', 1), ('V_PER', 2), ('V_LEVEL', 1), ('V_NOISE', 1),
                 ('V_RPOS', 1), ('V_CHAN', 1), ('V_ATT', 1), ('V_SOUND', 1),
@@ -474,7 +497,7 @@ VOICES = 3
 FXV_BASE = 0xE413
 FXV_END = FXV_BASE + VOICES * VOICE_SIZE      # $E443
 # FX_SVC: fx_service's temporaries, main loop only (FXS_C, FXS_V, FXS_N,
-# FXS_P; request FXPLAY-1)
+# FXS_P)
 FX_FIELDS = [('FX_ON', 1), ('FX_HOLD', 1), ('FX_INVAL', 1), ('FX_TEMPO', 2),
              ('FX_SVC', 4)]
 FX = R.allocate(FX_FIELDS, 0xE737, 0xE740)
@@ -499,7 +522,7 @@ S2T_FIELDS = [
     # W_READY's value pointer as readyNum sets it at the tic (an ammo
     # index, $FD none: before the first ST_Start, $FE LARGEAMMO, $FF the
     # frame rate) and ST_Start's st_running
-    # (part s2stbar, request S2STBAR-1)
+    # (part s2stbar)
     ('ST_READY', 1), ('ST_RUNNING', 1),
 ]
 S2T_SIZE = 61
@@ -507,13 +530,13 @@ S2T = R.allocate(S2T_FIELDS, 0, S2T_SIZE)
 S2T_USED = sum(n for _, n in S2T_FIELDS)
 MAIL_AMSTOP = 0x02              # S2_MAIL bit 1: the automap stopped (R6)
 MAIL_AMSTRIP = 0x04             # S2_MAIL bit 2: AMAPW published rows 0-9
-                                #   black (hu_drawer's A bit 1; S2AMAP-3)
+                                #   black (hu_drawer's A bit 1)
 MAIL_AMTITLE = 0x08             # bit 3: rows 160-167 black (A bit 2)
 MAIL_AMVIEW = 0x10              # bit 4: a frame drew the view without the
                                 #   overlay since the automap last ran
 # the channels (SC_BASE): the table, NUM_CHANNELS x 12 B, then the
-# mailboxes, NUM_CHANNELS x 4 B, then SC_EXTRA. A record (part fxchan,
-# request FXCHAN-1): the sound, the origin's kind with the pickup flag in
+# mailboxes, NUM_CHANNELS x 4 B, then SC_EXTRA. A record (part
+# fxchan): the sound, the origin's kind with the pickup flag in
 # bit 7, its handle, its last x and y (fixed point, 4 B each: 3 B cannot
 # hold the low byte that moves units' borrow)
 CHAN_FIELDS = [('CH_SFX', 1), ('CH_KIND', 1), ('CH_HANDLE', 2),
@@ -521,8 +544,8 @@ CHAN_FIELDS = [('CH_SFX', 1), ('CH_KIND', 1), ('CH_HANDLE', 2),
 CHF_PICKUP, CHF_KIND = 0x80, 0x03      # in CH_KIND: the pickup flag, the kind
 CHAN_SIZE = 12
 CHAN = R.allocate(CHAN_FIELDS, 0, CHAN_SIZE)
-# after the mailboxes (part fxchan, request FXCHAN-2, placed here in wave
-# 4: the tic-side block's two spare bytes went to S2STBAR-1): whether the
+# after the mailboxes (part fxchan; the tic-side block's two spare bytes
+# went to the status bar): whether the
 # listener exists (bit 7, for fx_pcache) and upstream's snd_SfxVolume
 # (0-15; the defaults, a loaded game and the menu's sound page write it)
 SC_EXTRA_FIELDS = [('LS_ON', 1), ('SND_SFXVOL', 1)]
@@ -547,14 +570,15 @@ class CardBuild(NamedTuple):
 
 BUILDS = {
     'release': CardBuild('release', 0xE443, 0xE8C0, 3, (0xE443, 0xE900),
-                         'the game (4.4)'),
+                         'the game'),
     # this half's tests: the test driver s2_drv at $F900-$FEFF in place of
     # the replay's part; the blocks where the release has them
     'test': CardBuild('test', 0xE443, 0xE8C0, 3, (0xE443, 0xE900),
                       'this half\'s test images (s2_drv)'),
-    # milestone 10's M11 test build: gdriver.s at $E000-$EDFF (request R4)
+    # the game's former M11 test build (its driver gdriver.s at
+    # $E000-$EDFF; no build here makes it now)
     'm11': CardBuild('m11', 0xEE00, 0xEE40, 3, (0xEE00, 0xEE80),
-                     'milestone 10\'s M11 test build (request R4)'),
+                     'the game\'s former M11 test build'),
     # the channel logic's comparison build: 8 channels, in the song ring's
     # place (no music in that image)
     'fxch8': CardBuild('fxch8', 0xE443, 0xE000, 8, (0xE000, 0xE100),
@@ -604,7 +628,7 @@ DRV_LOADS = 4                   # far_pload loads: bank, the runs' offset
 CALL_BUDGET_CYCLES = 400_000_000
 
 # ---------------------------------------------------------------------------
-# Cost phases (4.8): a2vm counts PHASE's value / 2 (cost.c phase_to)
+# Cost phases: a2vm counts PHASE's value / 2 (cost.c phase_to)
 # ---------------------------------------------------------------------------
 
 PHASE_2D = 30                   # the 2D frame side: P2DW, the mode images
@@ -619,7 +643,7 @@ PLATFORM_SOURCES = (re.compile(r'^src/native/(pl|fx)_[\w-]+\.s$'),
                     re.compile(r'^src/sound/fx[\w-]*\.s$'))
 
 # ---------------------------------------------------------------------------
-# The screen (aux 0): regions (6.3)
+# The screen (aux 0): regions
 # ---------------------------------------------------------------------------
 
 SHR, ROW_BYTES, ROWS = 0x2000, 160, 200
@@ -665,12 +689,12 @@ def rows(name: str, owner: str, r0: int, r1: int) -> Region:
 
 
 REGIONS = {
-    # the renderer's (exclusion X1): milestones 8 and 10 compare them
+    # the renderer's (exclusion X1): the renderer and the game own them
     'view': rows('view', 'renderer (X1)', STRIP_ROWS, VIEWHEIGHT - 1),
     'view-full': rows('view-full', 'renderer (X1)', 0, VIEWHEIGHT - 1),
     'strip': rows('strip', 's2hud', 0, STRIP_ROWS - 1),
     # 8 rows: STCFN036, STCFN064, STCFN081 are 8 high, so a title at 160
-    # can draw row 167 (part s2hud, request S2HUD-5)
+    # can draw row 167 (part s2hud)
     'title': rows('title', 's2hud', TITLE_Y, TITLE_Y + FONT_HEIGHT),
     'stbar': rows('stbar', 's2stbar', VIEWHEIGHT, ROWS - 1),
     'colors': Region('colors', 's2pal', (), (0, ROWS - 1), tuple(range(16))),
@@ -696,19 +720,19 @@ FRAME_KINDS = {
 }
 
 # ---------------------------------------------------------------------------
-# The field map (6.2): each upstream field a screen reads (1.6) and its
-# native place. Kinds: 'game' (milestones 9-10's places, read only: a name
+# The field map: each upstream field a screen reads and its
+# native place. Kinds: 'game' (the level part's and the game's places,
+# read only: a name
 # of llayout.G, of rlayout's frame block or render inputs, or 'player.F'
 # through llayout.player_layout, or 'GTAB'), 'card' (S2T_*), 'state' (an
 # image's state block in W, allocated below), 'bank' (S2STATE).
 # Encodings: word, byte, sxbyte (a signed byte), flag (0 or 256 as 0 or 1,
 # a byte), long, bytes, dropped, gfx (upstream's lump numbers, words, each
-# as its 2D store handle, a byte, $FFFF as $FF: s2data.handles_of; request
-# S2DATA-4), readysrc (W_READY's value pointer as ST_READY: an ammo
+# as its 2D store handle, a byte, $FFFF as $FF: s2data.handles_of),
+# readysrc (W_READY's value pointer as ST_READY: an ammo
 # index k for &ammo[k] (k < $FD), $FD NULL, $FE &largeammo, $FF
-# &_g_fps_framerate; request
-# S2STBAR-1), msgid (an hu_textline's text as its message id in s2msgs's
-# table, $FFFF the empty line; request S2HUD-6).
+# &_g_fps_framerate), msgid (an hu_textline's text as its message id in
+# s2msgs's table, $FFFF the empty line).
 # ---------------------------------------------------------------------------
 
 
@@ -760,7 +784,7 @@ def _stbar() -> List[Field]:
             _f(s, 'i_viigs65.s:STCACHE', 5120, 'bytes', 'bank',
                'SS_STCACHE')]
     # stHide's VW_MHID and the frame rate the fps cheat shows (part
-    # s2stbar, request S2STBAR-3; the frame rate is the second half's)
+    # s2stbar; the frame rate is the second half's)
     out += [_f(s, 'VW_MHID', 2, 'byte', 'state', 'P_MHID'),
             _f(s, 'd_main65.s:_g_fps_framerate', 2, 'word', 'state',
                'P_FPSRATE')]
@@ -781,7 +805,7 @@ def _stbar() -> List[Field]:
                'ST_OLDWEAPONS+%d' % k) for k in range(9)]
     # the widgets' value pointers: the native widget names its field, but
     # the ready number's, which readyNum sets at the tic (an ammo index,
-    # $FE LARGEAMMO, $FF the frame rate: encoding readysrc; S2STBAR-1)
+    # $FE LARGEAMMO, $FF the frame rate: encoding readysrc)
     out.append(_f(s, st + 'W_READY+8', 2, 'readysrc', 'card', 'ST_READY'))
     out += [_f(s, '%s%s+%d' % (st, w, 8), 2, 'dropped', 'state', '-')
             for w in ('W_HEALTH', 'W_ARMOR')]
@@ -801,7 +825,7 @@ def _hud() -> List[Field]:
         _f(s, 'i_viigs65.s:textValid', 4, 'bytes', 'state', 'P_TXTVALID'),
         _f(s, 'i_viigs65.s:textLen', 4, 'bytes', 'state', 'P_TXTLEN'),
         _f(s, 'i_viigs65.s:textY', 4, 'bytes', 'state', 'P_TXTY'),
-        # the cache's key, compared every frame a line is up (S2HUD-1)
+        # the cache's key, compared every frame a line is up
         _f(s, 'i_viigs65.s:textText', 80, 'bytes', 'state', 'P_TXTTEXT'),
         _f(s, 'i_viigs65.s:iigs_textShown', 4, 'bytes', 'state',
            'P_TXTSHOWN'),
@@ -809,8 +833,8 @@ def _hud() -> List[Field]:
         _f(s, hu + 'message_new', 2, 'byte', 'card', 'HU_NEW'),
         _f(s, hu + 'message_counter', 2, 'word', 'card', 'HU_COUNTER'),
         # the line's message id (the text of w_message: s2msgs's table,
-        # $FFFF an empty line; S2HUD-6); player.message is the player's
-        # field, milestone 10's reference (tag, symbol index)
+        # $FFFF an empty line); player.message is the player's
+        # field, the game's reference (tag, symbol index)
         _f(s, hu + 'w_message', 39, 'msgid', 'card', 'HU_MSGID', 2),
         _f(s, 'g_game65.s:_g_player.message', 0, 'player', 'game',
            'player.message', 0),
@@ -830,7 +854,7 @@ def _palettes() -> List[Field]:
                                                  'PS_CURTINT'),
           ('levelcopy', 2, 'byte', 'PS_LEVELCOPY'),
           # upstream's palettecount is 0 or 256 only [R i_viigs65.s:404,
-          # :1274-1275, :2124, :2187]: natively a flag (request S2PAL-5)
+          # :1274-1275, :2124, :2187]: natively a flag
           ('palettecount', 2, 'flag', 'PS_PALCOUNT'),
           ('scbchanged', 2, 'byte', 'PS_SCBCHANGED'),
           ('picturenum', 2, 'word', 'PS_PICTURE'),
@@ -856,7 +880,7 @@ def _menus() -> List[Field]:
            _f(s, m + 'iigs_mousespeed', 2, 'byte', 'bank', 'SS_SETTINGS+3'),
            _f(s, m + 'iigs_mousemove', 2, 'byte', 'bank', 'SS_SETTINGS+4'),
            # the release's MUSIC_MENU is 1: the display page's music row
-           # (part s2menu2, request S2MENU2-2; drawn and saved, it changes
+           # (part s2menu2; drawn and saved, it changes
            # no AY write)
            _f(s, 's_sound65.s:snd_MusicVolume', 2, 'byte', 'bank',
               'SS_SETTINGS+5')]
@@ -979,51 +1003,54 @@ def state_places(image: str) -> Dict[str, int]:
 
 # PALST's native fields after upstream's (no upstream counterpart, so not
 # in the field map): PS_BEGUN, s2_begin has run in this frame (s2_publish
-# sets it, s2_finish clears it; part s2draw, request S2DRAW-5);
+# sets it, s2_finish clears it; part s2draw);
 # PS_TXTINV: the HUD's text cache is invalid (upstream's textInvalidate:
 # s2_setrows, s2_nibtab and s2_picpal set it; s2hud clears both slots'
-# textValid and iigs_textShown, then it; part s2pal, request S2PAL-2)
+# textValid and iigs_textShown, then it; part s2pal)
 PALST_NATIVE = [('PS_BEGUN', 1), ('PS_TXTINV', 1)]
 
 
-# P2DW's own fields with no upstream counterpart (part s2hud, request
-# S2HUD-1): the message id P_MESSAGE's text was fetched for, the map
+# P2DW's own fields with no upstream counterpart (part s2hud): the message id
+# P_MESSAGE's text was fetched for, the map
 # P_TITLE's was; allocated after the field map's
 P2DW_NATIVE = [('P_MSGFILL', 2), ('P_MAPFILL', 1)]
-# MENUW's own fields with no upstream counterpart (part s2menu1, request
-# S2MENU1-1): UI_PALON, UI_PICTURE, UI_VIEWPAL, UI_STRIPPAL, UI_GAMMA,
+# MENUW's own fields with no upstream counterpart (part s2menu1): UI_PALON,
+# UI_PICTURE, UI_VIEWPAL, UI_STRIPPAL, UI_GAMMA,
 # menuNum's main row, bindRow, G_SettingsChanged's answer (the second
 # half's), the request to the second half and its argument, PALW due
 # after the close, UI_FONTBUF. The input layer's bind state (upstream's
 # iigs_bindwait, iigs_bindcode) is the input block's PL_BIND, which the
-# shared pl_poll writes (wave 5's integration: S2MENU1-4 with PLINPUT-3)
+# shared pl_poll writes
 MENUW_NATIVE = [('M_PALON', 1), ('M_PICTURE', 2), ('M_VIEWPAL', 1),
                 ('M_STRIPPAL', 1), ('M_UIGAMMA', 1), ('M_MAINN', 1),
                 ('M_BINDROW', 1), ('M_SETCHG', 1), ('M_REQ', 1),
                 ('M_REQARG', 1), ('M_RELOAD', 1), ('M_FONTBUF', 16),
                 # the benchmark's FPS text, 0-terminated, at most 7
                 # characters (bmDone's second line of VW_BTXT, x.xxx; the
-                # second half writes it; part s2menu2, request S2MENU2-1)
+                # second half writes it; part s2menu2)
                 ('M_BFPS', 8),
-                # the play build's phase timing (docs/PLAY.md 15): the three
+                # the play build's phase timing (docs/PLAY.md): the three
                 # rows X2 left black (y 92, 108, 124), 32 B each, 0-
                 # terminated; a row whose first byte is 0 stays black (the
                 # second half's bt_rows writes them; m2_bench draws them)
-                ('M_BROWS', 96)]
-# AMAPW's own fields with no upstream counterpart (part s2amap, request
-# S2AMAP-1): AM_MODE, AM_OLDTOP (bytes), the old byte list's entries
+                ('M_BROWS', 96),
+                # SAVE SETTINGS's answer, DLINIT's dli_save writes it (0
+                # none, 1 the write failed, 2 saved); m_frame shows it
+                ('M_SAVERES', 1)]
+# AMAPW's own fields with no upstream counterpart (part s2amap): AM_MODE,
+# AM_OLDTOP (bytes), the old byte list's entries
 # (AM_ON as entries) and its four bands' first entries
 AMAPW_NATIVE = [('A_MODE', 1), ('A_OLDTOP', 1), ('A_ON', 2), ('A_OB', 8)]
-# FINW's own fields with no upstream counterpart (part s2fin, request
-# S2FIN-1): the busy sign is on (upstream's VW_SGON)
+# FINW's own fields with no upstream counterpart (part s2fin): the busy sign is
+# on (upstream's VW_SGON)
 FINW_NATIVE = [('F_SIGNON', 1)]
 OWN_NATIVE = {'P2DW': P2DW_NATIVE, 'MENUW': MENUW_NATIVE,
               'AMAPW': AMAPW_NATIVE, 'FINW': FINW_NATIVE}
-# the menu's requests to the second half in M_REQ (S2MENU1-1)
+# the menu's requests to the second half in M_REQ
 MENU_REQUESTS = (('REQ_NONE', 0), ('REQ_NEWGAME', 1), ('REQ_QUIT', 2),
                  ('REQ_ENDGAME', 3), ('REQ_LOAD', 4), ('REQ_SAVE', 5),
                  ('REQ_BENCH', 6), ('REQ_SAVESET', 7))
-# MENUW keeps PALST in W at $A500, just above its room (S2MENU1-2); P2DW,
+# MENUW keeps PALST in W at $A500, just above its room; P2DW,
 # WIW and FINW at PALST_W
 MENUW_PALST = 0xA500
 
@@ -1040,7 +1067,7 @@ def resolve_game(place: str) -> Optional[Tuple[str, int]]:
         return None
     if place in LL.G:
         return ('main', LL.G[place])
-    if place in R.FRAME:        # absolute already [R rlayout.py] (S2HUD-5)
+    if place in R.FRAME:        # absolute already [R rlayout.py]
         return ('main', R.FRAME[place])
     if place in R.RINS:
         return ('main', R.RINS[place])
@@ -1054,7 +1081,7 @@ def resolve_game(place: str) -> Optional[Tuple[str, int]]:
 
 
 # ---------------------------------------------------------------------------
-# The packing of the images' stored pages (4.1)
+# The packing of the images' stored pages
 # ---------------------------------------------------------------------------
 
 class PackError(ValueError):
@@ -1113,7 +1140,7 @@ def image_banks() -> Dict[str, int]:
 
 
 # ---------------------------------------------------------------------------
-# The phase constants (4.8)
+# The phase constants
 # ---------------------------------------------------------------------------
 
 PHASE_NAME = re.compile(r'^(PHASE_\w+|\w+_PHASE)$')
@@ -1174,20 +1201,19 @@ def _local(expr: str, local: Dict[str, int]) -> str:
                   if m.group(0) in local else m.group(0), expr)
 
 
-# Milestone 10's test builds (game.mk's TEST_FLAGS: -D TESTBUILD) hold
-# harness entries that time one routine alone in phases of their own
-# (gflow.s's fl_timed, fl_tresume: 30, 31 [R docs/game-parts/flow.md
-# "Checkpoint"]); only milestone 10's routine-mode drivers call them, in
-# runs that time that routine and nothing of this half. Their stores are
-# the harness's (source_phases(harness=True)): checked in 0-31 and
-# readable, not against 4.8's owners, which are the game's (wave 4 as
-# integrated, SCREENS.md 8.8).
+# The code under -D TESTBUILD (which the disk build does not define: the
+# game's former test builds set it) holds harness entries that time one
+# routine alone in phases of their own (gflow.s's fl_timed, fl_tresume:
+# 30, 31), for routine-mode runs that time that routine and nothing of this
+# half. Their stores are the harness's (source_phases(harness=True)):
+# checked in 0-31 and readable, not against the phases' owners, which are
+# the game's (SCREENS.md).
 HARNESS_SYMBOL = 'TESTBUILD'
 _COND_OPEN = re.compile(r'^\.if(\w*)\b\s*(.*)$', re.I)
 
 
 def _harness_branch(kind: str, arg: str) -> Optional[bool]:
-    """Whether a conditional's first branch is the test builds' only
+    """Whether a conditional's first branch is TESTBUILD's only
     (True), never theirs (False), or not decided by HARNESS_SYMBOL
     (None)."""
     kind, arg = kind.lower(), arg.strip()
@@ -1217,7 +1243,7 @@ def source_phases(root: Path = ROOT, harness: bool = False
     with a constant. E may name a constant the same file defines (`NAME =
     expression`, read in the file's order). The phase is the value / 2
     (a2vm's cost.c: a phase over 31 counts in 31). harness False: the
-    stores outside milestone 10's test-build branches (`.ifdef TESTBUILD`
+    stores outside the TESTBUILD branches (`.ifdef TESTBUILD`
     and its forms); True: only those inside them (HARNESS_SYMBOL)."""
     found, unread = [], []
     for path in sorted((root / 'src').rglob('*.s')):
@@ -1225,7 +1251,7 @@ def source_phases(root: Path = ROOT, harness: bool = False
         lines = [_strip(x) for x in
                  path.read_text(errors='replace').splitlines()]
         code = []               # (line number, instruction text, label)
-        in_harness: set = set()     # the line numbers in test-build branches
+        in_harness: set = set()     # the line numbers in TESTBUILD branches
         conds: List[List[Optional[bool]]] = []  # [first branch, current]
         macros: Dict[str, str] = {}
         local: Dict[str, int] = {}  # the file's own NAME = constant
@@ -1343,7 +1369,7 @@ def is_platform(where: str) -> bool:
 
 def phase_problems(layouts: Sequence[Any], root: Path = ROOT) -> List[str]:
     """Every phase constant of the layouts and every phase the sources
-    write in 0-31; 31 only from the platform's code (4.8)."""
+    write in 0-31; 31 only from the platform's code."""
     out = []
     consts = layout_phases(layouts)
     for name, v in consts:
@@ -1359,7 +1385,7 @@ def phase_problems(layouts: Sequence[Any], root: Path = ROOT) -> List[str]:
             out.append('%s writes the phase 31, the platform\'s' % where)
     out += ['%s writes PHASE with a value the check cannot read' % w
             for w in unread]
-    # milestone 10's test-build harness (HARNESS_SYMBOL): 0-31, readable
+    # the TESTBUILD branches (HARNESS_SYMBOL): 0-31, readable
     found, unread = source_phases(root, harness=True)
     out += ['%s (a test build\'s harness) writes the phase %d (counted in '
             '31)' % (where, v) for where, v in found
@@ -1502,7 +1528,7 @@ def problems_of(g=None, root: Path = ROOT) -> List[str]:
         palst_places()
     except ValueError as error:
         out.append('PALST: %s' % error)
-    # ---- S2PAL's places (S2PAL-1): in $0200-$BFFF, disjoint, S2P_NIB
+    # ---- S2PAL's places: in $0200-$BFFF, disjoint, S2P_NIB
     # page aligned
     spans = sorted((a, a + z, n) for n, a, z in S2PAL_PLACES)
     for lo, hi, n in spans:
@@ -1516,7 +1542,7 @@ def problems_of(g=None, root: Path = ROOT) -> List[str]:
     if not (LL.ROOM[0] <= SFX_ROOM[0] < SFX_ROOM[1] <= LL.ROOM[1]) or \
             not (LL.ROOM[0] < S2VIEW_SAVE[0] < S2VIEW_SAVE[1] < LL.ROOM[1]):
         out.append('SFX_ROOM or S2VIEW_SAVE outside $0200-$BFFF')
-    # the songs' directory (PLBOOT-2): in the first song bank's room
+    # the songs' directory: in the first song bank's room
     dir_end = SONG_DIR[1] + SONG_DIR_ENTRY * SONG_COUNT
     if SONG_DIR[0] not in SONGS or \
             not LL.ROOM[0] <= SONG_DIR[1] < dir_end <= LL.ROOM[1]:
@@ -1553,7 +1579,7 @@ def problems_of(g=None, root: Path = ROOT) -> List[str]:
                           hi - 1))
     if not (0x0300 <= INPUT_LO and INPUT_END <= 0x03F0):
         out.append('the input block is outside the persistent globals')
-    # the key table (PLINPUT-1): in MEMORY_MAP.md 3.3's persistent
+    # the key table: in MEMORY_MAP.md's persistent
     # $1A80-$1FFF, so never in rule 3's $0400-$0BFF; clear of rlayout's,
     # llayout's and glayout's main places (the loop above)
     if not (0x1A80 <= KEYTAB_PLACE[0] and KEYTAB_PLACE[1] <= 0x2000) or \
@@ -1594,12 +1620,12 @@ def problems_of(g=None, root: Path = ROOT) -> List[str]:
         a, b = zp_named.get(alias), zp_named.get(of)
         if a is None or b is None or not (b[0] <= a[0] and a[1] <= b[1]):
             out.append('%s is not inside %s' % (alias, of))
-    # pl_poll's PLZ (PLINPUT-4): inside ZP_S2 and over the drawers'
+    # pl_poll's PLZ: inside ZP_S2 and over the drawers'
     # temporaries S2_W .. S2_O only, never the band's kept state
     if not (ZP_S2[0] <= PL_ZP[0] < PL_ZP[1] <= ZP_S2[1]) or \
             PL_ZP != (zp_named['S2_W'][0], zp_named['S2_O'][1]):
         out.append('PLZ is not the drawers\' temporaries S2_W .. S2_O')
-    # ---- each drawing image's marks page and fetch buffer (S2DRAW-1)
+    # ---- each drawing image's marks page and fetch buffer
     for name, (marks, fbuf, pages) in DRAW_PLACES.items():
         im = IMAGE[name]
         ranges = {r[2]: r[:2] for r in im.runtime}
@@ -1652,7 +1678,7 @@ def problems_of(g=None, root: Path = ROOT) -> List[str]:
             for n2, lo2, hi2 in blocks[i + 1:]:
                 if _overlap((lo, hi), (lo2, hi2)):
                     out.append('%s: %s overlaps %s' % (build, n, n2))
-            if build == 'm11':  # gdriver.s's $E000 part, the replay's
+            if build == 'm11':  # the old gdriver.s's $E000 part, the replay's
                 stays = [('gdriver.s', 0xE000, 0xEE00), REPLAY_CARD,
                          PLATFORM_CARD, VECTORS]
                 if lce is not None:
@@ -1666,7 +1692,7 @@ def problems_of(g=None, root: Path = ROOT) -> List[str]:
                 if build == 'm11' and n in ('the clock', 'the effect voices',
                                             'the effects\' flags',
                                             'the effect rings'):
-                    continue    # (no sound in milestone 10's M11 build)
+                    continue    # (no sound in the former M11 build)
                 if _overlap((lo, hi), (lo2, hi2)):
                     out.append('%s: %s overlaps %s' % (build, n, n2))
         s2t = cb.s2t_base
@@ -1680,7 +1706,7 @@ def problems_of(g=None, root: Path = ROOT) -> List[str]:
         if build == 'm11' and lce is not None and (
                 _overlap((s2t, s2t + S2T_SIZE), lce) or _overlap(sc, lce)):
             out.append('m11: the blocks meet gdriver\'s $E000 part')
-    # (3 channels in the release's 64 B, 14 spare since wave 4's SC_EXTRA;
+    # (3 channels in the release's 64 B, 14 spare after SC_EXTRA;
     # FXCH8's 8 in the song ring's place)
     if sc_size(3) > 64 or sc_size(8) != 8 * (CHAN_SIZE + MAIL_SIZE) + \
             SC_EXTRA_SIZE:
@@ -1736,29 +1762,8 @@ def problems_of(g=None, root: Path = ROOT) -> List[str]:
     return out
 
 
-def linkmap_problems(sym) -> List[str]:
-    """Every upstream field of the map that names a unit's label exists in
-    the link map with at least its offset + size bytes (bridge.linkmap's
-    Symbols; needs build/linkmap.json)."""
-    out = []
-    for f in field_map():
-        m = re.match(r'^(\w+65\.s):(\w+)(?:\+(\d+))?$', f.ref)
-        if not m or f.ref.startswith('i_viigs65.s:STCACHE'):
-            continue
-        unit, label, off = m.group(1), m.group(2), int(m.group(3) or 0)
-        try:
-            lab = sym.label('%s:%s' % (unit, label))
-        except KeyError:
-            out.append('%s is not in the link map' % f.ref)
-            continue
-        if f.size and off + f.size > lab.size:
-            out.append('%s: %d + %d bytes, the label has %d' % (
-                f.ref, off, f.size, lab.size))
-    return out
-
-
 # ---------------------------------------------------------------------------
-# Sizes against an image's ld65 map (4.1's size table)
+# Sizes against an image's ld65 map (the size table)
 # ---------------------------------------------------------------------------
 
 IMG_SEGMENTS = ('S2CODE', 'S2RODATA', 'S2DATA')
@@ -1807,7 +1812,7 @@ def size_rows(image: str, ms: MapSizes) -> Tuple[List[str], List[str]]:
     for stem, n in ms.modules.items():
         row = module_row(stem)
         # an image that links the publish alone (AMAPW) counts it in its
-        # own row (part s2draw, request S2DRAW-2)
+        # own row (part s2draw)
         if row == 's2_draw+s2_pub' and row not in im.shared and \
                 's2_pub' in im.shared and stem.split('-')[0] == 's2_pub':
             row = 's2_pub'
@@ -1882,6 +1887,9 @@ def constants(build: str = 'test') -> List[Tuple[str, int]]:
     out += sorted(INPUT.items(), key=lambda x: x[1])
     out += [('PL_EVENTS', QUEUE_EVENTS), ('PL_EVENT_SIZE', EVENT_SIZE)]
     out += [('PL_KEYTAB', KEYTAB_PLACE[0])] + list(PL_BIND_VALUES)
+    out += [('SET_BANK', SET_BANK), ('SET_FILE', SET_FILE),
+            ('SET_INFO', SET_INFO), ('SET_SIZE', SET_SIZE)]
+    out += list(SETTINGS_LAYOUT)
     out += [('S2S_' + k, v) for k, v in S2S.items()]
     out += [('PL_' + k, v) for k, v in PL.items()]
     out += sorted(CLOCK.items(), key=lambda x: x[1])
@@ -1926,7 +1934,7 @@ def zeropage() -> List[Tuple[str, int]]:
 
 def include_text(build: str = 'test') -> str:
     check()
-    lines = ['; Generated by tools/native/s2layout.py (docs/SCREENS.md 4), '
+    lines = ['; Generated by tools/native/s2layout.py (docs/SCREENS.md), '
              'build %s. Do not edit.' % build, '']
     seen = set()
     for name, value in constants(build):
@@ -1943,8 +1951,8 @@ def include_text(build: str = 'test') -> str:
     return '\n'.join(lines) + '\n'
 
 
-# the card areas of a 2D image's map (as src/sound/music.cfg places S2's
-# player in the game, MEMORY_MAP.md 4.2), all optional
+# the card areas of a 2D image's map (where the game has S2's player,
+# MEMORY_MAP.md), all optional
 CFG_CARD = """\
     SNDZP:  start = $00D8, size = $0028, type = rw, file = "";
     RING:   start = $E000, size = $0403, type = rw, file = "";
@@ -1964,7 +1972,7 @@ def cfg_text(image: str) -> str:
     im = IMAGE[image]
     lo, hi = im.stored
     return '\n'.join([
-        '# Generated by tools/native/s2layout.py (docs/SCREENS.md 4.1, 4.4):',
+        '# Generated by tools/native/s2layout.py (docs/SCREENS.md):',
         '# the image %s. Do not edit.' % image,
         'MEMORY {',
         '    W:      start = $6000, size = $%04X, file = "%%O.w";' % (
@@ -2017,37 +2025,6 @@ def write_if_changed(path: Path, text: str) -> None:
     os.replace(tmp, str(path))
 
 
-def report() -> List[str]:
-    out = ['The 2D images (docs/SCREENS.md 4.1), budgets against rooms:']
-    banks_ = image_banks()
-    for im in IMAGES:
-        out.append('  %-6s $%04X-$%04X  %6d of %6d B  bank %d' % (
-            im.name, im.stored[0], im.stored[1] - 1, budget_total(im),
-            im.stored[1] - im.stored[0], banks_[im.name]))
-    try:
-        pack(budget_extents(), FIRST_CODE_BANKS)
-        out.append('The first design\'s code banks 107, 108, 94 hold the '
-                   'images.')
-    except PackError as error:
-        out.append('The first design\'s code banks 107, 108, 94 do not '
-                   '(S2LAY-1): %s' % error)
-    last = S2STATE_FIELDS[-1][0]
-    out.append('S2STATE (bank %d): $%04X-$%04X used' % (
-        S2STATE, LL.ROOM[0], SS[last] + SS_SIZE[last] - 1))
-    out.append('Card: the tic-side block %d of %d B; the channels %d of 64 B'
-               % (S2T_USED, S2T_SIZE, sc_size(3)))
-    found, unread = source_phases()
-    out.append('Phases written by the sources: %s; unread: %d' % (
-        ', '.join(str(v) for v in sorted({v for _, v in found})),
-        len(unread)))
-    found, unread = source_phases(harness=True)
-    out.append('Phases written by test builds\' harnesses (%s): %s; '
-               'unread: %d' % (HARNESS_SYMBOL, ', '.join(
-                   '%s %d' % (w, v) for w, v in found if v) or 'none',
-                   len(unread)))
-    return out
-
-
 def main(argv: Optional[Sequence[str]] = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     build = 'test'
@@ -2062,9 +2039,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if argv == ['--check']:
         check()
         print('s2layout: check passed')
-        return 0
-    if argv == ['--report']:
-        print('\n'.join(report()))
         return 0
     if len(argv) == 2 and argv[0] == '--inc':
         write_if_changed(Path(argv[1]), include_text(build))

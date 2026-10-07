@@ -1,9 +1,9 @@
-; s2_ovd.s: part s2ovl's test driver (not the game's; docs/SCREENS.md
-; 1.5.4, 4.4 "Test builds"; docs/m11-parts/s2ovl.md). It is linked after
-; milestone 8's rdriver.s (-D MASKED -D FRAME8) into the card's $E000 part
-; of milestone 8's whole frame (src/native/render.cfg), and runs that
-; frame as rdriver.s's drv_fframe does (RENDER-MASKED.md 3.2, phases
-; 1-13), with the automap overlay's step of SCREENS.md 1.5.4 between the
+; s2_ovd.s: part s2ovl's driver (not the game's; m11/s2ovl.mk links it into
+; the renderer's whole frame ovf, whose map s2ovl.py places OVLW from). It
+; is linked after rdriver.s (-D MASKED -D FRAME8) into the card's $E000 part
+; of the renderer's whole frame (src/native/render.cfg), and runs that frame
+; as rdriver.s's drv_fframe does (docs/RENDER-MASKED.md, the frame's
+; phases), with the automap overlay's step (docs/SCREENS.md) between the
 ; masked phase and the bucket pass:
 ;
 ;   ovd_frame   the front end's window (far_wload) and nr_frame; the
@@ -20,11 +20,11 @@
 ;               nm_bkload), 18 the bucket pass, as rdriver.s.
 ;   ovd_ltime   OVLW's load alone in the cost phase 30 (its time)
 ;
-; Labels for the harness's snapshots and the write log's phases:
+; Labels for a host run's snapshots and the write log's phases:
 ; ovd_fload (the walk's end), ovd_ovl (the masked phase's end, before
 ; OVLW), ovd_load (OVLW's load), ovd_post (after am_ovl and its
 ; nm_bkload), ovd_plain (a frame without the overlay: before nm_bkload).
-; ovd_runs, ovd_fill and ovd_tics are the harness's (image records).
+; ovd_runs, ovd_fill and ovd_tics are the host run's (image records).
 
         .setcpu "65C02"
         .include "rlayout.inc"
@@ -119,7 +119,7 @@ poison: lda #<OVLW_LO
         rts
         .assert <OVLW_LO = 0 && <OVLW_HI = 0, error, "OVLW's room"
 
-; ovd_setup: rdriver.s's drv_setup without the lockstep stub's state: the
+; ovd_setup: rdriver.s's drv_setup without its stub's state: the
 ; IRQ vector (drv_irq: the VBL counted, a BRK to drv_crash), the counter,
 ; the mouse card's VBL interrupt (enabled by the caller's CLI)
 ovd_setup:

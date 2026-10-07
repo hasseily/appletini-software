@@ -1,10 +1,10 @@
-; game/secfind/sftest.s: part secfind's test routine (test builds only:
-; TESTBUILD; docs/game-parts/secfind.md). GPL-2, the port's own.
+; game/secfind/sftest.s: part secfind's test routine. It is under
+; .ifdef TESTBUILD, which no build here defines, so the disk build
+; assembles it to nothing (part.mk still lists it). GPL-2, the port's own.
 ;
 ;   sf_t_mod3   mod3 of every word from GA_0-1 up, 16,384 of them, into
 ;               main $2000-$5FFF (a byte each): the exhaustive check of the
 ;               part's arithmetic helper against upstream's mod3
-;               (tools/native/gparts/secfind.py --mod3)
 
         .setcpu "65C02"
         .include "rlayout.inc"
@@ -19,7 +19,7 @@
         .import mod3, fc_call, fc_unbuilt
 
         ; test-only code goes in the card's driver area, not the core
-        ; (wave 1 as integrated: the core's room is the game's)
+        ; (the core's room is the game's)
         .segment "DRIVER"
 FC_HERE .set 0
 

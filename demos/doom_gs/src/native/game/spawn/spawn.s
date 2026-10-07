@@ -1,5 +1,5 @@
-; game/spawn/spawn.s: part spawn's puffs and blood (milestone 10, docs/GAME.md
-; 2.4; docs/game-parts/spawn.md). A GPL-2 derivative of upstream's
+; game/spawn/spawn.s: part spawn's puffs and blood (docs/GAME.md). A GPL-2
+; derivative of upstream's
 ; p_spawn65.s (P_SpawnPuff, P_SpawnBlood, saveXYZ, zNoise, spawnXYZ,
 ; ticsNoise, thArg) and p_attack65.s (P_IsAttackRangeMeleeRange).
 ;
@@ -24,7 +24,7 @@
 ; upstream's saveXYZ (X:C, _Dp to SP_X..SP_Z), moArg and thArg (SM_MO,
 ; SP_TH to _Dp) copy arguments between upstream's registers, its _Dp and
 ; its near scratch; natively the coordinates stay in GA_X..GA_Z and the
-; slot is A:X or SP_TH, so they have no code (request 3: glayout.INLINED).
+; slot is A:X or SP_TH, so they have no code.
 
         .setcpu "65C02"
         .macpack longbranch

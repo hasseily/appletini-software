@@ -1,14 +1,14 @@
-; game/movers/movers.s: part movers of milestone 10 (docs/GAME.md 2.4,
-; wave 6): the door and the plat thinkers. A GPL-2 derivative of upstream's
-; p_doors65.s (T_VerticalDoor: waiting, down, up, done; partLight with
-; lightPartway, EV_LightTurnOnPartway; the helpers doorSound, moveCeiling
+; game/movers/movers.s: part movers of the game (docs/GAME.md, the
+; parts; wave 6): the door and the plat thinkers. A GPL-2 derivative of
+; upstream's p_doors65.s (T_VerticalDoor: waiting, down, up, done; partLight
+; with lightPartway, EV_LightTurnOnPartway; the helpers doorSound, moveCeiling
 ; and dlSec done in place, mulExt a routine of its own) and p_plats65.s
 ; (T_PlatRaise: waiting, up, down, remove; the helpers movePlat, stopWait,
 ; waitStatus and setStatus done in place). Upstream's doorArg, sectorArg,
 ; setDir, platArg, platSound are part evworld's helpers, which have no code
 ; (glayout.INLINED['evworld']): their work is done here in place too.
 ;
-; The native interfaces (docs/game-parts/movers.md 1.2):
+; The native interfaces:
 ;
 ;   THTAB's T_VerticalDoor, T_PlatRaise
 ;                   GA_0-1 = the thinker's handle (upstream's _Dp[0-3])

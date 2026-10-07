@@ -1,5 +1,5 @@
 ; auxlc.s: the renderer's reads of the aux card's tables, F1.2.1
-; (docs/MEMORY_MAP.md 4.3, docs/RENDER.md 1.6 and 3.4).
+; (docs/MEMORY_MAP.md, docs/RENDER.md).
 ;
 ; The aux card holds read-only tables (tools/native/rtables.py writes
 ; them): finetangent part 3 (bank 1 $D000 low bytes, $D400 high bytes),
@@ -13,14 +13,14 @@
 ; ALTZP leaves main), ALTZP off, CLI. With ALTZP on, zero page, the stack
 ; and the card are the aux bank's, so nothing inside touches them, and the
 ; code runs from W: its operand's high byte is set before each window
-; (self-modification in W only, RENDER.md 3.7). $C073 is 0 between
+; (self-modification in W only, RENDER.md). $C073 is 0 between
 ; windows, so the aux card is aux bank 0's.
 
         .setcpu "65C02"
         .include "rlayout.inc"
 
         .export ax_vtox, ax_tanto, ax_tan3, ax_tan4, ax_out
-        ; the operands each window sets (the harness allows these writes)
+        ; the operands each window sets (self-modified operands)
         .export axv_rd, axt_b2, axt_b3, ax3_lo, ax3_hi
         .export ax4_b0, ax4_b1, ax4_b2, ax4_b3
 
@@ -29,7 +29,7 @@ ALTZPON  = $C009
 LCBANK2  = $C083
 LCBANK1  = $C08B
 
-        .segment "AUXW"         ; (both W images: RENDER-MASKED.md 1.10)
+        .segment "AUXW"         ; (both W images: RENDER-MASKED.md)
 
 ; ---------------------------------------------------------------------------
 ; ax_vtox: A = viewangletoxTable[i], i = A:X (A the high byte, 0-7; i at

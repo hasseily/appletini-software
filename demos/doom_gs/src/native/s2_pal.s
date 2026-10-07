@@ -1,21 +1,20 @@
 ; s2_pal.s: the palettes, the tints, the SCBs, the finish and the wipe
-; (docs/SCREENS.md 1.3, 1.5.7, 1.5.8; part s2pal, docs/m11-parts/s2pal.md).
-; The shared object s2_pal, linked into P2DW, MENUW, WIW and FINW (4.1's
-; size table). Written from upstream's src/iigs/i_viigs65.s (I_SetPalette,
-; I_ReloadPalette, I_FinishUpdate and D_Wipe without showDirty,
-; I_ApplyColors, newColors, pictureColors, I_ViewPalette, I_MessageStrip,
-; setRows, rowPalette), st_stuff65.s (ST_doPaletteStuff) and d_main65.s
-; (stripEarly's palette).
+; (docs/SCREENS.md, the palettes; part s2pal). The shared object s2_pal,
+; linked into P2DW, MENUW, WIW and FINW. Written from upstream's
+; src/iigs/i_viigs65.s (I_SetPalette, I_ReloadPalette, I_FinishUpdate and
+; D_Wipe without showDirty, I_ApplyColors, newColors, pictureColors,
+; I_ViewPalette, I_MessageStrip, setRows, rowPalette), st_stuff65.s
+; (ST_doPaletteStuff) and d_main65.s (stripEarly's palette).
 ;
 ; The palette state PALST (s2layout.py's PS_*: scb, palette, newpal,
 ; curtint, levelcopy, palettecount, scbchanged, picturenum, viewpal,
 ; strippal, PS_BEGUN, PS_TXTINV) is at s2_palst in W, which each image
 ; exports; s2_palget and s2_palput move it from and to S2STATE's SS_PALST
-; (SCREENS.md 4.6). Natively PS_PALCOUNT is a flag: upstream's
+; (docs/SCREENS.md). Natively PS_PALCOUNT is a flag: upstream's
 ; palettecount is 0 or 256 words [R i_viigs65.s:1274-1275, :2124, :2187].
 ;
 ; The order of the screen's stores is upstream's [R i_viigs65.s:327-345]
-; through two entries (1.3): s2_begin, which s2_publish calls before the
+; through two entries: s2_begin, which s2_publish calls before the
 ; frame's first band (the black palettes when a picture is new, then
 ; newColors), and s2_finish at the frame's end (s2_begin if no band was
 ; published, then pictureColors). Every screen store is a CPU store with

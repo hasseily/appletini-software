@@ -1,5 +1,5 @@
-; game/missile/missile.s: part missile, a monster's missile (milestone 10,
-; docs/GAME.md 2.4; docs/game-parts/missile.md). A GPL-2 derivative of
+; game/missile/missile.s: part missile, a monster's missile (docs/GAME.md,
+; the parts). A GPL-2 derivative of
 ; upstream's p_spawn65.s (P_SpawnMissile, checkMissile and their helpers
 ; srcArg, srcAbove, seeTarget, thSpeed, destDelta, angleMom, speedMom,
 ; halfMom).
@@ -19,7 +19,7 @@
 ;                   P_TryMove there; a refused move explodes it
 ;                   (P_ExplodeMissile). Returns nothing
 ;
-; The helpers part wfire's P_SpawnPlayerMissile shares (GAME.md 2.4: a
+; The helpers part wfire's P_SpawnPlayerMissile shares (docs/GAME.md: a
 ; helper two parts need is the earlier part's), each a routine:
 ;   srcAbove        A:X = a mobj: GA_X, GA_Y, GA_Z = its x, y and z + 32 *
 ;                   FRACUNIT (upstream's SP_X, SP_Y, SP_Z: P_SpawnMobj's
@@ -37,7 +37,7 @@
 ;                   marks the line dirty. Changes A, X, Y, GT_0-GT_4
 ;
 ; Upstream's srcArg (_Dp = SP_SRC) has no code; destDelta, which only
-; P_SpawnMissile calls, is its local code (delta): request 1,
+; P_SpawnMissile calls, is its local code (delta):
 ; glayout.INLINED.
 
         .setcpu "65C02"

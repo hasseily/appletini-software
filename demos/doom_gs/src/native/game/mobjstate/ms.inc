@@ -1,5 +1,5 @@
-; game/mobjstate/ms.inc: part mobjstate's places (milestone 10, docs/GAME.md
-; 2.4, 4.4; docs/game-parts/mobjstate.md). GPL-2, the port's own.
+; game/mobjstate/ms.inc: part mobjstate's places (docs/GAME.md, the parts;
+; zero page and scratch). GPL-2, the port's own.
 ;
 ; The part has no zero page of its own: its temporaries are GT_0-GT_6
 ; (GT_7 on is the object API's), its arguments GA_*. What a routine keeps
@@ -21,9 +21,9 @@
 ;     when the mobj is still there, 0 (Z set) when S_NULL removed it
 
 MS_OBJ  = GA_MO                 ; (2) an action's or a thinker's object
-                                ;   (ggame.inc GA_MO: request R4)
+                                ;   (ggame.inc GA_MO)
 MS_W    = API_W                 ; (2) the object API's word (bk_get,
-                                ;   bk_put, sn_putw, mi_get: request R2)
+                                ;   bk_put, sn_putw, mi_get)
 
 MS      = SB_MOBJSTATE
         .assert SB_MOBJSTATE_SIZE >= 32, error, "mobjstate's scratch block"

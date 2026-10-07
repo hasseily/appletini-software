@@ -1,5 +1,4 @@
-; game/trymove/trymove.s: part trymove's move (milestone 10, docs/GAME.md
-; 2.4 row trymove, 0.3 fact 4; docs/game-parts/trymove.md). A GPL-2
+; game/trymove/trymove.s: part trymove's move (docs/GAME.md). A GPL-2
 ; derivative of upstream's p_map65.s (P_TryMove with lessHeight, overStep,
 ; its move, mvNodes, spec and specLine).
 ;
@@ -26,7 +25,7 @@
 ;               (LR_N 0) and the thing's node list is one node, of the new
 ;               sector, upstream's shortcut: validcount + 1 and
 ;               _s_sector_list none, the list as it was; else LR_USE 1 (the
-;               walk takes the record's lines, stamping none: fact 4).
+;               walk takes the record's lines, stamping none).
 ;               Then P_SetSeclist (_s_sector_list = the thing's list, its
 ;               list none) and P_CreateSecNodeList (the core's)
 ;   spec        (in place) while (numspechit--): the line spechit[numspechit]

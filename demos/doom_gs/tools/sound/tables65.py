@@ -3,15 +3,12 @@
 
 Usage:  python3 tools/sound/tables65.py OUT.inc
 
-Every value comes from tools/sound/tables.py, the tables the player
-model (player.py) uses, so the 65C02 player and its oracle cannot drift
-apart: the voices of the layout (native12, the only one) and the
+Every value comes from tools/sound/tables.py, which the converter uses
+too: the voices of the layout (native12, the only one) and the
 registers the music owns, the period tables of the card's native mode
 for a PAL and an NTSC //e, the bend magnitudes, the attenuation-to-level
 table and the tempo; and for the effect player (src/sound/fx.s), chip
 3's voices by side and the separations of its voice choice.
-tests/test_sound_player65.py reads the tables back
-from the assembled player and compares them with tables.py.
 
 Standard library only.
 """

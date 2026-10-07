@@ -1,5 +1,5 @@
-; rrec.s: the records of the native renderer (docs/RENDER.md 3.6;
-; milestone 7, stage B; milestone 8, stage B: docs/RENDER-MASKED.md 3.4):
+; rrec.s: the records of the native renderer (docs/RENDER.md;
+; docs/RENDER-MASKED.md):
 ; the batch buffer in W and its staging, and the model of upstream's list
 ; pages.
 ;
@@ -10,19 +10,21 @@
 ; copies the batch into the staging, aux 0 $A000-$BFFF, then the spill
 ; banks RECSP_FIRST..RECSP_LAST ($0200-$BFFF each), one RAMWRT window an
 ; area; STG_BANK (0: aux 0) and STG_PTR, in the frame block, say where the
-; next byte goes. When the staging and the spill are full the frame stops:
-; STATUS = ST_RECORDS and BRK, in the test and lockstep builds (RENDER.md
-; 3.6: nothing is dropped silently). The game's build (-D RELEASE,
-; RENDER-MASKED.md 6.1, stage C) never stops: a batch that does not fit
-; the last spill bank's room is dropped whole, and every later one (the
-; sticky RECDROP), with STATUS = ST_RECORDS; the frame completes with the
-; records staged (a covered range whose record was dropped is cleared by
-; the bucket pass), and the display treats it as not shown. Upstream's
+; next byte goes. The release build (-D RELEASE: render.mk's default, the
+; disk's rcard; RENDER-MASKED.md 10) never stops the frame: a batch that
+; does not fit the last spill bank's room is dropped whole, and every later
+; one (the sticky RECDROP, so the staged records stay a prefix of the
+; sequence numbers), with STATUS = ST_RECORDS; the frame completes with the
+; records staged (the bucket pass counts the columns again from the
+; staging, and clears a covered range whose record was dropped), and the
+; game goes on (the next frame's nr_frame clears STATUS and W_FSW: the cut
+; frame counts as not shown). Without it (render.mk's stops target) a full staging stops
+; the frame: STATUS = ST_RECORDS and BRK (nothing is dropped). Upstream's
 ; lists and their early flush are not reproduced: the native renderer
 ; stages the whole frame, and the bucket pass sorts it by column for the
 ; replay.
 ;
-; The page model (RENDER-MASKED.md 0.3 row 2, 3.4): a masked post's kind
+; The page model (RENDER-MASKED.md): a masked post's kind
 ; (K_TEXC or K_TEX) depends on the room left in upstream's page of its
 ; column's list, so rec_room keeps, for each record every producer makes,
 ; UPOFS[c] (the offset upstream's next record of column c takes in its
@@ -42,7 +44,7 @@
 ; mrec_room, mrec_flush, the count MRB of the draw phase's zero page, and
 ; the record's sequence number left in RSEQ for the covered ranges).
 ;
-;   rec_start   the frame's start (stage C): an empty batch and staging,
+;   rec_start   the frame's start: an empty batch and staging,
 ;               no record, every UPOFS 0, no extra page, no flush
 ;               (upstream's lists are empty when a frame starts: the
 ;               replay of the frame before emptied them)
@@ -51,16 +53,17 @@
 ;               for it. Keeps X. Out: Y = the batch's free byte.
 ;   rec_flush   the batch into the staging (the count 0 after). Keeps X.
 ;
-; Speed wave 1, part bucket (RENDER-MASKED.md 6.2 optimisation 10): REC_ROOM
+; Speed wave 1, part bucket (RENDER-MASKED.md): REC_ROOM
 ; also adds each record's bytes in W (its native size less the column
 ; byte) to its column's 16-bit count, FCNTLO/FCNTHI (W, the front end's,
 ; zeroed by rec_start) or MCNTLO/MCNTHI (W, the masked phase's: mmain.s
 ; nm_masked copies FCNT there first), so the bucket pass makes its
 ; batches without a first walk of the staging. A count that would pass
 ; $FFFF stays at $FFxx (a column of 64 KB stays past every batch). The
-; counts hold every record allocated: a batch the game build drops (6.1,
-; RECDROP) and a column cut at a batch's limit are counted again from the
-; staging by the bucket pass, which makes them exact again. REC_FLUSH copies
+; counts hold every record allocated: after a batch the release build
+; drops (6.1, RECDROP) or with a column past a batch's limit, the bucket
+; pass counts every column again from the staging (bucket.s walk 1), which
+; makes them exact again. REC_FLUSH copies
 ; a batch with one indexed loop (lda BATCH,y / sta (FA_DST),y), a batch
 ; crossing an area's end ($C000) in two runs.
 ;
@@ -72,7 +75,7 @@
         .include "rlayout.inc"
         .include "math.inc"
 
-LAST_AREA = RECSP_LAST          ; the staging's last area (RELEASE: 6.1)
+LAST_AREA = RECSP_LAST          ; the staging's last area
 
 .ifdef MREC
         .define REC_ROOM mrec_room
@@ -284,6 +287,6 @@ REC_FLUSH:
         rts
 @over:  lda #ST_RECORDS         ; the staging and the spill are full: a
         sta STATUS              ;   batch reached the last area's end
-        brk                     ;   (RELEASE: never reached, a batch that
-                                ;   would is dropped first)
+        brk                     ;   (the release build: never reached, a
+                                ;   batch that would is dropped first)
         .byte ST_RECORDS

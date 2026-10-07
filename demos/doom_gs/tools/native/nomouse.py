@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""The mouse card made optional (docs/PLAY.md 20): the records DOOM.SYSTEM
+"""The mouse card made optional (docs/PLAY.md): the records DOOM.SYSTEM
 writes when slot 2 is not the Appletini's mouse card.
 
 With the Appletini's mouse card nothing here runs: its VBL interrupt is
@@ -22,7 +21,7 @@ card_problems() checks that the bytes mo_recs replaces are still the ones
 it was written for. Records as amcpu.py's: a length, a bank, an address,
 the bytes; a length of 0 ends the table (MPATCH_SIZE bytes at bt_mpatch).
 
-With an AppleMouse II in slot 2 (docs/PLAY.md 21, 2026-10-04) DOOM.SYSTEM
+With an AppleMouse II in slot 2 (docs/PLAY.md, 2026-10-04) DOOM.SYSTEM
 writes the records above, then pl_boot.s's ap_recs (the handler on the
 mouse's VBL through its firmware, ap_irq) and this module's second table,
 ap_mpatch (APATCH_SIZE bytes, apple_patches()): in each of the same frame
@@ -32,11 +31,8 @@ AP_X: the button in AP_SB's bit 0, its count of updates in bits 2-7, so
 that the poll's two reads of the sequence still see an update between
 them), pl_mouse's first byte back to LDY #2 (bt_mpatch made it an RTS),
 and pl_centre's writes of the card's X writes of AP_X.
-
-Usage:  python3 tools/native/nomouse.py [--play DIR]   (the records)
 """
 
-import argparse
 import sys
 from pathlib import Path
 from typing import List, Optional, Sequence
@@ -200,36 +196,3 @@ def card_problems(boot, system: bytes, main_card: bytes) -> List[str]:
     if bytes(system[at:at + 3]) != IWIN_HEAD:
         out.append('pl_iwin is not the window\'s STZ $C0A7')
     return out
-
-
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('--play', type=Path,
-                        default=HERE.parent.parent / 'build' / 'native' /
-                        'play')
-    args = parser.parse_args(argv)
-    try:
-        records = play_patches(args.play)
-        data = amcpu.table(records, MPATCH_SIZE)
-    except amcpu.PatchError as e:
-        print('nomouse: %s' % e, file=sys.stderr)
-        return 1
-    for bank, address, d in records:
-        print('bank %3d $%04X %d B' % (bank, address, len(d)))
-    print('the table: %d of %d B' % (len(data.rstrip(b'\0')) + 1,
-                                     MPATCH_SIZE))
-    try:
-        records = apple_patches(args.play)
-        data = amcpu.table(records, APATCH_SIZE)
-    except amcpu.PatchError as e:
-        print('nomouse: %s' % e, file=sys.stderr)
-        return 1
-    for bank, address, d in records:
-        print('AppleMouse: bank %3d $%04X %d B' % (bank, address, len(d)))
-    print('the AppleMouse table: %d of %d B' % (
-        len(data.rstrip(b'\0')) + 1, APATCH_SIZE))
-    return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

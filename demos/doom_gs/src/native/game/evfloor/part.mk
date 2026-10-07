@@ -1,5 +1,5 @@
-# src/native/game/evfloor/part.mk: part evfloor of milestone 10 (docs/GAME.md
-# 2.4, wave 4; docs/game-parts/evfloor.md): the floors, the stairs and the
+# src/native/game/evfloor/part.mk: part evfloor of the game (docs/GAME.md,
+# the parts; wave 4): the floors, the stairs and the
 # donut a line starts (upstream's p_floor65.s EV_DoFloor, EV_BuildStairs,
 # EV_DoDonut, newFloor and the helpers floorUp, setDest, halfSpeed,
 # stairStep, nextStep) and LSTAB's entries lnFloor, lnStairs, lnDonut

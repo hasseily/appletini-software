@@ -1,15 +1,15 @@
-; fx.s: the sound effects' player on chip 3 of the Phasor (milestone 11,
-; part fxplay; sound track S4). GPL-2, the port's own: written from the
-; design (tools/sound/README.md "Effects (S4)", "The player"; docs/
-; SCREENS.md 0.1 F12, 2.3, 3, 4.4) and S2's player (src/sound/player.s:
-; its burst loop and the Phasor's addressing). Nothing of upstream's: its
-; DOC code is dropped.
+; fx.s: the sound effects' player on chip 3 of the Phasor. GPL-2, the port's
+; own: written from the design (tools/sound/README.md "Effects (S4)", "The
+; player"; docs/SCREENS.md) and the music player (src/sound/player.s: its
+; burst loop and the Phasor's addressing). Nothing of upstream's: its DOC
+; code is dropped.
 ;
-; tools/sound/fxplay.py is the specification: this code keeps its state,
-; runs its steps in its order with its integer arithmetic, and must write
-; the same registers of chip 3 in the same order at every interrupt.
+; It was written against a Python model of the player (no longer in this
+; tree): the same state, the same steps in the same order, the same
+; integer arithmetic, the same registers of chip 3 in the same order at
+; every interrupt.
 ;
-; Two objects come from this file (src/native/m11/fxplay.mk):
+; Two objects come from this file (src/native/play.mk: fx.o, fx-card.o):
 ;
 ;   the card part (FXCODE, the main card's $F505-$F8FF with pl_vbl):
 ;     fx_step      the VBL interrupt, before snd_tick (pl_vbl's step 4):
@@ -135,7 +135,7 @@ FXS_P           = FX_SVC + 3    ; a piece; a count
         .segment "FXCODE"
 
 ; ---------------------------------------------------------------------------
-; fx_step: the interrupt's steps (fxplay.py FxPlayer.step). A, X, Y free.
+; fx_step: the interrupt's steps. A, X, Y free.
 ; ---------------------------------------------------------------------------
 fx_step:
         lda FX_ON
@@ -279,7 +279,7 @@ fx_step:
         sty fx_wn
 @done:  rts
 
-; fx_tick: one tick of the voice at X (fxplay.py Voice.tick). Carry set:
+; fx_tick: one tick of the voice at X. Carry set:
 ; it took no more ticks in this interrupt (starved, or ended).
 fx_tick:
         lda FXV_BASE + V_RUN,x
@@ -378,7 +378,7 @@ fx_burst:
 @none:  rts
 
 ; ---------------------------------------------------------------------------
-; fx_song: a song start (docs/SCREENS.md 0.1 F12): snd_start ends with
+; fx_song: a song start: snd_start ends with
 ; reset_chips, a burst of all four chips from the main loop; an effect
 ; burst inside it would tear VIA-B's latch sequence, and after it chip 3
 ; no longer holds what the shadow says. snd_start's carry and A kept.

@@ -1,12 +1,12 @@
-; rwall.s: R_StoreWallRange of the native renderer (docs/RENDER.md 3.2;
-; milestone 7, stage B): the drawseg, the scales, the heights, the marks
+; rwall.s: R_StoreWallRange of the native renderer (docs/RENDER.md):
+; the drawseg, the scales, the heights, the marks
 ; and textures, the texture edges, the seg descriptor for R_RenderSegLoop,
 ; and after it the silhouettes and the clips saved for the sprites.
 ;
 ; A GPL-2 derivative of Webifi's IIgs DOOM (build/upstream/src/iigs/
 ; r_wall65.s, r_iigs65.s: R_StoreWallRange and its helpers,
 ; R_ScaleFromGlobalAngle): the same drawsegs, openings, clips and loop
-; inputs, bit for bit, with upstream's shortcuts kept (RENDER.md 5.2):
+; inputs, bit for bit, with upstream's shortcuts kept (RENDER.md):
 ; qmulh's "+ 0 or 1" in scaleFast and FIXAL, scaleFast's 1.001 step and
 ; its bail-outs to scaleSlow, distAny's 8-bit view fractions, the edges
 ; from the heights' shared low word, rowMod's remainder. The products are
@@ -25,7 +25,7 @@
 ;               the line's bit in LNMAP; what R_RenderSegLoop makes
 ;               (rseg.s); RW_STEP.
 ;
-; One upstream behaviour the harness must know: scaleSlow leaves
+; One upstream behaviour a host model must know: scaleSlow leaves
 ; rw_scalestep and the drawseg's scalestep as they were for a wall of one
 ; column (r_wall65.s:1975-1982); the edges of that wall are made with the
 ; old step, so RW_STEP is kept from wall to wall, and from frame to frame
@@ -985,7 +985,7 @@ textured:
         inc DSCOUNT
         rts
 
-; mark: the cost phase A / 2 in the profiling build (RENDER.md 4.2)
+; mark: the cost phase A / 2 in the profiling build (RENDER.md)
 mark:
 .ifdef RPROF
         sta PHASE
@@ -1513,10 +1513,10 @@ scaleslow:
 ; sines as sineLow reads them; 64.0 when den <= num >> 16, else
 ; FixedApproxDiv(num, den) clamped to 256 .. 64.0. A column seen from
 ; behind (angleb >= ANG180: its sine is negative) takes our rule RULE_SINE
-; (RENDER.md 3.9): the scale 256, vanilla DOOM's result (a negative num
+; (RENDER.md): the scale 256, vanilla DOOM's result (a negative num
 ; over a positive den, clamped), and the bit in RULES. Upstream's sineLow
 ; reads its own code there (sinelow below). anglea = ANG90 + xtoviewangle
-; lies in $2000 .. $6000 (tests/test_native_render.py checks the table), so
+; lies in $2000 .. $6000 (as the table is made), so
 ; neither sine index is negative after that test.
 ; ---------------------------------------------------------------------------
 rsga:   tax

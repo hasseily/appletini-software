@@ -1,9 +1,8 @@
-# src/native/play.mk: the playable game's links (docs/PLAY.md 4), assembled
+# src/native/play.mk: the playable game's links (docs/PLAY.md), assembled
 # with ca65 and linked with ld65 (cc65 2.18): the glue's images and the
 # tic image with every built part, from the sources; the other images read
-# from their milestones' builds (milestone 8's rcard, milestone 11's 2D
-# images: read only). Milestone 9's load image (lcard, LCODE on the disk)
-# links the runtime's state, so a layout change moves it: every run of
+# from their own builds (render.mk's rcard, m11.mk's 2D images: read
+# only). The load image (level.mk's lcard, LCODE on the disk) links the runtime's state, so a layout change moves it: every run of
 # this makefile first runs level.mk on LEVELS (build/native/levels/obj,
 # where playlink.py and playdisk.py read it), which rebuilds it when it is
 # out of date and writes nothing when it is not.
@@ -41,9 +40,9 @@ P2D := $(PLAY)/p2dw
 INIT := $(PLAY)/init
 CARD := $(PLAY)/card
 M11 ?= $(ROOT)/build/native/m11
-# milestone 9's build (playlink.py and playdisk.py read lrun.OBJ, this
-# directory; another LEVELS is for tests/test_play_glue.py's check only)
-LEVELS ?= $(ROOT)/build/native/levels/obj
+# level.mk's build (playlink.py and playdisk.py read lrun.OBJ, this
+# directory)
+LEVELS := $(ROOT)/build/native/levels/obj
 TABLES ?= $(ROOT)/build/native/render/tables
 SOUND65 ?= $(ROOT)/build/sound65
 TOOLS := $(ROOT)/tools/native
@@ -64,9 +63,8 @@ S2FLAGS = $(ASFLAGS) -I $(M11)/s2data -I $(SOUND65)
 all: card
 
 # ---------------------------------------------------------------------------
-# The load image: level.mk's own rules decide whether it is out of date
-# (the parallel runner's prebuild runs the same make first), and the links
-# that read its symbols follow lcard.lw's time
+# The load image: level.mk's own rules decide whether it is out of date,
+# and the links that read its symbols follow lcard.lw's time
 # ---------------------------------------------------------------------------
 $(LEVELS)/lcard.lw: FORCE
 	$(MAKE) -s -C $(HERE) -f level.mk ROOT=$(ROOT) OUT=$(LEVELS)
@@ -107,7 +105,7 @@ $(GEN)/s2hud.inc: $(TOOLS)/s2msgs.py $(LAYOUTS)
 $(GEN)/s2msgs.inc: $(TOOLS)/s2msgs.py $(LAYOUTS) $(M11)/s2data/s2data.json
 	@mkdir -p $(GEN)
 	$(PYTHON) $(TOOLS)/s2msgs.py --inc $@
-$(GEN)/s2pal.inc: $(TOOLS)/s2pal.py $(TOOLS)/s2palmodel.py $(LAYOUTS)
+$(GEN)/s2pal.inc: $(TOOLS)/s2pal.py $(LAYOUTS)
 	@mkdir -p $(GEN)
 	$(PYTHON) $(TOOLS)/s2pal.py --inc $@
 $(GEN)/fxchan.inc: $(ROOT)/tools/sound/fxchan.py $(LAYOUTS)
@@ -116,15 +114,14 @@ $(GEN)/fxchan.inc: $(ROOT)/tools/sound/fxchan.py $(LAYOUTS)
 $(GEN)/s2fin.inc: $(TOOLS)/s2fin.py $(M11)/s2data/s2data.json
 	@mkdir -p $(GEN)
 	$(PYTHON) $(TOOLS)/s2fin.py --inc $@
-# the other milestones' links' entries (rcard, lcard, the 2D images, the
+# the other makefiles' links' entries (rcard, lcard, the 2D images, the
 # card's player and platform): read only
 $(GEN)/playsym.inc: $(LINK) $(INCS) $(LEVELS)/lcard.lw
 	$(PYTHON) $(LINK) --symbols $@
 gen: $(INCS) $(S2INCS) $(GEN)/playsym.inc
 
 # ---------------------------------------------------------------------------
-# P2DW with the frame glue (the objects of src/native/m11/s2int.mk's
-# P2DW, its s2_p2dwl.s replaced by dl_p2d.s)
+# P2DW with the frame glue dl_p2d.s and the 2D modules' objects
 # ---------------------------------------------------------------------------
 P2D_OBJS := $(addprefix $(P2D)/,dl_p2d.o s2_st.o s2_hu.o s2_draw.o \
             s2_pub.o s2_pal.o pl_input.o fx.o fx-card.o pl_irq.o far.o \
@@ -172,8 +169,8 @@ $(GEN)/playsym2.inc $(GEN)/playimg.inc: $(LINK) $(P2D)/p2dw.map \
 	    --images $(GEN)/playimg.inc --play $(PLAY)
 
 # ---------------------------------------------------------------------------
-# The tic image: milestone 10's runtime and core (dl_hook.s in place of
-# ghook.s), every built part, the glue's groups, milestone 11's tic-side
+# The tic image: the game's runtime and core (with the hooks of
+# dl_hook.s), every built part, the glue's groups, the 2D screens' tic-side
 # modules (the status bar's, the HUD's, the finale's tickers, the sound
 # channels)
 # ---------------------------------------------------------------------------
@@ -191,7 +188,7 @@ PART_SRC := $(foreach q,$(BUILT),$($(q)_SRC))
 GLUE := dl_brain dl_cmd dl_disp dl_hook dl_snd dl_sym
 M11T := s2t_st s2t_hu s2t_fin fx_chan
 # (gspec.s, the load's SPECIALS step, is the load image's alone: nothing in
-# the tic image calls it; docs/SPEED.md 9)
+# the tic image calls it; docs/SPEED.md)
 TIC_OBJS := $(addprefix $(TIC)/,gobj.o gcall.o gthink.o gpos.o gspawn.o \
             gweap.o gvalid.o far.o math-r.o math-g.o auxlc.o \
             $(GLUE:%=%.o) $(M11T:%=%.o) $(PART_SRC:%.s=%.o))

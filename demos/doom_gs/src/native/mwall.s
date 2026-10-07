@@ -1,6 +1,5 @@
 ; mwall.s: R_RenderMaskedSegRange of the native renderer's masked phase
-; (docs/RENDER-MASKED.md 0.3 row 5, 1.10, 3.4, 3.5; milestone 8, stage
-; B). A GPL-2 derivative of Webifi's IIgs DOOM (build/upstream/src/iigs/
+; (docs/RENDER-MASKED.md). A GPL-2 derivative of Webifi's IIgs DOOM (build/upstream/src/iigs/
 ; r_frame65.s maskedRange, lineFlags, higher, lower, smul48, mwCols,
 ; mwCol, mwPost, mwNextCol, :357-637, :1060-1648; r_bsp65.s R_WallLight,
 ; :1036-1058): the same records, written for the 65C02 with the native

@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""The memory API made optional (docs/PLAY.md 19): the patch table that
+"""The memory API made optional (docs/PLAY.md): the patch table that
 DOOM.SYSTEM writes when its probe finds no memory API in slot 7.
 
 With the API nothing here runs: the card's transport (gcall.s AMEMLC) and
@@ -26,11 +25,8 @@ same point:
 A record: its length (1-255), its bank (0: the main card, bank 1 at
 $D000; else a RamWorks bank), its address, its bytes; a length of 0 ends
 the table (PATCH_SIZE bytes in DOOM.SYSTEM at bt_patch).
-
-Usage:  python3 tools/native/amcpu.py [--play DIR]   (the table's records)
 """
 
-import argparse
 import struct
 import sys
 from pathlib import Path
@@ -213,36 +209,3 @@ def table(records: Sequence[Record], size: int = PATCH_SIZE) -> bytes:
     if len(out) > size:
         raise PatchError('the patch table is %d B of %d' % (len(out), size))
     return bytes(out) + bytes(size - len(out))
-
-
-def apply(records: Sequence[Record], card: Dict[int, bytearray],
-          banks: Dict[int, bytearray]) -> None:
-    """The records into a machine's memory as am_patch writes them (card:
-    address -> its byte array at $0000; banks: bank -> 64 KB)."""
-    for bank, address, data in records:
-        mem = card[0] if bank == CARD else banks[bank]
-        mem[address:address + len(data)] = data
-
-
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('--play', type=Path,
-                        default=HERE.parent.parent / 'build' / 'native' /
-                        'play')
-    args = parser.parse_args(argv)
-    try:
-        records = play_patches(args.play)
-        data = table(records)
-    except PatchError as e:
-        print('amcpu: %s' % e, file=sys.stderr)
-        return 1
-    for bank, address, d in records:
-        print('%s $%04X %3d B' % ('card   ' if bank == CARD else
-                                  'bank %3d' % bank, address, len(d)))
-    print('the table: %d of %d B' % (len(data.rstrip(b'\0')) + 1,
-                                     PATCH_SIZE))
-    return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

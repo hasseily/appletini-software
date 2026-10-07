@@ -460,7 +460,7 @@ static void post(a2vm_cost *c, const a2vm *m, unsigned a17)
             c->lazy_count++;
             c->lazy_aux++;
         } else if (c->deferred[a17] == 1) {
-            /* a class change flushes first (lazy-mirror-spec.md 1); the
+            /* a class change flushes first (the lazy mirror's design); the
                renderer keeps SHR selected, so this does not arise */
             c->deferred[a17] = 2;
             c->deferred_count--;
@@ -713,7 +713,7 @@ static uint64_t admit(a2vm_cost *c, uint64_t r, unsigned busy)
         uint64_t open = cycle_start(c, k) + c->p.admit_offset;
         uint64_t close = open + c->p.admit_window;
         /* a captured aux mirror write takes the cycle after its own
-           (psram_simple.sv:439-467, cache-review.md F9) */
+           (psram_simple.sv:439-467) */
         int blocked = k == c->admit_cycle ||
                       (c->aux_drain_end &&
                        cycle_start(c, k) < c->aux_drain_end + (uint64_t)c->period);
@@ -757,7 +757,7 @@ static void ramworks(a2vm_cost *c, unsigned bank, uint32_t offset, int write)
         uint64_t s = admit(c, r, c->p.psram_write);
         r = s + c->p.psram_write;       /* X_RW_FLUSH (:2072-2079) */
     }
-    /* back-to-back reads are 32 clocks apart (cache-review.md F8) */
+    /* back-to-back reads are 32 clocks apart */
     uint64_t s = admit(c, r, c->p.psram_read + 1);
     uint64_t done = s + c->p.psram_read;       /* X_RW_FILL, X_RW_DONE */
     c->rw[victim].valid = 1;
@@ -800,7 +800,7 @@ static int exposure(uint16_t a, int write)
                      a == 0xc035 || a == 0xc071 || a == 0xc073);
 }
 
-/* The quiet set of switches-review.md section 4: RAMRD, ALTZP, the
+/* The quiet set of the fast-path firmware design: RAMRD, ALTZP, the
    language card and the RamWorks bank. */
 static int quiet(const a2vm_cost *c, uint16_t a, int write)
 {
@@ -827,9 +827,9 @@ static void sync_cycle(a2vm_cost *c)
     }
 }
 
-/* The reconciler of switches-review.md section 4: before a non-quiet
+/* The reconciler of the fast-path firmware design: before a non-quiet
    access, replay each switch the motherboard has not seen, the bank first
-   (after flushing aux bytes, rule O4). */
+   (after flushing aux bytes). */
 static void reconcile(a2vm_cost *c, a2vm *m, int bank_only)
 {
     if (!c->p.quiet_switches)
@@ -863,7 +863,7 @@ static void reconcile(a2vm_cost *c, a2vm *m, int bank_only)
         }
         if (c->phys_lc_read != m->lc_read || c->phys_lc_write != m->lc_write ||
             c->phys_lc_bank2 != m->lc_bank2) {
-            /* write enable needs two reads (switches-plan.md 3.3) */
+            /* write enable needs two reads */
             cycles += m->lc_write ? 2 : 1;
             c->phys_lc_read = m->lc_read;
             c->phys_lc_write = m->lc_write;
@@ -928,7 +928,7 @@ static void io_access(a2vm_cost *c, a2vm *m, uint16_t a, int write,
             c->c.video_wait += w;
         }
         /* a $C029 write that leaves SHR, or a physical bank write, takes
-           the lazy bytes out first (lazy-mirror-review.md 3) */
+           the lazy bytes out first */
         if (c->lazy_count && write &&
             ((a == 0xc029 && (value & 0xc0) != 0xc0) ||
              (bank_write && !is_quiet))) {
@@ -1044,7 +1044,7 @@ static void access_write(a2vm_cost *c, a2vm *m, uint16_t address,
    X_CAPTURE (vtw_core_top.sv:1524, :1590-1591, :1907): a step of n > 1
    cycles delays the next one n clocks. So with d2_replay a run of k
    dummy reads (one step's) costs k + 1 clocks: 2 for the first, 1 for
-   each one after it. The card (CALIB.hdv, docs/results/calib.md): REG's
+   each one after it. The card (README.md, "Calibration on the card"): REG's
    dey / bne, two such steps, takes 10.3 clocks, 6.3 without; every line
    within 0.6%. */
 static void dummy(a2vm_cost *c)
@@ -1069,9 +1069,8 @@ static void dummy(a2vm_cost *c)
    instruction_turbo_q is taken at the opcode fetch, :1250, so an
    instruction that started slow keeps all its cycles). The caches are
    still filled on the way (turbo_map_fill and turbo_byte_fill, :1212-1215:
-   X_ROUTE and X_MEM_CAPTURE, in any mode). FW-S1 (a proposal, not in
-   F1.2.1; docs/firmware/fws1-spec.md as corrected by fws1-review.md)
-   exempts writes to the VIA registers ORB and ORA without handshake
+   X_ROUTE and X_MEM_CAPTURE, in any mode). FW-S1 (a firmware proposal, not
+   in F1.2.1) exempts writes to the VIA registers ORB and ORA without handshake
    (0 and F) only: exempt writes to IFR, IER or ORA would release the
    card's IRQ in TURBO and cause a second interrupt. */
 
@@ -1250,7 +1249,7 @@ void a2vm_cost_after_io(a2vm *m, uint16_t address, int write, uint8_t value)
         c->mapping = mapping;
         /* F1.2.1 clears both caches on any change of the translation
            state (:1206-1211); with the fast path each entry is checked
-           against the physical page instead (switches-review.md 4) */
+           against the physical page instead */
         if (!c->p.caches_survive)
             invalidate_turbo(c);
     }

@@ -1,5 +1,5 @@
 /*
- * The cost model of a2vm (docs/MILESTONES.md, milestone 3.1): the time a
+ * The cost model of a2vm: the time a
  * program takes on the Appletini, in fabric clocks of its FPGA
  * (133.333 MHz), access by access.
  *
@@ -29,7 +29,7 @@
  *     it), but with the virtual Disk II active (d2_replay, the card as
  *     measured) the step that stands for it holds the next one: a run
  *     of k dummy reads takes k + 1 clocks (disk2_card.sv replays the
- *     step's cycles one a clock; docs/results/calib.md);
+ *     step's cycles one a clock; README.md, "Calibration on the card");
  *   - a change of the memory mapping: both TURBO caches are cleared;
  *   - a memory API request: the CPU hold, the mirror and line flushes,
  *     and the ARM's per-descriptor and per-byte work (memory_api_hw.c);
@@ -48,9 +48,8 @@
  *     a redirected access as a RamWorks line access (the page a2vm hands
  *     the hooks is the redirected bank's), never a TURBO cache hit, fill
  *     or invalidation (the pair is not part of the translation state the
- *     caches are checked against, zpbank-spec.md 3.2 and 6), and the
- *     $C069 write as an ordinary bus cycle (spec 2.2; read_bank is 0 in
- *     both profiles).
+ *     caches are checked against), and the $C069 write as an ordinary
+ *     bus cycle (read_bank is 0 in both profiles).
  *
  * Its parameters come from a file of "name value" lines, which
  * tools/a2vm/costs.py writes from a profile of tools/a2vm/costs/appletini.json,
@@ -61,8 +60,8 @@
  * arms it; a program that never writes $C069 runs the same). In
  * "timed" mode its clock is the machine's clock (the VBL, $C019, the
  * mouse interrupt and the idle skips follow it); otherwise it runs beside
- * the machine's own clock, and a compatibility run still matches
- * a2sim.py.
+ * the machine's own clock, and a compatibility run is still the one
+ * a2sim.py (the earlier port's Python model) gave.
  */
 #ifndef A2VM_COST_H
 #define A2VM_COST_H
@@ -72,7 +71,7 @@
 
 struct a2vm;
 
-enum { COST_PHASES = 32, COST_RW_LINES_MAX = 64 };   /* phases: milestone 8 numbers them to 18 (docs/RENDER-MASKED.md 4.4) */
+enum { COST_PHASES = 32, COST_RW_LINES_MAX = 64 };   /* phases: the renderer numbers them to 18 (docs/RENDER-MASKED.md) */
 
 /* The parameters, in fabric clocks unless the name says otherwise. */
 typedef struct {
@@ -234,7 +233,7 @@ typedef struct a2vm_cost {
     uint64_t phase_cycles_start, phase_io_start;
     uint64_t phase_cycles[COST_PHASES], phase_io[COST_PHASES];
 
-    /* the PC map of phases (--cost-pcmap, milestone 10's timing report):
+    /* the PC map of phases (--cost-pcmap, a timing report by subsystem):
        while the phase written is `pcmap_when`, the phase is the map's for
        the PC of each instruction (a fixed address, or a banked region:
        the phase of the group whose number main[slot] holds) */

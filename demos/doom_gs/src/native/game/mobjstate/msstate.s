@@ -1,5 +1,5 @@
-; game/mobjstate/msstate.s: part mobjstate's states (milestone 10, docs/GAME.md
-; 2.2, 2.4; docs/game-parts/mobjstate.md). A GPL-2 derivative of upstream's
+; game/mobjstate/msstate.s: part mobjstate's states (docs/GAME.md, the
+; dispatch tables, the parts). A GPL-2 derivative of upstream's
 ; p_tick65.s (P_SetMobjState, rocketCheat, P_MobjBrainlessThinker) and
 ; p_mobj65.s (P_ExplodeMissile, explode, P_MobjIsPlayer).
 ;

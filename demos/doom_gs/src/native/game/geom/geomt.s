@@ -1,8 +1,8 @@
-; game/geom/geomt.s: part geom's test driver for the random checks (docs/
-; GAME.md 2.4 row geom: 100,000 random point-line and box-line pairs a map,
-; 100,000 inputs of posMul), test builds only. GPL-2, the port's own. Not
-; game code: it reads and writes its cases with the far layer, as the
-; harness's grec.s does.
+; game/geom/geomt.s: part geom's driver for random checks (100,000 random
+; point-line and box-line pairs a map, 100,000 inputs of posMul). GPL-2,
+; the port's own. Not game code: everything below is under TESTBUILD,
+; which no current build defines, so it assembles to nothing in the disk
+; build. It reads and writes its cases with the far layer.
 ;
 ;   geo_t_run   for each of geo_t_count records (from $0200 of bank
 ;               GEO_T_BANK, a spare bank of llayout.bank_map, to $BFFF
@@ -12,8 +12,8 @@
 ;                 1  box (16), line (2) -> P_BoxOnLineSide's A (1)
 ;                 2  V (3), F (2) -> posMul's M_R (4)
 ;
-; tools/native/gparts/geom_check.py writes the records and the descriptor
-; (geo_t_kind, geo_t_count by their labels) and reads the
+; A host-side checker (no longer in the repository) wrote the records and
+; the descriptor (geo_t_kind, geo_t_count by their labels) and read the
 ; results back from the run's snapshot.
 
         .setcpu "65C02"
@@ -32,7 +32,7 @@
 GEO_T_BANK = 93                 ; (spare: llayout.bank_map)
 
         ; test-only code goes in the card's driver area, not the core
-        ; (wave 1 as integrated: the core's room is the game's)
+        ; (the core's room is the game's)
         .segment "DRIVER"
 FC_HERE .set 0
 

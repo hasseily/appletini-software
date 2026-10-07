@@ -1,14 +1,14 @@
-; s2_wi.s: the intermission (docs/SCREENS.md 1.5.5, 1.5.7; part s2wi,
-; docs/m11-parts/s2wi.md). The image WIW's own code. Written from upstream's
-; src/iigs/wi_stuff65.s (WI_Init's lumps, WI_Drawer, drawStats,
-; drawShowNextLoc, drawAtNode, slamBackground, drawCenteredPatch, nextY,
-; drawPercent, digitCount, drawNum, drawTime [R wi_stuff65.s:96-200,
-; :586-903]), with upstream's back buffer replaced by WIW's band of 40 rows
-; (SCREENS.md 1.2) and its lumps by the 2D store's handles (part s2data).
+; s2_wi.s: the intermission (docs/SCREENS.md, the intermission; part s2wi).
+; The image WIW's own code. Written from upstream's src/iigs/wi_stuff65.s
+; (WI_Init's lumps, WI_Drawer, drawStats, drawShowNextLoc, drawAtNode,
+; slamBackground, drawCenteredPatch, nextY, drawPercent, digitCount,
+; drawNum, drawTime [R wi_stuff65.s:96-200, :586-903]), with upstream's back
+; buffer replaced by WIW's band of 40 rows (docs/SCREENS.md) and its lumps
+; by the 2D store's handles (part s2data).
 ;
 ;   wi_init     WI_Init: the 33 lumps' handles into W_LUMPS (WIW's own
 ;               state block), and to its place in S2STATE (SS_WIW)
-;   wi_frame    an intermission frame (SCREENS.md 2.1): A bit 0 = a level
+;   wi_frame    an intermission frame (docs/SCREENS.md): A bit 0 = a level
 ;               was left (display's I_SetPalette(0) [R d_main65.s:389-392]);
 ;               the input poll and the effect service, PALST and W_LUMPS
 ;               from S2STATE, WI_Drawer, s2_finish, PALST back
@@ -35,7 +35,7 @@
 ; checks every patch of every case). A patch needing more units than are
 ; free empties the cache first; more than 16 is a stop.
 ;
-; The wi state is milestone 10's (GAME.md 1.5), read through its generated
+; The wi state is the game's (docs/GAME.md), read through its generated
 ; lgame.inc (WI_*, G_WMINFO and WM_*); W_LUMPS is WIW's own (s2layout's
 ; field map: upstream's lumps as 2D store handles). Zero page: the drawers'
 ; S2_*, the far layer's FA_* and WIW's S2W_* ($80-$AD) only.
@@ -105,7 +105,7 @@ SCREENW  = 320
 SCREENH  = 200
 NODE_TOP = 45                   ; "you are here": patch top = node y - 15
 
-; WIW's temporaries in zero page $80-$AD (S2W_*: request S2WI-1; the
+; WIW's temporaries in zero page $80-$AD (S2W_*; the
 ; menu's and the automap's own range, free while WIW runs)
 S2W      = $80
 px       = S2W + 0              ; the x of a drawLump (2)

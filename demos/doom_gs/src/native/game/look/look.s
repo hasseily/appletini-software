@@ -1,5 +1,5 @@
-; game/look/look.s: part look's monster senses (milestone 10, docs/GAME.md
-; 2.4; docs/game-parts/look.md). A GPL-2 derivative of upstream's
+; game/look/look.s: part look's monster senses (docs/GAME.md, the
+; parts). A GPL-2 derivative of upstream's
 ; p_enemy65.s (A_Look, lookForPlayers, behindFast with its bfTab cases,
 ; angleToAT, distanceAT, loadTarget, checkMeleeRange, checkMissileRange,
 ; P_CheckMeleeRange, P_CheckMissileRange, A_FaceTarget, faceTarget,
@@ -58,8 +58,8 @@
 ;   A_PlayerScream sfx_pldeth; A_Fall: MF_SOLID cleared
 ;
 ; The bfTab cases (bfD0 .. bfD7) have no code of their own: a computed
-; branch on k inside behindFast (request 1: glayout.INLINED). Every
-; product, divide and angle is milestone 6's math.s (pta3, aproxdist,
+; branch on k inside behindFast (glayout.INLINED). Every
+; product, divide and angle is math.s's (pta3, aproxdist,
 ; sdiv16); the P_Random calls are upstream's, in its order.
 
         .setcpu "65C02"
@@ -499,7 +499,7 @@ bf_no:  lda #$FF
 
         ROUTINE distanceAT
         DELTA LK_AT, LK_AP
-        jmp aproxdist           ; (math-g.o, the core: request 2)
+        jmp aproxdist           ; (math-g.o, the core)
 
 ; ===========================================================================
 ; loadTarget: LK_AP = GA_0-1, LK_AT = A:X = its target; C set when one

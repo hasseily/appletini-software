@@ -1,19 +1,18 @@
-; s2_ovl.s: the automap's overlay, the image OVLW (docs/SCREENS.md 0.1 F9,
-; 1.5.4, 4.1, 4.5; part s2ovl, docs/m11-parts/s2ovl.md). A GPL-2 rewrite
-; in 65C02 of upstream's src/iigs/am_map65.s: AM_Drawer's overlay path
-; with titleBand, drawLines, plot's overlay case ovl (recOvl of r_list65.s
-; inline, with lists.inc's FSCUTE), rowColors, and the rotation's fast
-; path (fastSetup, sq16, w16, fastLine, fpoint, smul) [R am_map65.s:1033-
-; 1058, :1179-1219, :1337-1352, :1461-1509, :1893-2352, :2843-2861;
-; lists.inc:65-106]. The window, the ticker, the walls, the arrow, the
-; clip and the line loops are part s2amap's s2_amline.s, which OVLW links
-; with its fast path's hook (request S2OVL-1).
+; s2_ovl.s: the automap's overlay, the image OVLW (docs/SCREENS.md, the
+; automap; part s2ovl). A GPL-2 rewrite in 65C02 of upstream's
+; src/iigs/am_map65.s: AM_Drawer's overlay path with titleBand, drawLines,
+; plot's overlay case ovl (recOvl of r_list65.s inline, with lists.inc's
+; FSCUTE), rowColors, and the rotation's fast path (fastSetup, sq16, w16,
+; fastLine, fpoint, smul) [R am_map65.s:1033- 1058, :1179-1219, :1337-1352,
+; :1461-1509, :1893-2352, :2843-2861; lists.inc:65-106]. The window, the
+; ticker, the walls, the arrow, the clip and the line loops are part
+; s2amap's s2_amline.s, which OVLW links with its fast path's hook.
 ;
 ; Upstream's overlay appends a K_OVL record for each pixel of the map's
 ; lines to the list of its column, after the view's records, and cuts the
 ; fill spans of the column at the pixel's row [R am_map65.s:1461-1509];
 ; R_DrawLists then draws them over the view. Natively OVLW runs in
-; milestone 8's frame between the masked phase (nm_masked: its last batch
+; the renderer's frame between the masked phase (nm_masked: its last batch
 ; staged) and the bucket pass: it is loaded by far_pload from its bank
 ; (OVLW_BANK) into MASKW's code room, and am_ovl makes the records through
 ; the masked copy of rrec.s (mrec_room: the page model of upstream's
@@ -21,7 +20,7 @@
 ; FSTOP/FSBOT as FSCUTE, stages its last batch, and ends by calling OVLW's
 ; own copy of bucket.s's nm_bkload (BKFAR and BKFAR2 are data in OVLW, as
 ; in MASKW: MASKW is not loaded again). The replay draws the records
-; (milestone 5's K_OVL).
+; (their kind K_OVL).
 ;
 ;   am_ovl      A = the frame's tics: AM_Ticker for each (s2_amline's
 ;               am_ticker, with the player's last position), then
@@ -30,7 +29,7 @@
 ;               and to S2STATE's SS_AMAPW; then nm_bkload. Entered by the
 ;               jump at OVLW_LO ($6800), the image's first bytes.
 ;   am_fastsetup, am_fastline   the fast path's hook (s2_amline.s built
-;               with -D AM_FASTLINE: request S2OVL-1)
+;               with -D AM_FASTLINE)
 ;   am_seg, am_plot, am_rowcol  what s2_amline.s needs of the linking
 ;               image (a line on the screen drawn at once; a pixel a
 ;               K_OVL record; a row's nibbles)
@@ -52,8 +51,8 @@
 ; Places: the code from $6800; at run time $9400-$9BFF (the nibble pages,
 ; NCACHE, RBASE, the fast path's variables, s2_amline's W variables AMW
 ; at $9A00, the state block AMST at $9B00), all in MASKW's code room
-; (milestone 8's other W ranges untouched: the records go through
-; mrec_room's batch BATCH, milestone 8's). Zero page: s2_amline's AMZ
+; (the renderer's other W ranges untouched: the records go through
+; mrec_room's batch BATCH, the renderer's). Zero page: s2_amline's AMZ
 ; ($80-$AE), the math block, the far layer's FA_*, MRB and RSEQ (the
 ; masked copy of rrec.s), bucket.s's BK_P and BK_Q (nm_bkload): overlay 2
 ; is dead after the masked phase and the bucket pass sets its own later.
@@ -134,13 +133,13 @@ am_ovl:
         jsr ovl_load
         jsr ovl_mail
         jsr am_getmo
-@tic:   lda AMTICS2             ; AM_Ticker once a tic (SCREENS.md 1.5.4)
+@tic:   lda AMTICS2             ; AM_Ticker once a tic
         beq @draw
         jsr am_ticker
         dec AMTICS2
         bra @tic
 @draw:  lda ST_MODE             ; the overlay on (the half views are
-        and #AMF_ACTIVE | AMF_OVERLAY   ;   milestone 13's)
+        and #AMF_ACTIVE | AMF_OVERLAY   ;   not built)
         cmp #AMF_ACTIVE | AMF_OVERLAY
         bne @end
         lda #1                  ; AM_MODE: the overlay
@@ -198,7 +197,7 @@ stbank: lda #S2STATE
         sta FA_N
         rts
 
-; ovl_mail: S2_MAIL's AM_Stop of the tics (R6) and a view drawn without
+; ovl_mail: S2_MAIL's AM_Stop of the tics and a view drawn without
 ; the overlay since the automap last ran (display zeroes am_valid and
 ; am_band then [R d_main65.s:497-503]), as AMAPW's am_mail
 ovl_mail:

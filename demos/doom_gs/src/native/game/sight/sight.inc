@@ -1,5 +1,5 @@
-; game/sight/sight.inc: part sight's scratch block (milestone 10,
-; docs/GAME.md 4.4; docs/game-parts/sight.md). GPL-2, the port's own.
+; game/sight/sight.inc: part sight's scratch block (docs/GAME.md). GPL-2,
+; the port's own.
 ;
 ; The part keeps P_CheckSight's state across its calls (the object API, the
 ; math, its own routines in other groups) in its scratch block: upstream's
@@ -7,8 +7,7 @@
 ; opening, the fraction, sightblocker, TWOBLOCKER, CS_Z, CS_T, the
 ; products and quotient of interceptFrac).
 ;
-; Wave 1 as integrated (request R1 of docs/game-parts/sight.md): the block
-; is SG_NEED (106) bytes, glayout.SCRATCH_REQUESTS['sight'].
+; The block is SG_NEED (106) bytes, glayout.SCRATCH_REQUESTS['sight'].
 
 SG      = SB_SIGHT
 SG_NEED = 106

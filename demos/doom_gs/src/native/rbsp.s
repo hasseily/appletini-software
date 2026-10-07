@@ -1,5 +1,5 @@
-; rbsp.s: the BSP walk of the native renderer (docs/RENDER.md; milestone
-; 7, stage A): R_RenderBSPNode, R_CheckBBox, R_Subsector, R_AddLine and
+; rbsp.s: the BSP walk of the native renderer (docs/RENDER.md):
+; R_RenderBSPNode, R_CheckBBox, R_Subsector, R_AddLine and
 ; R_ClipWallSegment with upstream's results, and the vertex-angle cache.
 ; A GPL-2 derivative of Webifi's IIgs DOOM (build/upstream/src/iigs/
 ; r_bsp65.s, r_iigs65.s): the same walk, the same calls of
@@ -7,14 +7,14 @@
 ; tools/native/levelconv.py (records in RamWorks, fetched whole by the far
 ; layer) instead of pointers into the level window.
 ;
-; Interface (RENDER.md 3.2)
+; Interface (RENDER.md)
 ;
 ;   nr_bsp      A:X = the root (numnodes - 1: A the low byte). The frame
 ;               block's view (VIEWX, VIEWY, VIEWA16), VA_*, VALIDCOUNT,
 ;               SKYFLAT, NUKAGE, LT_*; SOLIDCOL. Out: nr_storewall called
 ;               for each wall range, as upstream calls R_StoreWallRange;
 ;               the vertex cache and each sector's validcount stamped;
-;               VA_COUNT (the vertex angles computed, rtest). Changes
+;               VA_COUNT (the vertex angles computed). Changes
 ;               everything but the frame block's inputs.
 ;   nr_side     C = the side of the view of the node in the frame FRP
 ;               (R_PointOnSide: bspNode's tests for dx or dy 0, else
@@ -30,8 +30,8 @@
 ; of W (NODEF + 32 a level, FRP): 2 bytes of stack a level. The back side
 ; is a tail call that reuses the frame, as upstream's brl.
 ;
-; The box corner cache (speed wave 2, part frontend; RENDER-MASKED.md 6.2
-; optimisation 2). A corner's angle, R_PointToAngle16 of the corner from
+; The box corner cache (speed wave 2; RENDER-MASKED.md). A corner's
+; angle, R_PointToAngle16 of the corner from
 ; the view's map unit, depends on nothing else, so while the view stays
 ; at one map unit the two corners of the box and case a node last checked
 ; are kept: in RENDB's CCANG (4 bytes a node), named by the node's tag in
@@ -48,9 +48,9 @@
 ; viewSide: upstream first tries c14Bounds (r_bsp65.s:1237-1311), a log
 ; table interval test it claims exact, and falls back to the two shiftMul
 ; products. This code always takes the products, which gives upstream's
-; side whenever the claim holds: tools/native/sidecheck.py (check A3 of
-; RENDER.md 5.1) compares nr_side with upstream's viewSide on random and
-; dense edge cases of every map, with c14Bounds in upstream's path.
+; side whenever the claim holds: a host check compared nr_side with
+; upstream's viewSide on random and dense edge cases of every map, with
+; c14Bounds in upstream's path, while the port was written (RENDER.md).
 
         .setcpu "65C02"
         .include "rlayout.inc"
@@ -65,7 +65,7 @@
         .export nr_addsprites
 
 ; MARK n: in the profiling build (-D RPROF), the cost phase n (a2vm reads
-; the value / 2: RENDER.md 4.2), at upstream's places (PHASE of
+; the value / 2: RENDER.md), at upstream's places (PHASE of
 ; r_bsp65.s). Keeps A, X, Y and the flags but N and Z.
 .macro MARK n
 .ifdef RPROF
@@ -1072,7 +1072,7 @@ nr_sub:
 :       rts
 
 ; nr_addsprites: R_AddSprites of the subsector's sector, deferred
-; (milestone 8, RENDER-MASKED.md 0.3 row 1): the walk reads nothing the
+; (RENDER-MASKED.md): the walk reads nothing the
 ; projection makes, so the sector (SC_CUR) goes on the list SPRSEC (aux 0,
 ; one RAMWRT window) and the masked phase projects the listed sectors'
 ; things in this order. SPRN + 1 (at most 254 sectors, each once a frame:

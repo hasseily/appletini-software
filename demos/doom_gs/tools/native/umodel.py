@@ -1,9 +1,9 @@
-"""The model of upstream's memory at the end of a map's load (milestone 9,
-docs/LEVELS.md 1.2): the level window after W_LoadSet, the column memory
+"""The model of upstream's memory at the end of a map's load (docs/LEVELS.md):
+the level window after W_LoadSet, the column memory
 after R_MakeLevelColumns and W_LevelDone's moreColumns and W_ZeroBank,
 and the banks next to them, rebuilt from the release's level store and
 DOOM1.WAD, never from a reference run. tools/native/wadconv.py converts
-from it; level_check.py checks it against ref816's end-of-load dumps.
+from it.
 
 The release is read with our own readers (tools/v816/hdv.py, b1.py). Its
 level store (upstream's tools/levelimg.py documents the format): a header
@@ -58,7 +58,7 @@ The memory is a set of 64 KB banks with a mask of the bytes the model
 knows: the image banks, the zeroed banks, the release's resident banks
 (the directory in bank $10 as the set leaves it) and its store from $40.
 A read of a byte the model does not know fails, naming the address
-(wadconv.py's tails: docs/LEVELS.md 1.2, risk 7).
+(wadconv.py's tails: docs/LEVELS.md).
 """
 
 import struct
@@ -156,10 +156,6 @@ class Memory:
         self.known[bank] = bytearray(b'\x01' * BANK)
         self.names[bank] = what
 
-    def forget(self, bank: int) -> None:
-        for d in (self.data, self.known, self.names):
-            d.pop(bank, None)
-
     def write(self, address: int, data: bytes, mark: bool = True) -> None:
         at = 0
         while at < len(data):
@@ -192,26 +188,8 @@ class Memory:
             at += n
         return bytes(out)
 
-    def holds(self, address: int, length: int) -> bool:
-        try:
-            self.read(address, length)
-        except ModelError:
-            return False
-        return True
-
     def u16(self, address: int) -> int:
         return u16(self.read(address, 2))
-
-    def u32(self, address: int) -> int:
-        return int.from_bytes(self.read(address, 4), 'little')
-
-    def uint(self, address: int, size: int) -> int:
-        return int.from_bytes(self.read(address, size), 'little')
-
-    def u24(self, address: int) -> int:
-        b = self.read(address, 3)
-        return b[0] | b[1] << 8 | b[2] << 16
-
 
 # ---------------------------------------------------------------------------
 # The release
@@ -842,7 +820,7 @@ def release_lump(rel: Release, gamemap: int, win: Window, lump: int
 
 
 # The lumps of a set that are upstream's own build artifacts, not
-# DOOM1.WAD's (docs/LEVELS.md 1.1): taken from the release's units
+# DOOM1.WAD's (docs/LEVELS.md): taken from the release's units
 RELEASE_LUMPS = ('GSVIEW', 'GSFLAT', 'SGRID')
 
 
@@ -954,65 +932,8 @@ def load(gd: GameData, gamemap: int) -> Load:
 
 
 # ---------------------------------------------------------------------------
-# What the model holds against a reference memory (level_check.py)
+# The bytes a run-time allocation can change
 # ---------------------------------------------------------------------------
-
-def compare_window(ld: Load, ram_read: Callable[[int, int], bytes]
-                   ) -> Dict[str, int]:
-    """The image banks up to W_COLSTART, the column memory (from
-    W_COLSTART to colmem), the zeroed bank after it and COLDIR, against a
-    reference memory's bytes: the counts compared; raises on the first
-    difference."""
-    out = {'image': 0, 'columns': 0, 'zeroed': 0, 'coldir': 0}
-    colstart = ld.image.colstart
-    for bank in sorted(ld.image.banks):
-        end = BANK
-        if bank == colstart >> 16:
-            end = colstart & 0xFFFF
-        if bank == ld.image.zeroed_first:
-            continue
-        mine = ld.image.banks[bank][:end]
-        ref = ram_read(bank << 16, end)
-        if mine != ref:
-            at = next(i for i in range(end) if mine[i] != ref[i])
-            raise ModelError('image bank $%02X differs at $%04X' % (bank, at))
-        out['image'] += end
-    # the column memory: every bank from W_COLSTART's on to colmem's
-    bank = colstart >> 16
-    start = colstart & 0xFFFF
-    end_bank = ld.columns.colmem >> 16
-    while True:
-        end = BANK if bank != end_bank else (ld.columns.colmem & 0xFFFF)
-        mine = ld.mem.read(bank << 16 | start, end - start)
-        ref = ram_read(bank << 16 | start, end - start)
-        if mine != ref:
-            at = next(i for i in range(len(mine)) if mine[i] != ref[i])
-            raise ModelError('column memory differs at $%02X:%04X'
-                             % (bank, start + at))
-        out['columns'] += end - start
-        if bank == end_bank:
-            # the rest of colmem's bank: zeros (an image bank's FILL or a
-            # zeroed bank)
-            rest = ld.mem.read(bank << 16 | end, BANK - end)
-            if rest != ram_read(bank << 16 | end, BANK - end):
-                raise ModelError('the bytes after colmem differ')
-            out['zeroed'] += BANK - end
-            break
-        bank = ld.win.next[bank]
-        start = 0
-    if ld.lv_zb:
-        mine = ld.mem.read(ld.lv_zb << 16, BANK)
-        if mine != ram_read(ld.lv_zb << 16, BANK):
-            raise ModelError('the zeroed bank $%02X differs' % ld.lv_zb)
-        out['zeroed'] += BANK
-    mine = ld.mem.read(MM_COLDIR, COLDIR_SIZE)
-    if mine != ram_read(MM_COLDIR, COLDIR_SIZE):
-        at = next(i for i in range(COLDIR_SIZE)
-                  if mine[i] != ram_read(MM_COLDIR, COLDIR_SIZE)[i])
-        raise ModelError('COLDIR differs at entry %d' % (at // 4))
-    out['coldir'] = COLDIR_SIZE
-    return out
-
 
 def free_parts(ld: Load) -> List[Tuple[int, int]]:
     """The bytes a run-time allocation can change at the end of the load:

@@ -1,5 +1,5 @@
-; dl_sym.s: the card's routines the play build's tic image calls (docs/
-; PLAY.md 4), exported at their addresses in the card's link (playsym.inc,
+; dl_sym.s: the card's routines the play build's tic image calls
+; (docs/PLAY.md), exported at their addresses in the card's link (playsym.inc,
 ; tools/native/playlink.py: pl_time, fx_isplaying, fx_stopall are the
 ; card's, linked by DOOM.SYSTEM's link, not by the tic image's). GPL-2, the
 ; port's own.

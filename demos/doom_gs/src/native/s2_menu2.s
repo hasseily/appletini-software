@@ -1,12 +1,12 @@
 ; s2_menu2.s: the settings pages' values, the key setup page, the load and
-; save pages' slots and the benchmark's result in MENUW (docs/SCREENS.md
-; 1.5.3, 4.1, 6.2, 6.3; part s2menu2, docs/m11-parts/s2menu2.md). GPL-2:
-; rewritten from upstream's src/iigs/m_menu65.s (Doom8088: Apple IIgs
-; Edition, GPL-2): onOff's and thermo's drawing, drawControls, keyName,
-; text, drawSlots (drawLoad, drawSave) [R m_menu65.s:1260-1450], the
-; values of uiSettings past ON and OFF with uiViewIndex for the full view
-; only and the thermometers' positions (uiGammaPos, uiMousePos) [R
-; :2741-2758, :2927-2958], uiBenchmark's two rows [R :3012-3058].
+; save pages' slots and the benchmark's result in MENUW (docs/SCREENS.md,
+; the menu; part s2menu2). GPL-2: rewritten from upstream's
+; src/iigs/m_menu65.s (Doom8088: Apple IIgs Edition, GPL-2): onOff's and
+; thermo's drawing, drawControls, keyName, text, drawSlots (drawLoad,
+; drawSave) [R m_menu65.s:1260-1450], the values of uiSettings past ON and
+; OFF with uiViewIndex for the full view only and the thermometers'
+; positions (uiGammaPos, uiMousePos) [R :2741-2758, :2927-2958],
+; uiBenchmark's two rows [R :3012-3058].
 ;
 ; Part s2menu1's s2_menu.s calls these hooks inside m_page, with the band
 ; set (S2_BAND, S2_Y0, S2_Y1); they draw with s2menu1's m_dpatch,
@@ -22,20 +22,18 @@
 ;               the row's y
 ;   m2_bench    the benchmark's result (uiBenchmark): its title, the VIEW
 ;               and FPS rows; the CPU, CACHE and ROM rows (ZipGS and
-;               TransWarp, dropped: SCREENS.md 1.5.3, exclusion X2) are
+;               TransWarp, dropped: docs/SCREENS.md) are
 ;               black, and on them, each when not empty, the play build's
-;               phase rows M_BROWS (docs/PLAY.md 15: "TIC t  3D t", ...),
-;               as labels at x 36
+;               phase rows M_BROWS (docs/PLAY.md, the benchmark: "TIC t  3D
+;               t", ...), as labels at x 36
 ;
-; The key setup reads the //e key names (part plinput's plk_names, 8
-; bytes a name, 0-terminated) and the bindings through pl_action
-; (I_ActionKeys: the first two //e codes of a Doom key in upstream's order
-; of the ranges $30-$3F, $20-$2F, $00-$1F, $40-$7F). The view is the full
-; view only (D-M5): VIEW's value is "FULL". The benchmark's FPS text is
-; M_BFPS in MENUW's state block (s2layout's MENUW_NATIVE, request
-; S2MENU2-1; the second half's benchmark writes it). (The busy sign's font
-; this part also built, -D M2_SIGNFONT, went at wave 6's integration:
-; part s2fin's FINW draws the sign by columns, S2MENU2-4 with S2FIN-8.)
+; The key setup reads the //e key names (part plinput's plk_names, 8 bytes a
+; name, 0-terminated) and the bindings through pl_action (I_ActionKeys: the
+; first two //e codes of a Doom key in upstream's order of the ranges
+; $30-$3F, $20-$2F, $00-$1F, $40-$7F). The view is the full view only:
+; VIEW's value is "FULL". The benchmark's FPS text is M_BFPS in MENUW's
+; state block (s2layout's MENUW_NATIVE; the second half's benchmark writes
+; it). (The busy sign is FINW's: part s2fin draws it by columns.)
 ;
 ; Zero page: s2menu1's S2M_* that m_page and settings do not keep across
 ; the hooks (S2M_I, S2M_N, S2M_K, S2M_A, S2M_B); pl_action uses PLZ
@@ -273,7 +271,7 @@ m2_value:
         jmp m_align
 @thermo:
         cmp #KIND_MUSIC         ; snd_MusicVolume, 0-15 (the release's
-        beq @music              ;   MUSIC_MENU 1: S2MENU2-2)
+        beq @music              ;   MUSIC_MENU 1)
         cmp #KIND_SFX
         beq @sfx
         cmp #KIND_SPEED
@@ -368,9 +366,9 @@ x4:
 ; m2_bench: uiBenchmark [R :3012-3058]: the title centred at y 24; at y
 ; 60 + 16 i the label at x 36 (bmWrite) and the value at the right edge
 ; 284 (uiAlign): VIEW (uiViewIndex's label, the full view only) and FPS
-; (the benchmark's text M_BFPS); the CPU, CACHE and ROM rows black (X2),
+; (the benchmark's text M_BFPS); the CPU, CACHE and ROM rows black (dropped),
 ; then M_BROWS' three rows over them at x 36 (each when not empty: the
-; play build's phase timing, docs/PLAY.md 15)
+; play build's phase timing, docs/PLAY.md)
 ; ---------------------------------------------------------------------------
 m2_bench:
         lda #24

@@ -1,7 +1,7 @@
-; pl_keys.s: the //e key table's routines (milestone 11, part plinput;
-; docs/SCREENS.md 2.4; docs/m11-parts/plinput.md): what the boot and
+; pl_keys.s: the //e key table's routines (part plinput;
+; docs/SCREENS.md): what the boot and
 ; the menus call, apart from the poll every frame image links
-; (pl_input.s), so pl_poll keeps its 600 B (request PLINPUT-5). GPL-2,
+; (pl_input.s), so pl_poll keeps its 600 B. GPL-2,
 ; the port's own, written from upstream's documented behaviour of
 ; I_InitKeyboard, I_DefaultKeys, I_BindKey, recount and I_ActionKeys
 ; [R i_iigs65.s:685-700, :857-990].
@@ -120,8 +120,8 @@ pl_action:
         .segment "S2RODATA"
 pl_rlo: .byte $30, $20, $00, $40        ; I_ActionKeys' ranges
 pl_rhi: .byte $40, $30, $20, $80
-; the default keys (SCREENS.md 2.4; tools/native/plkeys.py's DEFAULTS, the
-; test checks them equal): a //e code and its Doom key
+; the default keys (docs/SCREENS.md; the same as tools/native/plkeys.py's
+; DEFAULTS): a //e code and its Doom key
 pl_defs:
         .byte $0B, 5, $0A, 6, $08, 7, $15, 8   ; the arrows
         .byte 'W', 5, 'S', 6, 'A', 3, 'D', 4   ; move, strafe

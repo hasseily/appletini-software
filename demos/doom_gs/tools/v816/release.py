@@ -47,14 +47,6 @@ class Target(NamedTuple):
     memory: memimage.MemoryImage
 
 
-def disk_address(address):
-    """Where the disk header says the byte of the link address
-    `address` of the game is loaded."""
-    if MOVED_FIRST <= address < MOVED_END:
-        return address - MOVED_BY
-    return address
-
-
 def linked_memories(rules, initialised):
     """(first, last) of each memory of `rules` (scm.Rules) that accepts
     one of the sections named in `initialised`: the sections that have
@@ -110,9 +102,3 @@ def targets(data, game_memories):
                 'loader': loader}
     return [Target(name, RULES_FILES[name], memories[name])
             for name in ('game', 'boot', 'loader')]
-
-
-def load(path, game_memories):
-    """The Targets of the disk image in the file `path`."""
-    with open(path, 'rb') as handle:
-        return targets(handle.read(), game_memories)

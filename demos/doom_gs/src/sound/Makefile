@@ -1,36 +1,26 @@
-# src/sound: the 65C02 music player for the Phasor, assembled with ca65 and
-# linked with ld65 (cc65 2.18) into build/sound65/. There is one build: the
-# voice layout native12 (4 AY chips, the card in native mode), the only
-# one since the 6-voice fallback was removed (NATIVE.md 15.1, row 11).
+# src/sound: the 65C02 music player for the Phasor, assembled with ca65
+# (cc65 2.18) into build/sound65/: the objects play.mk links into the
+# game (the voice layout native12: 4 AY chips, the card in native mode).
 #
-#   sound.lc      the player: code, tables and vectors, $E000-$FFFF of the
-#                 main language card
-#   sound.main    the test driver and the probe (probe.s, boot code),
-#                 main memory at $0800
-#   sound.lbl     every symbol (VICE labels, ld65 -Ln); sound.map, *.lst
+#   player.o      the player
+#   probe.o       the probe (boot code)
 #   tables.inc    the player's tables, from tools/sound/tables65.py
 #
-#   make            the player
-#   make sizes      code and data against native-sound.md 4.3
+#   make            all three
 #   make clean
-#
-# The comparison with tools/sound/player.py and the cost report are
-# tools/sound/run65.py (README.md).
 
 HERE := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 ROOT := $(abspath $(HERE)../..)
 OUT := $(ROOT)/build/sound65
 
 CA65 = ca65
-LD65 = ld65
 PYTHON = python3
 
 TOOLS := $(ROOT)/tools/sound/tables65.py $(ROOT)/tools/sound/tables.py
-SOURCES := player irq driver probe
 
-.PHONY: all sizes clean
+.PHONY: all clean
 
-all: $(OUT)/sound.lc
+all: $(OUT)/player.o $(OUT)/probe.o $(OUT)/tables.inc
 
 $(OUT)/tables.inc: $(TOOLS)
 	@mkdir -p $(OUT)
@@ -40,23 +30,9 @@ $(OUT)/player.o: $(HERE)player.s $(HERE)sound.inc $(OUT)/tables.inc
 	$(CA65) --cpu 65C02 -g -I $(HERE) -I $(OUT) -o $@ \
 	    -l $(OUT)/player.lst $<
 
-$(OUT)/irq.o: $(HERE)irq.s $(HERE)sound.inc $(OUT)/tables.inc
-	$(CA65) --cpu 65C02 -g -I $(HERE) -o $@ -l $(OUT)/irq.lst $<
-
-$(OUT)/driver.o: $(HERE)driver.s $(HERE)sound.inc
-	@mkdir -p $(OUT)
-	$(CA65) --cpu 65C02 -g -I $(HERE) -o $@ -l $(OUT)/driver.lst $<
-
 $(OUT)/probe.o: $(HERE)probe.s $(HERE)sound.inc
 	@mkdir -p $(OUT)
 	$(CA65) --cpu 65C02 -g -I $(HERE) -o $@ -l $(OUT)/probe.lst $<
-
-$(OUT)/sound.lc: $(foreach s,$(SOURCES),$(OUT)/$(s).o) $(HERE)sound.cfg
-	$(LD65) -C $(HERE)sound.cfg -o $(OUT)/sound -Ln $(OUT)/sound.lbl \
-	    -m $(OUT)/sound.map $(foreach s,$(SOURCES),$(OUT)/$(s).o)
-
-sizes: all
-	$(PYTHON) $(ROOT)/tools/sound/run65.py --sizes
 
 clean:
 	rm -rf $(OUT)

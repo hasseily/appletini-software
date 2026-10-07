@@ -1,7 +1,7 @@
 ; snd_probe: can the card in slot 4 play the music? The music needs the
 ; Phasor's native mode, 4 AY chips (the layout native12); a card that
 ; cannot switch to it has no music: the game runs without music and says
-; so (NATIVE.md 15.1, row 11: no 6-voice fallback).
+; so (there is no 6-voice fallback).
 ;
 ; It asks for the Phasor's native mode ($C0C8, then $C0C5), resets the
 ; chips behind VIA-A, writes register 0 of chip 0 ($55), then register 0

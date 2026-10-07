@@ -8,13 +8,13 @@
 # value; a script starts with the tone off, at 40 dB, the noise off, and
 # its last step ends with "end". '#' starts a comment.
 #
-# First versions (milestone 11, part fxconv, 2026-10-01), written from
+# First versions (2026-10-01), written from
 # the automatic scripts' per-tick states and their renders
 # (build/sound/fx/*.wav): the DP's pitch contour kept, the DS's loudness
 # contour smoothed into a few steps, the PC speaker's gating (a tone
 # every other tick, which the automatic script turns into tone and noise
 # alternating) replaced by a clean pulse. Nobody has heard them on the
-# card yet: they are a starting point for the owner's ear (milestone 12).
+# card yet: they are a starting point for the owner's ear.
 
 PISTOL
 2  period=324 noise=8 att=0

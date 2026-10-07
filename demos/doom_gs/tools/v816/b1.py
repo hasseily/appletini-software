@@ -3,7 +3,7 @@
 The format is defined by upstream's tools/b1.py (encoder and reference
 decoder) and by b1Seg in src/iigs/loader.s (the 65816 decoder). This is an
 independent decoder, so that reading the release image needs nothing from
-the upstream clone; tests/test_b1.py checks it against the reference.
+the upstream clone.
 
 The stream:
 - Bits come from 16-bit little-endian words, most significant bit first.

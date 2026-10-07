@@ -1,9 +1,9 @@
-; game/xymove/xymove.s: part xymove's move (milestone 10, docs/GAME.md 2.4
-; row xymove, 1.2; docs/game-parts/xymove.md). A GPL-2 derivative of
+; game/xymove/xymove.s: part xymove's move (docs/GAME.md). A GPL-2
+; derivative of
 ; upstream's p_mobj65.s (P_XYMovement with TICSTEP 1 and its helpers
 ; clampMove, isBig, wholeMove, halfMove, skyHit, quarterOut, slow,
 ; frictionAP, frictionNear, friction), Doom8088: Apple IIgs Edition. The
-; products are milestone 6's (umul16).
+; products are math.s's (umul16).
 ;
 ;   P_XYMovement  A:X = a mobj. No momentum: nothing. Else (its kind's
 ;               CLEAN off: the momentum changes) momx, momy clamped to

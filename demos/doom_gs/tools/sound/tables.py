@@ -1,7 +1,7 @@
-"""Constants and tables shared by the converter, the player and the tests.
+"""Constants and tables shared by the converter (mus2ay.py), the effects
+(fxconv.py) and the 65C02 player's generated tables (tables65.py).
 
-The 65C02 player holds the same tables; tests/test_sound_player.py checks
-each one against its formula. Facts about the card come from the
+Facts about the card come from the
 Appletini's HDL (FW/ = the appletini-one-main firmware snapshot):
 
 - The PSG clock enable is one pulse an Apple bus cycle (data_en), plus a
@@ -33,24 +33,17 @@ ATT_MAX = 80                   # attenuation in 0.5 dB steps; 80 = silent
 ATT_UNIT_DB = 0.5
 HW_DRUM_ATT = 12               # a drum hit this loud or louder (6 dB) uses
                                # the chip's envelope generator
-CYCLES_PER_WRITE = 41          # one AY register write in the burst loop
-                               # (native-sound.md 4.2), in bus cycles
 
 Machine = namedtuple('Machine', 'name bus_hz vbl_cycles psg_multiplier')
 
-# The music plays only with the card in native mode (NATIVE.md 15.1, row
-# 11: no 6-voice fallback), so these are the only machines.
+# The music plays only with the card in native mode (no 6-voice
+# fallback), so these are the only machines.
 PAL_NATIVE = Machine('pal-native', 1015625, 312 * 65, 2)
 NTSC_NATIVE = Machine('ntsc-native', 1020484, 262 * 65, 2)
-MACHINES = {m.name: m for m in (PAL_NATIVE, NTSC_NATIVE)}
 
 
 def psg_clock(machine):
     return machine.bus_hz * machine.psg_multiplier
-
-
-def vbl_hz(machine):
-    return machine.bus_hz / machine.vbl_cycles
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +53,7 @@ def vbl_hz(machine):
 # exist in the card's native mode. A drum voice owns the noise period (R6)
 # and the envelope registers (R11-R13) of its chip. There is one layout,
 # native12: the 6-voice fallback for a card in Mockingboard mode was
-# removed on 2026-09-30 (NATIVE.md 15.1, row 11). Its id is byte 1 of a
+# removed on 2026-09-30. Its id is byte 1 of a
 # song file.
 # ---------------------------------------------------------------------------
 
@@ -92,9 +85,8 @@ def owned_registers(layout):
 
 # ---------------------------------------------------------------------------
 # Chip 3's voices for the effects (S4): the one table of their sides. The
-# effect player (fxplay.py, and src/sound/fx.s through tables65.py's
-# FX_VOICE_* and FX_SEP_* equates), the test disk (fxdisk.py) and the
-# renders of the effects (ayrender.DOOM_PANS) read it.
+# effect player (src/sound/fx.s, through tables65.py's FX_VOICE_* and
+# FX_SEP_* equates) reads it.
 #
 # A voice is (name, side, pan): its channel of chip 3 is its index, its
 # pan the value the Doom profile gives it in the Appletini's Phasor menu
@@ -115,8 +107,6 @@ FxVoice = namedtuple('FxVoice', 'name side pan')
 FX_VOICES = (FxVoice('A', 'left', 5),
              FxVoice('B', 'right', 11),
              FxVoice('C', 'centre', 8))
-FX_MENU_PAN_KEY = 10           # phasor.pan.10-12: chip 3 (the menu's AY3)
-PAN_CENTRE = 8                 # the menu's centred pan: left and right full
 
 # The voice choice at a sound's start, from its separation (upstream's:
 # 128 the centre, below it the left: left = vol x (254 - sep) / 127,
@@ -132,19 +122,6 @@ FX_SEP_CENTRE = 128
 def fx_voice(side):
     """The index (chip 3's channel) of the voice on `side`."""
     return next(k for k, v in enumerate(FX_VOICES) if v.side == side)
-
-
-def fx_voice_order(sep):
-    """The voices a start with separation `sep` (0-255) tries, in order:
-    indexes of FX_VOICES."""
-    left, centre, right = (fx_voice(s) for s in ('left', 'centre', 'right'))
-    if sep < FX_SEP_LEFT:
-        return (left, centre, right)
-    if sep > FX_SEP_RIGHT:
-        return (right, centre, left)
-    if sep <= FX_SEP_CENTRE:
-        return (centre, left, right)
-    return (centre, right, left)
 
 
 # ---------------------------------------------------------------------------
@@ -183,20 +160,6 @@ def bend_magnitude(bend):
 BEND_MAGNITUDE = tuple(bend_magnitude(b) for b in range(256))
 
 
-def bent_period(period, bend):
-    """The player's bend: a 12 x 8 bit multiply (a product of up to 20
-    bits, 3 bytes on the 65C02), 1024 added to round, and a shift by 11.
-    A bend below 128 lowers the pitch (a larger period)."""
-    if bend == 128:
-        return period
-    delta = (period * BEND_MAGNITUDE[bend] + 1024) >> 11
-    if bend < 128:
-        period += delta
-        return 4095 if period > 4095 else period
-    period -= delta
-    return 1 if period < 1 else period
-
-
 # ---------------------------------------------------------------------------
 # Levels
 # ---------------------------------------------------------------------------
@@ -207,10 +170,6 @@ AY_TABLE = (0x00, 0x00, 0x03, 0x03, 0x04, 0x04, 0x06, 0x06,
             0x0a, 0x0a, 0x0f, 0x0f, 0x15, 0x15, 0x22, 0x22,
             0x28, 0x28, 0x41, 0x41, 0x5b, 0x5b, 0x72, 0x72,
             0x90, 0x90, 0xb5, 0xb5, 0xd7, 0xd7, 0xff, 0xff)
-YM_TABLE = (0x00, 0x01, 0x01, 0x02, 0x02, 0x03, 0x03, 0x04,
-            0x06, 0x07, 0x09, 0x0a, 0x0c, 0x0e, 0x11, 0x13,
-            0x17, 0x1b, 0x20, 0x25, 0x2c, 0x35, 0x3e, 0x47,
-            0x54, 0x66, 0x77, 0x88, 0xa1, 0xc0, 0xe0, 0xff)
 AY_OUT = tuple(AY_TABLE[2 * n + (n >> 3)] for n in range(16))
 AY_DB = (None,) + tuple(20.0 * math.log10(v / 255.0) for v in AY_OUT[1:])
 

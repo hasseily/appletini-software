@@ -1,11 +1,7 @@
-#!/usr/bin/env python3
 """Call logs of ref816 (--call-log, --call-log-file): routines written with
-the game's symbols, the log read back, and a command that logs routines
-through a script.
+the game's symbols (options), and the log read back (read).
 
-Usage:  python3 tools/ref816/calls.py RUN ROUTINE... [--out FILE]
-
-Each ROUTINE is ENTRY[,KEY=VALUE...] as ref816 takes it
+Each routine is ENTRY[,KEY=VALUE...] as ref816 takes it
 (tools/ref816/calllog.h), where ENTRY and the addresses of the ranges may
 be symbols of the link map (a name, or unit:name, with +offset), and a
 range may also be written dp:SYMBOL[+N]:LEN: the direct-page operand the
@@ -16,29 +12,23 @@ So upstream's FixedMul (a in X:C, b in _Dp[0-3]; m_fixed65.s) is
     FixedMul,in=dp:_Dp:4
 
 and its result is X:C of "out". The name defaults to ENTRY when that is a
-symbol. RUN is a coverage script (or a path), or DEMO1, DEMO2 or DEMO3:
-the title loop to the end of that demo (lumps.py; DEMO1 and DEMO2 placed
-as DEMO3). The log goes to FILE (default build/ref816/calls/RUN.log).
+symbol.
 
 `read` returns a log's first line, its calls and its last line; each call
-is the JSON object calllog.h describes, with "mem" as hex strings; `Call`
-wraps one with its registers and memory as numbers and bytes.
+is the JSON object calllog.h describes, with "mem" as hex strings.
 """
 
-import argparse
 import json
 import re
 import sys
 from pathlib import Path
-from typing import Dict, Iterator, List, NamedTuple, Optional, Sequence, \
-    Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ref816 import lumps, make_image, run_script, script, title  # noqa: E402
+from ref816 import make_image, script  # noqa: E402
 
 FORMAT = 'ref816-call-log 1'
-OUT = make_image.OUT_DIR / 'calls'
 DP_SECTION = 'ztiny'
 RANGE_KEYS = ('in', 'out', 'mem')
 HEX_ADDRESS = re.compile(r'[0-9A-Fa-f]{1,6}$')
@@ -130,72 +120,3 @@ def read(path: Path) -> Tuple[Dict, List[Dict], Dict]:
     if not end.get('end'):
         raise ValueError('%s ends without its last line' % path)
     return head, [json.loads(line) for line in lines[1:-1]], end
-
-
-class Call(NamedTuple):
-    """A call of a log: its routine's name and its line, with the memory
-    of in and out as bytes."""
-    name: str
-    line: Dict
-    memory_in: List[bytes]
-    memory_out: List[bytes]
-
-    @property
-    def registers_in(self) -> Dict[str, int]:
-        return {k: v for k, v in self.line['in'].items() if k != 'mem'}
-
-    @property
-    def registers_out(self) -> Optional[Dict[str, int]]:
-        out = self.line['out']
-        return None if out is None else \
-            {k: v for k, v in out.items() if k != 'mem'}
-
-
-def calls(path: Path) -> Iterator[Call]:
-    head, lines, _ = read(path)
-    names = [r['name'] for r in head['routines']]
-    for line in lines:
-        out = line['out']
-        yield Call(names[line['routine']], line,
-                   [bytes.fromhex(m) for m in line['in']['mem']],
-                   [bytes.fromhex(m) for m in out['mem']] if out else [])
-
-
-DEMOS = ('DEMO1', 'DEMO2', 'DEMO3')
-
-
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('run')
-    parser.add_argument('routines', nargs='+')
-    parser.add_argument('--out', type=Path)
-    arguments = parser.parse_args(argv)
-    title.build_machine()
-    title.ensure_image()
-    table = Linkmap()
-    demo = arguments.run if arguments.run in DEMOS else None
-    name = demo.lower() if demo else Path(arguments.run).stem
-    out = arguments.out or OUT / (name + '.log')
-    out.parent.mkdir(parents=True, exist_ok=True)
-    extra = options(arguments.routines, out, table)
-    limit = run_script.DEFAULT_LIMIT_SECONDS
-    if demo:
-        info = lumps.demo_info(lumps.read_wad()[demo])
-        path = OUT / (name + '.script')
-        path.write_text(lumps.demo_script(info['map']))
-        if demo != 'DEMO3':
-            extra += lumps.options(demo, table.symbols, out=OUT)
-        limit = 3120
-    else:
-        path = run_script.script_path(arguments.run)
-    report = run_script.run(path, limit_seconds=limit, extra=extra,
-                            name='calls-' + name)
-    print(run_script.summary(report))
-    _, lines, end = read(out)
-    print('%s: %d calls logged; arrivals %s' % (out, len(lines),
-                                               end['arrivals']))
-    return 1 if report['problems'] else 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

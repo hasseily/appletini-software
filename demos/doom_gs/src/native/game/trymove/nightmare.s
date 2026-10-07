@@ -1,5 +1,5 @@
-; game/trymove/nightmare.s: part trymove's nightmare respawn (milestone 10,
-; docs/GAME.md 2.4 row trymove; docs/game-parts/trymove.md). A GPL-2
+; game/trymove/nightmare.s: part trymove's nightmare respawn (docs/GAME.md).
+; A GPL-2
 ; derivative of upstream's p_spawn65.s (P_NightmareRespawn with nmArg, nmXY,
 ; subFloor and fog).
 ;

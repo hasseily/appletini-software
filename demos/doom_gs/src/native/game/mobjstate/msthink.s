@@ -1,6 +1,6 @@
 ; game/mobjstate/msthink.s: part mobjstate's thinker list and frees
-; (milestone 10, docs/GAME.md 1.3, 1.4, 1.8 item 3, 2.4;
-; docs/game-parts/mobjstate.md). A GPL-2 derivative of upstream's
+; (docs/GAME.md: the thinker list, the specials, the sight state, the
+; parts). A GPL-2 derivative of upstream's
 ; p_think65.s (P_RemoveThinker, P_RemoveThing, P_RemoveThinkerDelayed,
 ; P_RemoveThingDelayed, unlink, P_NextThinker), p_spawn65.s (P_RemoveMobj,
 ; rmArg, poolFree) and r_list65.s (linkRemove).
@@ -19,7 +19,8 @@
 ;                (poolFree); a zone one goes first on the zone's free list
 ;                (G_ZMFREE through the TNL, TNH planes; its kind FN_FREE: no
 ;                object), and a CS_PREV1 or CS_PREV2 that named it becomes
-;                stale ($FFFE) with GT_ZPREV raised (GAME.md 1.8 item 3)
+;                stale ($FFFE) with GT_ZPREV raised (docs/GAME.md, the sight
+;                state)
 ;   unlink     A:X = a thinker: next->prev = prev, prev->next = next (the
 ;                list's first and last are G_THFIRST, G_THLAST)
 ;   P_NextThinker  A:X = a thinker (none: the first): A:X = the next, none

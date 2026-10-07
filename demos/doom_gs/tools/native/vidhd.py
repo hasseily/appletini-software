@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-"""The VidHD's records (docs/PLAY.md 22, MEMORY_MAP.md 22): what
+"""The VidHD's records (docs/PLAY.md, docs/MEMORY_MAP.md): what
 DOOM.SYSTEM writes when its boot finds a VidHD and nothing of the
 Appletini's (pl_boot.s PLVIDHD, vh_boot).
 
@@ -59,15 +58,12 @@ the table (PATCH_SIZE bytes at pl_boot.s vh_patch). problems() checks
 every place: the original bytes at each patched instruction, each room
 free and zero (in LC.BIN, in the bank files, in no segment of the links
 and no layout's region), the slack inside the image's K_LOAD runs.
-
-Usage:  python3 tools/native/vidhd.py [--play DIR]   (the records)
 """
 
-import argparse
 import struct
 import sys
 from pathlib import Path
-from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
+from typing import Dict, List, NamedTuple, Sequence, Tuple
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
@@ -80,7 +76,7 @@ SH_ON, SH_OFF = 0x00, 0x18
 RAMWRTON = bytes([0x8D, 0x05, 0xC0])
 CARD = 0                        # a record's bank: main memory, the card
 
-# the shared code's places (MEMORY_MAP.md 22)
+# the shared code's places (docs/MEMORY_MAP.md)
 GO = 0xFFA7                     # the kernel's padding before KLISTS
 GO_END = 0xFFB8
 KR = 0xE8F2                     # the channel block's tail (50 of 64 B used)
@@ -297,8 +293,9 @@ def replay(p: Patcher, img: Image, bkfar_load: int) -> None:
     bkfar_load in the image's bank) a JSR vh_sc."""
     lab = img.labels
     run = lab['__BKFAR_RUN__']
-    lo = bkfar_load + lab['nb_frame'] - run
-    hi = bkfar_load + lab['nb_bucket'] - run
+    f_lo, f_hi = function_range(lab, 'nb_frame')
+    lo = bkfar_load + f_lo - run
+    hi = bkfar_load + f_hi - run
     at = find(p.mem[img.bank], lo, hi, bytes([0x20] + word(lab['nb_scatter'])))
     if len(at) != 1:
         raise amcpu.PatchError('%s\'s nb_frame calls nb_scatter %d times' % (
@@ -413,28 +410,3 @@ def play_patches(play: Path) -> List[Record]:
     if PL.DLBANK != dl.bank:
         raise amcpu.PatchError('DLINIT is not in DLBANK')
     return p.records
-
-
-def main(argv: Optional[Sequence[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('--play', type=Path,
-                        default=HERE.parent.parent / 'build' / 'native' /
-                        'play')
-    args = parser.parse_args(argv)
-    try:
-        records = play_patches(args.play)
-        data = amcpu.table(records, PATCH_SIZE)
-    except amcpu.PatchError as e:
-        print('vidhd: %s' % e, file=sys.stderr)
-        return 1
-    for bank, address, d in records:
-        print('%s $%04X %3d B  %s' % ('main/card' if bank == CARD else
-                                      'bank %4d' % bank, address, len(d),
-                                      d.hex()))
-    print('the table: %d of %d B' % (len(data.rstrip(b'\0')) + 1,
-                                     PATCH_SIZE))
-    return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

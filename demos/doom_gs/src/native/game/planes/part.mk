@@ -1,5 +1,5 @@
-# src/native/game/planes/part.mk: part planes of milestone 10 (docs/GAME.md
-# 2.4, wave 4; docs/game-parts/planes.md): the plane movers
+# src/native/game/planes/part.mk: part planes of the game's tic code
+# (docs/GAME.md): the plane movers
 # (T_MovePlaneFloor, T_MovePlaneCeiling), the check of the things in a
 # moving sector (checkSector = P_CheckSector, changeSector =
 # PIT_ChangeSector, heightClip = P_ThingHeightClip) and the floor thinker

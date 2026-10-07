@@ -42,7 +42,7 @@ address it has in the segment list.
 """
 
 import struct
-from typing import Dict, List, NamedTuple, Tuple
+from typing import List, NamedTuple, Tuple
 
 from v816 import b1, prodos
 
@@ -154,7 +154,7 @@ class DiskImage(NamedTuple):
 def kind(image: DiskImage, segment: Segment) -> str:
     """What `segment` holds, one of the KIND_ constants.
 
-    A label for listings (tools/list_segments.py), by the banks of the
+    A label for listings, by the banks of the
     release. Code that must know which segments the linker made asks
     the rules file instead (release.linked_memories)."""
     bank = segment.address >> 16
@@ -173,15 +173,6 @@ def kind(image: DiskImage, segment: Segment) -> str:
     if 0x03 <= bank <= 0x05:
         return KIND_CODE
     return KIND_DATA
-
-
-def totals(image: DiskImage) -> Dict[str, int]:
-    """The number of bytes of each kind of segment."""
-    sums = {}  # type: Dict[str, int]
-    for segment in image.segments:
-        name = kind(image, segment)
-        sums[name] = sums.get(name, 0) + len(segment.data)
-    return sums
 
 
 def parse(data: bytes) -> DiskImage:

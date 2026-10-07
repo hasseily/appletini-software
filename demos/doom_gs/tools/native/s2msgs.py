@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""The HUD's texts of milestone 11's first half (docs/SCREENS.md 1.5.2,
-part s2hud): the message ids' text table, the maps' titles and the font
+"""The HUD's texts of the screens' first half (docs/SCREENS.md, part
+s2hud): the message ids' text table, the maps' titles and the font
 table that src/native/s2_hu.s (P2DW) draws from, generated as ca65 data.
 
-The message ids are milestone 10's: natively `player.message` is a
+The message ids are the game's: natively `player.message` is a
 reference to a symbol, its id the index of the symbol in
 `llayout.symbol_list()` (every rodata label of the link map, sorted:
 the list the bridge's manifest numbers symbols with [R llayout.py
 symbol_list, bridge/layout.py native_v1]), so the HUD's table and the
-game agree by construction (request R5). The table holds the **message
+game agree by construction. The table holds the **message
 symbols**: the labels referenced as `.word0 NAME` (an immediate's or a
 table's address) in the units of upstream's sources that store a value
 into `player.message` (`sta`/`stx` of `OFS_PL_MESSAGE`: am_map65.s,
@@ -16,9 +16,7 @@ m_cheat65.s, m_menu65.s, p_doors65.s, p_inter65.s), and whose bytes in
 the release start with a NUL-terminated string of 1 to 34 printable
 characters (HU_MAXLINELENGTH [R hu_stuff65.s:17]). The rule takes a few
 labels that are never messages (`keyNames`, whose first name is "A", and
-the menu strings `txComma`, `txControls`, `txNone`, `txPress`): harmless,
-listed by --report. Every message the
-captures show must be in the table (tools/native/s2hud.py checks it).
+the menu strings `txComma`, `txControls`, `txNone`, `txPress`): harmless.
 
 The titles are upstream's `mapNames` table [R hu_stuff65.s:55-68], read
 from the release's memory; each is a table entry with the id
@@ -30,17 +28,12 @@ width (the patch's, from DOOM1.WAD; upstream reads `patch->width`
 [R hu_stuff65.s:175-176]).
 
 The texts live in RamWorks (S2STATE's SS_HUDMSG, a bank file HUDTXT.1;
-SCREENS.md risk 12's first remedy: P2DW's room), each line's text fetched
+SCREENS.md: P2DW's room has no place for them), each line's text fetched
 when its id changes; P2DW keeps the font table only.
 
 Usage:  python3 tools/native/s2msgs.py --inc OUT/s2msgs.inc (the font)
-        python3 tools/native/s2msgs.py --bank OUT/HUDTXT.1 [--test]
+        python3 tools/native/s2msgs.py --bank OUT/HUDTXT.1
         python3 tools/native/s2msgs.py --hud-inc OUT/s2hud.inc
-        python3 tools/native/s2msgs.py --report
-
---test adds synthetic entries (ids TEST_ID + k, test_texts()) for the
-test image only: every font character, lower case, characters outside the
-font, the space.
 """
 
 import argparse
@@ -65,16 +58,16 @@ HU_MAXLINELENGTH = 34           # [R hu_stuff65.s:17]
 FONT_LO, FONT_HI = 0x21, 0x5F   # '!' .. '_' [R hu_stuff65.s:18-19]
 NMAPS = 9                       # mapNames [R hu_stuff65.s:55-68]
 TITLE_ID = 0xFE00               # a title's id: TITLE_ID + map
-TEST_ID = 0x00E6                # the synthetic entries' (the test table)
+TEST_ID = 0x00E6                # the messages' ids are below it
 NONE_ID = 0xFFFF                # "no line" (hu_start: the empty text)
 # the bank table (SS_HUDMSG): an index of 256 words (the entry's address
 # in the bank, 0: none) by key, then the entries: the text padded to 35
 # bytes and its length (36 bytes: P_TITLE/P_MESSAGE's TL_TEXT and TL_LEN's
 # low byte). A message's key is its id (below TEST_ID), a title's
-# KEY_TITLE + map, a synthetic line's its id (TEST_ID + k)
+# KEY_TITLE + map
 KEY_TITLE = 0xF0
 ENTRY = 36
-# the table's place in S2STATE (request S2HUD-3, s2layout's since wave 4)
+# the table's place in S2STATE (s2layout's)
 SS_HUDMSG, SS_HUDMSG_SIZE = S.SS['SS_HUDMSG'], S.SS_SIZE['SS_HUDMSG']
 # a unit stores a message: `sta`/`stx` (not `stz`) of OFS_PL_MESSAGE
 STORE_RE = re.compile(r'^\s*(?:[\w$]+:)?\s*st[ax]\s+.*OFS_PL_MESSAGE',
@@ -88,7 +81,7 @@ class S2MsgsError(Exception):
 
 class Entry(NamedTuple):
     id: int
-    name: str                   # unit:label, title N, or test K
+    name: str                   # unit:label or title N
     text: bytes
 
 
@@ -104,8 +97,8 @@ def memory():
     if _MEM is None:
         from ref816 import refimage, title
         if not title.MEMORY.exists():
-            raise S2MsgsError('%s is missing: build ref816 first '
-                              '(MILESTONES.md "Setting up")' % title.MEMORY)
+            raise S2MsgsError('%s is missing: run python3 '
+                              'tools/ref816/make_image.py' % title.MEMORY)
         _MEM = refimage.load(refimage.read(title.MEMORY))
     return _MEM
 
@@ -149,7 +142,7 @@ def string_of(ref: str) -> Optional[bytes]:
 
 
 def symbol_ids() -> Dict[str, int]:
-    """Milestone 10's numbering of symbols: the index in
+    """The game's numbering of symbols: the index in
     llayout.symbol_list()."""
     return {s: k for k, s in enumerate(LL.symbol_list())}
 
@@ -223,25 +216,6 @@ def titles() -> List[Entry]:
     return out
 
 
-def test_texts() -> List[bytes]:
-    """The synthetic lines of the test image (docs/m11-parts/s2hud.md):
-    every font character, lower case, characters outside the font and
-    the space's width, and lines whose width ends near 320 (with the
-    title's overlong text, s2hud.py builds those from the font)."""
-    chars = bytes(range(FONT_LO, FONT_HI + 1))
-    return [chars[:HU_MAXLINELENGTH], chars[HU_MAXLINELENGTH:],
-            b'abcdefghijklmnopqrstuvwxyz',
-            b'Mixed Case, with: spaces!',
-            bytes([0x60, 0x7B, 0x7C, 0x7D, 0x7E, 0x7F, 0x01, 0x1F, 0x20,
-                   0x41, 0x80, 0xC1, 0xE1, 0xFF, 0x21]),
-            b' ', b'  A  ', b'W']
-
-
-def test_entries() -> List[Entry]:
-    return [Entry(TEST_ID + k, 'test %d' % k, t)
-            for k, t in enumerate(test_texts())]
-
-
 class Glyph(NamedTuple):
     char: int
     name: str
@@ -274,15 +248,12 @@ def font(s2data_json: Path = S2DATA_JSON) -> List[Glyph]:
     return out
 
 
-def entries(test: bool = False) -> List[Entry]:
+def entries() -> List[Entry]:
     out = message_symbols() + titles()
-    if test:
-        out += test_entries()
     ids = [e.id for e in out]
     if len(set(ids)) != len(ids) or NONE_ID in ids:
         raise S2MsgsError('the ids are not distinct')
-    big = [e for e in out if e.id < TITLE_ID and e.id >= TEST_ID and
-           not e.name.startswith('test ')]
+    big = [e for e in out if TEST_ID <= e.id < TITLE_ID]
     if big:
         raise S2MsgsError('the message %s has the id $%04X: the bank '
                           'table keys messages below $%02X' % (
@@ -296,11 +267,11 @@ def key_of(ident: int) -> int:
     return ident
 
 
-def bank_table(test: bool = False) -> bytes:
+def bank_table() -> bytes:
     """SS_HUDMSG's bytes: the index, then the entries."""
     index = bytearray(512)
     data = bytearray()
-    for e in entries(test):
+    for e in entries():
         k = key_of(e.id)
         at = SS_HUDMSG + 512 + len(data)
         index[2 * k:2 * k + 2] = at.to_bytes(2, 'little')
@@ -312,11 +283,11 @@ def bank_table(test: bool = False) -> bytes:
     return out
 
 
-def bank_file(test: bool = False) -> bytes:
+def bank_file() -> bytes:
     """The table as a bank file (LEVELS.md's A2DM format, lstore's) for
     S2STATE at SS_HUDMSG."""
     from native import lstore
-    return lstore.bank_file([(S.S2STATE, SS_HUDMSG, bank_table(test))])
+    return lstore.bank_file([(S.S2STATE, SS_HUDMSG, bank_table())])
 
 
 # ---------------------------------------------------------------------------
@@ -333,7 +304,7 @@ def table_text() -> str:
     """hu_fbank, hu_flo, hu_fhi, hu_fwid: the font's glyphs, indexed by the
     character less '!'."""
     lines = ['; Generated by tools/native/s2msgs.py (part s2hud, '
-             'docs/m11-parts/s2hud.md).', '; Do not edit. %s' % FORMAT, '']
+             'docs/SCREENS.md).', '; Do not edit. %s' % FORMAT, '']
     gs = font()
     for label, values in (('hu_fbank', [g.bank for g in gs]),
                           ('hu_flo', [g.address & 0xFF for g in gs]),
@@ -346,9 +317,8 @@ def table_text() -> str:
 
 def hud_inc_text() -> str:
     """The places s2_hu.s and s2t_hu.s need beyond s2.inc and rlayout.inc:
-    the game's (milestones 9-10, read only). P_TXTTEXT, P_MSGFILL,
-    P_MAPFILL (S2HUD-1) and SS_HUDMSG (S2HUD-3) are s2.inc's since wave
-    4's integration."""
+    the game's (read only). P_TXTTEXT, P_MSGFILL, P_MAPFILL and SS_HUDMSG
+    are s2.inc's."""
     pl = dict((p[0], at) for p, _, at in LL.player_layout())
     if 'message' not in pl:
         raise S2MsgsError('the player has no message field')
@@ -371,8 +341,8 @@ def hud_inc_text() -> str:
     lines += ['HU_TITLE_ID     = $%04X' % TITLE_ID,
               'HU_NONE_ID      = $%04X' % NONE_ID,
               'HU_KEY_TITLE    = $%02X' % KEY_TITLE,
-              'HU_KEY_END      = $%02X ; (the keys of messages and the test\'s '
-              'lines)' % KEY_TITLE]
+              'HU_KEY_END      = $%02X ; (the end of the messages\' keys)'
+              % KEY_TITLE]
     return '\n'.join(lines) + '\n'
 
 
@@ -385,30 +355,17 @@ def write_atomic(path: Path, text: str) -> None:
     tmp.replace(path)
 
 
-def report() -> str:
-    ms = message_symbols()
-    ts = titles()
-    out = ['%d message symbols, %d B of text; %d titles, %d B' % (
-        len(ms), sum(len(e.text) for e in ms), len(ts),
-        sum(len(e.text) for e in ts))]
-    for e in ms + ts:
-        out.append('  $%04X %-28s %r' % (e.id, e.name, e.text.decode()))
-    return '\n'.join(out)
-
-
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--inc', type=Path)
     parser.add_argument('--hud-inc', type=Path)
     parser.add_argument('--bank', type=Path)
-    parser.add_argument('--test', action='store_true')
-    parser.add_argument('--report', action='store_true')
     args = parser.parse_args(argv)
     try:
         if args.inc:
             write_atomic(args.inc, table_text())
         if args.bank:
-            data = bank_file(args.test)
+            data = bank_file()
             if not args.bank.exists() or args.bank.read_bytes() != data:
                 args.bank.parent.mkdir(parents=True, exist_ok=True)
                 tmp = args.bank.with_name(args.bank.name + '.tmp')
@@ -416,8 +373,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 tmp.replace(args.bank)
         if args.hud_inc:
             write_atomic(args.hud_inc, hud_inc_text())
-        if args.report:
-            print(report())
     except S2MsgsError as error:
         print('s2msgs: %s' % error, file=sys.stderr)
         return 1

@@ -1,28 +1,29 @@
 ; pl_irq.s: the platform's interrupt entry, the tic clock, I_GetTime and
-; the PAL or NTSC detection (milestone 11, part plclock; docs/SCREENS.md
-; 2.2, 2.3, 4.4). GPL-2, the port's own: written from the design, the
-; //e kernel's IRQ entry (demos/doom/src/kernel/kstart.s, irq_entry and
-; irq_mouse_service) and S2's snd_vbl (src/sound/irq.s), which it replaces
-; as the IRQ vector (irq.s itself is unchanged: MUSIC.SYSTEM keeps it).
+; the PAL or NTSC detection (part plclock; docs/SCREENS.md). GPL-2, the
+; port's own: written from the design, the IRQ entry of the earlier
+; Appletini Doom port's //e kernel (irq_entry and irq_mouse_service) and
+; S2's snd_vbl (MUSIC.SYSTEM's IRQ handler), which it replaces as the IRQ
+; vector.
 ;
-;   pl_vbl      the IRQ vector of the main card ($FFFE). SCREENS.md 2.3's
+;   pl_vbl      the IRQ vector of the main card ($FFFE). docs/SCREENS.md's
 ;               seven steps: (1) A, X, Y saved; a BRK (the B bit of the
 ;               pushed P) goes to the crash stop; (2) the mouse card's
 ;               status read, then acknowledged; only the VBL cause counts
 ;               (a second entry with no VBL pending, which the card can make
-;               in TURBO [R kstart.s:267-270], changes nothing); (3) the
+;               in TURBO, as the earlier port's kernel found, changes nothing); (3) the
 ;               clock; (4) fx_step; (5) snd_tick, S2's music player
 ;               unchanged; (6) fx_burst; (7) restore and RTI.
-;   pl_vbody    steps 2-6 as a subroutine: pl_vbl's body, and what the aux
-;               card's bridge (pl_bridge.s) calls with ALTZP off. Without
+;   pl_vbody    steps 2-6 as a subroutine: pl_vbl's body (an aux card's
+;               IRQ bridge would call it with ALTZP off; none is linked).
+;               Without
 ;               the Appletini's mouse card DOOM.SYSTEM writes its first 13
-;               bytes over (pl_boot.s mo_recs, docs/PLAY.md 20): the cause
+;               bytes over (pl_boot.s mo_recs, docs/PLAY.md): the cause
 ;               is then the Phasor's VIA-B timer 1 flag, cleared by
 ;               writing it back to IFR, the branch to pl_vnone the same;
 ;               pl_crash's mode and ACK become VIA-B's IER off
 ;   pl_crash    the crash stop: interrupts masked, the VBL off, a loop.
 ;               The code that stops writes its code to PL_STATUS first,
-;               then BRK (MEMORY_MAP.md 15's rule)
+;               then BRK (docs/MEMORY_MAP.md's rule)
 ;   pl_time     I_GetTime: the tics since pl_clkset, read with interrupts
 ;               masked: A bits 0-7, X 8-15, Y 16-23, and bits 24-31 copied
 ;               to CLK_TIME3 in the same masked read; P's I bit as it was
@@ -30,28 +31,25 @@
 ;               bit): its fraction a VBL into CLK_STEP; the fraction, the
 ;               tics and the VBL count from 0
 ;   pl_detect   PAL or NTSC as MUSIC.SYSTEM decides it [R tools/sound/
-;               README.md:395-405]: VIA-A's timer 1 over one VBL, 20,280
+;               README.md]: VIA-A's timer 1 over one VBL, 20,280
 ;               bus cycles PAL, 17,030 NTSC, the nearer wins; then
 ;               pl_clkset. Interrupts on, the VBL running, pl_vbl the
 ;               handler. Returns A = the standard, X:Y = the count (high,
 ;               low)
 ;
-; The clock (SCREENS.md 2.2, 0.1 F2): a 16-bit fraction a VBL, TIC_FRAC
+; The clock (docs/SCREENS.md): a 16-bit fraction a VBL, TIC_FRAC
 ; 45,743 (PAL) or 38,229 (NTSC) / 65,536; a carry out of the fraction is
 ; a tic. 50.0801 x 45,743 / 65,536 = 34.9551 and 59.9227 x 38,229 /
 ; 65,536 = 34.9546 tics a second, upstream's 34.955. After pl_clkset, at
-; VBL n the fraction is n x F mod 65,536 and the tics n x F >> 16
-; (tools/native/plclock.py, the host model).
+; VBL n the fraction is n x F mod 65,536 and the tics n x F >> 16.
 ;
-; The IRQ contract (MEMORY_MAP.md rule 2): zero page $D8-$FF, the stack,
+; The IRQ contract (docs/MEMORY_MAP.md): zero page $D8-$FF, the stack,
 ; $E000-$FFFF, $C0A0-$C0AF, $C400-$C4FF; nothing else, so RAMRD, RAMWRT,
 ; $C073 may be anything when it comes.
 ;
 ; The VBL count is S2's vbl_count, in the IRQ's zero page (S2's 31 bytes
-; at $D8 hold it), not in the card: S2's driver, MUSIC.SYSTEM and the
-; timing test import it as a zero-page word, and the music's comparison
-; links S2's driver unchanged (request PLCLOCK-1 in
-; docs/m11-parts/plclock.md, applied in wave 2's integration: the card's
+; at $D8 hold it), not in the card: S2's driver and MUSIC.SYSTEM import
+; it as a zero-page word, so S2's driver links unchanged (the card's
 ; clock is CLK_STEP, CLK_FRAC, CLK_TICS, CLK_STD, CLK_TIME3 of s2.inc).
 
         .setcpu "65C02"
@@ -131,8 +129,7 @@ pl_vbody:
 pl_vnone:
         rts
 
-; the crash stop: a BRK lands here (from pl_vbl, or from the aux card's
-; bridge with ALTZP off). Writes nothing outside the IRQ contract.
+; the crash stop: a BRK lands here (from pl_vbl). Writes nothing outside the IRQ contract.
 pl_crash:
         sei
         stz MOUSE_MODE          ; no more VBL interrupts

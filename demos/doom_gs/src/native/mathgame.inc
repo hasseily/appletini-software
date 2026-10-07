@@ -1,14 +1,15 @@
-; mathgame.inc: the game's math of math.s (milestone 6; src/native/MATH.md):
+; mathgame.inc: the game's math of math.s (src/native/MATH.md):
 ; R_PointToAngle3 (pta3, its octant pta_oct), finesine, finecosine,
-; P_AproxDistance (aproxdist: docs/game-parts/look.md request 2, wave 3) and
+; P_AproxDistance (aproxdist) and
 ; the cosine's exceptions (cosexc). GPL-2, the port's own (a derivative of
 ; upstream's r_iigs65.s and tables65.s, as math.s).
 ;
-; Included by math.s twice over: in its full build (MATHW, beside the rest)
-; and in its game build (-D GAMEMATH, src/native/game.mk: the tic images,
-; which link the render build math-r.o and this as math-g.o in the core,
-; docs/GAME.md "Wave 2 as integrated"; docs/game-parts/damage.md R1). The
-; tables are the tables bank's (MT_TBANK) through mt_far, in both.
+; Included by math.s in its game build (-D GAMEMATH, src/native/play.mk:
+; the tic image, which links the render build math-r.o and this as
+; math-g.o in the core, docs/GAME.md "Wave 2 as integrated"); without
+; GAMEMATH and RENDER (a build none of the makefiles has now) it would
+; sit in MATHW beside the rest. The tables are the tables bank's
+; (MT_TBANK) through mt_far.
 
 ; pta_oct: X = k from M_A, M_B (x, y) and 4-byte magnitudes in them; for
 ; x <= y the two are swapped, so the slope is M_B / M_A (num / den).

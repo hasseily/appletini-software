@@ -27,7 +27,7 @@ release (INIT_TABLE_NOTE, which the match report repeats). That image
 has no entry that copies data (the second field is always 0) and its
 entries are in the order of the names; a program with initialised
 data in RAM, or a linker that orders the entries otherwise, would need
-more than this. tests/test_sections.py checks both against the release.
+more than this.
 The address of the table comes from the recovery (the holes of crt0.s
 hold .sectionStart data_init_table), because the linker is free to put
 the table anywhere in the memories that accept the section.

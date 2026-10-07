@@ -1,17 +1,17 @@
 ; s2_fin.s: the finale, the pages, the loading screen and the busy sign
-; (docs/SCREENS.md 1.5.6, 1.5.7, 1.5.8; part s2fin, docs/m11-parts/
-; s2fin.md). The image FINW's own code. Written from upstream's
-; src/iigs/f_finale65.s (F_Init's lumps, F_Drawer, textSpeed,
-; F_TextWrite, F_LoadScreen [R f_finale65.s:60-284]), d_main65.s
-; (D_PageDrawer's V_DrawRawFullScreen [R d_main65.s:417-422]) and
-; m_menu65.s (bmSignOn, bmSignOff, bmSignBox, bmSignPatch with bmGlyph,
-; bmGlyphCol, bmPut, bmBlanks, bmMargin [R m_menu65.s:1759-2091]), with
-; upstream's back buffer replaced by FINW's band (SCREENS.md 1.2).
+; (docs/SCREENS.md: the finale, the pages, the signs; part s2fin). The image
+; FINW's own code. Written from upstream's src/iigs/f_finale65.s (F_Init's
+; lumps, F_Drawer, textSpeed, F_TextWrite, F_LoadScreen [R
+; f_finale65.s:60-284]), d_main65.s (D_PageDrawer's V_DrawRawFullScreen [R
+; d_main65.s:417-422]) and m_menu65.s (bmSignOn, bmSignOff, bmSignBox,
+; bmSignPatch with bmGlyph, bmGlyphCol, bmPut, bmBlanks, bmMargin [R
+; m_menu65.s:1759-2091]), with upstream's back buffer replaced by FINW's
+; band (docs/SCREENS.md).
 ;
 ;   fin_init    F_Init: the picture's and the background's lumps as the 2D
 ;               store's handles (F_HELP2, F_BACKGROUND), no sign; FINW's own
 ;               block written to S2STATE (SS_FINW)
-;   fin_frame   a frame (SCREENS.md 2.1): A bit 0 = a level was left
+;   fin_frame   a frame (docs/SCREENS.md): A bit 0 = a level was left
 ;               (display's I_SetPalette(0) [R d_main65.s:389-392]), bit 1
 ;               = the title page (D_PageDrawer) instead of the finale; the
 ;               input poll and the effect service, PALST from S2STATE,
@@ -22,7 +22,7 @@
 ;               "INSERT DISK n" with X the digit's character, bmDiskAsk's);
 ;               the first time the rows under the sign are saved (a
 ;               memory-API COPY of aux 0's rows 88-111 to S2STATE's SS_SIGN:
-;               a source in aux 0 is allowed, SCREENS.md 0.1 F10); a new
+;               a source in aux 0 is allowed); a new
 ;               text while the sign is on puts them back first
 ;   fin_signoff bmSignOff: the rows as they were, when the sign is on
 ;
@@ -36,10 +36,9 @@
 ; scheme), so the slots never overflow whatever the rows' palettes.
 ;
 ; The finale's state is the card's (F_STAGE, F_COUNT, F_MID: the tic side,
-; s2t_fin.s), acceleratestage is milestone 10's WI_ACCEL; F_Drawer's
+; s2t_fin.s), acceleratestage is the game's WI_ACCEL; F_Drawer's
 ; textSpeed writes F_MID and WI_ACCEL as upstream's does. Zero page: the
-; drawers' S2_*, the far layer's FA_* and FINW's FZ_* ($80-$AA, request
-; S2FIN-2).
+; drawers' S2_*, the far layer's FA_* and FINW's FZ_* ($80-$AA).
 
         .setcpu "65C02"
         .include "rlayout.inc"
@@ -70,7 +69,7 @@ SLOTS    = FINW_RT2             ; 16 units of 2 pages
 OWN      = PALST_W + PALST_SIZE ; FINW's own block ($BF00)
 SCBS     = PALST_W + PS_SCB
 ; the sign's state F_SIGNON (VW_SGON) is s2.inc's, after the field map's
-; F_HELP2 and F_BACKGROUND (s2layout's FINW_NATIVE, request S2FIN-1)
+; F_HELP2 and F_BACKGROUND (s2layout's FINW_NATIVE)
 OWN_N    = 3
         .assert F_SIGNON = OWN + 2, error, "FINW's own block"
 
@@ -93,7 +92,7 @@ BUSY_M   = 4                    ; BUSY_MARGIN
 BUSY_END = BUSY_Y + BUSY_H
 SIGN_SRC = SS_SIGN - BUSY_Y * 160   ; s2_rect's base: row r at + r * 160
 
-; FINW's temporaries in zero page (FZ_*: request S2FIN-2); the sign's
+; FINW's temporaries in zero page (FZ_*); the sign's
 ; over the text's (never live at once)
 FZ       = $80
 ff       = FZ + 0               ; fin_frame's flags

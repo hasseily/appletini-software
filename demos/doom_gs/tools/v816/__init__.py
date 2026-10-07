@@ -13,11 +13,8 @@ The front end, from upstream's sources to the intermediate representation:
   macro     .macro definitions and their expansion
   mnemonics the instruction names of the 65816
   parse     preprocessed lines to the IR
-  ir        the data classes of the IR, and their JSON dump
-  stats     counts over the sources and over the IR
-  report    the Markdown report docs/FRONTEND_STATS.md
+  ir        the data classes of the IR
   frontend  driver: all sources of upstream's default build
-  cppcheck  cross-check of cpp against clang -E
 
 The back end, from the IR to an image that equals the release:
   opcodes   the opcode table of the 65816

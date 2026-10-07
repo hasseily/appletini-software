@@ -1,5 +1,5 @@
-; game/attack/attack.s: part attack of milestone 10 (docs/GAME.md 2.2
-; TRVTAB, 2.4 row attack; docs/game-parts/attack.md): the hitscan
+; game/attack/attack.s: part attack of the game (docs/GAME.md: TRVTAB,
+; the parts): the hitscan
 ; attacks. GPL-2: rewritten from upstream's p_attack65.s (P_LineAttack:78,
 ; traceSetup:95, endPoint:148, traceRun:179, PTR_ShootTraverse:227,
 ; loadIntercept:372, opening:391, rangeDist:399, rangeMul:418,
@@ -10,7 +10,7 @@
 ; thingBottomRaw:974, slopeTo:985, slopeOf:996, puffPos:1019, traceAt:1066,
 ; puffArgs:1087, spawnPuff:1100), Doom8088: Apple IIgs Edition. Nothing
 ; here comes from upstream's cal_integer.s: the products, the reciprocal
-; and the divide are milestone 6's (mul32 for _Mul32, fixmul for
+; and the divide are math.s's (mul32 for _Mul32, fixmul for
 ; FixedMul, recip for FixedReciprocal, approxdiv for FixedApproxDiv,
 ; finesine, finecosine).
 ;
@@ -29,7 +29,7 @@
 ;                    linetarget none, P_PathTraverse(..., PTR_AimTraverse).
 ;                    Out: GA_0-3 = aimslope when a target was found, else
 ;                    0; AK_LTGT = GM_LINETARGET the target (the shared
-;                    field of request R1)
+;                    field)
 ;   setup            (traceSetup, endPoint) shootthing = t1, attackrange
 ;                    (GM_ATRANGE) = distance, x2 = t1.x + the low 32 bits
 ;                    of (distance >> 16) finecosine(angle >> 19), y2 the
@@ -77,7 +77,7 @@
 ;                    attackrange 1 << 27 (MISSILERANGE), << 10 for 1 << 26
 ;                    (the low 32 bits, as FixedMul), else fixmul
 ;
-; Upstream's helpers with no code of their own here (request R3: INLINED):
+; Upstream's helpers with no code of their own here (inlined):
 ; traceSetup, endPoint (setup, endpt), traceRun (run), loadIntercept
 ; (loadic), opening, rangeDist, lineSectors, sideAddr and sideSectors
 ; (the line's sectors come from ln_get: LVS's LNSECF, LNSECB), thingPtr,
@@ -85,7 +85,7 @@
 ; callers' code), rawSlope, slopeOf, slopeTo, sectorsDiffer, shootable,
 ; thingHead, thingFoot, ceilBelowZ, traceAt, puffArgs (the puff's place is
 ; made in GA_X-GA_Z), spawnPuff. The routines that share local helpers are
-; asserted to be in one group (the placement's unit, request R4).
+; asserted to be in one group (the placement's unit).
 
         .setcpu "65C02"
         .macpack longbranch
@@ -99,7 +99,7 @@
 
         .export P_LineAttack, P_AimLineAttack, PTR_AimTraverse
         .export PTR_ShootTraverse, shootSpecial, puffPos, mul3, rangeMul
-        ; the places, for the harness (args.json's cp:) and the callers
+        ; the places, for the callers
         .export AK_SHOOT, AK_Z, AK_DMG, AK_TOP, AK_BOT, AK_AIM, AK_LTGT
         .import mo_get, ln_get, sec_get
         .import mul32, fixmul, recip, approxdiv, finesine, finecosine

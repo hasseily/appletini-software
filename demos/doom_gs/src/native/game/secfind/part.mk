@@ -1,5 +1,7 @@
-# src/native/game/secfind/part.mk: part secfind of milestone 10 (docs/GAME.md
-# 2.4, wave 1; docs/game-parts/secfind.md)
+# src/native/game/secfind/part.mk: part secfind of the game's tic code
+# (docs/GAME.md): the sector searches, the specials' updates and the light
+# thinkers. sftest.s assembles to nothing here (its routine is under
+# .ifdef TESTBUILD, which no build defines).
 PART := secfind
 WAVE := 1
 secfind_SRC := game/secfind/secfind.s game/secfind/sftest.s

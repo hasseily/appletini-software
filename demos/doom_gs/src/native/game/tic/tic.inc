@@ -1,10 +1,10 @@
-; game/tic/tic.inc: part tic's places (milestone 10, docs/GAME.md 2.4, 4.4;
-; docs/game-parts/tic.md). GPL-2, the port's own.
+; game/tic/tic.inc: part tic's places (docs/GAME.md). GPL-2, the port's
+; own.
 ;
 ; The part has no zero page of its own: its temporaries are GT_0-GT_6
 ; (GT_7 on is the object API's: PL_N, PL_K, PL_T among them), its
 ; arguments GA_*. The walk's thinker and its next are the runtime's (main
-; RT_TH, RT_NEXT: GAME.md 4.4); what a routine keeps across a call is in
+; RT_TH, RT_NEXT: GAME.md); what a routine keeps across a call is in
 ; the scratch block SB_TIC (32 bytes). G_Ticker is active under every
 ; other routine of the tic, so no other part's block shares these bytes
 ; (glayout.py's overlays).

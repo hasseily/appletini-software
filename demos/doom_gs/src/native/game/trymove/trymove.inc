@@ -1,5 +1,4 @@
-; game/trymove/trymove.inc: part trymove's places (milestone 10,
-; docs/GAME.md 2.4 row trymove, 4.4; docs/game-parts/trymove.md). GPL-2,
+; game/trymove/trymove.inc: part trymove's places (docs/GAME.md). GPL-2,
 ; the port's own. Included after ggame.inc.
 ;
 ; The scratch block SB_TRYMOVE (32 B). P_TryMove's frame (upstream's TT,
@@ -13,8 +12,7 @@
 ;
 ;   TM_SAVE  tmthing (2), tmx (4), tmy (4): P_TryMove's copy of
 ;            cpCopy's, taken back when PIT_CheckThing ran (G_MPCLOB), as
-;            upstream takes them back from its frame (p_map65.s:340-352;
-;            checkpos.md R5)
+;            upstream takes them back from its frame (p_map65.s:340-352)
 ;   TM_OX, TM_OY  the thing's x, y before the move (only when numspechit
 ;            is not 0, as upstream)
 ;   TM_OS    the old side of the crossed line being tested

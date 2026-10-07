@@ -1,5 +1,5 @@
-; game/chase/chase.s: part chase (milestone 10, wave 6; docs/GAME.md 2.4;
-; docs/game-parts/chase.md). A GPL-2 derivative of upstream's p_enemy65.s
+; game/chase/chase.s: part chase (wave 6; docs/GAME.md, the parts). A
+; GPL-2 derivative of upstream's p_enemy65.s
 ; (A_Chase with TICSTEP 1, the release's; A_PosAttack, A_SPosAttack,
 ; A_TroopAttack, A_SargAttack, A_CyberAttack, A_BruisAttack, A_Explode,
 ; A_BossDeath; the helpers lineAttack, aimLine, spreadAngle, damageTarget,
@@ -36,7 +36,7 @@
 ;                 down to the lowest floor next to each (EV_DoFloor's
 ;                 lowerFloorToLowest, upstream's junk line of tag 666)
 ;
-; Every product and divide is milestone 6's (p_enemy_randMod: math.s's
+; Every product and divide is math.s's (p_enemy_randMod: math.s's
 ; sdiv16, upstream's _Mod16); the P_Random calls are upstream's, in its
 ; order. Upstream's helpers of the same file that part look built
 ; (loadTarget, faceTarget, randMod, startSound, checkMeleeRange,
@@ -44,7 +44,7 @@
 ; loadTarget's and startSound's few bytes, which are done in place (the
 ; target read from the actor's line; S_StartSound, the core's hook).
 ;
-; A_BossDeath's floors (request 1): upstream calls EV_DoFloor with a junk
+; A_BossDeath's floors: upstream calls EV_DoFloor with a junk
 ; line of tag 666 (AC_JUNK); a native line's tag is a byte (no line of E1
 ; has a tag above 127), so EV_DoFloor (part evfloor) cannot be given that
 ; line. The stand-in bd_floors below does EV_DoFloor's lowerFloorToLowest
@@ -764,9 +764,8 @@ ch_flag:
 
 ; bd_floors: EV_DoFloor(the junk line of tag 666, lowerFloorToLowest): for
 ; each sector of tag 666 (in their order) with no moving floor, a floor
-; down to the lowest floor next to it. The stand-in of request 1,
-; accepted at wave 6's integration (chase.md R1 (b): EV_DoFloor by a tag
-; would change two verified parts): evfloor's newFloor, floorUp's down
+; down to the lowest floor next to it. The stand-in (EV_DoFloor
+; by a tag would change two verified parts): evfloor's newFloor, floorUp's down
 ; (direction -1, the sector, FLOORSPEED) and setDest, secfind's
 ; P_FindLowestFloorSurrounding, as EV_DoFloor does them
 bd_floors:

@@ -1,12 +1,11 @@
-; game/wfire/wfire.s: part wfire, the player's weapons firing (milestone 10,
-; docs/GAME.md 2.2 ACTTAB, 2.4 row wfire; docs/game-parts/wfire.md). A
-; GPL-2 derivative of upstream's p_pspr65.s (A_Punch:767, A_Saw:802,
+; game/wfire/wfire.s: part wfire, the player's weapons firing (docs/GAME.md,
+; ACTTAB). A GPL-2 derivative of upstream's p_pspr65.s (A_Punch:767, A_Saw:802,
 ; meleeAngle, spread, meleeAttack, angleToTarget, randMod, useAmmo,
 ; A_FireMissile:1005, bulletSlope:1015, aimAt, gunShot:1055, notRefire,
 ; A_FirePistol:1108, A_FireShotgun:1121, A_FireCGun:1139) and of
 ; p_spawn65.s (P_SpawnPlayerMissile:640 with aim), Doom8088: Apple IIgs
 ; Edition. Nothing here comes from upstream's cal_integer.s: the modulo of
-; randMod is a subtraction loop, FixedMul is milestone 6's fixmul,
+; randMod is a subtraction loop, FixedMul is math.s's fixmul,
 ; R_PointToAngle3 the game math's pta3.
 ;
 ; The weapon actions (ACTTAB: GS_PSP the psprite, gw_setpsprite's
@@ -65,7 +64,7 @@
 ;
 ; Upstream's aim and aimAt (an aim of the retries) and notRefire (C =
 ; !refire) have no code of their own: the retries are a loop in their
-; routine, the refire test is done in place (request R1: INLINED).
+; routine, the refire test is done in place.
 ;
 ; Every routine changes A, X, Y, GA_*, GT_*, GS_* and the math block (its
 ; callees do: P_AimLineAttack, P_LineAttack, P_SpawnMobj).

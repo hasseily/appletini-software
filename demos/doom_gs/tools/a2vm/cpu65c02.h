@@ -15,8 +15,7 @@
  *      SingleStepTests WDC 65C02 set cycle for cycle;
  *   2. the WDC W65C02S datasheet (tables 4-1, 5-2, 6-4 and 7-1);
  *   3. the SingleStepTests set itself.
- * Where they disagree, tools/a2vm/README.md says so and why; the vector
- * harness lists each such case with its evidence.
+ * Where they disagree, tools/a2vm/README.md says so and why.
  *
  * Two builds of the same code (cpu65c02_core.h):
  *   - cpu65c02.c connects the bus through the `read` and `write`
@@ -54,8 +53,7 @@ enum {
  *            read: the 65C02 has no dummy writes.
  *
  * The flag EA marks the cycles of the Appletini core's six "data_ea"
- * states (w65c02_core.sv:1049-1069; docs/firmware/zpbank-review.md,
- * finding 7), the only cycles whose address is an instruction's
+ * states (w65c02_core.sv:1049-1069), the only cycles whose address is an instruction's
  * effective address in memory:
  *   DATA_EA   ST_MEM_READ, ST_RMW_READ (reads) and ST_MEM_WRITE,
  *             ST_RMW_WRITE (writes)

@@ -1,5 +1,5 @@
-; game/player/puser.s: part player's think (milestone 10, docs/GAME.md 2.4;
-; docs/game-parts/player.md). A GPL-2 derivative of upstream's p_user65.s
+; game/player/puser.s: part player's think (docs/GAME.md). A GPL-2
+; derivative of upstream's p_user65.s
 ; (P_PlayerThink with the death think, movePlayer with bobAndThrust and
 ; addMom, calcHeight with fixedSquare, angleToAttacker, specialSector with
 ; hurt32, onGround, thrustMul).
@@ -44,7 +44,7 @@
 ;
 ; argMo, moSector, countDown, blink, bobAndThrust and addMom have no code of
 ; their own: the routines that call them do their work in place (local
-; subroutines named pt_*, pm_*; request R2: INLINED).
+; subroutines named pt_*, pm_*).
 ;
 ; Every routine changes A, X, Y, GT_*, the math's block and what its
 ; callees change.

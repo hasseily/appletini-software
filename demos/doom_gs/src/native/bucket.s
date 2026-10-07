@@ -1,8 +1,7 @@
 ; bucket.s: the bucket pass of the native renderer and the replay of its
-; batches (docs/RENDER-MASKED.md 3.2 phases 12-13, 3.4; milestone 8: stage
-; A's prototype, finished in stage C). It turns the frame's staged records
+; batches (docs/RENDER-MASKED.md). It turns the frame's staged records
 ; (aux 0 STAGE, then the spill banks RECSP, in production order, each with
-; its column byte after its kind) into milestone 5's replay input, batch
+; its column byte after its kind) into the replay's input (replay.s), batch
 ; by batch: whole columns of at most 8,192 bytes, each column's records in
 ; order without the column byte, the column starts in COLLO/COLHI, each
 ; covered range's record as its W address, the shadows that must be drawn
@@ -26,23 +25,25 @@
 ;               RAMWRT off, $C073 0. Out: the 3D view drawn; the covered
 ;               ranges zeroed (by the replay, after each strip).
 ;   nb_bucket   each column's count of bytes (the producers': MCNTLO/HI,
-;               rrec.s; speed wave 1, RENDER-MASKED.md 6.2 optimisation 10:
+;               rrec.s; speed wave 1, RENDER-MASKED.md:
 ;               no walk of the staging); the batches (runs of
 ;               whole columns of at most 8,192 bytes: the batch list,
 ;               BK_FIRST, BK_SZLO/HI, BK_NB of them, at most MAXB: rlayout.py
 ;               proves the bound); each column's cursor, its start in its
 ;               batch's region (W $6000 + $2000 (b mod 3)). A column of more
-;               than 8,192 bytes, a broken staging: STATUS ST_BUCKET, BRK; in
-;               the game build (-D RELEASE, RENDER-MASKED.md 6.1) such a
-;               column is cut instead: the counts are made again by walk 1
-;               (walk1: a column keeps its records up to the first
-;               that would take it past 8,192 bytes, CVDONE bit 7, its batch
-;               ends with it), STATUS ST_RECORDS, and the frame goes on; a
-;               frame whose batches were dropped (RECDROP) has its counts
-;               made again the same way (the producers counted them).
+;               than 8,192 bytes, a broken staging: STATUS ST_BUCKET, BRK;
+;               in the release build (-D RELEASE, render.mk's default) such
+;               a column is cut instead: the counts are made again by walk
+;               1 (walk1: a column keeps each record that leaves it under
+;               8,192 bytes, CVDONE bit 7 when it refused one; a cut column
+;               is alone in its batch), STATUS ST_RECORDS, and the frame
+;               goes on; a frame whose batches were dropped (RECDROP) has
+;               its counts made again the same way (the producers counted
+;               them).
 ;   nb_scatter  walk 2 for the group's batches BK_G .. BK_GE - 1: each of
 ;               their records copied to its column's cursor, which steps
-;               past it (a cut column's past its kept bytes left out); a
+;               past it (a cut column's records that would end past its
+;               region left out, as walk 1 left them out); a
 ;               covered column's record, when its sequence
 ;               number comes (CVDONE not yet set), gives the covered range
 ;               its W address in $6000-$7FFF (where its batch is
@@ -60,7 +61,7 @@
 ;               a row from R_ROW - 1 to R_ROW + R_COUNT (loader.mark_fuzz's
 ;               rule).
 ;
-; How (RENDER-MASKED.md 3.4): inside a RAMRD window only zero page, the
+; How (RENDER-MASKED.md): inside a RAMRD window only zero page, the
 ; stack page and the card are near, and the per-column arrays the walks
 ; need are in main memory, so the staging is read in chunks of up to 180
 ; bytes into page 1 (chunk: one RAMRD window a chunk, the card's code),
@@ -69,7 +70,7 @@
 ; (BK_REM) are 24 bits: aux 0's 8 KB and four spill banks.
 ;
 ; Speed wave 1 (docs/SPEED.md, part bucket): the counts come from the
-; producers (no walk 1, but in the game build's recount); a chunk's runs
+; producers (no walk 1, but in the release build's recount); a chunk's runs
 ; are copied by ZLOOP, ten bytes of code in zero page (BK_ZLOOP, after the
 ; batch list; nb_bucket writes them) whose absolute,y operands each run
 ; patches, Y counting up to 0; walk 2 is one loop with the walk (scan),
@@ -78,13 +79,25 @@
 ; is CVDONE 0 from nb_bucket on (1: no range), so the other columns' records
 ; take no range test.
 ;
-; Where (RENDER-MASKED.md 3.7, risk 2): the code that runs inside a window
+; Where (RENDER-MASKED.md): the code that runs inside a window
 ; (cwin, the chunk's window; the batches' parking and bring-back: BKNEAR)
-; in the card's $F900 part after milestone 5's replay, with the game
-; build's walk 1; the rest in main memory the masked phase leaves dead,
-; copied there by nm_bkload: BKFAR at $0C00-$0EFF, BKFAR2 at $0200-$02FF.
-; Its zero page: overlay 1, BK_NB ($70) and the batch list, ZLOOP; the
-; replay keeps to $48-$6F.
+; in the card's $F900 part after the replay's; nb_bucket and, in the
+; release build, its recount (bk_recount, walk 1) in the masked image
+; (MASKW, W), which it runs before any scatter writes W; the rest in main
+; memory the masked phase leaves dead, copied there by nm_bkload: BKFAR at
+; $0C00-$0EFF (with bstop and the release build's rp_cut, the replay's
+; cut), BKFAR2 at $0200-$02FF. Its zero page: overlay 1, BK_NB ($70) and
+; the batch list, ZLOOP; the replay keeps to $48-$6F.
+;
+; The release build (-D RELEASE: render.mk's default, the disk's rcard;
+; RENDER-MASKED.md 10) cuts instead of stopping, STATUS ST_RECORDS: after
+; a dropped batch (rrec.s, RECDROP) or with a column past RECBUF_SPAN,
+; walk 1 counts every column again from the staging, leaving out of a
+; column each record that would take it to RECBUF_SPAN (CVDONE bit 7: the
+; column is cut); a cut column is alone in its batch, at its region's
+; start, so walk 2 keeps the same records: those that end inside the
+; region. A covered range whose record was dropped or cut is cleared.
+; Without it (render.mk's stops target) those stop the frame (bstop).
 
         .setcpu "65C02"
         .include "rlayout.inc"
@@ -96,7 +109,9 @@
         .export nm_bkload, nb_frame, nb_bucket, nb_scatter, nb_batch
         .exportzp BK_NB, BK_G, BK_GE, BK_B
 .ifdef RELEASE
-        .export bk_cut
+        .export rp_cut
+        .import run_descriptors, draw_strip, rp_drawn, gcol
+        .importzp rp
 .endif
 
 RECBUF_SPAN = $2000             ; a batch's bytes at most (the replay's
@@ -125,12 +140,13 @@ BK_GE    = $30                  ;   its last
 BK_LO    = $31                  ; the group's first column, the column
 BK_HI    = $32                  ;   after its last
 BK_B     = $33                  ; the batch being replayed
-BK_MODE  = $34                  ; (the game build) scan: bit 7, walk 1
+BK_MODE  = $34                  ; (the release build) scan: bit 7, walk 1
 BK_V     = $35                  ; scan: a record's column byte in page 1
                                 ;   (2; the high byte P1's, set by zl_put)
 BK_NB    = $70                  ; the batches (BK_FIRST follows)
         .assert BK_NB = BK_NB_ZP && BK_FIRST = BK_NB + 1, error, "BK_NB"
         .assert RECBUF_SPAN <= REGION, error, "RECBUF_SPAN"
+        .assert (RECBUF & (REGION - 1)) = 0, error, "the regions' alignment"
 ; ZLOOP (zero page, after the batch list): lda ZL_SRC,y / sta ZL_DST,y /
 ; iny / bne ZLOOP / rts
 ZLOOP    = BK_ZLOOP
@@ -181,93 +197,181 @@ nm_bkload:
 .assert __BKFAR2_SIZE__ <= BKFAR2_END - BKFAR2_RUN, lderror, "BKFAR2 is too large"
 
 ; ===========================================================================
-; BKNEAR: the code that runs inside a window (the card)
+; nb_bucket (the masked image, W): it runs once, first in nb_frame, while W
+; still holds the masked image (or OVLW, which links this file too): no
+; scatter has written W yet
 ; ===========================================================================
-        .segment "BKNEAR"
-
-; bstop: a limit of the pass, a broken staging: STATUS ST_BUCKET, BRK
-bstop:  lda #ST_BUCKET
-        sta STATUS
-        brk
-        .byte ST_BUCKET
-
-.ifdef RELEASE
-; bk_cut (the game build, RENDER-MASKED.md 6.1): a column cut at a limit
-; (the batch's, here; the replay's stage, replay.s): STATUS ST_RECORDS, the
-; frame goes on. Keeps X, Y.
-bk_cut: lda #ST_RECORDS
-        sta STATUS
-        rts
-
-; bk_kept: C set when the record at page 1's BK_SIZE bytes, column X (cut:
-; the last column of its batch, the group's), fits before the column's end,
-; its batch's end in its region: BK_P + BK_SIZE - 1 <= RECBUF + $2000 (b -
-; BK_G) + its bytes. Keeps X, Y; changes BK_T, BK_E.
-bk_kept:
-        phy
-        ldy BK_G                ; its batch: the first whose end column is
-:       txa                     ;   past X
-        cmp BK_FIRST+1,y
+nb_bucket:
+        jsr zl_put              ; the chunk's copy loop into zero page
+        ldx #VIEWWIDTH          ; CVDONE 0: a covered column (CVEND not 0,
+@cv:    lda CVEND-1,x           ;   CVFIRST below it) whose record is not
+        beq @nc                 ;   found yet; 1: no covered range; (the
+        lda CVFIRST-1,x         ;   release build, walk 1) bit 7: cut
+        cmp CVEND-1,x
+        lda #0
         bcc :+
-        iny
-        bra :-
-:       tya                     ; BK_T = its end
-        sec
-        sbc BK_G
-        asl a
-        asl a
-        asl a
-        asl a
-        asl a
-        adc #>RECBUF            ; (carry clear: at most $40)
-        adc BK_SZHI,y
-        sta BK_T+1
-        lda BK_SZLO,y
-        sta BK_T
-        lda BK_SIZE             ; BK_E = the record's end
-        dec a
-        clc
-        adc BK_P
-        sta BK_E
-        lda BK_P+1
-        adc #0
-        sta BK_E+1
-        lda BK_T                ; C set: BK_E <= BK_T
-        cmp BK_E
-        lda BK_T+1
-        sbc BK_E+1
-        ply
-        rts
+@nc:    lda #1
+:       sta CVDONE-1,x
+        dex
+        bne @cv
+.ifdef RELEASE
+        stz BK_MODE             ; (scan: walk 2)
+        lda RECDROP             ; a batch dropped: the counts again
+        bne @recount
 .endif
+        ; the batches: runs of whole columns of at most RECBUF_SPAN bytes
+@batches:
+        ldx #0                  ; X = the column, Y = the batch
+        ldy #0
+@batch: cpy #MAXB
+        bcs @maxb
+        stx BK_FIRST,y
+        lda #0
+        sta BK_SZLO,y
+        sta BK_SZHI,y
+@col:   cpx #VIEWWIDTH
+        beq @last
+.ifdef RELEASE
+        bit CVDONE,x            ; a cut column is alone in its batch (walk
+        bpl @add                ;   2 keeps its records by their place in
+        txa                     ;   its region): the batch before it ends
+        cmp BK_FIRST,y          ;   (its bytes, less than RECBUF_SPAN by
+        bne @next               ;   walk 1, fit an empty batch)
+@add:
+.endif
+        clc                     ; + the column's bytes
+        lda BK_SZLO,y
+        adc MCNTLO,x
+        sta BK_T
+        lda BK_SZHI,y
+        adc MCNTHI,x
+        cmp #>RECBUF_SPAN
+        bcc @fits
+        bne @full
+        lda BK_T
+        bne @full
+        lda #>RECBUF_SPAN
+@fits:  sta BK_SZHI,y
+        lda BK_T
+        sta BK_SZLO,y
+        inx
+.ifdef RELEASE
+        bit CVDONE-1,x          ; a cut column ends its batch
+        bpl @col
+        cpx #VIEWWIDTH
+        beq @last
+        bra @next
+.else
+        bra @col
+.endif
+@full:  txa                     ; a batch of no column: one column passes
+        cmp BK_FIRST,y          ;   RECBUF_SPAN (the release build counts
+        beq @stop               ;   again: walk 1 cuts it)
+@next:  iny
+        bra @batch
+@maxb:
+.ifndef RELEASE
+@stop:
+.endif
+        jmp bstop               ; (more than MAXB: none, rlayout.py)
+.ifdef RELEASE
+@stop:
+@recount:
+        jsr bk_recount          ; each column's count from the staging
+        bra @batches
+.endif
+@last:  iny
+        sty BK_NB
+        lda #VIEWWIDTH
+        sta BK_FIRST,y
+        ; the counts become the cursors: each column's start in its batch's
+        ; region, RECBUF + $2000 (b mod 3)
+        ldy #0
+        ldx #0                  ; (b mod 3)
+@cursor:
+        stz BK_P
+        txa
+        asl a
+        asl a
+        asl a
+        asl a
+        asl a
+        adc #>RECBUF            ; (carry clear)
+        sta BK_P+1
+        phx
+        ldx BK_FIRST,y
+@cs:    txa
+        cmp BK_FIRST+1,y
+        beq @nexb
+        lda BK_P                ; cursor = start; start += count
+        sta COLLO,x
+        clc
+        adc MCNTLO,x
+        sta BK_P
+        lda BK_P+1
+        sta COLHI,x
+        adc MCNTHI,x
+        sta BK_P+1
+        inx
+        bra @cs
+@nexb:  plx
+        inx
+        cpx #3
+        bcc :+
+        ldx #0
+:       iny
+        cpy BK_NB
+        bne @cursor
+        rts
 
 .ifdef RELEASE
-; walk 1 (6.1, the counts again; in the card, RAMRD off): the column's count + the size less the
-; column byte, up to RECBUF_SPAN: the record that would pass it cuts the
-; column (CVDONE bit 7), and none of its later records counts
+; bk_recount (6.1, the release build): each column's count again from the
+; staging, walk 1 (scan with BK_MODE bit 7): after a dropped batch (the
+; producers counted its records) or a column past RECBUF_SPAN
+bk_recount:
+        ldx #VIEWWIDTH
+:       stz MCNTLO-1,x
+        stz MCNTHI-1,x
+        dex
+        bne :-
+        dec BK_MODE             ; (0 before: $FF)
+        jsr scan
+        stz BK_MODE
+        rts
+
+; walk 1 (scan's, Y: the record in page 1; RAMRD off): the column's count +
+; the record's bytes in W (its size less the column byte) when that stays
+; below RECBUF_SPAN; else the record is left out of the column, which is
+; cut (CVDONE bit 7, STATUS ST_RECORDS). A later record that fits still
+; counts. So a cut column keeps less than a region, and walk 2 keeps
+; exactly these records: those that end inside the column's region.
+; Changes A, X, BK_T.
 walk1:  ldx P1+1,y
-        bit CVDONE,x
-        bmi @w9
         lda BK_SIZE
-        dec a                   ; (size - 1)
+        dec a
         clc
         adc MCNTLO,x
         sta BK_T
         lda MCNTHI,x
         adc #0
         cmp #>RECBUF_SPAN
-        bcc @w1
-        bne @cut
-        ldy BK_T
-        bne @cut
-@w1:    sta MCNTHI,x
+        bcs @cut
+        sta MCNTHI,x
         lda BK_T
         sta MCNTLO,x
-@w9:    rts
+        rts
 @cut:   lda CVDONE,x
         ora #$80
         sta CVDONE,x
-        jmp bk_cut
+        lda #ST_RECORDS
+        sta STATUS
+        rts
 .endif
+
+; ===========================================================================
+; BKNEAR: the code that runs inside a window (the card)
+; ===========================================================================
+        .segment "BKNEAR"
 
 ; ---------------------------------------------------------------------------
 ; cwin (one RAMRD window), chunk's part in the card: BK_C bytes of the
@@ -500,132 +604,6 @@ nb_frame:                       ; (the caller marks phase 18)
         rts
 
 ; ---------------------------------------------------------------------------
-; nb_bucket
-; ---------------------------------------------------------------------------
-nb_bucket:
-        jsr zl_put              ; the chunk's copy loop into zero page
-        ldx #VIEWWIDTH          ; CVDONE 0: a covered column (CVEND not 0,
-@cv:    lda CVEND-1,x           ;   CVFIRST below it) whose record is not
-        beq @nc                 ;   found yet; 1: no covered range; (the
-        lda CVFIRST-1,x         ;   game build) bit 7: the column is cut
-        cmp CVEND-1,x
-        lda #0
-        bcc :+
-@nc:    lda #1
-:       sta CVDONE-1,x
-        dex
-        bne @cv
-.ifdef RELEASE
-        stz BK_MODE             ; (scan: walk 2)
-        lda RECDROP             ; (6.1) a batch dropped: the counts again
-        bne @recount
-.endif
-        ; the batches: runs of whole columns of at most RECBUF_SPAN bytes
-@batches:
-        ldx #0                  ; X = the column, Y = the batch
-        ldy #0
-@batch: cpy #MAXB
-        bcs @maxb
-        stx BK_FIRST,y
-        lda #0
-        sta BK_SZLO,y
-        sta BK_SZHI,y
-@col:   cpx #VIEWWIDTH
-        beq @last
-        clc                     ; + the column's bytes
-        lda BK_SZLO,y
-        adc MCNTLO,x
-        sta BK_T
-        lda BK_SZHI,y
-        adc MCNTHI,x
-        cmp #>RECBUF_SPAN
-        bcc @fits
-        bne @full
-        lda BK_T
-        bne @full
-        lda #>RECBUF_SPAN
-@fits:  sta BK_SZHI,y
-        lda BK_T
-        sta BK_SZLO,y
-        inx
-.ifdef RELEASE
-        bit CVDONE-1,x          ; (6.1) a cut column ends its batch
-        bpl @col
-        cpx #VIEWWIDTH
-        beq @last
-        iny
-        bra @batch
-.else
-        bra @col
-.endif
-@full:  txa                     ; a batch of no column: one column passes
-        cmp BK_FIRST,y          ;   RECBUF_SPAN (the game build counts again:
-        beq @stop               ;   walk 1)
-        iny
-        bra @batch
-@maxb:
-.ifndef RELEASE
-@stop:
-.endif
-        jmp bstop               ; (more than MAXB: none, rlayout.py)
-.ifdef RELEASE
-@stop:
-@recount:                       ; (6.1) each column's count from the
-        ldx #VIEWWIDTH          ;   staging, walk 1: a column past a batch
-:       stz MCNTLO-1,x          ;   cut (after a recount none is past one)
-        stz MCNTHI-1,x
-        dex
-        bne :-
-        dec BK_MODE
-        jsr scan
-        stz BK_MODE
-        bra @batches
-.endif
-@last:  iny
-        sty BK_NB
-        lda #VIEWWIDTH
-        sta BK_FIRST,y
-        ; the counts become the cursors: each column's start in its batch's
-        ; region, RECBUF + $2000 (b mod 3)
-        ldy #0
-        ldx #0                  ; (b mod 3)
-@cursor:
-        stz BK_P
-        txa
-        asl a
-        asl a
-        asl a
-        asl a
-        asl a
-        adc #>RECBUF            ; (carry clear)
-        sta BK_P+1
-        phx
-        ldx BK_FIRST,y
-@cs:    txa
-        cmp BK_FIRST+1,y
-        beq @nexb
-        lda BK_P                ; cursor = start; start += count
-        sta COLLO,x
-        clc
-        adc MCNTLO,x
-        sta BK_P
-        lda BK_P+1
-        sta COLHI,x
-        adc MCNTHI,x
-        sta BK_P+1
-        inx
-        bra @cs
-@nexb:  plx
-        inx
-        cpx #3
-        bcc :+
-        ldx #0
-:       iny
-        cpy BK_NB
-        bne @cursor
-        rts
-
-; ---------------------------------------------------------------------------
 ; nb_scatter: the group BK_G .. BK_GE - 1
 ; ---------------------------------------------------------------------------
 nb_scatter:
@@ -709,10 +687,11 @@ nb_scatter:
 
 ; ---------------------------------------------------------------------------
 ; scan: each staged record, in production order, through page 1 (chunk):
-; walk 2 (the game build: walk 1 when BK_MODE bit 7 is set). Walk 2: a
+; walk 2 (the release build: walk 1 when BK_MODE bit 7 is set). Walk 2: a
 ; record of the group's columns (BK_LO .. BK_HI - 1) without its column
-; byte to the column's cursor, which steps past it (the game build: a cut
-; column's records past its kept bytes left out); a covered column's record
+; byte to the column's cursor, which steps past it (the release build: a
+; cut column's records that would end past its region left out); a covered
+; column's record
 ; (its sequence number CVRECLO/HI, BK_SEQ counting every record): the
 ; range's W address where its batch is replayed, CVDONE.
 ; ---------------------------------------------------------------------------
@@ -790,10 +769,17 @@ walk2:  ldx P1+1,y
         lda COLHI,x
         sta BK_P+1
 .ifdef RELEASE
-        bit CVDONE,x            ; (6.1) a cut column: its records past its
-        bpl @whole              ;   kept bytes are left out
-        jsr bk_kept
-        bcc @seq
+        bit CVDONE,x            ; (6.1) a cut column, alone in its batch
+        bpl @whole              ;   from its region's start: a record that
+        lda BK_SIZE             ;   would end past the region's last byte
+        dec a                   ;   is left out (as walk 1 left it out of
+        clc                     ;   the count): the record's end (BK_P +
+        adc BK_P                ;   its bytes in W) in the next region,
+        bcc @whole              ;   a carry out of the last page of BK_P's
+        lda BK_P+1              ;   region
+        ora #>(-REGION)
+        inc a
+        beq @seq
 @whole:
 .endif
         lda CVDONE,x            ; the column's covering record? (0: a
@@ -836,6 +822,48 @@ walk2:  ldx P1+1,y
         bne :+
         inc BK_SEQ+1
 :       jmp scan_nx
+
+; ---------------------------------------------------------------------------
+; bstop: a limit of the pass, a broken staging: STATUS ST_BUCKET, BRK
+; ---------------------------------------------------------------------------
+bstop:  lda #ST_BUCKET
+        sta STATUS
+        brk
+        .byte ST_BUCKET
+
+.ifdef RELEASE
+; ---------------------------------------------------------------------------
+; rp_cut (-D RELEASE, RENDER-MASKED.md 10): replay.s's strip of one column
+; that does not fit the stage (over 125 texture records), from nat_replay
+; with RAMRD and RAMWRT off, card bank 2 selected. The column keeps its
+; records before the one that did not fit (rp): its end is rp while the
+; strip of that column alone is drawn with what was gathered, without its
+; covered range (its covering record may be past the cut); STATUS
+; ST_RECORDS; then nat_replay's next strip (rp_drawn)
+; ---------------------------------------------------------------------------
+rp_cut: inc gcol
+        ldx gcol
+        lda COLLO,x             ; the next column's start, kept
+        pha
+        lda COLHI,x
+        pha
+        lda rp
+        sta COLLO,x
+        lda rp+1
+        sta COLHI,x
+        stz CVFIRST-1,x
+        stz CVEND-1,x
+        lda #ST_RECORDS
+        sta STATUS
+        jsr run_descriptors
+        jsr draw_strip
+        ldx gcol
+        pla
+        sta COLHI,x
+        pla
+        sta COLLO,x
+        jmp rp_drawn
+.endif
 
 ; ---------------------------------------------------------------------------
 ; chunk: the record cut at page 1's end (from BK_AT) to page 1's start, then

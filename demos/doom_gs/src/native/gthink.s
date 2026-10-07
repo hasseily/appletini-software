@@ -1,6 +1,5 @@
 ; gthink.s: the game core's thinker list, its pools and P_Random
-; (milestone 9, stage C; docs/LEVELS.md 2.4, 3.1, 3.2; milestone 10's
-; skeleton: the final layouts, docs/GAME.md 1.3, 1.4, 3.1). A GPL-2
+; (docs/LEVELS.md; in play: the final layouts, docs/GAME.md). A GPL-2
 ; derivative of upstream's p_think65.s (P_InitThinkers, P_AddThinker),
 ; p_spawn65.s (poolInit, poolTake), p_map65.s (newSecnode's pool) and
 ; m_random65.s.
@@ -23,12 +22,12 @@
 ;                index (poolTake), else a zone slot (Z_MallocLevel): the
 ;                first of the zone's free list (G_ZMFREE, through the TNL
 ;                and TNH planes), else the next one after the pool's and
-;                the zone's used ones (docs/LEVELS.md 3.1); GC_MO the slot,
+;                the zone's used ones (docs/LEVELS.md); GC_MO the slot,
 ;                GC_K 1 when pooled; G_MOHWM the highest slot + 1
 ;   gt_zfree     a zone mobj's slot GC_MO onto the zone's free list (its
 ;                kind FN_FREE: no object for the bridge); a slot that
 ;                CS_PREV1 or CS_PREV2 names becomes "stale" ($FFFE) and
-;                GT_ZPREV is raised (docs/GAME.md 1.8)
+;                GT_ZPREV is raised (docs/GAME.md)
 ;   gt_spectake  a special of kind X (llayout.SPEC_KINDS' order): the
 ;                first of its free list (G_SPFREE), else the next slot of
 ;                its range; GC_H its handle
@@ -111,8 +110,8 @@ g_random:
 .ifndef LOADIMG
 ; g_mrandom: A = M_Random(): rndtable[++rndindex], its own index (main
 ; $03EF, m_random65.s); g_mclearrandom: M_ClearRandom, both indexes 0
-; (wave 1 as integrated: the tic images' math is the render build's, which
-; has neither; docs/game-parts/flow.md request 4). Change X.
+; (here: the tic images' math is the render build's, which has neither).
+; Change X.
 g_mrandom:
         inc MT_MRND
         ldx MT_MRND
@@ -436,7 +435,7 @@ bitmask:
 ; ---------------------------------------------------------------------------
 ; gt_zfree: zone slot GC_MO onto the zone's free list: its kind FN_FREE, its
 ; next the old first; CS_PREV1, CS_PREV2 naming it become STALE and raise
-; GT_ZPREV (docs/GAME.md 1.8). Changes A, X, Y, the API's temporaries.
+; GT_ZPREV (docs/GAME.md). Changes A, X, Y, the API's temporaries.
 ; ---------------------------------------------------------------------------
 gt_zfree:
         ldx #2                  ; CS_PREV2, then CS_PREV1

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""The constant render tables of the native front end (milestone 7,
-docs/RENDER.md 1.5 and 1.6), from the reference's RAM, checked.
+"""The constant render tables of the native front end (docs/RENDER.md),
+from the reference's RAM, checked.
 
 Usage:  python3 tools/native/rtables.py [--ram SOURCE] [--out DIR]
 
@@ -12,16 +12,16 @@ release builds FSTEP_TABLE and the square tables at boot
 like the rest. Output in build/native/render/tables/ (Doom's and
 upstream's data: build/ only):
 
-    tables.img    A2VMIMG1 records: the aux card (F1.2.1, MEMORY_MAP.md
-                  4.3 with RENDER.md 1.6's correction): finetangent part 3
+    tables.img    A2VMIMG1 records: the aux card (F1.2.1, docs/MEMORY_MAP.md
+                  with docs/RENDER.md's correction): finetangent part 3
                   (bank 1 $D000, low and high planes), viewangletox (bank 1
                   $D800, one plane of 2,042 bytes), finetangent part 4
                   (bank 2 $D000, four planes), tantoangle 0-2047 ($E000,
                   four planes); xtoviewangle (main $09A9 low, $0AF3 high);
                   FSTEP_TABLE (RamWorks banks 116-119: entries 16,384 k to
                   16,384 k + 16,383 in bank 116 + k, low plane $2000-$5FFF,
-                  high plane $6000-$9FFF); milestone 8: the sprite scale
-                  records in bank SPRT (RENDER-MASKED.md 1.6: for each d =
+                  high plane $6000-$9FFF); the sprite scale records in
+                  bank SPRT (docs/RENDER-MASKED.md: for each d =
                   tz >> 16, SPRXSCALE, SPRYSCALE, SPRISCALE and FQ's q
                   and r, 16 bytes)
     *.bin         the tables the W code includes (.incbin): smap.bin (64),
@@ -29,8 +29,8 @@ upstream's data: build/ only):
                   c26rev.bin (85: c26Reverse, derived from PGT and compared
                   with upstream's copy), kslo.bin, kshi.bin (161 each),
                   bxr0lo.bin, bxr0hi.bin, bxlimlo.bin, bxlimhi.bin (9 each:
-                  checkBox's arcs, r_bsp65.s BXR0, BXLIM); milestone 8's
-                  masked image: cmop.bin (85: the record page of CMO[i],
+                  checkBox's arcs, r_bsp65.s BXR0, BXLIM); the
+                  masked image's: cmop.bin (85: the record page of CMO[i],
                   $46 + CMO[i] / 256), sfirst.bin (55 low bytes, then 55
                   high: the first SPRFR record of each sprite, from the
                   frames the states use)
@@ -43,10 +43,10 @@ Checks, each a failure: every table equal to the reference's RAM (read
 back from the files written); FSTEP entries for L >= 512 equal to
 33,554,431 / L; SMAP, PCMO, CMO and PGT equal to their formulas; the
 derived c26Reverse equal to upstream's; tantoangle entry 2,048 is ANG45;
-the tables equal in every level source; milestone 8: SPRXSCALE[d] =
+the tables equal in every level source; SPRXSCALE[d] =
 PROJECTION / d, SPRYSCALE[d] = PROJECTIONY * FRACUNIT / d, SPRISCALE[d]
-= MATH.md's recip of SPRXSCALE[d], FQ[d] = (16 d / 5, 16 d % 5), for d =
-4..1280, read from a level source whose frame made them (PR_IOK: upstream
+= the recip of SPRXSCALE[d] (mathdefs.m_recip), FQ[d] = (16 d / 5,
+16 d % 5), for d = 4..1280, read from a level source whose frame made them (PR_IOK: upstream
 makes SPRISCALE and FQ at the first frame after each level load) and
 equal in every other such source.
 """
@@ -70,7 +70,7 @@ ROOT = HERE.parent.parent
 TABLES = ROOT / 'build' / 'native' / 'render' / 'tables'
 MM_FSTEP = 0x1B0000
 FSTEP_ENTRIES = 65536
-XTVLO, XTVHI = 0x09A9, 0x0AF3           # MEMORY_MAP.md 3.2
+XTVLO, XTVHI = 0x09A9, 0x0AF3           # docs/MEMORY_MAP.md
 CMAPA_PAGE = 0x46                       # iigs_shrcmapA at $0D:4600
 # the sprite tables (memmap.inc bank $22, r_thing65.s:33-37)
 MM_SPRXSCALE, MM_SPRYSCALE = 0x220000, 0x222000
@@ -210,8 +210,8 @@ def check_sprite_tables(tab: Dict[str, List[int]], recip: List[int]
 
 
 def scale_records(tab: Dict[str, List[int]]) -> bytes:
-    """The native records of bank SPRT, d = 0..1280 (RENDER-MASKED.md
-    1.6): d < 4 is never read (tz below 4.0 is rejected first)."""
+    """The native records of bank SPRT, d = 0..1280 (docs/RENDER-MASKED.md):
+    d < 4 is never read (tz below 4.0 is rejected first)."""
     out = bytearray()
     for d in range(R.MAXZ + 1):
         rec = bytearray(R.SCALE_SIZE)
@@ -239,7 +239,7 @@ def build(ram: bytes, sym: blink.Symbols, out: Path,
     for name in ('SMAP', 'PCMO', 'CMO'):
         if words(t[name]) != f[name]:
             raise TableError('%s differs from its formula' % name)
-    # milestone 8: the sprite tables, from a source whose frame made them
+    # the sprite tables, from a source whose frame made them
     if sprite_ram is None:
         sprite_ram = made_source(ram, sym)
     stab = sprite_tables(sprite_ram)

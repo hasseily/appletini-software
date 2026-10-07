@@ -1,6 +1,6 @@
 /*
  * a2vm: the model of the DOOM GS port's target, an enhanced Apple //e
- * with an Appletini card (docs/MILESTONES.md, milestone 3.1).
+ * with an Appletini card.
  *
  * This file is the machine around the W65C02S core of cpu65c02.h:
  *
@@ -13,12 +13,12 @@
  *     registers), and the memory API FIFO at $CFF0-$CFF2 in slot 7;
  *   - a trap of the ProDOS MLI entry (prodos.h);
  *   - optionally, the zero-page bank pair of the firmware design
- *     (docs/firmware/zpbank-spec.md, as zpbank-review.md corrects it),
- *     which is not in F1.2.1: off unless armed.
+ *     (README.md, "The zero-page bank pair"), which is not in F1.2.1:
+ *     off unless armed.
  *
- * Every rule follows demos/doom/tools/a2sim.py, the Python model the
- * existing port was developed on, so that the two can be compared cycle
- * for cycle; README.md lists where a2sim.py itself departs from the
+ * Every rule was first written to follow a2sim.py, the Python model the
+ * earlier Appletini Doom port was developed on (not in this repository),
+ * cycle for cycle; README.md lists where that model departs from the
  * hardware.
  *
  * Two cores run on this bus:
@@ -27,8 +27,7 @@
  *                      instruction semantics, memory accesses and cycle
  *                      counts of py65's 65C02, the core a2sim.py uses,
  *                      with a2sim.py's I/O surcharge, interrupt delivery
- *                      and idle skipping. Runs of it match a2sim.py
- *                      exactly (tools/a2vm/compare_a2sim.py).
+ *                      and idle skipping.
  *   A2VM_CORE_W65C02S  the exact W65C02S of cpu65c02_core.h: every bus
  *                      cycle of the chip, dummy reads included, one cycle
  *                      a bus access.
@@ -201,6 +200,29 @@ typedef struct {
     uint64_t amem;                  /* memory API requests made with rd or
                                        wr nonzero */
 } a2vm_zpbank;
+
+/* --blockdev SLOT:FILE[:ro] (README.md, "The block device"): a ProDOS
+   block device in a slot, one drive, whose blocks are FILE's 512-byte
+   blocks. Its slot ROM has a ProDOS block device's ID bytes ($Cn01 $20,
+   $Cn03 $00, $Cn05 $03) and its driver's entry at $Cn0A ($CnFF $0A); in
+   slot 7 with --amem it is the memory API's ROM, as on the Appletini,
+   whose SmartPort serves both. When the CPU is about to run the entry,
+   a2vm does the call (zero page $42 the command, $43 the unit, $44-$45
+   the buffer, $46-$47 the block, through the bus), writes MSLOT ($07F8)
+   as the Appletini's firmware does, and returns as RTS with A the error
+   and C set on one. A write goes to FILE at once. */
+#define A2VM_BLOCKDEV_NOTES 16
+typedef struct {
+    int slot;
+    int read_only;
+    FILE *file;
+    uint32_t blocks;
+    uint64_t calls, statuses, reads, writes, errors;
+    uint8_t last_command, last_unit, last_error;
+    uint16_t last_block;
+    uint16_t written[A2VM_BLOCKDEV_NOTES];  /* the blocks written, the first */
+    unsigned written_count;
+} a2vm_blockdev;
 
 /* --vidhd SLOT (README.md, "The VidHD"): a VidHD card as DOOM sees it on
    a //e with RamWorks. Its slot ROM reads $24 $EA $4C at $Cn00-$Cn02
@@ -403,7 +425,7 @@ typedef struct a2vm {
                                    pass it halts the run */
 
     /* The zero-page bank pair (README.md, "The zero-page bank pair";
-       docs/firmware/zpbank-spec.md as corrected by zpbank-review.md).
+       the firmware design's pair, which F1.2.1 does not have).
        zpb.armed is 0 in every run without --zpbank or a pair profile
        (f121zp, fastzp): the machine is then F1.2.1's exactly. */
     a2vm_zpbank zpb;
@@ -411,6 +433,10 @@ typedef struct a2vm {
     /* --vidhd (README.md, "The VidHD"); vidhd.slot is 0 in every other
        run, and the machine is then what it was. */
     a2vm_vidhd vidhd;
+
+    /* --blockdev (README.md, "The block device"); blockdev.slot is 0 in
+       every other run, and the machine is then what it was. */
+    a2vm_blockdev blockdev;
 } a2vm;
 
 typedef struct {
@@ -431,6 +457,10 @@ typedef struct {
                                        (GSSquared's at 33.3 MHz) */
     int amem;                       /* attach the memory API */
     int vidhd_slot;                 /* a VidHD in this slot (1-7); 0 none */
+    int blockdev_slot;              /* a ProDOS block device in this slot
+                                       (1-7); 0 none */
+    const char *blockdev_path;      /* its image (512-byte blocks) */
+    int blockdev_ro;                /* write-protected */
 } a2vm_config;
 
 void a2vm_default_config(a2vm_config *config);
@@ -444,6 +474,11 @@ void a2vm_free(a2vm *m);
 /* Attach the MLI trap (FakeProDOS.attach): writes JMP $BF00 at $BF00 and
    the launched program's path at $0280. The machine takes ownership. */
 void a2vm_attach_prodos(a2vm *m, a2vm_prodos *prodos);
+
+/* --blockdev with the MLI trap: ProDOS's global page as after a boot
+   from the block device: DEVNUM ($BF30) its slot's drive 1, its DEVADR
+   entry ($BF10 + 2n) the driver's $Cn0A. */
+void a2vm_blockdev_global_page(a2vm *m);
 
 /* The memory API options of FakeSmartPortMemory. */
 void a2vm_amem_options(a2vm *m, int supported, int available,
@@ -507,7 +542,7 @@ int a2vm_zpbank_arm(a2vm *m, int on, char *error, size_t error_size);
    m->write_ranges. It is the machine's write_hook, so a harness cannot
    use both. */
 void a2vm_start_write_log(a2vm *m, FILE *log);
-/* RES#: the pair turns off (zpbank-spec.md section 4). */
+/* RES#: the pair turns off. */
 void a2vm_zpbank_reset(a2vm *m);
 /* A data access of the CPU at an effective address (kind DATA_EA of
    cpu65c02.h): what the core's ST_MEM_READ and ST_MEM_WRITE do, the

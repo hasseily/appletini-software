@@ -1,8 +1,7 @@
-# src/native/game/flow/part.mk: part flow of milestone 10 (docs/GAME.md 2.4,
-# wave 1): the game flow game-side (g_game65.s's actions, the load
+# src/native/game/flow/part.mk: part flow of the game (docs/GAME.md, the
+# parts; wave 1): the game flow game-side (g_game65.s's actions, the load
 # protocol's continuations, the demo playback; wi_stuff65.s's ticker and
-# counts; ST_Ticker's and HU_Ticker's game effects). Its record:
-# docs/game-parts/flow.md.
+# counts; ST_Ticker's and HU_Ticker's game effects).
 PART := flow
 WAVE := 1
 flow_SRC := game/flow/gflow.s game/flow/gwi.s

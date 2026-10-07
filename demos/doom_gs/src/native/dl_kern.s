@@ -1,10 +1,10 @@
-; dl_kern.s: the main loop's resident kernel (docs/PLAY.md 2, 3), the
+; dl_kern.s: the main loop's resident kernel (docs/PLAY.md), the
 ; playable game's: in the main card at $FF00, pl_ready's place (DOOM.SYSTEM
 ; ends with jmp pl_ready, which the second half replaces with the title
-; loop: docs/SCREENS.md 2.5; the play build's link puts this code there in
+; loop: docs/SCREENS.md; the play build's link puts this code there in
 ; pl_ready's stead), and its menu loop in main $0880-$08FF and $0B94-$0BFF
 ; (read-only code: DLINIT's PRIVATE copy puts it there with the static
-; tables, in MEMORY_MAP.md 3.2's free bytes of $0800-$0BFF). GPL-2, the port's own.
+; tables, in docs/MEMORY_MAP.md's free bytes of $0800-$0BFF). GPL-2, the port's own.
 ;
 ; W ($6000-$BFFF) holds one image at a time, so the main loop's logic is
 ; the brain's (src/native/dl_brain.s and its groups, in the tic image):
@@ -15,7 +15,7 @@
 ;   K_LOAD b, runs   bank b's page runs (first page, count; a first page
 ;                    0 ends them) into main at the same addresses: one
 ;                    memory-API PRIVATE request, a descriptor a run
-;                    (gcall.s's am_runs in the card; docs/SPEED.md 10). The
+;                    (gcall.s's am_runs in the card; docs/SPEED.md). The
 ;                    render front end's window and the masked phase's image
 ;                    come this way too (the brain's img_wload, img_mload:
 ;                    far_wloadt's and far_mload's runs)
@@ -33,18 +33,16 @@
 ;                    and, at its end, the two load lists k_core and k_planes
 ;                    (dl_disp.s kc_from, planes_out: at KLISTS, a fixed
 ;                    place, as the tic image is linked before this card)
-;   K_MENU           the menu's paused frames, with MENUW in W (R7 item
-;                    9): each queued event to m_responder (a key the menu
+;   K_MENU           the menu's paused frames, with MENUW in W: each queued event to m_responder (a key the menu
 ;                    does not eat goes to gamekeydown, G_Responder's keys),
 ;                    m_ticker for each new tic (at most MAXTICS), m_frame;
 ;                    until the menu closes or makes a request
 ;   K_HALT           interrupts off, the end (the quit)
 ;
 ;   far_gcopy        a group's copy in one RAMRD window, at KERN_GCOPY:
-;                    gr_load's until the copy engine took it (docs/SPEED.md
-;                    10); no game code calls it, CALIB.hdv's GC lines time
-;                    it (calibdisk.py)
-;   bt_mark          the benchmark's phase timing (docs/PLAY.md 15): a
+;                    gr_load's until the copy engine took it (docs/SPEED.md);
+;                    no code calls it now
+;   bt_mark          the benchmark's phase timing (docs/PLAY.md): a
 ;                    phase boundary (a K_CALL of the list, or bt_replay's),
 ;                    at BT_MARK and BT_MARK2 in the menu loop's free main
 ;                    bytes, its middle part the brain's at BT_EXT
@@ -88,8 +86,8 @@ k_tic:  sta DL_CODE
         lda #<k_core
         ldx #>k_core
         ldy #GCODE0
-k_tcore:                        ; (playtime.py times the loads from here,
-        jsr XS_am_runs          ;   k_tplan and k_tbrain)
+k_tcore:                        ; (the loads' labels: here, k_tplan and
+        jsr XS_am_runs          ;   k_tbrain)
         lda #<k_planes
         ldx #>k_planes
         ldy #MOBJP
@@ -127,7 +125,7 @@ k_load: lda DLBUF,y             ; the bank
         ora #<DLBUF
         ldx #>DLBUF
         ldy KV_BANK
-k_lrun: jsr XS_am_runs          ; (playtime.py names the step by Y here)
+k_lrun: jsr XS_am_runs          ; (the step: the bank in Y)
         ldy KV_PTR
 :       lda DLBUF,y             ; past the runs
         beq :+
@@ -173,8 +171,8 @@ k_planes: .byte >PL_TNL, PLANE_SLOTS >> 8, >PL_TNH, PLANE_SLOTS >> 8
         .assert PL_TNH = PL_TNL + PLANE_SLOTS && PL_TICS + PLANE_SLOTS = $C000, error, "the planes"
 
 ; ---------------------------------------------------------------------------
-; bt_replay: nat_replay's entry while the benchmark is timed (docs/PLAY.md
-; 15): the brain's bt_start writes jmp bt_replay over nat_replay's first
+; bt_replay: nat_replay's entry while the benchmark is timed (docs/PLAY.md):
+; the brain's bt_start writes jmp bt_replay over nat_replay's first
 ; instruction (sta gcol), which it keeps in BT_J with jmp nat_replay + 3
 ; after it. A batch's replay is the phase PH_DRAW, then PH_MASK again (the
 ; bucket pass's next batch). A, X: nat_replay's (Y it does not read).
@@ -196,10 +194,9 @@ bt_rback:
 ; far_gcopy: FA_N pages (1-255) of RamWorks bank FA_BANK from FA_SRC to
 ; main FA_DST, both with the same low byte, but the first Y bytes (Y even:
 ; the first page from byte Y), in one RAMRD window (gcall.s's gr_load's
-; copy of a group from speed wave 1 to the frame slots: docs/SPEED.md 4,
-; items 2 and 4; since the copy engine a memory-API request makes it,
-; docs/SPEED.md 10, and this copy stays for CALIB.hdv's GC lines,
-; calibdisk.py, which time it on the card). In the card: with RAMRD on,
+; copy of a group to the frame slots, before the copy engine: since
+; then a memory-API request makes it, docs/SPEED.md; no code calls this
+; copy now). In the card: with RAMRD on,
 ; the fetches of $0200-$BFFF come from the bank. Its window, as
 ; far_pload's, writes $C073 at its start and 0 at its end. Changes A, Y,
 ; FA_SRC, FA_DST (their high bytes on by FA_N), FA_N.
@@ -277,7 +274,7 @@ km_pop: txa
         bra km_ev
 
 ; ---------------------------------------------------------------------------
-; bt_mark: a phase boundary of the benchmark's timing (docs/PLAY.md 15), a
+; bt_mark: a phase boundary of the benchmark's timing (docs/PLAY.md), a
 ; K_CALL of the frame's list or bt_replay's call. A = the phase that starts
 ; (PH_*). VIA-A's timer 1 (the Phasor's, free-running, counting the Apple
 ; bus cycles down: pl_detect's, which nothing else uses after the boot) is

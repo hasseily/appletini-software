@@ -1,8 +1,8 @@
-# src/native/m11/s2fin.mk: part s2fin's builds (docs/SCREENS.md 1.5.6-1.5.8,
-# 4.1, 4.7, 7.3; docs/m11-parts/s2fin.md), read by src/native/m11.mk
+# src/native/m11/s2fin.mk: part s2fin's builds (docs/SCREENS.md: the
+# help, title and end screens), read by src/native/m11.mk
 # (make -f m11.mk part P=s2fin):
 #
-#   build/native/m11/s2fin/gen/lgame.inc   milestone 10's generated include
+#   build/native/m11/s2fin/gen/lgame.inc   the game's generated include
 #                                    (tools/native/llayout.py --game:
 #                                    WI_ACCEL, G_GAMEACTION, G_GAMESTATE),
 #                                    read only
@@ -19,9 +19,7 @@
 #                                    (src/sound/fx.s -D FX_SERVICE) and
 #                                    fx.s's card part with S2's player
 #                                    (build/sound65, read only) and pl_irq.s
-#                                    (pl_time), under the test driver
-#   build/native/m11/s2fin/s2ft.*    the same with the tic side s2t_fin.s
-#                                    and the test glue s2_fint.s
+#                                    (pl_time), with the driver s2_drv.s
 #
 # The 2D store's include and manifest (part s2data: make -f m11.mk part
 # P=s2data, which this file does not rebuild) and S2's objects (make -C
@@ -39,10 +37,11 @@ $(S2FIN_GEN)/lgame.inc: $(TOOLS)/llayout.py $(TOOLS)/rlayout.py
 $(S2FIN_GEN)/s2fin.inc: $(TOOLS)/s2fin.py $(S2FIN_DATA)/s2data.json
 	@mkdir -p $(S2FIN_GEN)
 	$(PYTHON) $(TOOLS)/s2fin.py --inc $@
-$(S2FIN_GEN)/s2pal.inc: $(TOOLS)/s2pal.py $(TOOLS)/s2palmodel.py $(LAYOUTS)
+$(S2FIN_GEN)/s2pal.inc: $(TOOLS)/s2pal.py $(LAYOUTS)
 	@mkdir -p $(S2FIN_GEN)
 	$(PYTHON) $(TOOLS)/s2pal.py --inc $@
 
+# S2's objects, read only (the guarded rules of plboot.mk)
 ifndef M11_SOUND65_RULES
 M11_SOUND65_RULES := 1
 $(S2FIN_SOUND65)/%.o:
@@ -52,8 +51,8 @@ $(S2FIN_SOUND65)/tables.inc:
 	@echo "no $@: run make -C src/sound (S2's player)" >&2
 	@exit 1
 endif
-# (one rule for the store's manifest, which parts s2menu1's and s2hud's
-# fragments also name)
+# (one rule for the store's manifest, which part s2menu2's fragment also
+# names)
 ifndef M11_S2DATA_JSON_RULE
 M11_S2DATA_JSON_RULE := 1
 $(S2FIN_DATA)/s2data.json:
@@ -66,10 +65,6 @@ S2FIN_INCS := $(M11_INCS) $(S2FIN_GEN)/lgame.inc $(S2FIN_GEN)/s2fin.inc \
               $(S2FIN_DATA)/s2data.inc
 
 $(S2FIN_DIR)/s2_fin.o: s2_fin.s $(S2FIN_INCS)
-	$(CA65) $(S2FIN_ASFLAGS) -o $@ -l $(@:.o=.lst) $<
-$(S2FIN_DIR)/s2t_fin.o: s2t_fin.s $(S2FIN_INCS)
-	$(CA65) $(S2FIN_ASFLAGS) -o $@ -l $(@:.o=.lst) $<
-$(S2FIN_DIR)/s2_fint.o: s2_fint.s $(S2FIN_INCS)
 	$(CA65) $(S2FIN_ASFLAGS) -o $@ -l $(@:.o=.lst) $<
 $(S2FIN_DIR)/pl_input.o: pl_input.inc
 $(S2FIN_DIR)/s2_pal.o: s2_pal.s $(M11_INCS) $(S2FIN_GEN)/s2pal.inc
@@ -94,11 +89,8 @@ S2FIN_SHARED := $(S2FIN_DIR)/s2_draw.o $(S2FIN_DIR)/s2_pub.o \
                 $(S2FIN_DIR)/s2_drv.o $(M11_COMMON_OBJS:%=$(S2FIN_DIR)/%)
 $(eval $(call M11_IMAGE,$(S2FIN_DIR),finw,FINW,\
     $(S2FIN_DIR)/s2_fin.o $(S2FIN_SHARED)))
-$(eval $(call M11_IMAGE,$(S2FIN_DIR),s2ft,FINW,\
-    $(S2FIN_DIR)/s2_fint.o $(S2FIN_DIR)/s2_fin.o $(S2FIN_DIR)/s2t_fin.o \
-    $(S2FIN_SHARED)))
 
 .PHONY: s2fin_all
-s2fin_all: gen $(S2FIN_DIR)/finw.map $(S2FIN_DIR)/s2ft.map
+s2fin_all: gen $(S2FIN_DIR)/finw.map
 
 PARTS += s2fin

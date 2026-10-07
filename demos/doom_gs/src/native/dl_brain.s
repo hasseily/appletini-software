@@ -1,4 +1,4 @@
-; dl_brain.s: the main loop's brain (docs/PLAY.md 2), in the tic image's
+; dl_brain.s: the main loop's brain (docs/PLAY.md), in the tic image's
 ; group DLG_BRAIN: what upstream's d_main65.s does around the tics
 ; (D_DoomLoop's tryRunTics and runTic, D_PostEvent's routing, D_StartTitle)
 ; and g_game65.s's G_Responder and m_cheat65.s's matching of typed keys
@@ -16,19 +16,19 @@
 ;             buildNewTiccmds; the tics
 ;             (runTic: D_DoAdvanceDemo when due, G_Ticker, gametic + 1);
 ;             the frame's list (dl_disp.s)
-;   E_RESUME  after a level's load (the load protocol, docs/GAME.md 3.4):
+;   E_RESUME  after a level's load (the load protocol, docs/GAME.md):
 ;             g_resume (part flow's continuation), the keys up, S_Start,
 ;             then G_Ticker again at its action loop (part tic's gt_loop,
 ;             as its driver's g_tresume), and the frame's other tics
 ;   E_EVENT   after AMAPW's am_responder had the queue's head: taken, or
 ;             on to G_Responder
 ;   E_MENU    after the menu's frames: its request (a new game, the end of
-;             the game, the quit, the benchmark; a save: the failed save's
-;             message, the menu again; a load, saving the settings: none
+;             the game, the quit, the benchmark; SAVE SETTINGS: DLINIT's
+;             dli_save, then the menu again; a game's load or save: none
 ;             in this version), then a frame
 ;
-; The menu benchmark (m_menu65.s's bmStart, bmStop, bmDone; docs/speed-
-; parts/bench.md): REQ_BENCH sets timingdemo and plays demo3 at the normal
+; The menu benchmark (m_menu65.s's bmStart, bmStop, bmDone; docs/PLAY.md,
+; the benchmark): REQ_BENCH sets timingdemo and plays demo3 at the normal
 ; tic rate (G_DeferedPlayDemo); its frames are the level views drawn
 ; (DL_VIEWS, dl_disp.s's count) from then on. At demo3's end G_CheckDemo-
 ; Status's timingdemo branch calls the hook G_TimeDemoEnd (dl_hook.s): the
@@ -57,7 +57,7 @@
         .import far_get, far_put
         .import c_build
         .import c_display, c_loadlist, c_bootlist, c_menulist, c_cplist
-        .import c_amlist, c_quitlist, c_savelist
+        .import c_amlist, c_quitlist, c_savelist, c_setlist
         .import h_sstart, sc_update, st_init, d_doadvance, s_rinit
         .import s_level
 .if GP_G_Ticker_B
@@ -82,9 +82,9 @@ dl_brain:
                                 ;   phase to a replay passes here, the
                                 ;   frame's, a load's, the menu's, the
                                 ;   intermission's, the benchmark's
-dl_rsback:                      ; (playtime.py: the restore's end)
+dl_rsback:                      ; (the restore's end)
         lda BT_PH               ; the benchmark timed: the tic phase ends
-        beq :+                  ;   here (docs/PLAY.md 15)
+        beq :+                  ;   here (docs/PLAY.md, the benchmark)
         lda BT_NX
         DLCALL DLG_DISP, bt_close
 :       rts
@@ -92,7 +92,7 @@ b_go:   jmp (b_ent,x)
 b_ent:  .addr b_boot, b_frame, b_resume, b_event, b_menu
 
 ; ---------------------------------------------------------------------------
-; E_BOOT (D_DoomMain's part after the subsystems: docs/PLAY.md 2.1)
+; E_BOOT (D_DoomMain's part after the subsystems: docs/PLAY.md)
 ; ---------------------------------------------------------------------------
 b_boot:
         DLCALL DLG_SND, st_init         ; ST_Init's state
@@ -162,7 +162,7 @@ b_bres: stz DL_BENCH
 
 ; b_runtic: runTic: the demo sequence when it advances, G_Ticker, gametic
 ; + 1 (M_Ticker: the menu's, MENUW's, runs in its paused frames only:
-; docs/PLAY.md 5). C set: G_Ticker needs a load (its list is written).
+; docs/PLAY.md). C set: G_Ticker needs a load (its list is written).
 b_runtic:
         lda DL_ADVDEMO
         beq b_tick
@@ -190,7 +190,7 @@ b_after:
 ; ---------------------------------------------------------------------------
 b_resume:
         lda DL_BENCH            ; the benchmark's load done: its timing
-        cmp #1                  ;   starts (docs/PLAY.md 15)
+        cmp #1                  ;   starts (docs/PLAY.md, the benchmark)
         bne :+
         lda BT_PH
         bne :+
@@ -267,10 +267,14 @@ b_menu:
         bne :+
         DLCALL DLG_DISP, c_quitlist
         rts
+:       cmp #REQ_SAVESET        ; G_SaveSettings: the menu stays
+        bne :+
+        DLCALL DLG_DISP, c_setlist
+        rts
 :       cmp #REQ_BENCH
         bne @frame
         jsr b_bench
-@frame: jmp b_frame             ; (REQ_LOAD, REQ_SAVESET: none in this
+@frame: jmp b_frame             ; (REQ_LOAD, REQ_SAVE: none in this
                                 ;   version)
 
 ; b_bench: bmStart (the menu is closed: s2_menu.s's r_vwitem): timingdemo
@@ -348,7 +352,7 @@ b_settings:
 ; ---------------------------------------------------------------------------
 ; The events: the queue's, in order. C set: a step list was written (the
 ; queue's head waits for another image's responder). (The keys a menu up
-; does not eat went to gamekeydown in the kernel's K_MENU: docs/PLAY.md 5)
+; does not eat went to gamekeydown in the kernel's K_MENU: docs/PLAY.md)
 ; ---------------------------------------------------------------------------
 b_events:
 @queue: ldx PL_QHEAD
@@ -415,7 +419,7 @@ ev_route:
         lda #1
         rts
 @zoom:  cmp #KEY_ZOOMOUT        ; the view's size: the full view only
-        beq :+                  ;   (milestone 13): eaten in a level
+        beq :+                  ;   (this version): eaten in a level
         cmp #KEY_ZOOMIN         ;   without the automap, as vwKeys
         bne @nomenu
 :       lda G_GAMESTATE

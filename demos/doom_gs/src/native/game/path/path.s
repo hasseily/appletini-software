@@ -1,11 +1,11 @@
-; game/path/path.s: part path of milestone 10 (docs/GAME.md 0.3 fact 4,
-; 1.9, 2.2 TRVTAB, 2.4 row path; docs/game-parts/path.md): P_PathTraverse,
+; game/path/path.s: part path of the game's tic code (docs/GAME.md: the
+; trace, TRVTAB): P_PathTraverse,
 ; the walk of a trace through the block map, and P_TraverseIntercepts.
 ; GPL-2: rewritten from upstream's p_path65.s (P_PathTraverse:186,
 ; ptBody:226, offLine:436, fromOrigin:450, axisStep:474, a1Shr7:566, the
 ; traversal traverse:578, early:594, traverseTo:772 with callTrav:816,
 ; ptStuck:832), Doom8088: Apple IIgs Edition. Nothing here comes from
-; upstream's cal_integer.s: the products and the divide are milestone 6's
+; upstream's cal_integer.s: the products and the divide are the native math's
 ; (umul16 for _Mul16, udiv32 for _UDivMod32, approxdiv, fixmul3216,
 ; aproxdist).
 ;
@@ -32,10 +32,9 @@
 ;               x's, else ptStuck), at most 64 steps; then the traversal of
 ;               every intercept up to FRACUNIT. Upstream's dead guard
 ;               (guardL and the rest, p_path65.s:612-614: "no guard
-;               (decision 34)") and its state (G_IDT, PT_OK: GAME.md 3.5
-;               R4) are not here; upstream's ptPatch (the flags' branches
-;               patched in place) is a test of PT_FLAGS here (tracet.md
-;               R1, R5).
+;               (decision 34)") and its state (G_IDT, PT_OK) are not here;
+;               upstream's ptPatch (the flags' branches patched in place)
+;               is a test of PT_FLAGS here.
 ;   offLine     X = the axis (0 x, 4 y): when the coordinate GA_0 + X is on
 ;               a block line ((v - origin) & (MAPBLOCKSIZE - 1) == 0, 23
 ;               bits), + FRACUNIT (the high word, 16 bits).
@@ -75,8 +74,7 @@
 ;               they do not fit in MAXINTERCEPTS.
 ;
 ; The traverser's convention (TRVTAB): GA_0 the intercept's index (ICPT +
-; 6 GA_0: frac 4, what 2); C set on return to go on, clear to stop
-; (request R2).
+; 6 GA_0: frac 4, what 2); C set on return to go on, clear to stop.
 ;
 ; Every call of another routine is an FCALL (the placement may put them in
 ; different groups); the math, gv_inc and the dispatch are resident (jsr).

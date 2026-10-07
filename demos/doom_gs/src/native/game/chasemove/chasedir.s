@@ -1,8 +1,7 @@
 ; game/chasemove/chasedir.s: part chasemove's new chase direction
-; (milestone 10, docs/GAME.md 2.4 row chasemove; docs/game-parts/
-; chasemove.md). A GPL-2 derivative of upstream's p_enemy65.s with TICSTEP
-; 1, the release's (P_NewChaseDir with newChaseDir, doNewChaseDir, setDir,
-; absGreater, absD).
+; (docs/GAME.md, the parts). A GPL-2 derivative of upstream's p_enemy65.s
+; with TICSTEP 1, the release's (P_NewChaseDir with newChaseDir,
+; doNewChaseDir, setDir, absGreater, absD).
 ;
 ;   newChaseDir   GA_0-1 the actor (CM_AP; upstream's AP): with a tall
 ;                 drop-off under it (floorz - dropoffz > 24.0, signed), z <=
@@ -27,13 +26,12 @@
 ;                 ends the search
 ;   P_NewChaseDir upstream's public P_NewChaseDir: newChaseDir
 ;
-; setDir, absGreater and absD have no code of their own (docs/game-parts/
-; chasemove.md R1): cm_setdir, cm_absgreater, cm_abs. Each routine's local
-; code is in its own segment (its group): newChaseDir's cm_get,
-; doNewChaseDir's dn_get. Records through the
-; object API (mo_get, mo_dirty); P_Random is g_random. A routine changes A,
-; X, Y, GA_*, GT_*, the math block, the API's temporaries and what its
-; callees change.
+; setDir, absGreater and absD have no code of their own: cm_setdir,
+; cm_absgreater, cm_abs. Each routine's local code is in its own segment (its
+; group): newChaseDir's cm_get, doNewChaseDir's dn_get. Records through the
+; object API (mo_get, mo_dirty); P_Random is g_random. A routine changes A, X,
+; Y, GA_*, GT_*, the math block, the API's temporaries and what its callees
+; change.
 
         .setcpu "65C02"
         .macpack longbranch

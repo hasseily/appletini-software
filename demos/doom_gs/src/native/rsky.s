@@ -1,5 +1,5 @@
 ; rsky.s: the sky and the patchless columns of the native renderer's seg
-; loops (docs/RENDER.md 0.1, 3.1; milestone 7, stage C): skyColumn and
+; loops (docs/RENDER.md): skyColumn and
 ; ceilSky (r_seg65.s:1403-1474, :1696-1706), tierFlat (:1525-1543) with
 ; R_DrawColumnFlat's fill record and its span cut (build/gen/drawcol.s:
 ; 142-, fillCol and FSCUTE of r_list65.s:423-450, lists.inc). A GPL-2
@@ -10,7 +10,7 @@
 ;               for its ceiling rows: a K_TEX record of the texel column
 ;               ((viewangle >> 16) + xtoviewangle[x]) >> 6 of the sky patch
 ;               (skywidthmask 255: levelconv.py checks it), its slot in
-;               SKYBANK:SKYHI:SKYLO + 128 c (RENDER.md 1.4), one texel a
+;               SKYBANK:SKYHI:SKYLO + 128 c (RENDER.md), one texel a
 ;               row (SKYFRACSTEP 512), texturemid 100 << 16, the page of
 ;               the fixed colormap or of colormap A's full light. As
 ;               upstream, the wall's yl goes through DC_ROW (DCROW = YL on
@@ -28,7 +28,7 @@
 ;               of kind 6 and 14 read the ceiling clip from it after the
 ;               tier (the synthetic frames flatv06 and flatv14 show it).
 ;
-; The skyFlat path (no sky patch) is not ported: RENDER.md 0.1.
+; The skyFlat path (no sky patch) is not ported: RENDER.md.
 
         .setcpu "65C02"
         .include "rlayout.inc"

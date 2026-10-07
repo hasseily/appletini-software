@@ -1,15 +1,15 @@
-; s2_hu.s: the HUD's drawer in P2DW (docs/SCREENS.md 1.4, 1.5.2; part
-; s2hud, docs/m11-parts/s2hud.md). GPL-2: rewritten from upstream's
-; src/iigs/hu_stuff65.s (HU_Drawer, drawTextLine) and src/iigs/
-; i_viigs65.s (I_DrawCachedText, I_EndTextCapture, textInvalidate, the
-; clear of I_MessageStrip) (Doom8088: Apple IIgs Edition, GPL-2). The
-; text cache keeps a record of the bytes a line wrote (CAPVAL, CAPMSK)
-; instead of upstream's generated 65816 code (IIGS_TextCode).
+; s2_hu.s: the HUD's drawer in P2DW (docs/SCREENS.md, the HUD; part s2hud).
+; GPL-2: rewritten from upstream's src/iigs/hu_stuff65.s (HU_Drawer,
+; drawTextLine) and src/iigs/ i_viigs65.s (I_DrawCachedText,
+; I_EndTextCapture, textInvalidate, the clear of I_MessageStrip) (Doom8088:
+; Apple IIgs Edition, GPL-2). The text cache keeps a record of the bytes a
+; line wrote (CAPVAL, CAPMSK) instead of upstream's generated 65816 code
+; (IIGS_TextCode).
 ;
 ;   hu_drawer   HU_Drawer: the map's title over the automap (slot 1, rows
 ;               160-167), then the message (slot 0, rows 0-9), each
 ;               composed in P2DW's band and published. A = the frame's
-;               flags (the frame driver's and AMAPW's, request S2HUD-2):
+;               flags (the frame driver's and AMAPW's):
 ;                 bit 0  the strip is cleared: I_MessageStrip's clear
 ;                        (s2_stripearly's C = 1): rows 0-9 black, marked,
 ;                        the message's text not on the screen
@@ -21,16 +21,16 @@
 ;                        clearView)
 ;               PALST's PS_TXTINV (set by s2_setrows, s2_nibtab,
 ;               s2_picpal: upstream's textInvalidate) empties both slots
-;               first, then is cleared (request S2PAL-2).
+;               first, then is cleared.
 ;
 ; The state: the card's HU_ON, HU_MSGID, HU_TITLEMAP (s2t_hu.s's), the
 ; frame block's AUTOMAP, PALST's PS_SCB (the rows' palettes) and
 ; PS_TXTINV, and P2DW's own block: P_TITLE, P_MESSAGE (upstream's lines:
 ; y, the text, its length), P_TXTVALID, P_TXTLEN, P_TXTY, P_TXTSHOWN
 ; (upstream's words, a slot each), and the stand-ins P_TXTTEXT,
-; P_MSGFILL, P_MAPFILL (s2hud.inc; request S2HUD-1). A line's text comes
+; P_MSGFILL, P_MAPFILL (s2hud.inc). A line's text comes
 ; from its id: the table SS_HUDMSG in S2STATE (tools/native/s2msgs.py,
-; the bank file HUDTXT.1; stand-in place, request S2HUD-3) gives each
+; the bank file HUDTXT.1) gives each
 ; message id and each title its text, fetched when the line's id
 ; changes. A slot's record (CAPVAL then CAPMSK of its rows, 3,328 bytes
 ; with the copy's tail) is at S2STATE's SS_HUDTXT + slot * $1000.
@@ -42,7 +42,6 @@
 ; for every new message; the full map's clearStrip and clearView), and
 ; the title's rows are black under the title (titleBand, clearView): so
 ; a line drawn again over its own old pixels gives upstream's bytes.
-; tools/native/s2hud.py checks this on every frame of the runs.
 ;
 ; The nibble tables of the line's rows (their palettes from PS_SCB) are
 ; fetched from S2PAL's S2NIB into P2DW's slots from the last one down,

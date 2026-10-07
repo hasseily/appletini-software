@@ -1,5 +1,5 @@
-; game/missile/missile.inc: part missile's places (milestone 10, docs/GAME.md
-; 2.4, 4.4; docs/game-parts/missile.md). GPL-2, the port's own.
+; game/missile/missile.inc: part missile's places (docs/GAME.md, the parts;
+; zero page and scratch). GPL-2, the port's own.
 ;
 ; The part has no zero page of its own: its temporaries are GT_0-GT_1 and
 ; the math block (M_A, M_B, M_R: math.inc), its arguments GA_*. What a

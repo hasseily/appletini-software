@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Frame captures of upstream's renderer for milestones 7 and 8
-(docs/RENDER.md section 4.1, docs/RENDER-MASKED.md 4.1): the reference's
+"""Frame captures of upstream's renderer for the native renderer
+(docs/RENDER.md, docs/RENDER-MASKED.md): the reference's
 state at chosen frames, from R_FillStamps to the return of R_DrawLists,
 with the calls of R_StoreWallRange, vtxAngle, R_AddSprites and the masked
 phase's routines in between.
@@ -18,7 +18,7 @@ frames, the second to capture them), give the four frame sets:
     title    the title loop to demo3's end    title (50), demo3 (every
              (tools/ref816/lumps.py demo_script(7),   frame from the note
              written under build/)                    "demo" to "demo-end",
-                                                      533: milestone 8)
+                                                      533)
     tour     coverage/tour.script, with the   e1m3 (m5: e1m3-1), tour (50:
              note "e1m3" after "shot e1m3"    5 or 6 a map, E1M1-E1M9)
              (as tools/ref816/capture.py)
@@ -27,17 +27,15 @@ frames, the second to capture them), give the four frame sets:
              cheats idbeholdl and idbeholdv   fixed colormaps and a gamma
                                               other than 0
 
-The m5 frames are milestone 5's (tools/ref816/capture.py chooses their
-R_DrawLists calls the same way, with its own code): for each, the frame
-whose R_FillStamps comes last before that call. `newgame` takes 50 frames
+The m5 frames are the record replay's first sets (tools/ref816/capture.py
+chooses their R_DrawLists calls the same way, with its own code): for
+each, the frame whose R_FillStamps comes last before that call. `newgame` takes 50 frames
 evenly over all the run's level frames; `title` 50 evenly from the note
 "demo" to "demo-end"; `tour` 5 or 6 evenly over each map's frames, the
 map's first frame among them. The last frame of a run is never chosen, a
 frame whose view is not the full view (VW_CUR) is never chosen, and a
 frame must reach drawMasked. `demo3` takes every usable frame of demo3,
-named by its index among the run's frames (demo3-000 ...); render_check.py
-leaves it out unless it is asked for (milestone 7's 188 frames stay its
-default).
+named by its index among the run's frames (demo3-000 ...).
 
 The first run marks R_FillStamps, R_RenderBSPNode, the return of
 weaponClip in weaponClipSame (weaponClipSame + 3), drawAllL (an early
@@ -67,14 +65,14 @@ range is dumped and the others dropped as the stream is read):
     P3   drawMasked            the truth: bank $02, bank $1D, the spans,
                                $0A:B500-$B9FF, $0A:C500-$C8FF,
                                $00:0900-$0BFF, the zone $06-$09
-    P3s  drawMasked + 3        after sortSkip (milestone 8): bank $02
+    P3s  drawMasked + 3        after sortSkip: bank $02
                                (FR_ORDER, FR_SKIP), $00:0A00-$0AFF (W_WSK)
     P3w  playerSkip            before the weapon's draw: bank $1D, bank $02
                                (COLW, XPNEXT), the spans
     PS   stripEarly            the render's end: $E1:2000-$9FFF
     P4   R_DrawLists           bank $1D, bank $02 (COLW, XPNEXT, FZ_POS),
                                the spans, $0A:C500-$C8FF, $E1:2000-$9FFF,
-                               $00:0AB0-$0AB1 (W_WSK, milestone 8)
+                               $00:0AB0-$0AB1 (W_WSK)
     P5   R_DrawLists' return   $E1:2000-$9FFF
 
 and P0 also holds SPRBOUND ($22:7800, 220 bytes), P2 the screen. An early
@@ -84,8 +82,8 @@ and logs the calls of R_StoreWallRange (the start in A; the stop, BSPDP,
 the plane colours, worldbottom and ds_p at the entry; solidcol at the
 return), vtxAngle (entries), R_FillStamps (entries), R_MakeTextureColumns
 (entries, the texture in A), the first call of viewSide (its registers
-and return address, for the side check of tools/native/sidecheck.py),
-and for milestone 8 the entries of R_AddSprites (the sector at _Dp+4, the
+and return address),
+and for the masked phase the entries of R_AddSprites (the sector at _Dp+4, the
 light in A), R_DrawVisSprite (the vissprite, VS_CLIP, mfloorclip,
 mceilingclip, floorclip and ceilingclip), R_RenderMaskedSegRange (FR_DS,
 _Dp+4, A), wcProf and wdProf. A frame's walk calls are those from its
@@ -170,7 +168,7 @@ class RunSpec(NamedTuple):
 
 
 # The lights run: paths no coverage script reaches (the renderer's fixed
-# colormaps and a gamma other than 0; RENDER.md 4.1: "a path with no frame
+# colormaps and a gamma other than 0; docs/RENDER.md: "a path with no frame
 # gets frames added from the scripts"). The new game of newgame.script,
 # then in E1M1 the gamma poked to 2, the light amplification visor
 # (idbeholdl: fixedcolormap 1) and invulnerability (idbeholdv: the
@@ -257,8 +255,8 @@ def check_disk(path: Path) -> None:
 
 def machine_command(prog_path: Path, work: Path, symbols: script.Symbols,
                     seconds: float, extra: Sequence[str]) -> List[str]:
-    """The machine's command line, as run_script.Run.execute builds it
-    (the stops, the main loop's marks), with the shots in `work`."""
+    """The machine's command line for a script run (run_script's stops,
+    the main loop's marks), with the shots in `work`."""
     shots = work / 'shots'
     shots.mkdir(parents=True, exist_ok=True)
     options = ['--input', str(prog_path), '--shot-dir', str(shots),
@@ -656,7 +654,7 @@ def call_routines() -> List[str]:
         'R_FillStamps,entry=1',
         'R_MakeTextureColumns,entry=1',
         'r_bsp65.s:viewSide,entry=1,hits=1,in=s+1:2',
-        # milestone 8 (RENDER-MASKED.md 4.1): the listed sectors, and the
+        # the masked phase (docs/RENDER-MASKED.md): the listed sectors, and the
         # masked phase's calls
         'R_AddSprites,entry=1,in=dp:_Dp+4:3',
         # (R_DrawSprite and the weapon enter R_DrawVisSprite by JML)
@@ -679,25 +677,6 @@ MASKED_CALLS = {'R_DrawVisSprite': 'drawvis',
 def write_dump(path: Path, d: dumps.Dump) -> None:
     head = json.dumps(d.header, separators=(',', ':')).encode() + b'\n'
     path.write_bytes(zlib.compress(head + d.data, 6))
-
-
-def load_dump(path: Path) -> dumps.Dump:
-    """A dump stored by this tool."""
-    raw = zlib.decompress(Path(path).read_bytes())
-    nl = raw.index(b'\n')
-    header = json.loads(raw[:nl])
-    data = raw[nl + 1:]
-    if len(data) != header['bytes']:
-        raise ValueError('%s is cut short' % path)
-    return dumps.Dump(header, data)
-
-
-def load_ram(path: Path) -> bytes:
-    """A level source: all RAM (banks $00-$7F, $E0, $E1)."""
-    data = zlib.decompress(Path(path).read_bytes())
-    if len(data) != 130 * 0x10000:
-        raise ValueError('%s is not a whole RAM' % path)
-    return data
 
 
 def frames_of_cycles(bounds: Sequence[Tuple[int, int, str]], cycles: int

@@ -1,33 +1,33 @@
 ; far.s: the far layer of the native renderer, F1.2.1 back end
-; (docs/NATIVE.md 4.5, docs/RENDER.md 3.4 and 3.5), and the loops that
+; (docs/RENDER.md), and the loops that
 ; must run inside a read window.
 ;
 ; It lives in the main card's bank 1 from $DC43, after MATHFAR
-; (docs/MEMORY_MAP.md 4.2: the far layer's $DC00-$DFFF): inside a RAMRD
+; (docs/MEMORY_MAP.md: the far layer's $DC00-$DFFF): inside a RAMRD
 ; window only zero page, the stack page and the card are near, and RAMRD
-; also moves the fetches of $0200-$BFFF (NATIVE.md 4.5 rules 1 and 2), so
+; also moves the fetches of $0200-$BFFF, so
 ; the code of a read window and the data it keeps are in the card. Its
 ; arguments are in zero page $00-$05 (FA_*, rlayout.py).
 ;
 ; Every window writes $C073 at its start and 0 at its end, as mt_far does
-; (math.s): between windows RAMRD, RAMWRT and $C073 are 0 (RENDER.md 3.2),
+; (math.s): between windows RAMRD, RAMWRT and $C073 are 0 (RENDER.md),
 ; so no shadow of $C073 is kept.
 ;
-; The vertex-angle gather (RENDER.md 3.5): the walk puts the native vertex
+; The vertex-angle gather (RENDER.md): the walk puts the native vertex
 ; numbers of a batch of segs in vg_vlo/vg_vhi (the card: near in the
 ; window), far_vgather reads their angles and stamps from LVMAP in one
 ; window, the walk computes the missing ones and marks them in vg_d, and
 ; far_vput writes those back in one window.
 ;
-; The phase loader (stage C, RENDER.md 3.4; MEMORY_MAP.md 3.5, 4.2): on
+; The phase loader (RENDER.md; MEMORY_MAP.md): on
 ; F1.2.1 the tics run in W before the frame, so the render window is
 ; loaded each frame from its image in RamWorks bank WCODE_BANK, at the
 ; same addresses: far_wload copies the code (from $6000 to the page after
 ; the end of RENDERW, the last segment of W) and the per-level tables'
 ; pages (WTABLES_PAGE for WTABLES_PAGES) with RAMRD on, the stores going
-; to main W. It is its own segment, RLOAD, so that the harness can tell
-; its writes (W only) from the render code's. Milestone 8 (RENDER-MASKED.md
-; 3.2): the loader takes a bank and a list of page runs (far_pload), and
+; to main W. It is its own segment, RLOAD (its writes go to
+; W only), apart from the render code. For the masked phase
+; (RENDER-MASKED.md) the loader takes a bank and a list of page runs (far_pload), and
 ; mfar.s's far_mload loads the masked phase's image from MCODE_BANK. Speed
 ; wave 2: far_wloadt loads the same image from $6500, for the game's
 ; kernel, whose tic image leaves the same bytes in $6000-$64FF.
@@ -162,7 +162,7 @@ far_vput:
 
 ; ---------------------------------------------------------------------------
 ; far_vclear: every vertex stamp 0 (NVERT of them, the frame block): the
-; stamp wrapped (RENDER.md 1.3). One RAMWRT window. Changes A, X, Y,
+; stamp wrapped (RENDER.md). One RAMWRT window. Changes A, X, Y,
 ; FA_DST.
 ; ---------------------------------------------------------------------------
 far_vclear:
@@ -329,20 +329,20 @@ vg_d:   .res VG_MAX
 
 ; ---------------------------------------------------------------------------
 ; far_wload: the render window's image into main W (the phase loader),
-; its code from $6000; far_wloadt (speed wave 2, part frontend): the same
+; its code from $6000; far_wloadt (speed wave 2): the same
 ; from WL_TIC, for a W whose first pages already hold the image's bytes
 ; (the game's kernel: the tic image, loaded just before from $6000, holds
 ; the same MATHW and AUXW bytes there); far_pload: the page runs of the
 ; list at A:X (A the low byte; each run its first page and its count, a
 ; first page of 0 ends the list; in the card, near in the window) of
-; RamWorks bank Y into the same addresses of main memory (milestone 8: the
-; masked phase's image too, mfar.s). One RAMRD window. Changes A, X, Y,
+; RamWorks bank Y into the same addresses of main memory (the masked
+; phase's image too, mfar.s). One RAMRD window. Changes A, X, Y,
 ; FA_SRC, FA_DST, FA_N.
 ;
 ; The copy loop stays (zp),y: on F1.2.1 a page costs the RamWorks reads'
 ; time, about 64 us, whatever the loop (a2vm f121: an abs,y loop with
-; patched operands, 13% fewer cycles, loads WCODE in the same 4.92 ms;
-; docs/speed-parts/frontend.md). Fewer pages are the gain: far_wloadt.
+; patched operands, 13% fewer cycles, loads WCODE in the same 4.92 ms).
+; Fewer pages are the gain: far_wloadt.
 ; ---------------------------------------------------------------------------
         .segment "RLOAD"
 

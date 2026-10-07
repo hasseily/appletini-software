@@ -1,5 +1,5 @@
-# src/native/game/look/part.mk: part look of milestone 10 (wave 3;
-# docs/GAME.md 2.4; docs/game-parts/look.md): the monsters' senses (A_Look,
+# src/native/game/look/part.mk: part look of the game (wave 3;
+# docs/GAME.md, the parts): the monsters' senses (A_Look,
 # lookForPlayers with behindFast's fast answer, the angle and the distance
 # to the target, A_FaceTarget, the melee and missile range checks) and the
 # simple actions (the screams, the pain sound, A_Fall), and the radius

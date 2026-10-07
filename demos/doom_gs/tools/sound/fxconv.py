@@ -3,19 +3,15 @@
 chip 3 of the Phasor, and the bank file SFX.1 (RamWorks bank 103).
 
 Usage:  python3 tools/sound/fxconv.py [--wad FILE] [--tune FILE]
-                                      [--out DIR] [--no-tune]
+                                      [--out DIR]
 
 Writes DIR/SFX.1 (the bank file, the tuned scripts in place of the
-automatic ones), DIR/SFXAUTO.1 (the same with every script automatic, for
-the test disk's T key) and DIR/SFX.lst (the listing: each effect's
-lengths, quantization stage, bytes and worst 42-tick window). DIR is
+automatic ones) and DIR/SFX.lst (the listing: each effect's lengths,
+quantization stage, bytes and worst 42-tick window). DIR is
 build/native/m11/fxconv by default.
 
-The design is tools/sound/README.md, "Effects (S4)"; docs/m11-parts/
-fxconv.md records what this file decided where the design left a choice.
-Written from the published WAD and DMX lump layouts; no code of
-upstream's. tools/sound/fxmodel.py is the second model, written apart,
-and tools/sound/fxdec.py the third, small decoder.
+The design is tools/sound/README.md, "Effects (S4)". Written from the
+published WAD and DMX lump layouts; no code of upstream's.
 
 Sources (all numbers little endian):
 
@@ -105,10 +101,6 @@ NAMES = (
     'SGTDTH', 'BRSDTH', 'POSACT', 'BGACT', 'DMACT', 'NOWAY', 'BAREXP',
     'PUNCH', 'TINK', 'GETPOW')
 
-# The ten tuned effects (tools/sound/README.md, "The ten tuned effects").
-TUNED = ('BGACT', 'PISTOL', 'POSACT', 'SHOTGN', 'PLPAIN', 'FIRSHT',
-         'FIRXPL', 'STNMOV', 'POPAIN', 'BGSIT2')
-
 TICK_HZ = 140
 PSG = tables.psg_clock(tables.PAL_NATIVE)          # 2,031,250 Hz
 PIT = 1193181                                      # the PC's 8253 input
@@ -127,9 +119,7 @@ SFX_BANK = 103
 
 # The PC speaker's divisor of each DP tone byte, as Chocolate Doom's
 # src/i_pcsound.c `divisors[]` publishes it (GPL-2+, Simon Howard; its
-# comment cites pcspkr10.zip): 0 is silence. docs/m11-parts/fxconv.md
-# compares it with native-sound 4.5's reconstruction (quarter tones from
-# 175 Hz).
+# comment cites pcspkr10.zip): 0 is silence.
 DIVISORS = (
     0,
     6818, 6628, 6449, 6279, 6087, 5906, 5736, 5575,
@@ -154,7 +144,7 @@ DIVISORS = (
 # dropped under N. The first is no quantization; then L grows from the
 # AY's finest step (1.5 dB at the top of its table, 3 units), H from 2
 # (a PC speaker warble, a tone every other tick, becomes a held sweep) and
-# N with them. Measured on DOOM1.WAD (docs/m11-parts/fxconv.md): every
+# N with them. Measured on DOOM1.WAD: every
 # effect fits by stage 9, 10,995 B of scripts in all.
 STAGES = (
     (0, 1, 0), (3, 1, 1), (3, 2, 2), (6, 2, 2), (6, 2, 4), (10, 2, 4),
@@ -513,23 +503,18 @@ def main(argv=None):
     parser.add_argument('--wad', default=str(mus.WAD_PATH))
     parser.add_argument('--tune', default=str(TUNE_PATH))
     parser.add_argument('--out', default=str(OUT_DIR))
-    parser.add_argument('--no-tune', action='store_true',
-                        help='SFX.1 with the automatic scripts only')
     args = parser.parse_args(argv)
     wad = mus.Wad.open(args.wad)
-    tune = None if args.no_tune else load_tune(args.tune)
+    tune = load_tune(args.tune)
     try:
         effects = convert_all(wad, tune)
-        auto = effects if tune is None else convert_all(wad, None)
         data = bank_file(effects)
-        auto_data = bank_file(auto)
     except FxError as e:
         print('fxconv: %s' % e, file=sys.stderr)
         return 1
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / 'SFX.1').write_bytes(data)
-    (out / 'SFXAUTO.1').write_bytes(auto_data)
     text = listing(effects, data)
     (out / 'SFX.lst').write_text(text)
     print('%s: %d effects (%d tuned), %d bytes of %d; worst 42-tick window'

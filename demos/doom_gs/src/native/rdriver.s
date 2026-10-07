@@ -1,44 +1,46 @@
-; rdriver.s: the a2vm test driver of the native renderer (not part of the
-; game; docs/RENDER.md 4.2 and 5.1). It lives in the card's $E000 part,
-; which the game gives the sound and the IRQ code.
+; rdriver.s: the native renderer's driver for host runs on a2vm (not part
+; of the game; docs/RENDER.md). It lives in the card's $E000 part,
+; which the game gives the sound and the IRQ code. Of its builds only
+; rdriver-f.o (-D MASKED -D FRAME8, render.mk) is made now: m11/s2ovl.mk
+; links it into the whole frame ovf, whose map places OVLW (s2_ovd.s,
+; linked after it, is that frame's driver). The other entries and the
+; LOCKSTEP stub are kept as written.
 ;
 ;   drv_frame   one frame: the mouse card's VBL interrupt on (a stub
 ;               handler that acknowledges and counts it), nr_frame between
-;               drv_call and drv_ret, then the halt. Checkpoint A's build
-;               links the lockstep stub below as nr_storewall.
+;               drv_call and drv_ret, then the halt. With -D LOCKSTEP
+;               the lockstep stub below is nr_storewall.
 ;   drv_wframe  the same, the render window first loaded from its image
-;               in RamWorks (far_wload, the phase loader: stage C's frame
-;               mode, RENDER.md 3.4), between drv_wload and drv_call
-;   drv_bulk    the cases of a descriptor (as src/native/mathdrv.s): for
+;               in RamWorks (far_wload, the phase loader: the frame
+;               mode, RENDER.md), between drv_wload and drv_call
+;   drv_bulk    the cases of a descriptor: for
 ;               each, its input bytes to their places (or the registers A,
 ;               X, Y), the call, its output bytes to the results; cases
-;               and results in RamWorks banks. For check A3 (rt_side) and
-;               the aux card's reads.
-;   drv_wall    routine mode (stage B, RENDER.md 4.3): nr_storewall(RT_A,
+;               and results in RamWorks banks. For rt_side and the aux
+;               card's reads.
+;   drv_wall    routine mode (RENDER.md): nr_storewall(RT_A,
 ;               RT_X) on the state the harness put in the image, then the
-;               record batch flushed; drv_seg the same for nr_segloop. The
-;               build without LOCKSTEP (rwall) links the real wall code.
-;   drv_mframe  milestone 8 (the builds with -D MASKED, mtest and mprof):
-;               the frame to the masked phase's end: the front end's window
-;               (far_wload), nr_frame, then at drv_mload the masked phase's
-;               window (far_mload, RENDER-MASKED.md 3.2 phase 5) and
+;               record batch flushed; drv_seg the same for nr_segloop. Without
+;               LOCKSTEP the real wall code (rwall.s) is linked.
+;   drv_mframe  (-D MASKED) the frame to the masked phase's end: the
+;               front end's window (far_wload), nr_frame, then at drv_mload
+;               the masked phase's window (far_mload, RENDER-MASKED.md) and
 ;               nm_masked. The cost phases: 1 the front end's load, 13 the
-;               masked load (RENDER-MASKED.md 4.4).
-;   drv_fframe  milestone 8, stage C (-D FRAME8, the builds ftest and
-;               fprof): the whole frame, RENDER-MASKED.md 3.2 phases 1-13,
+;               masked load (RENDER-MASKED.md).
+;   drv_fframe  (-D FRAME8) the whole frame (RENDER-MASKED.md),
 ;               from the front end's window to the replay's last SHR write:
 ;               as drv_mframe to nm_masked (with the weapon), then at
 ;               drv_mend nm_bkload (the bucket pass's code into main) and
 ;               nb_frame (the bucket pass and the replay of each batch).
-;               This is the order the game's frame driver keeps (milestone
-;               11 puts it in the main loop: W is the phases' window).
+;               This is the order the game's frame driver keeps (the main
+;               loop's: W is the phases' window).
 ;
-; The checkpoint A builds (rtest, rprof: -D LOCKSTEP) link the lockstep
-; stub below as nr_storewall; the stage B build (rwall) links rwall.s.
+; With -D LOCKSTEP (no current build defines it) the lockstep stub below
+; is nr_storewall; without it rwall.s's is linked.
 ;
-; The lockstep data are in RamWorks bank SEAM (RENDER.md 1.8,
-; tools/native/rlayout.py; milestone 8's stage C made the weapon's clip
-; pass native: the seam of floorclip, FR_VIS and MM_WPOK is gone):
+; The lockstep data are in RamWorks bank SEAM (RENDER.md,
+; tools/native/rlayout.py; the weapon's clip pass is native, so the seam
+; of floorclip, FR_VIS and MM_WPOK is gone):
 ;
 ;   SEAM_HDR    +0: the reference's R_StoreWallRange calls in this frame
 ;   SEAM_CALLS  16 bytes a call of nr_storewall, written by the stub:
@@ -168,8 +170,8 @@ drv_mend:
         jmp drv_ret
 .endif
 
-; drv_mroutine: routine mode of the masked phase (RENDER-MASKED.md 4.1,
-; 5.2 item 1): the windows (the front end's for the shared math and the
+; drv_mroutine: routine mode of the masked phase (RENDER-MASKED.md):
+; the windows (the front end's for the shared math and the
 ; W tables, the masked image), the draw phase's constants, then one call
 ; with the reference's state the harness injected: mr_kind 0 R_DrawSprite
 ; of vissprite mr_vis, 1 R_DrawVisSprite of it with the clips, 2
@@ -326,7 +328,7 @@ rec_flush:
         rts
 
 ; ---------------------------------------------------------------------------
-; nr_storewall, checkpoint A's lockstep stub (RENDER.md 5.1, item 4): its
+; nr_storewall, the lockstep stub (-D LOCKSTEP; RENDER.md): its
 ; arguments (A = start, X = stop, BS_SEG, SC_CUR, FPC, CPC, WBOT) into the
 ; next call record, then SOLIDCOL = the reference's solidcol after the
 ; same call, when the reference made it.
@@ -421,7 +423,7 @@ rt_side:
         rts
 
 ; ---------------------------------------------------------------------------
-; drv_bulk (src/native/mathdrv.s's loop): the descriptor drv_desc, filled
+; drv_bulk: the descriptor drv_desc's cases, the descriptor filled
 ; by the harness (tools/native/render_check.py).
 ; ---------------------------------------------------------------------------
 drv_bulk:

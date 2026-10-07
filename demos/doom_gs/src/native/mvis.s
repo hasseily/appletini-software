@@ -1,5 +1,5 @@
 ; mvis.s: a sprite's records in the masked phase of the native renderer
-; (docs/RENDER-MASKED.md 1.9, 3.3-3.5; milestone 8, stage B). A GPL-2
+; (docs/RENDER-MASKED.md). A GPL-2
 ; derivative of Webifi's IIgs DOOM (build/upstream/src/iigs/r_seg65.s
 ; R_DrawVisSprite, visCol, visNext, visPost, visFill, :2698-3145;
 ; r_frame65.s wclipSprite, visColD, vrCol, vrPost, vrNext, vrFill,
@@ -21,9 +21,9 @@
 ;               that show the same texture column with the same clips) or
 ;               the others. The columns go on while the texture column
 ;               (frac >> 16) stays in the patch, not to x2: a sprite can
-;               draw a column past x2 (RENDER-MASKED.md 0.3). A test build
-;               (-D CLIPLOG) first logs the vissprite and both clip arrays
-;               in the SEAM bank (RENDER-MASKED.md 4.2); stage C: DS_IDX
+;               draw a column past x2 (RENDER-MASKED.md). The -D CLIPLOG
+;               build (the -c objects of m11/s2ovl.mk's ovf) first logs
+;               the vissprite and both clip arrays in the SEAM bank (RENDER-MASKED.md); DS_IDX
 ;               with bit 7 is the weapon's draw (mpsp.s), logged as $FF00
 ;               + the psprite.
 ;   vm_yrow     YHTAB[t] (t = V_T, 16 bits): (E - 1) >> 16 of texel row t,
@@ -36,15 +36,15 @@
 ;               covered range when it has more rows than the range before.
 ;
 ; The covered ranges name their record by its sequence number (RSEQ, from
-; mrec_room): the bucket pass turns it into a W address (RENDER-MASKED.md
-; 3.4). A shadow sets its column's range to 255, 254: none for the frame.
+; mrec_room): the bucket pass turns it into a W address (RENDER-MASKED.md).
+; A shadow sets its column's range to 255, 254: none for the frame.
 
         .setcpu "65C02"
         .include "rlayout.inc"
         .include "math.inc"
 
 .if .defined(CLIPLOG) .and .defined(LOCKSTEP)
-        .error "CLIPLOG and LOCKSTEP share the SEAM bank (RENDER-MASKED.md 4.2)"
+        .error "CLIPLOG and LOCKSTEP share the SEAM bank (RENDER-MASKED.md)"
 .endif
 
         .import fixmul, far_put, far_posts, far_postsc, mrec_room
@@ -847,7 +847,7 @@ vfuzz:
 
 .ifdef CLIPLOG
 ; ---------------------------------------------------------------------------
-; cl_log: the clip log (test builds, RENDER-MASKED.md 4.2): the vissprite's
+; cl_log: the clip log (-D CLIPLOG, RENDER-MASKED.md): the vissprite's
 ; index (2 bytes) and FLOORCLIP, CEILCLIP into the SEAM bank at CL_PTR.
 ; Three RAMWRT windows (far_put).
 ; ---------------------------------------------------------------------------
@@ -856,7 +856,7 @@ cl_log:
         cmp #CLIPLOG_MAX
         bcs @done
         lda DS_IDX              ; the vissprite's index; bit 7: the weapon's
-        sta MD_T                ;   draw (stage C: $FF00 + the psprite)
+        sta MD_T                ;   draw ($FF00 + the psprite)
         stz MD_T+1
         bpl :+
         and #$7F

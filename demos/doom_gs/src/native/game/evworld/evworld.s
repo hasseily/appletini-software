@@ -1,5 +1,5 @@
-; game/evworld/evworld.s: part evworld of milestone 10 (docs/GAME.md 2.4,
-; wave 3): the doors and the plats a line starts. A GPL-2 derivative of
+; game/evworld/evworld.s: part evworld of the game (docs/GAME.md, the
+; parts; wave 3): the doors and the plats a line starts. A GPL-2 derivative of
 ; upstream's p_doors65.s (EV_DoDoor, newDoor, EV_VerticalDoor with the
 ; locked doors and the reopening of a moving door; the helpers doorArg,
 ; setDir, topLowest, setTop, edLine, edSec, edSound and sectorArg done in
@@ -7,7 +7,7 @@
 ; setLow and plSec done in place) and p_switch65.s (lnDoor, lnPlat,
 ; lnVDoor: LSTAB's door and plat entries).
 ;
-; The native interfaces (docs/game-parts/evworld.md, "Interfaces"):
+; The native interfaces:
 ;
 ;   EV_DoDoor        A:X = the line, Y = the door type (upstream's _Dp[0-3]
 ;                    and C) -> A = 1 when a door started, else 0
@@ -35,7 +35,7 @@
 ;
 ; The plat's list field (SPPL_LIST) is always none: upstream keeps no list
 ; of active plats (p_plats65.s:3-6), so its OFS_PLAT_LIST stays NULL from
-; Z_CallocLevSpec (docs/GAME.md 1.4, review 8); its tag stays 0 (upstream
+; Z_CallocLevSpec (docs/GAME.md, the specials); its tag stays 0 (upstream
 ; never writes it).
 
         .setcpu "65C02"

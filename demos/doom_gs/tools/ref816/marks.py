@@ -1,5 +1,4 @@
-"""The log of marks and notes that ref816 writes (--mark, --marks), and
-the frame rate of the game between two notes.
+"""The log of marks and notes that ref816 writes (--mark, --marks).
 
 A line is "mark ADDRESS CLOCK CYCLES INSTRUCTIONS" when the CPU reached a
 marked address (the counts are those before the instruction there),
@@ -7,14 +6,8 @@ marked address (the counts are those before the instruction there),
 last one "end - CLOCK CYCLES INSTRUCTIONS" for the end of the run. The clock
 is in master clocks of 14.31818 MHz, so seconds of machine time whatever
 the CPU rate.
-
-A frame of the game, here, is one pass of its main loop that drew the 3D
-view: from one call of R_RenderPlayerView to the next, the tics run in
-between included. Its cost is the instructions and cycles between the
-two calls.
 """
 
-import statistics
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Sequence
 
@@ -31,17 +24,6 @@ class Entry(NamedTuple):
     @property
     def seconds(self) -> float:
         return self.clock / MASTER_HZ
-
-
-class Interval(NamedTuple):
-    start: str          # the notes at its ends
-    end: str
-    seconds: float      # of machine time
-    rendered: int       # 3D views drawn
-    frames_per_second: float
-    frames_measured: int        # whole frames inside the interval
-    median_instructions: Optional[float]
-    median_cycles: Optional[float]
 
 
 def parse(text: str) -> List[Entry]:
@@ -65,10 +47,6 @@ def at(entries: Sequence[Entry], address: int) -> List[Entry]:
     return [e for e in entries if e.kind == 'mark' and e.what == name]
 
 
-def notes(entries: Sequence[Entry]) -> List[Entry]:
-    return [e for e in entries if e.kind == 'note']
-
-
 def longest_gap(entries: Sequence[Entry], address: int
                 ) -> Optional[Dict[str, float]]:
     """The most CPU cycles between two marks of `address`, or from the
@@ -85,27 +63,3 @@ def longest_gap(entries: Sequence[Entry], address: int
             for a, b in zip(ends, ends[1:])]
     cycles, seconds, start = max(gaps, default=(0, 0.0, ends[0].seconds))
     return {'cycles': cycles, 'seconds': seconds, 'from': start}
-
-
-def interval(entries: Sequence[Entry], start: Entry, end: Entry,
-             render: int) -> Interval:
-    """The frames of the game between the notes `start` and `end`;
-    `render` is the address of R_RenderPlayerView."""
-    inside = [e for e in at(entries, render)
-              if start.clock <= e.clock <= end.clock]
-    seconds = (end.clock - start.clock) / MASTER_HZ
-    instructions = [b.instructions - a.instructions
-                    for a, b in zip(inside, inside[1:])]
-    cycles = [b.cycles - a.cycles for a, b in zip(inside, inside[1:])]
-    return Interval(
-        start.what, end.what, seconds, len(inside),
-        len(inside) / seconds if seconds else 0.0, len(cycles),
-        statistics.median(instructions) if instructions else None,
-        statistics.median(cycles) if cycles else None)
-
-
-def intervals(entries: Sequence[Entry], render: int) -> List[Interval]:
-    """An interval between each note and the next."""
-    marked = notes(entries)
-    return [interval(entries, a, b, render)
-            for a, b in zip(marked, marked[1:])]

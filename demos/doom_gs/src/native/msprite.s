@@ -1,5 +1,5 @@
 ; msprite.s: R_DrawSprite of the native renderer's masked phase
-; (docs/RENDER-MASKED.md 0.3, 3.3, 3.5; milestone 8, stage B). A GPL-2
+; (docs/RENDER-MASKED.md). A GPL-2
 ; derivative of Webifi's IIgs DOOM (build/upstream/src/iigs/r_sprite65.s
 ; R_DrawSprite, dsLoop, clipIt, ltScale2, clipPtr, dsVisible, :481-561,
 ; :1460-1716; r_data65.s R_PointOnSegSide, :768-): the same clips, the

@@ -1,15 +1,15 @@
-; game/pickup/cheat.s: part pickup's cheats (milestone 10, docs/GAME.md 2.4,
-; 3.7; docs/game-parts/pickup.md). A GPL-2 derivative of upstream's
+; game/pickup/cheat.s: part pickup's cheats (docs/GAME.md: the tic
+; stream). A GPL-2 derivative of upstream's
 ; m_cheat65.s (Doom8088: Apple IIgs Edition, GPL-2): the cheats' effects.
 ;
 ;   C_Responder  A = a cheat by its event number (m_cheat65.s's table:
 ;                0 idchoppers, 1 iddqd, 2 idkfa, 3 idfa, 4 idspispopd,
 ;                5-10 idbehold v, s, i, r, a, l, 11 idclev, 12 idend,
-;                13 idrocket, 14 idrate; the tic stream's events, GAME.md
-;                3.7): its effect, A = 1 (upstream's "true" for a
+;                13 idrocket, 14 idrate; the tic stream's events, GAME.md):
+;                its effect, A = 1 (upstream's "true" for a
 ;                completed cheat); a number past the table: nothing, A = 0.
 ;                Matching typed keys to the sequences (upstream's CHT_P and
-;                the event's key) is milestone 11's input
+;                the event's key) is dl_brain.s's
 ;   power        A = a power: P_GivePower's (FCALL), the result dropped
 ;   m_cheat_giveAmmo  the ammo of idfa and idkfa: a backpack (twice the
 ;                maxima, once), armour, the weapons of the shareware game
@@ -17,9 +17,8 @@
 ;                ammo but cells
 ;
 ; The messages are the player's message (ch_msg: the symbol numbers of
-; ggame.inc, SYM_*: request P1). idrate's frame rate flag is no canonical
-; state: it is the persistent G_FPSSHOW (request P4; the harnesses write
-; the reference's _g_fps_show there at a run's start).
+; ggame.inc, SYM_*). idrate's frame rate flag is no canonical state: it is
+; the persistent G_FPSSHOW.
 
         .setcpu "65C02"
         .macpack longbranch
@@ -181,7 +180,7 @@ ch_rocket:
         MSG SYM_m_cheat_msgRocketOn
 @off:   MSG SYM_m_cheat_msgRocketOff
 
-; idrate: the frame rate on or off (G_FPSSHOW: request P4)
+; idrate: the frame rate on or off (G_FPSSHOW)
 ch_rate:
         lda G_FPSSHOW
         beq @on

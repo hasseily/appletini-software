@@ -1,5 +1,5 @@
 ; mpsp.s: the weapon's draw in the native renderer's masked phase
-; (docs/RENDER-MASKED.md 3.2 phase 11; milestone 8, stage C). A GPL-2
+; (docs/RENDER-MASKED.md). A GPL-2
 ; derivative of Webifi's IIgs DOOM (build/upstream/src/iigs/r_frame65.s
 ; playerSkip, playerSprites, psSetup, pspDraw0, pspSprite, :656-854,
 ; :945-958, :1035-1048; r_sprite65.s wcDraw3, wdDraw, wpCheck, wdProf,
@@ -21,7 +21,7 @@
 ;               2.0, fracstep 512), the clips WCLIP or the view's bottom +
 ;               1 (CLIPBUF) and 0 (MCCLIP). The records go through the
 ;               masked copy of rrec.s (the page model), with FSCUT and the
-;               covered ranges (mvis.s vtexrec). A test build's clip log
+;               covered ranges (mvis.s vtexrec). The clip log (-D CLIPLOG)
 ;               names the weapon's calls $FF00 + the psprite.
 
         .setcpu "65C02"

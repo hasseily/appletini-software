@@ -1,5 +1,5 @@
-; game/wfire/wfire.inc: part wfire's places (milestone 10, docs/GAME.md 2.4
-; row wfire, 4.4; docs/game-parts/wfire.md). GPL-2, the port's own.
+; game/wfire/wfire.inc: part wfire's places (docs/GAME.md). GPL-2, the
+; port's own.
 ; Included after ggame.inc.
 ;
 ; The part has no zero page of its own: its temporaries are GT_0-GT_6 (GT_7
@@ -18,7 +18,7 @@
 ;     GM_LINETARGET (part attack's P_AimLineAttack writes it)
 ;   - an angle, a slope, a fixed_t: 4 bytes, little-endian, as upstream's
 ;   - a weapon action takes its psprite in GS_PSP (0 the weapon, 1 the
-;     flash: milestone 9's gw_setpsprite)
+;     flash: gweap.s's gw_setpsprite)
 
 WF      = SB_WFIRE
         .assert SB_WFIRE_SIZE >= 32, error, "wfire's scratch block"

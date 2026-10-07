@@ -7,9 +7,8 @@ segment holds address X" and tells loaded zero bytes from memory that
 nothing was loaded to.
 """
 
-import os
 from array import array
-from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple
+from typing import List, NamedTuple, Optional, Tuple
 
 BANK_SIZE = 0x10000
 ADDRESS_SPACE = 0x1000000
@@ -51,15 +50,6 @@ class MemoryImage:
         self.overlaps = []      # type: List[Overlap]
         self._data = {}         # type: Dict[int, bytearray]
         self._owner = {}        # type: Dict[int, array]
-
-    @classmethod
-    def from_segments(cls, segments: Iterable) -> 'MemoryImage':
-        """An image of `segments`, each an (address, bytes, flags, ...)
-        tuple, loaded in the order given."""
-        image = cls()
-        for number, segment in enumerate(segments):
-            image.load(segment[0], segment[1], 'segment %d' % number)
-        return image
 
     def load(self, address: int, data: bytes, label: str = '') -> Region:
         """Put `data` at `address`; it may cross bank boundaries."""
@@ -166,19 +156,3 @@ class MemoryImage:
             low, high = start % BANK_SIZE, (end - 1) % BANK_SIZE + 1
             out[low:high] = self._data[bank][low:high]
         return bytes(out)
-
-    def dump(self, directory: str, fill: int = 0) -> List[str]:
-        """Write each bank with data to `directory` as bankXX.bin (64 KB,
-        holes set to `fill`) and return the paths.
-
-        The files hold upstream's code and data: `directory` must be in
-        build/, never in a place that is committed.
-        """
-        os.makedirs(directory, exist_ok=True)
-        paths = []
-        for bank in self.banks():
-            path = os.path.join(directory, 'bank%02X.bin' % bank)
-            with open(path, 'wb') as handle:
-                handle.write(self.bank_bytes(bank, fill))
-            paths.append(path)
-        return paths

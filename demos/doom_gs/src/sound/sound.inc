@@ -1,8 +1,9 @@
-; DOOM GS music player for the Phasor: shared definitions (README.md).
+; DOOM GS music player for the Phasor: shared definitions
+; (src/sound/README.md).
 ;
 ; The player follows tools/sound/player.py step by step; the names below
 ; are that model's. Everything the interrupt reads or writes is in the
-; language card or the zero page (docs/research/native-sound.md 4.3).
+; language card or the zero page.
 
 ; ---- the Phasor in slot 4 (tools/sound/README.md, "Addressing") ----------
 ; VIA-A answers at $C41x and VIA-B at $C48x in both card modes.
@@ -59,7 +60,7 @@ SONG_VERSION    = 1
 ENV_SIZE        = 8             ; attack, decay, release (2 each), sustain, flags
 DRUM_SIZE       = 6             ; tone, noise, envelope period (2), step (2)
 MAX_ENVELOPES   = 20            ; the card's room for a song's tables:
-MAX_DRUMS       = 23            ; 160 + 138 bytes (native-sound.md 4.3: <= 300)
+MAX_DRUMS       = 23            ; 160 + 138 bytes (the room: <= 300)
 
 ; ---- snd_probe's answer (probe.s): A, and carry set with no music ---------
 SND_MUSIC       = 0             ; native mode, 4 chips: the music plays

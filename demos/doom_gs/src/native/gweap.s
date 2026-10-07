@@ -1,6 +1,5 @@
-; gweap.s: the game core's weapon at the start of a level (milestone 9,
-; stage C; docs/LEVELS.md 2.4). A GPL-2 derivative of upstream's
-; p_pspr65.s (P_SetupPsprites, bringUpWeapon, setPsprite, A_Raise).
+; gweap.s: the game core's weapon at the start of a level (docs/LEVELS.md).
+; A GPL-2 derivative of upstream's p_pspr65.s (P_SetupPsprites, bringUpWeapon, setPsprite, A_Raise).
 ;
 ;   gw_setup        P_SetupPsprites: both psprites' states none, the
 ;                   pending weapon the ready one, then bringUpWeapon: the
@@ -10,16 +9,14 @@
 ;   gw_setpsprite   P_SetPsprite(psprite GS_PSP, state GS_ST): the state,
 ;                   its tics, its action, then the next state while the
 ;                   tics are 0. In the tic image the action goes through
-;                   ACTTAB (DCALL: milestone 10's skeleton, docs/GAME.md
-;                   2.2; a weapon action takes its psprite in GS_PSP); in
+;                   ACTTAB (DCALL: docs/GAME.md; a weapon action takes its psprite in GS_PSP); in
 ;                   the load image the actions an up state reaches are
 ;                   known (A_Raise) and any other is a stop (LS_ACTION)
 ;   A_Raise         sy -= RAISESPEED; at WEAPONTOP or above the weapon is
 ;                   ready (its ready state)
 ;
-; The chainsaw's raising sound (S_StartSound, sfx_sawup) goes to the sound
-; event log in the tic image's test builds (ghook.s); the load image has no
-; sound. A state's action is upstream's address in the states table (GTAB
+; The chainsaw's raising sound (S_StartSound, sfx_sawup) goes to the hook
+; S_StartSound (dl_hook.s) in the tic image; the load image has no sound. A state's action is upstream's address in the states table (GTAB
 ; holds upstream's records): A_Raise's is U_A_RAISE; act_num gives its
 ; ACTTAB number in the tic image.
 
@@ -61,7 +58,7 @@ gw_setup:
         lda PLR + PL_READYWEAPON + 1
         sta PLR + PL_PENDINGWEAPON + 1
         ; bringUpWeapon (an entry of its own: part pspr's A_Lower calls
-        ; it, docs/game-parts/pspr.md R2)
+        ; it)
 bringUpWeapon:
         lda PLR + PL_PENDINGWEAPON       ; WP_NOCHANGE: the ready one
         cmp #U_WP_NOCHANGE

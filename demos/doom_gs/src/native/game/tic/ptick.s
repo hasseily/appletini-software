@@ -1,5 +1,5 @@
-; game/tic/ptick.s: part tic's level tic and thinker walk (milestone 10,
-; docs/GAME.md 1.3, 2.2 THTAB, 2.4, 5.1; docs/game-parts/tic.md). A GPL-2
+; game/tic/ptick.s: part tic's level tic and thinker walk (docs/GAME.md:
+; the thinkers, THTAB). A GPL-2
 ; derivative of upstream's p_think65.s (P_Ticker) and p_tick65.s
 ; (P_RunThinkers, P_MobjThinker with mobjArg and stillMobjThinker), the
 ; release's TICSTEP 1 (tics.inc) (Doom8088: Apple IIgs Edition).
@@ -34,7 +34,7 @@
 ;
 ; mobjArg (upstream's _Dp = MO_P) and stillMobjThinker (the function still
 ; P_MobjThinker) are P_MobjThinker's local subroutines mt_mo and mt_still,
-; with no label of the part table (request R1: INLINED). Every routine changes A, X, Y, GA_*, GT_* and what its callees
+; with no label of the part table. Every routine changes A, X, Y, GA_*, GT_* and what its callees
 ; change.
 
         .setcpu "65C02"
@@ -346,7 +346,7 @@ mt_nm:  jsr mt_mo               ; the nightmare respawn: MF_COUNTKILL,
 ; mt_still: Z set when TK_MO's function is still P_MobjThinker (upstream's
 ; stillMobjThinker: the kind plane, CLEAN aside); mt_mo: A:X = TK_MO
 ; (upstream's mobjArg). Local subroutines: their return is on the stack
-; under pl_get (request R3: OWN_STACK)
+; under pl_get
 mt_still:
         jsr mt_mo
         jsr pl_get

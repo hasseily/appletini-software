@@ -1,7 +1,6 @@
 """Tokens of one line of Calypsi assembly, after the preprocessor.
 
-The syntax is that of chapter 21 of the Calypsi manual
-(docs/research/calypsi-assembler-chapter.txt):
+The syntax is that of chapter 21 of the Calypsi manual:
 - ";" starts a comment, except inside a string or character constant
 - symbols start with a letter or "_"; a name or a number with "$" at its
   end is a local label ("loop$", "3$")

@@ -1,26 +1,26 @@
-; pl_input.s: the //e's input, the shared object pl_poll (milestone 11,
-; part plinput; docs/SCREENS.md 2.1, 2.4, 4.2; docs/m11-parts/plinput.md).
+; pl_input.s: the //e's input, the shared object pl_poll (part
+; plinput; docs/SCREENS.md).
 ; GPL-2, the port's own: written from the design, upstream's documented
 ; behaviour of I_InitKeyboard, I_StartTic, repeatStart, repeat, I_BindKey,
 ; I_DefaultKeys, recount, I_ActionKeys and postKey [R i_iigs65.s:676-1000]
-; and the //e kernel's input_frame (demos/doom/src/kernel/input.s:139-256:
-; the keyboard, the Apple keys, the mouse card's X between two reads of
+; and the input_frame of the earlier Appletini Doom port's //e kernel
+; (the keyboard, the Apple keys, the mouse card's X between two reads of
 ; its sequence byte, re-centred).
 ;
-;   pl_poll      once a frame, in every frame image (SCREENS.md 2.1), first
+;   pl_poll      once a frame, in every frame image (docs/SCREENS.md), first
 ;                after the replay; A = nonzero while a menu is up (the
 ;                menu's arrow repeat, upstream's _g_menuactive test).
 ;                The keys' events into PL_QUEUE, the mouse's X motion
 ;                added to PL_MDX (upstream's iigs_mousedx). A, X, Y and
 ;                the PLZ_* zero page clobbered
-;   pl_xhi       (a label: the read of X's high byte, the tests' point
-;                for a report between the two reads)
+;   pl_xhi       (a label: the read of X's high byte, the point for a
+;                report between the two reads)
 ;
 ; pl_keys.s holds what the boot and the menus call (pl_init, pl_defaults,
 ; pl_bind, pl_action: I_InitKeyboard, I_DefaultKeys, I_BindKey,
 ; I_ActionKeys), so the object every frame image links is the poll alone.
 ;
-; The sources (SCREENS.md 2.4). The //e knows one key down: the held key
+; The sources (docs/SCREENS.md). The //e knows one key down: the held key
 ; PL_HELD (0: none) is the last code read at $C000, folded to upper case
 ; ($61-$7A less $20), and it goes up when $C010's bit 7 (a key is down)
 ; clears. The Apple keys and the mouse's buttons are four more keys, read
@@ -69,7 +69,7 @@
 ;
 ; Writes: the input block $03B3-$03ED, PLZ_*, the mouse card's X ($C0A1,
 ; $C0A2); pl_keys.s writes PL_KEYTAB and the card's window too. $Cxxx: $C000, $C010, $C061, $C062, $C0A5, $C0A6 twice,
-; $C0A1, $C0A2 a poll (SCREENS.md 2.1), two more to re-centre.
+; $C0A1, $C0A2 a poll (docs/SCREENS.md), two more to re-centre.
 
         .setcpu "65C02"
         .include "s2.inc"

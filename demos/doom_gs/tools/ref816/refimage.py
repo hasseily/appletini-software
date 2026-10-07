@@ -1,4 +1,4 @@
-"""ref816 memory images: read, write, and a sparse memory to build them.
+"""ref816 memory images: read, and a sparse memory to load them into.
 
 An image (main.c, make_image.py) is a 32-byte header, "REF816I1" then
 the registers and the soft switches, then records: a 32-bit address, a
@@ -8,8 +8,7 @@ reads and writes images in the same format (footprint.h).
 
 import struct
 from pathlib import Path
-from typing import Dict, Iterable, Iterator, List, NamedTuple, Optional, \
-    Tuple, Union
+from typing import Dict, Iterable, List, NamedTuple, Optional, Tuple, Union
 
 from ref816 import make_image
 
@@ -59,15 +58,6 @@ def read(path: Union[str, Path]) -> Image:
     return parse(Path(path).read_bytes())
 
 
-def image_bytes(registers: Registers, switches: Switches,
-                records: Iterable[Tuple[int, bytes]]) -> bytes:
-    return make_image.image_bytes(registers, list(records), tuple(switches))
-
-
-def registers_dict(registers: Registers) -> Dict[str, int]:
-    return registers._asdict()
-
-
 class Memory:
     """Bytes at 24-bit addresses, with which of them are known."""
 
@@ -100,36 +90,6 @@ class Memory:
             out += data[offset:offset + count] if data else bytes(count)
             at += count
         return bytes(out)
-
-    def byte(self, address: int) -> int:
-        data = self.banks.get(address >> 16)
-        return data[address & 0xffff] if data else 0
-
-    def word(self, address: int, size: int = 2) -> int:
-        return int.from_bytes(self.get(address, size), 'little')
-
-    def is_known(self, address: int) -> bool:
-        known = self.known.get(address >> 16)
-        return bool(known and known[address & 0xffff])
-
-    def runs(self) -> Iterator[Tuple[int, bytes]]:
-        """The known bytes as records, a run of consecutive addresses in a
-        bank each, in address order."""
-        for bank in sorted(self.banks):
-            known, data = self.known[bank], self.banks[bank]
-            offset = 0
-            while offset < BANK:
-                start = known.find(1, offset)
-                if start < 0:
-                    break
-                end = known.find(0, start)
-                if end < 0:
-                    end = BANK
-                yield (bank << 16 | start, bytes(data[start:end]))
-                offset = end
-
-    def count(self) -> int:
-        return sum(k.count(1) for k in self.known.values())
 
 
 def load(image: Image, memory: Optional[Memory] = None) -> Memory:

@@ -1,15 +1,15 @@
-; s2_pub.s: the publish of a band (docs/SCREENS.md 1.2, 1.3; part s2draw,
-; docs/m11-parts/s2draw.md). A shared object, linked alone into AMAPW and
-; with s2_draw.s into the other 2D images. Written from upstream's
-; showDirty (src/iigs/i_viigs65.s): the marked bytes of each row go to the
-; screen, and the marks are cleared; natively the screen is aux 0, written
-; by CPU stores in one RAMWRT window a band (MEMORY_MAP.md rules 3 and 4),
-; and the bytes come from the band in W.
+; s2_pub.s: the publish of a band (docs/SCREENS.md, the bands and the
+; publish). A shared object, linked alone into AMAPW and with s2_draw.s into
+; the other 2D images. Written from upstream's showDirty
+; (src/iigs/i_viigs65.s): the marked bytes of each row go to the screen, and
+; the marks are cleared; natively the screen is aux 0, written by CPU stores
+; in one RAMWRT window a band (docs/MEMORY_MAP.md's rules), and the bytes
+; come from the band in W.
 ;
 ;   s2_publish  the band's marked bytes (S2_DRY0 .. S2_DRY1 - 1, DRB ..
 ;               DRE - 1 of each) to aux 0 $2000 + (S2_Y0 + row) * 160,
 ;               then the marks cleared. Before the frame's first band,
-;               s2_begin (the palettes and SCBs, upstream's order: 1.3)
+;               s2_begin (the palettes and SCBs, upstream's order)
 ;               once, recorded in s2_begun. A band with no mark publishes
 ;               nothing and does not count as the first.
 ;   s2_mul160   A * 160 in A (low) and X (high); A <= 255. Changes S2_M.

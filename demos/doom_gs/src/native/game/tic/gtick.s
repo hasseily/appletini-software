@@ -1,5 +1,5 @@
-; game/tic/gtick.s: part tic's game tic (milestone 10, docs/GAME.md 2.2,
-; 2.4, 3.4, 5.1; docs/game-parts/tic.md). A GPL-2 derivative of upstream's
+; game/tic/gtick.s: part tic's game tic (docs/GAME.md: the action table,
+; the load protocol). A GPL-2 derivative of upstream's
 ; g_game65.s (G_Ticker with its action table) and p_map65.s (P_MapEnd)
 ; (Doom8088: Apple IIgs Edition).
 ;
@@ -11,7 +11,7 @@
 ;               ga_worlddone, where upstream loops for ever, the stop
 ;               GS_ACTION); an action that reaches a load returns A =
 ;               GT_LOAD with G_LOADACT = that action (the load protocol,
-;               GAME.md 3.4: the driver loads the level, then g_tresume);
+;               GAME.md: the driver loads the level, then g_tresume);
 ;               then the tic's command: paused (the menu up, no demo)
 ;               basetic + 1, else the ring's command of gametic into the
 ;               player's, and in a demo readDemoTiccmd; WI_End when the
@@ -22,16 +22,16 @@
 ;   P_MapEnd    no thing moves: tmthing none (GM_TMTHING $FFFF: upstream's
 ;               NULL)
 ;   g_ttick     (the driver's, not a routine of the part table: card
-;               segment DRIVER) the lockstep driver's dg_ticker: G_Ticker
-;               through FCALL (its group paged in); A as G_Ticker's
+;               segment DRIVER) a driver's entry: G_Ticker through FCALL
+;               (its group paged in); A as G_Ticker's. The playable game's
+;               brain (dl_brain.s) calls G_Ticker and gt_loop itself
 ;   g_tresume   (the driver's, as g_ttick) the load protocol's resumption,
-;               the driver's dg_resume: part flow's g_resume (the action's
+;               part flow's g_resume (the action's
 ;               continuation), then G_Ticker again at its action loop's
 ;               test of gameaction (gt_loop), as upstream goes on after the
 ;               action returns; A as G_Ticker's
 ;
-; actions (upstream's table) has no code of its own: the loop's compares
-; (request R1: INLINED).
+; actions (upstream's table) has no code of its own: the loop's compares.
 
         .setcpu "65C02"
         .macpack longbranch
@@ -100,7 +100,7 @@ gt_back:
         lda #GT_LOAD
         rts
 gt_save:
-        lda #GS_SAVEGAME        ; ga_loadgame, ga_savegame: milestone 11's
+        lda #GS_SAVEGAME        ; ga_loadgame, ga_savegame: dl_brain.s's
         jmp g_stop
 gt_bad: lda #GS_ACTION          ; no such action (upstream: for ever)
         jmp g_stop
@@ -191,8 +191,8 @@ gt_done:
         rts
 
 ; ---------------------------------------------------------------------------
-; g_ttick, g_tresume: the driver's entries of the tic (dg_ticker, dg_resume:
-; the card's driver area, which the driver calls with no paging; G_Ticker's
+; g_ttick, g_tresume: the driver's entries of the tic (in the card's
+; driver area, called with no paging; G_Ticker's
 ; group is paged in by fc_call). g_ttick: G_Ticker. g_tresume: the load
 ; protocol's resumption, part flow's g_resume (the core: the action's
 ; continuation), then G_Ticker's action loop

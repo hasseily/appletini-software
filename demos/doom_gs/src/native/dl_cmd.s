@@ -1,7 +1,7 @@
-; dl_cmd.s: the tic command (docs/PLAY.md 2), in the tic image's group
+; dl_cmd.s: the tic command (docs/PLAY.md), in the tic image's group
 ; DLG_CMD: d_main65.s's buildNewTiccmds and g_game65.s's G_BuildTiccmd
 ; with its helpers, and p_pspr65.s's P_SwitchWeapon, P_WeaponCycleUp and
-; P_WeaponCycleDown (called only by G_BuildTiccmd: docs/GAME.md 0.1). A
+; P_WeaponCycleDown (called only by G_BuildTiccmd: docs/GAME.md). A
 ; GPL-2 derivative of upstream's src/iigs/d_main65.s, g_game65.s and
 ; p_pspr65.s (Doom8088: Apple IIgs Edition, GPL-2).
 ;
@@ -14,7 +14,7 @@
 ; it), the settings are the menu's (DL_SETRUN, DL_SETMOUSE, DL_SETMSPD).
 ; A command goes to the ring G_CMDS at maketic & (CMDS - 1), 8 bytes:
 ; forwardmove, sidemove, angleturn (2), buttons, 0 0 0, which part tic's
-; G_Ticker copies into the player's (docs/GAME.md 3.7's stream format).
+; G_Ticker copies into the player's (docs/GAME.md's stream format).
 
         .setcpu "65C02"
         .macpack longbranch
@@ -635,7 +635,7 @@ down_to:        .byte UC_WP_SUPERSHOTGUN, UC_WP_SHOTGUN, UC_WP_CHAINSAW
                 .byte UC_WP_FIST, UC_WP_BFG
 
 ; ---------------------------------------------------------------------------
-; The benchmark's phase rows (docs/PLAY.md 15; the timing is dl_disp.s's)
+; The benchmark's phase rows (docs/PLAY.md, the benchmark; the timing is dl_disp.s's)
 ; ---------------------------------------------------------------------------
 BT_TPAL  = 6500                 ; 64 x the bus cycles of 0.1 ms: 1,015,625
 BT_TNTSC = 6531                 ;   Hz (PAL), 1,020,484 Hz (NTSC)

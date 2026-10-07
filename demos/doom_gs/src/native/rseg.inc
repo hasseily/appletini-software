@@ -1,5 +1,5 @@
 ; rseg.inc: the macros of the seg loops (src/native/rseg.s and the loops
-; tools/native/seggen.py writes). docs/RENDER.md 3.2; upstream's
+; tools/native/seggen.py writes). docs/RENDER.md; upstream's
 ; r_seg65.s:113-186.
 
 ; STEP32 v, s: the 32-bit step v += s (genColumn's). Carry and A as the

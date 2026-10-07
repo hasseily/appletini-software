@@ -1,5 +1,5 @@
-; game/pspr/pspr.s: part pspr's weapon sprites (milestone 10, docs/GAME.md
-; 2.4; docs/game-parts/pspr.md). A GPL-2 derivative of upstream's
+; game/pspr/pspr.s: part pspr's weapon sprites (docs/GAME.md). A GPL-2
+; derivative of upstream's
 ; p_pspr65.s (P_MovePsprites, tickPsprite, A_WeaponReady with signExt4 and
 ; signExt0, A_ReFire, A_Lower, A_GunFlash, fireSomething, A_Light0-2,
 ; fireWeapon with the noise alert, checkAmmo, P_CheckAmmo, startSound,
@@ -37,13 +37,13 @@
 ;                   shot (1, the BFG 40, the super shotgun 2; ammo[a] >=
 ;                   count, signed) or needs none, else 0. Upstream's
 ;                   checkAmmo switches no weapon (G_BuildTiccmd's
-;                   P_SwitchWeapon does, milestone 11's)
+;                   P_SwitchWeapon does: dl_cmd.s)
 ;   P_CheckAmmo     the same (upstream's JSL entry)
 ;   p_pspr_startSound  A = a sound: S_StartSound(player->mo, A)
 ;   setMoState      A:X = a state: P_SetMobjState(player->mo, A:X)
 ;
 ; argMo (upstream's _Dp = player->mo) has no code: the routines read the
-; player's PL_MO where upstream calls it (request R1: INLINED).
+; player's PL_MO where upstream calls it.
 ;
 ; Every routine changes A, X, Y, GT_*, GS_ST, GS_PSP, the math's block and
 ; what its callees change; GA_* only through its callees.
@@ -366,7 +366,7 @@
         sta PLR + PL_READYWEAPON
         lda PLR + PL_PENDINGWEAPON + 1
         sta PLR + PL_READYWEAPON + 1
-        jmp bringUpWeapon       ; (gweap.s, the core: request R2)
+        jmp bringUpWeapon       ; (gweap.s, the core)
 
 ; ===========================================================================
 ; A_GunFlash, fireSomething

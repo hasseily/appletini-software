@@ -1,5 +1,4 @@
-; game/teleport/teleport.inc: part teleport's places (milestone 10,
-; docs/GAME.md 2.4 row teleport, 4.4; docs/game-parts/teleport.md). GPL-2,
+; game/teleport/teleport.inc: part teleport's places (docs/GAME.md). GPL-2,
 ; the port's own.
 ;
 ; The part has no zero page of its own: its temporaries are GT_0-GT_6
@@ -8,7 +7,7 @@
 ; (32 bytes, 27 used): upstream's TP_* of p_telept65.s and MP_TP*,
 ; MP_TELEFRAG of p_map65.s. P_TeleportMove keeps its block loop on the
 ; stack (5 bytes), as upstream does: stompThing's P_DamageMobj runs game
-; logic (request R3 of docs/game-parts/teleport.md: OWN_STACK).
+; logic.
 
 TP      = SB_TELEPORT
         .assert SB_TELEPORT_SIZE >= 32, error, "teleport's scratch block"
@@ -22,7 +21,7 @@ TP_OZ   = TP + 12               ; (4)                            TP_OZ
 TP_TPX  = TP + 16               ; (4) x                          MP_TPX
 TP_TPY  = TP + 20               ; (4) y                          MP_TPY
 TP_TF   = TP + 24               ; (1) telefrag (0: no)           MP_TELEFRAG
-; (TP + 25 .. 27 free: request R4's stand-in, gone at wave 4's integration)
+; (TP + 25 .. 27 free)
 TP_TPT  = TP + 28               ; (2) the thing                  MP_TPT
         .assert TP_TPT + 2 <= TP + 32, error, "teleport's scratch block"
 ; EV_Teleport before P_TeleportMove (destination), over TP_TPX..

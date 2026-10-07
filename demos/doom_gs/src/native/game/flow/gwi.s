@@ -1,29 +1,29 @@
-; game/flow/gwi.s: part flow of milestone 10 (docs/GAME.md 2.4, wave 1),
+; game/flow/gwi.s: part flow of the game (docs/GAME.md, the parts; wave 1),
 ; the intermission's game side (wi_stuff65.s: WI_Start, WI_End,
 ; WI_checkForAccelerate, WI_Ticker and the counts, without drawing) and the
 ; game effects of the status bar's and the HUD's tickers (st_stuff65.s
 ; ST_Ticker: M_Random; hu_stuff65.s HU_Ticker: the message's clear).
 ; GPL-2: rewritten from upstream's wi_stuff65.s, st_stuff65.s and
 ; hu_stuff65.s (Doom8088: Apple IIgs Edition, GPL-2); every divide is
-; milestone 6's math.s.
+; math.s's.
 ;
-; The intermission's counters are the globals WI_* (llayout.py, GAME.md
-; 1.5: they decide the tic of the next load), the level's numbers
+; The intermission's counters are the globals WI_* (llayout.py, docs/GAME.md,
+; the globals: they decide the tic of the next load), the level's numbers
 ; G_WMINFO; the sounds go to the S_StartSound hook (no origin: $FFFF). No
 ; routine takes an argument: WI_Start reads G_WMINFO (upstream's _Dp[0-3]
 ; is always _g_wminfo, G_DoCompleted's).
 ;
 ;   ST_Ticker (st_tick)  M_Random's call, once a tic in a level, then the
 ;                        hook ST_TickerHook with A = its value (the face,
-;                        the widgets and st_oldhealth are milestone 11's:
-;                        docs/m11-parts/design.md R4 item 1)
-;   HU_Ticker (hu_tick)  the hook HU_TickerHook first (milestone 11's
-;                        message line, which reads the message: R5), then
+;                        the widgets and st_oldhealth are the status bar's:
+;                        s2t_st.s)
+;   HU_Ticker (hu_tick)  the hook HU_TickerHook first (the HUD's
+;                        message line, which reads the message), then
 ;                        player.message cleared, and
 ;                        _g_message_dontfuckwithme (G_MSGKEEP), when a
 ;                        message is set and showMessages (G_SHOWMSG) or
 ;                        G_MSGKEEP is (the message line, its counter and
-;                        its drawing are milestone 11's)
+;                        its drawing are the HUD's)
 
         .setcpu "65C02"
         .macpack longbranch
@@ -630,10 +630,9 @@ div_out:
         ROUTINE ST_Ticker
 st_tick:
         jsr g_mrandom           ; M_Random (gthink.s; st_randomnumber is
-                                ;   the face's, milestone 11)
-        jmp ST_TickerHook       ; with A = its value: milestone 11's
-                                ;   st_ticker (docs/m11-parts/design.md
-                                ;   R4 item 1; ghook.s's: nothing)
+                                ;   the face's, s2t_st.s)
+        jmp ST_TickerHook       ; with A = its value: the status
+                                ;   bar's st_ticker (dl_hook.s)
 
 ; ===========================================================================
 ; HU_Ticker (hu_tick): a message of the player taken (cleared) when
@@ -641,9 +640,9 @@ st_tick:
 ; ===========================================================================
         ROUTINE HU_Ticker
 hu_tick:
-        jsr HU_TickerHook       ; milestone 11's hu_ticker first, which
+        jsr HU_TickerHook       ; the HUD's hu_ticker first, which
                                 ;   reads the message before the clear
-                                ;   (design.md R5; ghook.s's: nothing)
+                                ;   (dl_hook.s)
         lda G_SHOWMSG
         ora G_SHOWMSG+1
         ora G_MSGKEEP

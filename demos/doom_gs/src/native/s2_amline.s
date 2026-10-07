@@ -1,14 +1,13 @@
 ; s2_amline.s: the automap's window, its ticker, the transform, the clip,
-; the walls, the player's arrow and the line loops (docs/SCREENS.md 1.5.4;
-; part s2amap, docs/m11-parts/s2amap.md). A GPL-2 rewrite in 65C02 of
-; upstream's src/iigs/am_map65.s: the window, scale and follow routines
+; the walls, the player's arrow and the line loops (docs/SCREENS.md, the
+; automap; part s2amap). A GPL-2 rewrite in 65C02 of upstream's
+; src/iigs/am_map65.s: the window, scale and follow routines
 ; (AM_changeWindowLoc, AM_activateNewScale, AM_changeWindowScale,
 ; AM_doFollowPlayer, AM_Ticker) [R am_map65.s:559-811], the fixed-point
 ; helpers [R :813-1019], drawWalls, drawPlayers, the clip and drawFL [R
-; :1664-1892, :2354-2861]; the rotation's fast path (fastLine and its
-; vertex cache, the overlay's only) is part s2ovl's (s2_ovl.s:
-; am_fastsetup, am_fastline, through this file's hook when assembled with
-; -D AM_FASTLINE: request S2OVL-1, applied in wave 7).
+; :1664-1892, :2354-2861]; the rotation's fast path (fastLine and its vertex
+; cache, the overlay's only) is part s2ovl's (s2_ovl.s: am_fastsetup,
+; am_fastline, through this file's hook when assembled with -D AM_FASTLINE).
 ;
 ; Shared by the image AMAPW (with s2_am.s) and part s2ovl's OVLW: the
 ; places come from s2_am.inc (AMZ, AMW, AMST), and three routines are the
@@ -52,7 +51,7 @@
         .export am_half32, am_ftom, ld_ma, ld_mb, st_mr, stw_mr, mr_ma
         .import am_seg, am_plot, am_rowcol
 .ifdef AM_FASTLINE
-        .import am_fastsetup, am_fastline   ; (OVLW's: request S2OVL-1)
+        .import am_fastsetup, am_fastline   ; (OVLW's)
         .export toscreen, clipscr
 .endif
         .import far_get
@@ -297,7 +296,7 @@ am_getmo:
         jmp far_get
 
 ; am_setauto: the frame block's AUTOMAP byte = automapmode (the renderer
-; reads AM_ACTIVE and AM_OVERLAY there [R RENDER-MASKED.md 2.1])
+; reads AM_ACTIVE and AM_OVERLAY there: docs/RENDER-MASKED.md)
 am_setauto:
         lda ST_MODE
         sta AM_FAUTO

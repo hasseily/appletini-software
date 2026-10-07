@@ -1,5 +1,5 @@
-; game/damage/dinter.s: part damage's damage and deaths (milestone 10,
-; docs/GAME.md 2.4; docs/game-parts/damage.md). A GPL-2 derivative of
+; game/damage/dinter.s: part damage's damage and deaths (docs/GAME.md,
+; the parts). A GPL-2 derivative of
 ; upstream's p_inter65.s (P_DamageMobj, killMobj and their helpers).
 ;
 ;   P_DamageMobj  GA_0-1 the target, GA_2-3 the inflictor, GA_4-5 the
@@ -45,7 +45,7 @@
 ;                 enemy lives and the old target is the source
 ;
 ; targetArg, setTarget and addThrust have no code of their own: their work
-; is done in place (request R3). The routines' order of P_Random calls is
+; is done in place. The routines' order of P_Random calls is
 ; upstream's: the thrust's (turned over), then the pain chance's, or the
 ; death tics'.
 
@@ -776,7 +776,7 @@ add_thrust:
         lda #>UC_PST_DEAD
         sta PLR + PL_PLAYERSTATE + 1
         FCALL P_DropWeapon
-        jsr AM_Stop             ; (its own test of the automap: request R4)
+        jsr AM_Stop             ; (its own test of the automap)
 @state: lda DM_TYPE             ; health < -spawnhealth and an extreme
         ldy #UO_MI_SPAWNHEALTH  ;   death state: that one
         jsr mi_get

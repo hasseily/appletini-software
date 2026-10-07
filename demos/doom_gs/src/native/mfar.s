@@ -1,19 +1,19 @@
-; mfar.s: the masked phase's card code (docs/RENDER-MASKED.md 3.2, 3.5;
-; milestone 8, stage A), in the main card's bank 1 after far.s (segment
-; MFAR): the loader of the masked phase's image and the loops that run
-; inside its read windows, which must be card code (MEMORY_MAP.md rule 5).
+; mfar.s: the masked phase's card code (docs/RENDER-MASKED.md), in the
+; main card's bank 1 after far.s (segment MFAR): the loader of the masked
+; phase's image and the loops that run inside its read windows, which
+; must be card code (MEMORY_MAP.md rule 5).
 ;
 ;   far_mload   the masked image from RamWorks bank MCODE_BANK into W: its
 ;               code (from MCODE, after the shared MATHW and AUXW, which it
 ;               leaves in place: they are the front end's image's, loaded
-;               at the frame's start) to the image's end (stage C: the
-;               whole frame's builds carry the bucket pass's BKFAR after
+;               at the frame's start) to the image's end (the
+;               whole frame's links carry the bucket pass's BKFAR after
 ;               the code), and its per-level table's pages (TXMP), through
 ;               far.s's far_pload. Changes A, X, Y, FA_SRC, FA_DST, FA_N.
 ;   far_dscopy  the dsw_n drawsegs of RENDB whose indexes are in dsw_idx
 ;               into W from DSW, DS_SIZE bytes each, in that order. One
 ;               RAMRD window. Changes A, X, Y, FA_SRC, FA_DST.
-;   far_posts   (stage B) the posts of a patch column, as upstream's
+;   far_posts   the posts of a patch column, as upstream's
 ;               visCol, fzCol and mwCol walk them (r_seg65.s:2906-2917,
 ;               :2953-2966; r_frame65.s:1351-1360, :1618-1625): FA_SRC =
 ;               the column's entry of columnofs, FA_DST = the patch's
@@ -161,8 +161,8 @@ fp_walk:
         stz RWBANK
         rts
 .ifdef CLIPLOG
-; m_hook (test builds only): the harness's snapshot of the masked phase at
-; the weapon's draw (nm_masked calls it first): a card address, which no
+; m_hook (-D CLIPLOG only): a label for a host run's snapshot of the
+; masked phase at the weapon's draw (nm_masked calls it first): a card address, which no
 ; code of the front end's image shares, as W's addresses are
 m_hook: rts
 .endif

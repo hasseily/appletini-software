@@ -1,12 +1,12 @@
 /*
  * The ProDOS 8 MLI stand-in of a2vm: the calls, files and error codes of
- * a2sim.py's FakeProDOS, so that a run of the existing Doom port's
- * DOOM.SYSTEM loader on a2vm matches one on a2sim.py.
+ * a2sim.py's FakeProDOS (the earlier Appletini Doom port's Python
+ * model), so that a run of that port's DOOM.SYSTEM loader on a2vm
+ * matched one on a2sim.py.
  *
  * Every file lives in the volume directory. OPEN of the volume directory
- * reads real ProDOS directory blocks, built the way the existing port's
- * tools/build_disk.py lays out its disks (as FakeProDOS does through
- * build_disk). Files written by the program stay in memory.
+ * reads real ProDOS directory blocks, built the way the earlier port's
+ * build_disk.py laid out its disks (as FakeProDOS did). Files written by the program stay in memory.
  *
  * The calls read and write main memory only, whatever the soft switches
  * say, as FakeProDOS does. How the call is reached (the JSR $BF00 trap)

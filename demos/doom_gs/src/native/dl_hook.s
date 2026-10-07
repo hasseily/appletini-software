@@ -1,13 +1,11 @@
-; dl_hook.s: the hooks of the tic phase in the playable game (docs/PLAY.md
-; 2.3): the play build links this file in place of ghook.s, the test
-; builds' (milestone 10's skeleton, docs/GAME.md 3.4), with every one of its
-; exports (tests/test_play_glue.py checks the two lists). GPL-2, the
-; port's own; the hooks' targets are upstream's routines, rewritten by
-; milestones 11 and S4 (the status bar's, the HUD's, the finale's tickers,
-; the sound channels) and here.
+; dl_hook.s: the hooks of the tic phase in the playable game (docs/PLAY.md,
+; docs/GAME.md): the entries the game's parts call for what lies outside
+; the game logic. GPL-2, the port's own; the hooks' targets are upstream's
+; routines, rewritten by the 2D screens' and the sound's code (the status
+; bar's, the HUD's, the finale's tickers, the sound channels) and here.
 ;
 ; The core holds only the hooks' entries (the core is the placement's: as
-; few bytes as ghook.s's); their bodies are in the group DLG_HOOK, reached
+; few bytes as can be); their bodies are in the group DLG_HOOK, reached
 ; through fc_call:
 ;
 ;   S_StartSound  A the sound (bit 7 upstream's PICKUP_SOUND), Y:X the
@@ -18,13 +16,12 @@
 ;                 SG_SOUNDX, SG_SOUNDY): sc_start2 (the fake mobj FM)
 ;   S_StopSound   Y:X the origin: sc_stop
 ;   I_GetTime     the platform's clock (pl_time): GA_0-3 the tics, A:X the
-;                 low word (ghook.s's contract)
-;   AM_Stop       the automap off (request R6): AUTOMAP's AM_ACTIVE clear
+;                 low word
+;   AM_Stop       the automap off: AUTOMAP's AM_ACTIVE clear
 ;                 and S2_MAIL's MAIL_AMSTOP set, only when it was on (part
-;                 damage calls it whatever the automap's state: damage.md
-;                 R4)
-;   ST_Start      s2t_st's st_start (request R4)
-;   HU_Start      s2t_hu's hu_start, then G_MSGKEEP 0 (request R5)
+;                 damage calls it whatever the automap's state)
+;   ST_Start      s2t_st's st_start
+;   HU_Start      s2t_hu's hu_start, then G_MSGKEEP 0
 ;   AM_Ticker, Z_CheckHeap   nothing (the automap's ticker runs at the
 ;                 frame, A = the frame's tics: AMAPW's am_frame, OVLW's
 ;                 am_ovl; the zone is the native pools)
@@ -38,21 +35,20 @@
 ;   W_StartFinale the finale's music (D_VICTOR, looping), then s2t_fin's
 ;                 f_start (F_StartFinale: the game state GS_FINALE)
 ;   F_Ticker      part flow's WI_checkForAccelerate, then s2t_fin's
-;                 f_ticker (request S2FIN-4)
-;   ST_TickerHook, HU_TickerHook   requests R4 and R5 for part flow: its
+;                 f_ticker
+;   ST_TickerHook, HU_TickerHook   for part flow: its
 ;                 st_tick ends with jmp ST_TickerHook with A = M_Random's
 ;                 value (s2t_st's st_ticker); its hu_tick starts with jsr
 ;                 HU_TickerHook (s2t_hu's hu_ticker: in the core when
 ;                 assembled with PLAY_TIC, play.mk's tic image, so no tic
-;                 loads DLG_HOOK for it; speed wave 2,
-;                 docs/speed-parts/glue.md)
+;                 loads DLG_HOOK for it; docs/SPEED.md)
 ;   G_TimeDemoEnd the menu benchmark's end (bmDone): G_CheckDemoStatus's
 ;                 timingdemo branch jumps here at demo3's end with the
-;                 realtics at flow's fl_realtics; hk_bench below (ghook.s's
-;                 is the stop GS_DEMOEND)
+;                 realtics at flow's fl_realtics; hk_bench below (without
+;                 the benchmark, the stop GS_DEMOEND)
 ;   I_Error, Z_MallocLevel, Z_CallocLevel, Z_CallocLevSpec, Z_Free
-;                 stops (GS_ERROR, GS_ZONE), as ghook.s's
-;   hl_add        nothing (the test builds' same-pair log)
+;                 stops (GS_ERROR, GS_ZONE)
+;   hl_add        nothing (sight.s's same-pair hit log: no log kept)
 ;
 ; The core also holds the callback s2t_pos (A:X a handle, A the high
 ; byte: its x, y, angle into GT_0-11, carry clear; carry set: none;
@@ -235,13 +231,13 @@ s2t_pos:
 
 ; HU_TickerHook's jmp: s2t_hu.s assembled with PLAY_TIC (play.mk's
 ; TICFLAGS) puts hu_ticker, which runs on every tic, in LOADW, the core;
-; the test images of milestone 11 assemble it without, in S2CODE
+; assembled without PLAY_TIC it would go in S2CODE
 .ifdef PLAY_TIC
         .assert hu_ticker >= TW_CORE && hu_ticker < TW_CORE_END, lderror, "hu_ticker is not in the tic image's core"
 .endif
 
-; the channel logic's scratch block (fx_chan.s; in the core since speed
-; wave 2: DLG_HOOK, which the brain's sc_update loads at each frame, is
+; the channel logic's scratch block (fx_chan.s; in the core (docs/SPEED.md):
+; DLG_HOOK, which the brain's sc_update loads at each frame, is
 ; then 7 pages, not 8)
 fxc_scr:
         .res 32
@@ -301,7 +297,7 @@ hk_fticker:                     ; F_Ticker: WI_checkForAccelerate first
 ; $80: the brain opens the menu after this tic. The demo is not advanced:
 ; its next tic reads the end again and ends it (G_CheckDemoStatus without
 ; timingdemo). With no benchmark running (no other timed demo in this
-; build): the stop, as ghook.s's.
+; build): the stop.
 ; ---------------------------------------------------------------------------
 hk_bench:
         lda DL_BENCH
@@ -310,7 +306,7 @@ hk_bench:
         lda #GS_DEMOEND
         jmp g_stop
 :       DLCALL DLG_DISP, bt_stop        ; the phases' timing ends here
-        stz G_TIMINGDEMO                ;   (docs/PLAY.md 15)
+        stz G_TIMINGDEMO                ;   (docs/PLAY.md, the benchmark)
         stz G_TIMINGDEMO+1
         lda #$80
         sta DL_BENCH

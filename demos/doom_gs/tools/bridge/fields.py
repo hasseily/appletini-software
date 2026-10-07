@@ -1,39 +1,20 @@
-"""Field types, structures and the canonical values of the bridge.
+"""Field types and structures of the bridge's schema.
 
 A structure (`Struct`) is a list of fields that tile its size exactly:
 every byte of a record belongs to one field. A field has a type:
 
     Int(size, signed)   a number of 1, 2 or 4 bytes, little-endian
-    Ref(targets)        a far pointer: 24 bits and a pad byte that must be
-                        0; its value is a canonical reference to one of
-                        the object kinds `targets` (never a raw address)
-    Fn()                a thinker function: 24 bits, one of the declared
-                        functions (schema.THINKER_FUNCTIONS) or none
+    Ref(targets)        a far pointer to one of the object kinds `targets`
+    Fn()                a thinker function: 24 bits
     Array(elem, n)      n values of a type
     Sub(struct)         a structure inside a structure
     Raw(size)           bytes that are not numbers or pointers (names)
 
-and a class that says what the bridge does with it:
-
-    state     canonical, compared
-    cache     canonical, round-tripped; a comparison may skip it (an
-              upstream cache whose result-neutrality routine tests check)
-    table     the base address of an object table: canonical as the
-              reference to the table's first object (layout)
-    list      a link of a list: not decoded alone; the list machinery
-              claims it (upstream.py)
-    thinker   the thinker header (links, function, byte 11)
-    excluded  not canonical: the reason is the field's `why` and the
-              exclusion's name (schema.EXCLUSIONS)
-
-A canonical reference (`R`) names an object by kind and identity, and a
-field of it when the pointer points inside the object: R('mobj', 12,
-'snext'), R('sector', 3, 'thinglist'), R('lump', 1011, 305).
+and a class: state, cache, list (a link of a list), thinker (the thinker
+header) or kindcache.
 """
 
-import json
-from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple, \
-    Union
+from typing import Any, Dict, NamedTuple, Sequence, Tuple
 
 
 class Int(NamedTuple):
@@ -112,7 +93,6 @@ class Field(NamedTuple):
     offset: int
     type: Any
     cls: str = 'state'
-    why: str = ''          # the exclusion's name for class excluded
 
     @property
     def end(self) -> int:
@@ -124,13 +104,10 @@ class StructError(ValueError):
 
 
 class Struct:
-    def __init__(self, name: str, size: int, fields: Sequence[Field],
-                 source: str = ''):
+    def __init__(self, name: str, size: int, fields: Sequence[Field]):
         self.name = name
         self.size = size
         self.fields = list(fields)
-        self.source = source
-        self.by_name = {f.name: f for f in self.fields}
         at = 0
         for f in self.fields:
             if f.offset != at:
@@ -140,55 +117,3 @@ class Struct:
         if at != size:
             raise StructError('%s: fields end at %d, size %d'
                               % (name, at, size))
-
-    def field_at(self, offset: int) -> Optional[Field]:
-        for f in self.fields:
-            if f.offset <= offset < f.end:
-                return f
-        return None
-
-    def __repr__(self) -> str:
-        return 'Struct(%s, %d)' % (self.name, self.size)
-
-
-class R(NamedTuple):
-    """A canonical reference: kind, identity, and a field (a name, or a
-    byte offset for byte arrays such as lumps), None for the object."""
-    kind: str
-    id: Any
-    field: Any = None
-
-    def __repr__(self) -> str:
-        return '@%s[%s]%s' % (self.kind, self.id,
-                              '' if self.field is None else
-                              '.%s' % (self.field,))
-
-
-# ---- JSON form of canonical values ----
-
-def to_json(value: Any) -> Any:
-    if isinstance(value, R):
-        return {'ref': [value.kind, value.id, value.field]}
-    if isinstance(value, dict):
-        return {str(k): to_json(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [to_json(v) for v in value]
-    return value
-
-
-def from_json(value: Any) -> Any:
-    if isinstance(value, dict):
-        if set(value) == {'ref'}:
-            kind, ident, field = value['ref']
-            return R(kind, ident, field)
-        return {k: from_json(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [from_json(v) for v in value]
-    return value
-
-
-def dumps(value: Any) -> str:
-    return json.dumps(to_json(value), indent=1, sort_keys=True)
-
-
-Value = Union[int, str, None, R, List[Any], Dict[str, Any]]

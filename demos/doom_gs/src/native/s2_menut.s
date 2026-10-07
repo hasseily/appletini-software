@@ -1,17 +1,16 @@
-; s2_menut.s: the menus' test glue (parts s2menu1 and s2menu2,
-; docs/m11-parts/s2menu1.md, s2menu2.md), not the game: one MENUW with
-; both menu parts linked (request S2MENU2-3, wave 6's integration: the
-; hooks m2_page, m2_value, m2_bench are s2_menu2.s's), the STANDIN of the
-; routine another part owns, and the test build's sound log.
+; s2_menut.s: the menus' glue for the host runs (parts s2menu1 and s2menu2;
+; m11/s2menu2.mk links it), not the game: one MENUW with both menu parts
+; linked (the hooks m2_page, m2_value, m2_bench are s2_menu2.s's), the
+; STANDIN of the routine another part owns, and the sound log's buffer.
 ;
 ;   pl_mouseup  IIGS_MouseUp (the menu's MOUSE option): not in part
 ;               plinput's pl_poll, which has no byte left for upstream's
-;               iigs_mouseon (plinput.md 7, open problem 2); nothing here.
+;               iigs_mouseon; nothing here.
 ;               pl_poll, pl_bind and pl_defaults are part plinput's
-;               (src/native/pl_input.s, pl_keys.s; since wave 5's
-;               integration)
-;   s2m_sndbuf  the sounds s2_menu.s's sound gave sc_start (-D S2M_SNDLOG):
-;               a count, then the sounds (at most 63)
+;               (src/native/pl_input.s, pl_keys.s)
+;   s2m_sndbuf  the sounds s2_menu.s's sound gave sc_start (filled only
+;               with -D S2M_SNDLOG, which no build here defines): a
+;               count, then the sounds (at most 63)
 ;
 ; The checkpoints' entries (tools/native/s2menu1.py, s2menu2.py), each
 ; between m_load and m_save, the routine alone in the cost phase 30 (PHASE

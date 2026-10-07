@@ -14,13 +14,12 @@ the release image from a hard disk in slot 7, and writes
                    the game's firmware calls
   DIR/loader.img   the loader alone, entered as the boot block leaves it:
                    running it on the machine up to the entry point gives
-                   the memory of the real loader, to check memory.img
+                   the memory of the real loader
 
 DIR is build/ref816 by default. The files hold upstream's code and data:
-they stay in build/, which git ignores. The test of memory.img against
-the loader is in tests/test_ref816_machine.py; the two differ only in
-the loader's direct page and stack, its own variables, and the load
-strip.
+they stay in build/, which git ignores. memory.img and the loader's
+run differ only in the loader's direct page and stack, its own
+variables, and the load strip.
 
 --banks N makes the image of a IIgs with RAM in banks $00 to N-1 instead
 (64 for 4 MB): the loader then leaves the level store on the disk and

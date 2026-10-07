@@ -1,5 +1,5 @@
-; game/player/player.inc: part player's places (milestone 10, docs/GAME.md
-; 2.4, 4.4; docs/game-parts/player.md). GPL-2, the port's own.
+; game/player/player.inc: part player's places (docs/GAME.md). GPL-2, the
+; port's own.
 ;
 ; The part has no zero page of its own: its temporaries are GT_0-GT_6 (GT_7
 ; on is the object API's and gcall.s's), its arguments GA_*. What its
@@ -15,8 +15,7 @@
 PY      = SB_PLAYER
         .assert SB_PLAYER_SIZE >= 32, error, "player's scratch block"
 PY_ONG  = G_ONGROUND            ; (1) onground (upstream's PU_ONGROUND):
-                                ;   the persistent global of request R1
-                                ;   (wave 5 as integrated: it lives from
+                                ;   a persistent global (it lives from
                                 ;   one tic to the next, movePlayer is
                                 ;   skipped while reactiontime counts
                                 ;   down); the block's byte 0 is free

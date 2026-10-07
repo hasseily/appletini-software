@@ -1,11 +1,10 @@
 ; s2_am.inc: the automap's places, shared by s2_am.s (the image AMAPW) and
 ; s2_amline.s (the transform, the clip and the line loops, which part
-; s2ovl's OVLW links too). Part s2amap, docs/m11-parts/s2amap.md;
-; docs/SCREENS.md 1.5.4, 4.1, 4.3.
+; s2ovl's OVLW links too). Part s2amap; docs/SCREENS.md (the automap).
 ;
 ; Three bases, which another image can set before including this file
-; (OVLW lives in milestone 8's W, where AMAPW's places are not free):
-;   AMZ    the automap's zero page, 48 bytes ($80-$AF: SCREENS.md 4.3's
+; (OVLW lives in the renderer's W, where AMAPW's places are not free):
+;   AMZ    the automap's zero page, 48 bytes ($80-$AF: s2layout.py's
 ;          S2A_*)
 ;   AMW    its W variables, 192 bytes (AMAPW: $A840-$A8FF, the part of
 ;          its marks range the marks page leaves)

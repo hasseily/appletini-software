@@ -1,6 +1,7 @@
 /*
  * a2vm: the machine around the cores. See a2vm.h for what it models;
- * each part names the part of demos/doom/tools/a2sim.py it follows.
+ * each part names the part of a2sim.py (the earlier Appletini Doom
+ * port's Python model, not in this repository) it was written from.
  */
 #include "a2vm.h"
 
@@ -46,7 +47,8 @@ static const uint8_t mouse_rom[256] = {
    $Cn07 $18, $Cn0B $01, $Cn0C $20, $CnFB $D6) and an AppleMouse II's
    first instruction (BIT $FF58), nothing of the Appletini's firmware and
    no registers behind $C0n0-$C0nF: a card the AppleMouse ID check
-   accepts that is not the Appletini's (DOOM GS's probe, docs/PLAY.md 20). */
+   accepts that is not the Appletini's (DOOM GS's probe, docs/PLAY.md,
+   the mouse probe). */
 static uint8_t plain_mouse_rom(unsigned offset)
 {
     switch (offset) {
@@ -1332,35 +1334,34 @@ static void lc_switch(a2vm *m, unsigned low, int is_read)
     a2vm_remap(m);
 }
 
-/* ---- the zero-page bank pair (zpbank-spec.md, zpbank-review.md) ----
+/* ---- the zero-page bank pair (README.md, "The zero-page bank pair") ----
 
-   The review's corrected specification (zpbank-review.md section 2),
-   with the RTL places the spec cites (appletini-one, F1.2.1):
+   The firmware design's pair as corrected in its review, with the RTL
+   places it builds on (appletini-one, F1.2.1):
 
    - A write to $C069 while the pair is armed sets the pair and clears
      both registers: $00 or $FF turns it off, $01-$FE makes that byte
      zp_rd and the next zp_wr. The write stays an ordinary bus cycle (the
-     X_ROUTE branch is not changed, spec 2.2): a2vm's I/O write does
-     nothing else, as a2sim.py's does nothing for $C069. Reads of $C069
+     X_ROUTE branch is not changed): a2vm's I/O write does nothing
+     else, as a2sim.py's did nothing for $C069. Reads of $C069
      are unchanged.
    - While the pair is on, a committed CPU write whose decode is main
      zero page loads the register its address names; writes to aux zero
-     page (ALTZP) are ignored (review finding 2). The value applies on
-     the next edge (spec 2.4): every write to $00xx is the last cycle of
+     page (ALTZP) are ignored. The value applies on the next edge: every write to $00xx is the last cycle of
      its instruction and the first redirected access comes at least 4
      cycles later, so a2vm applies it at once.
    - A stored 1-126 selects that $C073 bank (physical bank value + 1);
-     0 and 127-255 follow the switches (review finding 1).
+     0 and 127-255 follow the switches.
    - Only data_ea cycles (cpu65c02.h) to $0200-$BFFF are redirected, by
      zp_rd for reads and zp_wr for writes, and the redirect wins over
-     RAMRD, RAMWRT, 80STORE and PAGE2 (spec 3.1, D2: the override comes
-     after the 80STORE block of translate_apple_addr, globals.sv:263-269).
+     RAMRD, RAMWRT, 80STORE and PAGE2 (the override comes after the
+     80STORE block of translate_apple_addr, globals.sv:263-269).
      Redirected banks are PSRAM banks of 2 or more, so a redirected write
-     is never posted, shadowed or counted as a video write (spec 3.1,
-     vtw_core_top.sv:565-569).
-   - Reset (spec section 4, review section 2): off at power-on, on RES#
+     is never posted, shadowed or counted as a video write
+     (vtw_core_top.sv:565-569).
+   - Reset: off at power-on, on RES#
      (a2vm_zpbank_reset) and when disarmed; kept across everything else.
-   - The memory API and the pokes of a harness never load it (they do not
+   - The memory API and pokes from outside the CPU never load it (they do not
      go through the CPU; the API cannot reach zero page). */
 
 static uint8_t zpb_decode(uint8_t value)
@@ -1387,8 +1388,8 @@ static void zpb_watch(a2vm *m, uint16_t address, uint8_t value)
     }
 }
 
-/* The contract breach of native-memory.md 8.1 item 9: firmware (the slot
-   ROMs or the //e ROM) running while the pair redirects. */
+/* A breach of the pair's contract: firmware (the slot ROMs or the //e
+   ROM) running while the pair redirects. */
 static int zpb_in_firmware(const a2vm *m)
 {
     uint16_t pc = m->instruction_pc;
@@ -1656,6 +1657,105 @@ static void io_write(a2vm *m, uint16_t address, uint8_t value)
         rm_pia_write(&m->romouse, low & 0x0f, value);
 }
 
+/* ---- the block device (--blockdev; README.md, "The block device") ---- */
+
+/* Its slot ROM: a ProDOS block device's ID bytes, not a SmartPort's
+   ($Cn07 $01), the driver's entry $Cn0A (an RTS there; a2vm does the call
+   before it runs), $CnFF its offset. In slot 7 with --amem the memory
+   API's ROM answers first: the same bytes but $C707 $00 (amem_init). */
+static uint8_t blockdev_rom(unsigned offset)
+{
+    switch (offset) {
+    case 0x01: return 0x20;
+    case 0x03: return 0x00;
+    case 0x05: return 0x03;
+    case 0x07: return 0x01;
+    case 0x0a: return 0x60;
+    case 0xff: return 0x0a;
+    default: return 0x00;
+    }
+}
+
+enum {
+    BD_STATUS = 0, BD_READ = 1, BD_WRITE = 2, BD_FORMAT = 3,
+    BD_E_BADCALL = 0x01, BD_E_IO = 0x27, BD_E_NODEV = 0x28,
+    BD_E_WPROT = 0x2b
+};
+
+/* The driver's call the CPU is about to run at $Cn0A (INTCXROM off):
+   ProDOS's block-device protocol through the bus, then an RTS. */
+static int blockdev_call(a2vm *m)
+{
+    a2vm_blockdev *b = &m->blockdev;
+    unsigned n = (unsigned)b->slot;
+    if (m->sw[SW_INTCXROM] || m->cpu.pc != (0xc00a | n << 8))
+        return 0;
+    uint8_t command = a2vm_read(m, 0x0042), unit = a2vm_read(m, 0x0043);
+    uint16_t buffer = (uint16_t)(a2vm_read(m, 0x0044) |
+                                 a2vm_read(m, 0x0045) << 8);
+    uint16_t block = (uint16_t)(a2vm_read(m, 0x0046) |
+                                a2vm_read(m, 0x0047) << 8);
+    uint8_t error = 0, data[512];
+    b->calls++;
+    a2vm_write(m, 0x07f8, (uint8_t)(0xc0 + n));     /* MSLOT */
+    if (((unit >> 4) & 7) != n || (unit & 0x80))
+        error = BD_E_NODEV;                         /* one drive */
+    else if (command == BD_STATUS) {
+        b->statuses++;
+        m->cpu.x = (uint8_t)b->blocks;
+        m->cpu.y = (uint8_t)(b->blocks >> 8);
+        if (b->read_only)
+            error = BD_E_WPROT;
+    } else if (command == BD_READ) {
+        b->reads++;
+        if (block >= b->blocks || fseek(b->file, (long)block * 512,
+                                        SEEK_SET) ||
+            fread(data, 1, 512, b->file) != 512)
+            error = BD_E_IO;
+        else
+            for (unsigned i = 0; i < 512; i++)
+                a2vm_write(m, (uint16_t)(buffer + i), data[i]);
+    } else if (command == BD_WRITE) {
+        b->writes++;
+        if (b->read_only)
+            error = BD_E_WPROT;
+        else if (block >= b->blocks)
+            error = BD_E_IO;
+        else {
+            for (unsigned i = 0; i < 512; i++)
+                data[i] = a2vm_read(m, (uint16_t)(buffer + i));
+            if (fseek(b->file, (long)block * 512, SEEK_SET) ||
+                fwrite(data, 1, 512, b->file) != 512 || fflush(b->file))
+                error = BD_E_IO;
+            else if (b->written_count < A2VM_BLOCKDEV_NOTES)
+                b->written[b->written_count++] = block;
+        }
+    } else if (command == BD_FORMAT)
+        error = b->read_only ? BD_E_WPROT : 0;
+    else
+        error = BD_E_BADCALL;
+    if (error)
+        b->errors++;
+    b->last_command = command;
+    b->last_unit = unit;
+    b->last_block = block;
+    b->last_error = error;
+    if (n == 7 && m->amem_on)
+        m->amem.selected = 1;       /* (the firmware's C8 space stays) */
+    /* the RTS */
+    uint8_t lo = a2vm_read(m, (uint16_t)(0x0100 + (uint8_t)(m->cpu.s + 1)));
+    uint8_t hi = a2vm_read(m, (uint16_t)(0x0100 + (uint8_t)(m->cpu.s + 2)));
+    m->cpu.s = (uint8_t)(m->cpu.s + 2);
+    m->cpu.pc = (uint16_t)((lo | hi << 8) + 1);
+    m->cpu.a = error;
+    if (error)
+        m->cpu.p |= CPU65C02_C;
+    else
+        m->cpu.p &= (uint8_t)~CPU65C02_C;
+    m->cpu.cycles += 6;
+    return 1;
+}
+
 /* ---- the bus ---- */
 
 static uint8_t slow_read(a2vm *m, uint16_t address)
@@ -1670,6 +1770,9 @@ static uint8_t slow_read(a2vm *m, uint16_t address)
             return (uint8_t)value;
     }
     int slot = (address >> 8) & 7;
+    if (m->blockdev.slot && slot == m->blockdev.slot && address < 0xc800 &&
+        !m->sw[SW_INTCXROM])
+        return blockdev_rom(address & 0xff);
     if (m->vidhd.slot && slot == m->vidhd.slot && address < 0xc800 &&
         !m->sw[SW_INTCXROM] && (slot != 3 || m->sw[SW_SLOTC3ROM]))
         return vidhd_rom(address & 0xff);   /* (slot 3: the //e's own
@@ -2258,6 +2361,9 @@ void a2vm_step(a2vm *m)
         if (m->mouse_apple && (pc >> 8) == 0xc0 + m->mouse_slot)
             halt(m, "mouse-apple: the AppleMouse II's firmware needs "
                  "--core w65c02s");
+        if (m->blockdev.slot && pc == (0xc00a | m->blockdev.slot << 8))
+            halt(m, "blockdev: the block device's driver needs "
+                 "--core w65c02s");
         if (m->idle_map[pc >> 3] & (1u << (pc & 7)))
             skip_idle(m, pc);
         if (m->pc_hook && !m->r.waiting &&
@@ -2301,6 +2407,9 @@ void a2vm_step(a2vm *m)
         return;
     if (m->mouse_apple && m->cpu.state == CPU65C02_RUNNING &&
         !(irq && !(m->cpu.p & CPU65C02_I)) && apple_mouse_call(m))
+        return;
+    if (m->blockdev.slot && m->cpu.state == CPU65C02_RUNNING &&
+        !(irq && !(m->cpu.p & CPU65C02_I)) && blockdev_call(m))
         return;
     int rti = (m->ay_log || m->irq_bound_count) && !taken &&
               m->cpu.state == CPU65C02_RUNNING && at_rti(m, m->cpu.pc);
@@ -2639,6 +2748,31 @@ a2vm *a2vm_new(const a2vm_config *config, char *error, size_t error_size)
     }
     m->amem_on = config->amem;
     amem_init(&m->amem);
+    if (config->blockdev_slot) {
+        a2vm_blockdev *b = &m->blockdev;
+        if (config->blockdev_slot < 1 || config->blockdev_slot > 7 ||
+            !config->blockdev_path) {
+            snprintf(error, error_size, "the block device needs a slot "
+                     "1..7 and an image");
+            a2vm_free(m);
+            return NULL;
+        }
+        b->read_only = config->blockdev_ro;
+        b->file = fopen(config->blockdev_path, b->read_only ? "rb" : "r+b");
+        long size = -1;
+        if (b->file && !fseek(b->file, 0, SEEK_END))
+            size = ftell(b->file);
+        if (size <= 0 || size % 512 || size / 512 > 0xffff) {
+            snprintf(error, error_size, "%s is not an image of 1-65,535 "
+                     "blocks", config->blockdev_path);
+            a2vm_free(m);
+            return NULL;
+        }
+        b->blocks = (uint32_t)(size / 512);
+        b->slot = config->blockdev_slot;
+        if (b->slot == 7)
+            m->amem.rom[0x0a] = 0x60;   /* (the entry's RTS) */
+    }
     mouse_init(&m->mouse);
     phasor_init(&m->phasor);
     m->sw[SW_TEXT] = 1;
@@ -2704,5 +2838,17 @@ void a2vm_free(a2vm *m)
     free(m->amem.input);
     free(m->vidhd.copy);
     free(m->vidhd.check_map);
+    if (m->blockdev.file)
+        fclose(m->blockdev.file);
     free(m);
+}
+
+void a2vm_blockdev_global_page(a2vm *m)
+{
+    unsigned n = (unsigned)m->blockdev.slot;
+    if (!n)
+        return;
+    m->main[0xbf30] = (uint8_t)(n << 4);            /* DEVNUM: drive 1 */
+    m->main[0xbf10 + 2 * n] = 0x0a;                 /* DEVADR's entry */
+    m->main[0xbf11 + 2 * n] = (uint8_t)(0xc0 + n);
 }

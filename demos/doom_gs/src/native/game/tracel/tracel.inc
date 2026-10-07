@@ -1,6 +1,5 @@
-; game/tracel/tracel.inc: part tracel's places (milestone 10, docs/GAME.md
-; 1.9, 2.4 row tracel, 4.4; docs/game-parts/tracel.md). GPL-2, the port's
-; own. Included after ggame.inc.
+; game/tracel/tracel.inc: part tracel's places (docs/GAME.md: the trace
+; and its intercepts). GPL-2, the port's own. Included after ggame.inc.
 ;
 ; The trace's state. Upstream keeps it in near and bank $3F scratch of
 ; p_trace65.s and p_path65.s (_g_trace, TR_LONG, intercept_p, IC_LAST,
@@ -8,7 +7,7 @@
 ; and sideSetup (part tracet) and read by this part, tracet, path and the
 ; traversers (attack: the trace's point at a frac). It is shared tic
 ; scratch, as geom's GM_* are: glayout.TIC_GW_FIELDS's GM_TRACE ..
-; GM_INVB in GW, never overlaid (request R1, wave 2 as integrated):
+; GM_INVB in GW, never overlaid:
 ;
 ;   TL_TRACE    _g_trace: x, y, dx, dy (fixed_t each)
 ;   TL_TRLONG   TR_LONG: 1 a long trace (longTrace), else 0
@@ -25,7 +24,7 @@
 ; The intercepts themselves are llayout's ICPT (64 entries of 6 bytes:
 ; frac (4), what (2: a line, or $8000 + a mobj slot)) and ICHAIN (the
 ; by-frac chain: the next entry's index after each entry, $FF none; the
-; head at ICHAIN + MAXINTERCEPTS), GAME.md 1.9.
+; head at ICHAIN + MAXINTERCEPTS), GAME.md.
 ;
 ; The part's own bytes kept across its calls: TL_LD (the line of
 ; PIT_AddLineIntercepts and lineCross), TL_S1 (the first side).
@@ -51,7 +50,7 @@ TL_S1     = TL + 2              ; the first side
 IC_HEAD   = MAXINTERCEPTS       ; the chain's head: ICHAIN + 64
 IC_NONE   = $FF                 ; no next entry
 
-; The zero page of the part's routines (GAME.md 4.4: the arguments GA_*,
+; The zero page of the part's routines (GAME.md: the arguments GA_*,
 ; the temporaries GT_0-GT_6 that no runtime routine uses, and GT_7-GT_18
 ; inside a routine that makes no API call and no FCALL while they live):
 ;

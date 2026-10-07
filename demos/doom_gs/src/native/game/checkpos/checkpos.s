@@ -1,5 +1,5 @@
-; game/checkpos/checkpos.s: part checkpos of milestone 10 (docs/GAME.md 2.4
-; row checkpos; docs/game-parts/checkpos.md): whether a thing fits at a
+; game/checkpos/checkpos.s: part checkpos of the game (docs/GAME.md, the
+; parts): whether a thing fits at a
 ; place. A GPL-2 derivative of upstream's p_map65.s (P_CheckPosition,
 ; cpCopy, checkPos with loadRad, setBox, walkRange, lineBlocks's
 ; PIT_CheckLine mode with lCross and ps32, checkThing = PIT_CheckThing).
@@ -7,7 +7,7 @@
 ; Things and lines are handles, sectors bytes; every record comes through
 ; the object API (mo_get, ln_get, sec_get, bk_get, bl_get, mi_get). The
 ; places (checkpos.inc): tmthing, tmx, tmy, the box, spechit and MP_TRY
-; are the shared GM_TM* of GW (request R1); tmfloorz, tmceilingz, tmdropoffz,
+; are the shared GM_TM* of GW; tmfloorz, tmceilingz, tmdropoffz,
 ; numspechit are GM_* (geom's sectorFloor and baseLite write them first);
 ; ceilingline G_CEILLINE, MP_CLOB G_MPCLOB, the line record G_LROK, G_LRN,
 ; G_LRLINES (the globals block).
@@ -58,7 +58,7 @@
 ;
 ; Upstream's helpers above (geom's P_BoxOnLineSide has it inline), setBoxL
 ; (a JSL wrapper: FCALL setBox), lCross, ps32 and loadRad have no code of
-; their own: their work is done in place (request R4).
+; their own: their work is done in place.
 ;
 ; A routine changes A, X, Y, GA_*, GT_*, the math block, the API's
 ; temporaries and what its callees change (sectorFloor, baseLite,

@@ -66,9 +66,6 @@ class Linear:
         """The atoms that the value depends on."""
         return [atom for atom, _ in self.terms]
 
-    def coefficient(self, atom):
-        return dict(self.terms).get(atom, 0)
-
     def plus(self, other, sign=1):
         """self + sign * other"""
         terms = dict(self.terms)

@@ -1,6 +1,6 @@
-; game/chasemove/chasemove.inc: part chasemove's places (milestone 10,
-; docs/GAME.md 2.4 row chasemove, 4.4; docs/game-parts/chasemove.md).
-; GPL-2, the port's own. Included after ggame.inc.
+; game/chasemove/chasemove.inc: part chasemove's places (docs/GAME.md,
+; the parts; zero page and scratch). GPL-2, the port's own. Included after
+; ggame.inc.
 ;
 ; The part has no zero page of its own: its temporaries are GT_0-GT_6 (GT_7
 ; on is the object API's, which every API call may change) and the math

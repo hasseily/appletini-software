@@ -1,8 +1,7 @@
-; game/chasemove/pmove.s: part chasemove's walk (milestone 10, docs/GAME.md
-; 2.4 row chasemove; docs/game-parts/chasemove.md). A GPL-2 derivative of
-; upstream's p_enemy65.s with TICSTEP 1, the release's (P_Move as pMove,
-; with speedStep, mulSpeed, umul16x and their tables speedTab, speeds,
-; SPD47; P_TryWalk with tryWalk).
+; game/chasemove/pmove.s: part chasemove's walk (docs/GAME.md, the
+; parts). A GPL-2 derivative of upstream's p_enemy65.s with TICSTEP 1, the
+; release's (P_Move as pMove, with speedStep, mulSpeed, umul16x and their
+; tables speedTab, speeds, SPD47; P_TryWalk with tryWalk).
 ;
 ;   pMove       GA_0-1 the actor (CM_AP). A = 0 (C clear) when its movedir
 ;               is DI_NODIR. Else its try point: when its type's speed is
@@ -24,14 +23,13 @@
 ;               (C clear)
 ;   P_TryWalk   upstream's public P_TryWalk: tryWalk
 ;
-; The helpers have no code of their own (docs/game-parts/chasemove.md R1,
-; glayout.INLINED): speedStep is cm_step, mulSpeed cm_mulspeed, umul16x
-; cm_umul16x (milestone 6's umul16), the tables cm_class (speedTab), the
-; class values cm_value (speeds: the value of each direction is its class's,
-; so the two tables of 16 longs are one of 5) and cm_spd47 (SPD47). Every
-; product is math.s's (umul16, mul32). Records through the object API
-; (mo_get, mi_get). A routine changes A, X, Y, GA_*, GT_*, the math block,
-; the API's temporaries and what its callees change.
+; The helpers have no code of their own (glayout.INLINED): speedStep is
+; cm_step, mulSpeed cm_mulspeed, umul16x cm_umul16x (math.s's umul16), the
+; tables cm_class (speedTab), the class values cm_value (speeds: the value of
+; each direction is its class's, so the two tables of 16 longs are one of 5)
+; and cm_spd47 (SPD47). Every product is math.s's (umul16, mul32). Records
+; through the object API (mo_get, mi_get). A routine changes A, X, Y, GA_*,
+; GT_*, the math block, the API's temporaries and what its callees change.
 
         .setcpu "65C02"
         .macpack longbranch

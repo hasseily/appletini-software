@@ -1,6 +1,6 @@
 /*
  * The trace of a run of ref816: what the game does frame by frame, for
- * the profiles of tools/ref816/profile816.py.
+ * profiling the release.
  *
  * A frame of the game is one pass of its main loop that drew the 3D view,
  * from one call of the frame entry (R_RenderPlayerView) to the next, as
@@ -93,8 +93,8 @@
  * CLOCK is in master clocks; an instruction is an opcode fetch (MVN and
  * MVP fetch theirs again for each byte), as in iigs.h.
  *
- * The code records model the code page cache of the interpreter of
- * src/vm (src/vm/README.md, "The code cache"): TRACE_CODE_SLOTS pages,
+ * The code records model the code page cache of this project's earlier
+ * 65816 interpreter (no longer in the repository): TRACE_CODE_SLOTS pages,
  * looked up when a fetch enters a page other than the current one, and
  * on a miss filled in turn (the oldest fill is replaced). It counts
  * every fetch the way the interpreter makes it, whatever the phase, and
@@ -104,7 +104,7 @@
  * Samples. With a sample file, every sample_every-th instruction of the
  * recorded frames (counted over all of them; the frame that the end of
  * the run cuts short is recorded too) is written there whole, so that
- * another machine can run it again (tools/a2vm/game816.c):
+ * another machine can run it again:
  *
  *   ref816-samples 1
  *   s PHASE PC A X Y S D DBR P E           an instruction: its phase, then
@@ -133,7 +133,7 @@ enum {
     TRACE_MAX_PHASES = 16,
     TRACE_MAX_ENTRIES = 64,
     TRACE_SAMPLE_EVERY = 499,
-    TRACE_CODE_SLOTS = 16,      /* src/vm/vm.s, NSLOT */
+    TRACE_CODE_SLOTS = 16,      /* the interpreter's NSLOT */
     TRACE_OTHER = 0,            /* the phase outside all others */
     TRACE_INTERRUPT = 1
 };

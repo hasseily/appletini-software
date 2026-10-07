@@ -1,11 +1,11 @@
-; s2_draw.s: the 2D drawers into a band (docs/SCREENS.md 1.2, 1.4; part
-; s2draw, docs/m11-parts/s2draw.md). A shared object, linked into every
-; 2D image that draws (P2DW, MENUW, WIW, FINW). Written from upstream's
-; src/iigs/patch65.s (IIGS_DrawPatch, markPatch, capPost) and
-; src/iigs/i_viigs65.s (V_DrawPatchNotScaled, V_DrawRaw's drawRawData and
-; pairByte, V_DrawBackground, markRect, markRows, rectOffset and
-; copyToBuffer), with upstream's back buffer replaced by a band of rows in
-; W and its far data by RamWorks through far_get.
+; s2_draw.s: the 2D drawers into a band (docs/SCREENS.md, the bands and the
+; drawers). A shared object, linked into every 2D image that draws (P2DW,
+; MENUW, WIW, FINW). Written from upstream's src/iigs/patch65.s
+; (IIGS_DrawPatch, markPatch, capPost) and src/iigs/i_viigs65.s
+; (V_DrawPatchNotScaled, V_DrawRaw's drawRawData and pairByte,
+; V_DrawBackground, markRect, markRows, rectOffset and copyToBuffer), with
+; upstream's back buffer replaced by a band of rows in W and its far data by
+; RamWorks through far_get.
 ;
 ;   s2_patch    IIGS_DrawPatch: the patch at S2_PBANK:S2_PADDR (Doom's
 ;               format) at S2_X, S2_Y, its rectangle marked (markPatch),
@@ -27,14 +27,13 @@
 ;               S2_MB0 .. S2_MB1 the bytes, clipped to the band
 ;   s2_markp    markPatch alone: the rectangle of S2_X, S2_Y (the offsets
 ;               applied), S2_W, S2_H clipped to the screen, then marked
-;               (s2_mark); nothing drawn (part s2stbar's marking pass,
-;               request S2STBAR-5)
+;               (s2_mark); nothing drawn (part s2stbar's marking pass)
 ;   s2_unmark   the band's marks cleared
 ;
 ; The patch's columns come from RamWorks: each column's offset by a
 ; far_get of 2 bytes, its posts through the fetch buffer, refilled from the
 ; column when the 256 bytes from its start are not in it (a column of a 2D
-; patch is at most 256 bytes: tools/native/s2draw.py checks every one).
+; patch is at most 256 bytes: tools/native/s2data.py checks every one).
 ; A source lies in its bank's $0200-$BFFF (a RAMRD window reaches nothing
 ; else), a patch's last column the fetch buffer's size before $C000. As
 ; upstream, a post off the screen (row >= 200, or negative) ends its
@@ -61,7 +60,7 @@
 ;   s2_begun    a byte: s2_begin has run in this frame (s2_pub.s; PALST's
 ;               PS_BEGUN in the images that keep PALST)
 ;   s2_begin    the palettes and SCBs before the frame's first band
-;               (part s2pal; s2_beginstub.s in the test images)
+;               (part s2pal)
 ;
 ; The inner loops patch their own operands (the row table, the nibble
 ; table's page, the mask): W is RAM and loaded every frame.

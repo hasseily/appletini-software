@@ -1,14 +1,13 @@
-; s2_mvid.s: the menu's video in MENUW (docs/SCREENS.md 1.2, 1.5.3, 4.1;
-; part s2menu1, docs/m11-parts/s2menu1.md). GPL-2: rewritten from
-; upstream's src/iigs/i_viigs65.s (Doom8088: Apple IIgs Edition, GPL-2):
-; I_MenuPalette, uiGrayTables, grayMap, uiDimAll, uiDimRect,
-; uiFontNibbles, I_MenuPaletteBack, I_RestoreBackRect [R :877-957,
-; :1556-1622, :2030-2402], and d_main65.s's static screen
+; s2_mvid.s: the menu's video in MENUW (docs/SCREENS.md, the menu; part
+; s2menu1). GPL-2: rewritten from upstream's src/iigs/i_viigs65.s (Doom8088:
+; Apple IIgs Edition, GPL-2): I_MenuPalette, uiGrayTables, grayMap,
+; uiDimAll, uiDimRect, uiFontNibbles, I_MenuPaletteBack, I_RestoreBackRect
+; [R :877-957, :1556-1622, :2030-2402], and d_main65.s's static screen
 ; (staticUpToDate, restoreRect, skullRect, staticDrawn [R :561-624]).
 ;
 ; Upstream saves the screen into a bank, redraws every byte through
 ; UI_GRAY into its back buffer and copies the marked bytes to the screen.
-; Natively (1.2, 1.5.3) the screen is saved by one memory-API COPY of aux
+; Natively the screen is saved by one memory-API COPY of aux
 ; 0 $2000-$9FFF to bank S2VIEW, and every frame composes 24-row bands in
 ; W: the saved rows fetched (far_get), each byte through the gray map of
 ; its row's saved palette, the menu drawn over them (s2_menu.s), the band
@@ -51,9 +50,8 @@
 ;   mv_drawn    staticDrawn [R d_main65.s:618-624]
 ;
 ; The image's places for the drawers (s2_marks, s2_fbuf, s2_fbpages,
-; s2_begun, s2_palst) are exported here; their addresses are s2layout's
-; (request S2MENU1-2, applied in wave 5's integration). Zero page: S2_* (the drawers'), S2M_* ($80-$AF),
-; FA_*; A, X, Y changed.
+; s2_begun, s2_palst) are exported here; their addresses are s2layout's.
+; Zero page: S2_* (the drawers'), S2M_* ($80-$AF), FA_*; A, X, Y changed.
 
         .setcpu "65C02"
         .include "rlayout.inc"

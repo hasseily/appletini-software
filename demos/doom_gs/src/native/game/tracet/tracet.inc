@@ -1,14 +1,13 @@
-; game/tracet/tracet.inc: part tracet's places (milestone 10, docs/GAME.md
-; 1.9, 2.4 row tracet, 4.4; docs/game-parts/tracet.md). GPL-2, the port's
-; own. Included after ggame.inc.
+; game/tracet/tracet.inc: part tracet's places (docs/GAME.md: the trace).
+; GPL-2, the port's own. Included after ggame.inc.
 ;
-; The trace's shared state is GW's GM_* (tracel.md R1, wave 2 as
-; integrated): GM_TRACE (x, y, dx, dy), GM_TRLONG, GM_IVON, GM_IVM,
+; The trace's shared state is GW's GM_* (tracel.inc): GM_TRACE (x, y, dx,
+; dy), GM_TRLONG, GM_IVON, GM_IVM,
 ; GM_INVB, the intercepts ICPT/ICHAIN with GM_ICN, GM_ICLAST.
 ;
 ; SIDE1's constants of the trace (upstream's VT_* of bank $21, written by
-; sideSetup, read by traceLines and thSide) are GW's GM_RR and GM_SIDE1
-; (request R4); the walks' state is the part's scratch block SB_TRACET:
+; sideSetup, read by traceLines and thSide) are GW's GM_RR and GM_SIDE1;
+; the walks' state is the part's scratch block SB_TRACET:
 ;
 ;   TT_RR    VT_RR: not 0 when the fast vertex sides are on (a byte)
 ;   TT_AX    the main axis (0: x, sub = X', main = Y'; 4: y, sub = Y',
@@ -43,7 +42,6 @@ TT_NEED  = 13
 ; SIDE1's constants live from sideSetup to the trace's last block step,
 ; across the early traversal's traverser calls (part path), and path reads
 ; TT_RR (upstream's VT_RR): GW's GM_RR and GM_SIDE1 (15), never overlaid
-; (request R4, wave 3 as integrated)
 TT_RR    = GM_RR
 TT_AX    = GM_SIDE1 + 0
 TT_P1    = GM_SIDE1 + 1
@@ -80,7 +78,7 @@ VBV     = 5                     ; L cannot tell: -5..5 for vertices,
 VBTH    = 21                    ;   -21..13 for the corners of things
 VBTL    = 13
 
-; The zero page (GAME.md 4.4): SIDE1's point in GT_0-GT_3 (X', Y'), its
+; The zero page (GAME.md): SIDE1's point in GT_0-GT_3 (X', Y'), its
 ; temporaries in GT_4-GT_12 (no API call and no FCALL while they live);
 ; sideSetup's in GT_0-GT_9 before its first FCALL and GA_0-GA_9 as vsC's
 ; arguments (SQ in GA_0-1, which vsC and gOf leave as they are).

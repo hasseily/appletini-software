@@ -1,9 +1,8 @@
-"""The game's form of DOOM1.WAD's lumps (milestone 9, docs/LEVELS.md 1.1):
+"""The game's form of DOOM1.WAD's lumps (docs/LEVELS.md):
 our own transforms of the map lumps, TEXTURE1 and PNAMES into the form
 upstream's P_SetupLevel and R_InitTextures read, written from the format
 that upstream's build tool documents (build/upstream/tools/wadtool.py
-describes the form; none of its code runs here), and checked equal to the
-release's lumps (tools/native/umodel.py reads those).
+describes the form; none of its code runs here).
 
 The forms, all little endian:
 
@@ -48,7 +47,7 @@ release's game SECTORS lump and fails unless the pairing is one to one.
 """
 
 import struct
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 ML_NAMES = ('THINGS', 'LINEDEFS', 'SIDEDEFS', 'VERTEXES', 'SEGS',
             'SSECTORS', 'NODES', 'SECTORS', 'REJECT', 'BLOCKMAP')
@@ -430,13 +429,3 @@ class GameMap:
         d = self.lumps['THINGS']
         return [struct.unpack_from('<hhhbb', d, 8 * i)
                 for i in range(len(d) // 8)]
-
-
-def check_equal(name: str, mine: bytes, release: bytes) -> Optional[str]:
-    """None when equal, else where they first differ."""
-    if mine == release:
-        return None
-    n = min(len(mine), len(release))
-    at = next((i for i in range(n) if mine[i] != release[i]), n)
-    return '%s: %d bytes, the release\'s %d; first difference at %d' % (
-        name, len(mine), len(release), at)

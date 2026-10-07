@@ -1,6 +1,5 @@
 ; wclip.s: the weapon's clip pass of the native renderer's front end
-; (docs/RENDER-MASKED.md 3.2 phase 3; milestone 8, stage C), in place of
-; milestone 7's seam. A GPL-2 derivative of Webifi's IIgs DOOM
+; (docs/RENDER-MASKED.md). A GPL-2 derivative of Webifi's IIgs DOOM
 ; (build/upstream/src/iigs/r_frame65.s weaponClip, psSetup, pspSprite,
 ; :647-854; r_sprite65.s wcDraw3, wpCheck, wcProf, :794-880, :1259-1301;
 ; r_seg65.s visCol, visPost 30$, visNext, :2887-3116), written for the
@@ -22,7 +21,7 @@
 ; wcDraw3's other tests always pass here: wpCheck (unit scale, xiscale 2.0,
 ; whole startfrac, the clip arrays of psSetup: pspSprite's vissprite), and
 ; W_WSK is 0 when a frame starts (every frame's end leaves it 0: sortSkip,
-; playerSkip; tools/native/framestate.py checks it), so the clip pass takes
+; playerSkip), so the clip pass takes
 ; no wclipSprite.
 
         .setcpu "65C02"

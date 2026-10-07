@@ -1,5 +1,5 @@
-; game/spawn/sp.inc: part spawn's places (milestone 10, docs/GAME.md 2.4,
-; 4.4; docs/game-parts/spawn.md). GPL-2, the port's own.
+; game/spawn/sp.inc: part spawn's places (docs/GAME.md). GPL-2, the port's
+; own.
 ;
 ; The part has no zero page of its own: its temporaries are GT_0-GT_6 (GT_7
 ; on is the object API's) and, inside a routine between its calls of other
@@ -28,9 +28,8 @@ SP_DMG  = SP + 14               ; (2) P_SpawnBlood's damage (SP_DAMAGE)
 ZM_MO   = SP + 16               ; (2) its mobj
 ZM_PL   = SP + 18               ; (1) 1: the player's (upstream's MV_PL)
 ; the attack's range, attackrange (upstream's p_attack65.s AT_RANGE: part
-; attack's, wave 5, which sets it in P_LineAttack and P_AimLineAttack):
-; GM_ATRANGE in GW (glayout.TIC_GW_FIELDS, never overlaid; request 1,
-; wave 2 as integrated)
+; attack's, which sets it in P_LineAttack and P_AimLineAttack):
+; GM_ATRANGE in GW (glayout.TIC_GW_FIELDS, never overlaid)
 AT_RANGE = GM_ATRANGE
         .assert ZM_PL + 1 <= SP + 28, error, "spawn's scratch block"
 

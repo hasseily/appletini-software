@@ -1,5 +1,5 @@
-; game/attack/attack.inc: part attack's places (milestone 10, docs/GAME.md
-; 2.4 row attack, 4.4; docs/game-parts/attack.md). GPL-2, the port's own.
+; game/attack/attack.inc: part attack's places (docs/GAME.md, the parts;
+; zero page and scratch). GPL-2, the port's own.
 ; Included after ggame.inc.
 ;
 ; The part has no zero page of its own. What lives from P_LineAttack's or
@@ -8,7 +8,7 @@
 ; AT_AIM) and what a traverser keeps across its own calls (the intercept
 ; and its line or thing, the shot's height t) is in the scratch block
 ; SB_ATTACK (32 bytes, 27 used). attackrange is the shared GM_ATRANGE
-; (spawn.md request 1: P_IsAttackRangeMeleeRange reads it); the trace is
+; (P_IsAttackRangeMeleeRange reads it); the trace is
 ; the shared GM_TRACE (x, y, dx, dy: path's P_PathTraverse writes it).
 ;
 ; A traverser's temporaries between calls that change no GT_0-GT_6 (the
@@ -36,8 +36,7 @@ AK_NEED   = 27
 
 AK_RANGE  = GM_ATRANGE          ; attackrange (AT_RANGE)
 AK_LTGT   = GM_LINETARGET       ; (2) linetarget, $FFFF none (the shared
-                                ;   GM_LINETARGET: request R1, wave 5 as
-                                ;   integrated)
+                                ;   GM_LINETARGET)
 AK_TRACE  = GM_TRACE            ; _g_trace: x, y, dx, dy
 
 ; a mobj cache line's groups (LW_MOB's layout)
@@ -45,7 +44,7 @@ AK_LNB    = 2 * MO_SIZE
 
 ; the sky's ceiling pic: upstream's skyflatnum, the word $FFFE
 ; (r_data65.s:62), is the native byte pic SKY_PIC of ggame.inc
-; (levelconv.py's SKY_PIC; request R2, wave 5 as integrated)
+; (levelconv.py's SKY_PIC)
 AK_SKYPIC = SKY_PIC
 ; the one gun special: open a door on impact (p_attack65.s:942)
 AK_GUNDOOR = 46

@@ -1,13 +1,12 @@
-; s2t_st.s: the status bar's tic side (docs/SCREENS.md 1.5.1, 4.7; part
-; s2stbar, docs/m11-parts/s2stbar.md): a module for milestone 10's tic
-; image, with GAME.md 4.4's calling conventions, called by its hooks
-; (request R4). Written from upstream's src/iigs/st_stuff65.s (ST_Init's
-; state, ST_Start with ST_initData and ST_createWidgets, ST_Ticker but
-; M_Random: readyNum, the key boxes, updateFace, painOffset, muchPain,
-; ouch, turnHead, st_oldhealth), with upstream's 16-bit arithmetic and
-; its quirks (ST_createWidgets' pointer has no NOAMMO check; a ready
-; weapon past weaponinfo's 9 reads the release's next bytes, kept in
-; st_wammo for 9 and 10).
+; s2t_st.s: the status bar's tic side (docs/SCREENS.md, the status bar; part
+; s2stbar): a module for the game's tic image, with docs/GAME.md's calling
+; conventions, called by its hooks. Written from upstream's
+; src/iigs/st_stuff65.s (ST_Init's state, ST_Start with ST_initData and
+; ST_createWidgets, ST_Ticker but M_Random: readyNum, the key boxes,
+; updateFace, painOffset, muchPain, ouch, turnHead, st_oldhealth), with
+; upstream's 16-bit arithmetic and its quirks (ST_createWidgets' pointer has
+; no NOAMMO check; a ready weapon past weaponinfo's 9 reads the release's
+; next bytes, kept in st_wammo for 9 and 10).
 ;
 ;   st_ticker   ST_Ticker: A = M_Random's value (flow's st_tick makes the
 ;               call). The ready number's source (P_FPS, the fps cheat's,
@@ -15,7 +14,7 @@
 ;               the face, st_oldhealth.
 ;   st_start    ST_Start: ST_REFRESHED 0 (the next frame redraws the
 ;               bar); after the first, I_SetPalette(0) (newpal 0 in
-;               S2STATE's PALST, request S2PAL-9); the face 0, st_palette
+;               S2STATE's PALST); the face 0, st_palette
 ;               -1 (P2DW's state), st_oldhealth -1, the old weapons, the
 ;               key boxes -1, the ready number's source, the widgets' old
 ;               values (0, -1 for the icons) in P2DW's state.
@@ -23,13 +22,13 @@
 ;               but st_lastattackdown and st_oldhealthPO -1.
 ;
 ; State: the card's ST_* (s2.inc's S2T block, S2T_BASE of the build);
-; ST_READY and ST_RUNNING (request S2STBAR-1). It reads the player at
+; ST_READY and ST_RUNNING. It reads the player at
 ; G_PLAYER (mo and attacker as mobj handles). turnHead asks the positions
 ; of the player's mobj and of the attacker of the callback s2t_pos (A, X
-; a handle: x, y, angle at GT_POS, 4 bytes each; milestone 10's, with
-; mo_get; request R4, S2STBAR-4) and calls pta3 (R_PointToAngle3) and
+; a handle: x, y, angle at GT_POS, 4 bytes each; the game's, with
+; mo_get) and calls pta3 (R_PointToAngle3) and
 ; sdiv16 (_Div16) of the math. What it keeps across the callback is in
-; its scratch block st_sb (32 bytes; milestone 10's SB_ of the module).
+; its scratch block st_sb (32 bytes; the game's SB_ of the module).
 ; No zero page of its own: FA_* for the far layer, the math's M_*, GT_POS.
 
         .setcpu "65C02"

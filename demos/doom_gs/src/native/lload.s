@@ -1,5 +1,4 @@
-; lload.s: the level load's program runner (milestone 9, stage B;
-; docs/LEVELS.md 2.1, 2.2, 4.1): nl_load runs a map's load program from
+; lload.s: the level load's program runner (docs/LEVELS.md): nl_load runs a map's load program from
 ; the level store in RamWorks, as tools/native/lstore.py's HostMachine
 ; defines it:
 ;
@@ -9,15 +8,15 @@
 ;
 ;     VARIANTS m   the undo requests of the map LV_VARMAP names (none for
 ;                  0), then map m's apply requests, then LV_VARMAP = m
-;                  (docs/LEVELS.md 1.4)
+;                  (docs/LEVELS.md)
 ;     COPYREQ n,   the program's request n: its descriptors (COPY, FILL;
 ;     PRIVREQ n    PRIVATE for main and aux 0) fetched from the store into
 ;                  W and handed to the memory API's transport
 ;     LINES, GROUP, FLOOD, CMAPS
 ;                  the static steps (lgeom.s)
 ;     GTABS, SPAWN, SPECIALS
-;                  the game's steps (lgeom.s's LVS tables, milestone 10;
-;                  stage C's game core, gspawn.s, gspec.s): run only when
+;                  the game's steps (lgeom.s's LVS tables; the game
+;                  core's gspawn.s, gspec.s): run only when
 ;                  the load is nl_setup's (nl_game: GS_GAME); nl_load alone
 ;                  loads the level's data and skips them. The object API
 ;                  (gobj.s) the game core uses keeps its pointers in zero
@@ -25,13 +24,13 @@
 ;                  keeps the program's zero page on the stack
 ;     END          the end
 ;
-; The code runs in W (the load phase's mode window, MEMORY_MAP.md 3.5),
+; The code runs in W (the load phase's mode window, MEMORY_MAP.md),
 ; loaded with the phase loader (far_pload) from bank LCODE; every read of
 ; the store and every write to a RamWorks bank goes through the far
-; layer's far_get and far_put (the card's, docs/MEMORY_MAP.md 4.2: inside
+; layer's far_get and far_put (the card's, docs/MEMORY_MAP.md: inside
 ; a RAMRD or RAMWRT window only zero page, the stack and the card are
-; near). The memory API's transport is here too (MEMORY_MAP.md 4.1,
-; fallback 3): a request is built in W at LW_REQ and sent through slot
+; near). The memory API's transport is here too (MEMORY_MAP.md,
+; the transport's fallback): a request is built in W at LW_REQ and sent through slot
 ; 7's FIFO with interrupts masked.
 ;
 ; A stop (a store without the map, a codec other than raw, a malformed
@@ -222,9 +221,9 @@ steps:  .word 0                 ; END (above)
         .word st_flood
         .word st_cmaps
         .word st_priv           ; PRIVREQ
-        .word st_spawn          ; SPAWN (stage C)
-        .word st_specials       ; SPECIALS (stage C)
-        .word st_gtabs          ; GTABS (milestone 10)
+        .word st_spawn          ; SPAWN
+        .word st_specials       ; SPECIALS
+        .word st_gtabs          ; GTABS
         .assert LST_GTABS = LST_SPECIALS + 1, error, "the steps' order"
 
 st_spawn:
@@ -297,7 +296,7 @@ st_req: ldx LP_ARG
         jmp ld_stop
 
 ; VARIANTS m: the undo list of the map LV_VARMAP names, m's apply list,
-; LV_VARMAP = m (docs/LEVELS.md 1.4)
+; LV_VARMAP = m (docs/LEVELS.md)
 st_variants:
         MARK 2
         lda LV_VARMAP

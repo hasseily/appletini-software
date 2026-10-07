@@ -1,5 +1,5 @@
-; game/sight/sight.s: P_CheckSight, part sight of milestone 10 (docs/GAME.md
-; 0.3 facts 2-3, 1.6, 1.8, 2.4). GPL-2: rewritten from upstream's
+; game/sight/sight.s: P_CheckSight, part sight of the game's tic code
+; (docs/GAME.md). GPL-2: rewritten from upstream's
 ; p_sight65.s (P_CheckSight:138, the walk of P_CrossBSPNode and
 ; P_CrossSubsector, nodeSide, lineSideS, sideTest, nodeDone, lineDone,
 ; straceDone, hintOf, half, qbd, bitTab), Doom8088: Apple IIgs Edition.
@@ -11,8 +11,9 @@
 ; As upstream, step by step:
 ;
 ;   the same pair as the last call (CS_PREV1, CS_PREV2: handles; $FFFE,
-;   stale, names no slot): the last answer CS_PREVR, no validcount++ (fact
-;   2); in test builds the hit goes to the hit log (ghook.s hl_add, 1.8)
+;   stale, names no slot): the last answer CS_PREVR, no validcount++ (with
+;   TESTBUILD, which no build here defines, the hit goes to a hit log,
+;   hl_add)
 ;   REJECT: the bit RJROW[t1's sector] + t2's sector of the map's REJECT
 ;   lump (LVG2 at G_REJECTAT), bit 0 the lowest (upstream's bitTab)
 ;   the same subsector: seen
@@ -20,7 +21,7 @@
 ;   t2y, its box in whole units + $8000) and the walk: first the hint, the
 ;   line that stopped t1's last check: its sightline (one-sided) or the
 ;   hint plane by its slot (HINTL, HINTH, two-sided; upstream's SIGHTHINT
-;   by address, fact 3) when it is a line of the map, as a subsector of one
+;   by address) when it is a line of the map, as a subsector of one
 ;   seg (the line's sectors from LVS through ln_get) while the tree waits;
 ;   then the tree from the root: at a node the sides of both ends, the
 ;   start's child first and the other one waiting on the stack when the
@@ -32,15 +33,15 @@
 ;   (p_sight_opening, zSetup the first time, interceptFrac, sightSlope)
 ;   and blocks when they close (TWOBLOCKER)
 ;   the end: CS_PREVR, t1's sightline = sightblocker, its hint =
-;   TWOBLOCKER. A zone mobj as t1 raises GT_HINT (docs/GAME.md 3.6, T3:
-;   upstream keys its hint by the mobj's address)
+;   TWOBLOCKER. A zone mobj as t1 raises GT_HINT (docs/GAME.md: upstream
+;   keys its hint by the mobj's address)
 ;
 ; The side tests (P_DivlineSide) take the whole parts of the coordinates
 ; as 16-bit values with their wrap, as upstream's (p_sight65.s:620-650,
 ; 838-913), and compare the exact signed products QA QB and QC QD (sg_side:
 ; two umul16), where upstream first tries its log fast path (LOGTAB, the
-; side test of p_sight65.s:695-702): the part's check of the two is in
-; docs/game-parts/sight.md. half and qbd are folded into sg_mag and the
+; side test of p_sight65.s:695-702); the two agree. half and qbd are
+; folded into sg_mag and the
 ; operands; nodeDone, lineDone and straceDone into the walk; hintOf is the
 ; slot itself.
 ;
@@ -157,7 +158,7 @@ LN_BS   = LINE_SIZE + 1         ;   front and back sectors (LVS)
 @walk:  jsr gv_inc              ; validcount++
         lda SG_T1               ; t1 a zone mobj: its hint and sightline
         cmp G_POOLN             ;   are upstream's by address (GT_HINT,
-        lda SG_T1+1             ;   docs/GAME.md 3.6 T3)
+        lda SG_T1+1             ;   docs/GAME.md)
         sbc G_POOLN+1
         bcc :+
         lda #1
@@ -1037,19 +1038,19 @@ sg_mag: cpy #$80
 bitTab: .byte 1, 2, 4, 8, 16, 32, 64, 128
 
 ; ---------------------------------------------------------------------------
-; sg_bulk (test builds only): the arithmetic helpers on many inputs, for the
-; part's random checks (tests/test_native_game_sight.py, against upstream's
-; helpers on ref816). A = the helper: 0 sg_mag (2 bytes in, 2 out), 1 the
+; sg_bulk (TESTBUILD only, which no build here defines): the arithmetic
+; helpers on many inputs, for random checks against upstream's helpers on
+; ref816. A = the helper: 0 sg_mag (2 bytes in, 2 out), 1 the
 ; side test (QA, QB, QC, QD in; its answer out, 1 byte), 2 smul48 (V 4
 ; and C 2 in; 6 out); X:Y = the count. The inputs from bank SPARE_IN at
 ; $0200, the outputs to bank SPARE_OUT at $0200.
 ; ---------------------------------------------------------------------------
 .ifdef TESTBUILD
         ; test-only code goes in the card's driver area, not the core
-        ; (wave 1 as integrated: the core's room is the game's)
+        ; (the core's room is the game's)
         .segment "DRIVER"
 FC_HERE .set 0
-; sg_timed (test builds only): the routine harness's call of entry A (0
+; sg_timed (TESTBUILD only): a timing harness's call of entry A (0
 ; P_CheckSight, 1 zSetup, 2 sightSlope, 3 interceptFrac, 4 p_sight_opening)
 ; with the cost phase (rlayout PHASE) 1 around it (a2vm --cost-phase: the
 ; value written / 2), so a2vm's cost report times the call alone; A, X, Y

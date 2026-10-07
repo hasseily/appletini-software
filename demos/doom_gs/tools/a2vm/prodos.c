@@ -1,9 +1,10 @@
 /*
  * The MLI stand-in of a2vm: see prodos.h. Each call follows the method of
- * the same name in a2sim.py's FakeProDOS, in the same order of checks.
+ * the same name in a2sim.py's FakeProDOS (the earlier Appletini Doom
+ * port's Python model), in the same order of checks.
  * Where FakeProDOS raises ProDOSError the call returns that code; where
  * Python itself would fail (an index past the end of main memory, a
- * volume build_disk refuses) the call returns PRODOS_FAULT.
+ * volume the earlier port's build_disk refuses) the call returns PRODOS_FAULT.
  */
 #include "prodos.h"
 

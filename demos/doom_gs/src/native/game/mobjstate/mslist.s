@@ -1,5 +1,5 @@
-; game/mobjstate/mslist.s: part mobjstate's lists of a mobj (milestone 10,
-; docs/GAME.md 1.2, 2.4; docs/game-parts/mobjstate.md). A GPL-2 derivative
+; game/mobjstate/mslist.s: part mobjstate's lists of a mobj (docs/GAME.md,
+; the mobj, the parts). A GPL-2 derivative
 ; of upstream's p_map65.s (P_UnsetThingPosition, unlist, link, mvSector,
 ; mvBlock, blockOf, P_DelSeclist, P_DelSecnode, snLink).
 ;
@@ -35,7 +35,7 @@
 ;
 ; Every record through the object API: the cached kinds (mo_get, sec_get,
 ; ss_get), the sector nodes (sn_get, sn_put, sn_putw) and the blocklinks
-; (bk_get, bk_put; wave 1 as integrated: request R2).
+; (bk_get, bk_put).
 
         .setcpu "65C02"
         .macpack longbranch

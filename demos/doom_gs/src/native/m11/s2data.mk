@@ -1,25 +1,25 @@
-# src/native/m11/s2data.mk: part s2data of milestone 11 (docs/SCREENS.md
-# 4.5, 7.3; docs/m11-parts/s2data.md): the 2D store, host only.
+# src/native/m11/s2data.mk: part s2data (docs/SCREENS.md, the 2D
+# store): the 2D store, host only.
 #
 #   build/native/m11/s2data/GFX.1        the bank file(s) of the 2D store
-#                                        (loader.s's format), with the
+#                                        (the bank file format of the earlier
+#                                        Appletini Doom port), with the
 #                                        handles table at GFX0's $0200
 #   build/native/m11/s2data/s2data.inc   the handles (H_*), each lump's
 #                                        place (HBANK_*, HADDR_*), the
 #                                        table's and the pictures' offsets
 #   build/native/m11/s2data/s2data.json  the manifest: each lump's handle,
 #                                        number, kind, source, place, hash
-#   build/native/m11/s2data/s2data.lst   the bytes a bank against 4.5
+#   build/native/m11/s2data/s2data.lst   the bytes a bank against its room
 #   build/native/m11/s2data/s2data.log   the last build's report and checks
 #
 #   make -f src/native/m11/s2data.mk               the store, checked
 #   make -f src/native/m11/s2data.mk s2data-check  the files checked again
 #   make -f src/native/m11/s2data.mk s2data-clean  removes what it made
 #
-# src/native/m11.mk (part s2lay) includes this file; its variables and
-# targets all start with S2DATA_ or s2data, and it leaves the including
-# makefile's default goal alone. ROOT can be set, so a copy of the tools
-# builds elsewhere (S2DATA_OUT with it).
+# src/native/m11.mk includes this file; its variables and targets all
+# start with S2DATA_ or s2data, and it leaves the including makefile's
+# default goal alone. ROOT and S2DATA_OUT can be set.
 
 S2DATA_HERE := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 S2DATA_SAVED_GOAL := $(.DEFAULT_GOAL)
@@ -40,7 +40,7 @@ S2DATA_TOOLS := $(ROOT)/tools/native/s2data.py \
 
 # (read by src/native/m11.mk: the part's name, and the store in its `all`)
 PARTS += s2data
-M11_HOST += s2data
+M11_HOST += $(S2DATA_OUT)/GFX.1
 
 s2data: $(S2DATA_OUT)/GFX.1
 s2data_all: s2data
@@ -57,10 +57,10 @@ $(S2DATA_OUT)/GFX.1: $(S2DATA_TOOLS) $(S2DATA_INPUTS)
 
 # the include and the manifest, which the other parts' builds name, come
 # from the same run, written after the bank files (so never older than
-# GFX.1). This rule replaces the stand-in that s2fin's, s2hud's,
-# s2menu1's and s2menu2's fragments give the manifest when this file is
-# not read (make -f m11.mk part P=NAME): m11.mk reads the fragments in
-# sorted order, so this file comes before theirs.
+# GFX.1). This rule replaces the stand-in that s2fin's and s2menu2's
+# fragments give the manifest when this file is not read (make -f m11.mk
+# part P=NAME): m11.mk reads the fragments in sorted order, so this file
+# comes before theirs.
 M11_S2DATA_JSON_RULE := 1
 $(S2DATA_OUT)/s2data.json $(S2DATA_OUT)/s2data.inc: $(S2DATA_OUT)/GFX.1 ;
 

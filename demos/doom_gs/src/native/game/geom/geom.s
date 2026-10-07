@@ -1,4 +1,4 @@
-; game/geom/geom.s: part geom of milestone 10 (docs/GAME.md 2.4 row geom):
+; game/geom/geom.s: part geom of the game (docs/GAME.md, the parts):
 ; the side tests, the openings, the point's sector and the box's blocks. A
 ; GPL-2 derivative of upstream's p_map65.s (P_PointOnLineSide with
 ; pointOnLineSide and posMul, P_BoxOnLineSide with boxOnLineSide, above,
@@ -24,7 +24,7 @@
 ;   posMul             M_R = the low 32 bits of V F: V the signed 24-bit
 ;                      M_A..M_A+2, F the signed 16-bit M_B..M_B+1 (upstream's
 ;                      posMul: V.lo F + (V.hi F) << 16, as _Mul32 gives it:
-;                      milestone 6's mul32). Changes M_A+3, M_B+2..3 and
+;                      math.s's mul32). Changes M_A+3, M_B+2..3 and
 ;                      what mul32 changes
 ;   P_BoxOnLineSide    A = the side of the box GA_0..GA_15 (top, bottom,
 ;                      left, right: geom.inc) to line A:X: 0, 1, or $FF when
@@ -513,7 +513,7 @@
         sta GC_Y,x
         dex
         bpl :-
-        jsr gp_pointsub                 ; R_PointInSubsector (milestone 9)
+        jsr gp_pointsub                 ; R_PointInSubsector (gpos.s)
         lda GC_S
         sta GEO_SS
         ldx GC_S+1

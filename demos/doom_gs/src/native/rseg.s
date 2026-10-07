@@ -1,5 +1,5 @@
-; rseg.s: R_RenderSegLoop of the native renderer (docs/RENDER.md 3.2;
-; milestone 7, stage B): the seg's prologue, the loop's choice, genColumn,
+; rseg.s: R_RenderSegLoop of the native renderer (docs/RENDER.md):
+; the seg's prologue, the loop's choice, genColumn,
 ; the masked-only loop, texCol with its exact texture u, the tiers and
 ; their K_TEX records, the ceiling and floor fills with their spans and
 ; K_FILL records. The 13 loops of segvar.inc are generated
@@ -16,8 +16,8 @@
 ;     table read of tcScale, or fstepHigh's) and, for a seg whose light
 ;     varies, its light distance d (DLIGHT); the loops read them by column
 ;   - a record goes into the batch (rrec.s) with its column, not into a
-;     column list; R_SRC is the native texel slot of the column (RENDER.md
-;     1.4)
+;     column list; R_SRC is the native texel slot of the column
+;     (RENDER.md)
 ;   - the masked texture columns go into MASKLO, MASKHI by column and to
 ;     the openings at the seg's end
 ;   - the C16 constant-row products are one product: frac = (row - 85)
@@ -234,7 +234,7 @@ nr_segloop:
 
 ; texslots: A = a texture: it must have slots (levelconv.py made its
 ; columns); upstream makes them in the frame (tierMake), which a native
-; level never needs (RENDER.md 1.4). A texture without slots stops the
+; level never needs (RENDER.md). A texture without slots stops the
 ; frame (ST_TEXTURE, BRK) in every build: levelconv.py converts every
 ; texture the level source made. Changes Y.
 texslots:
@@ -922,8 +922,8 @@ tcexact:
         plx
         rts
 ; 4096 <= ang, a column seen from behind (upstream's `long:` read goes past
-; finetangent part 4 into live data): our rule RULE_TANGENT (RENDER.md
-; 3.9), the table's end: 4095 below 6144 (part 4 [1023], -), else 0
+; finetangent part 4 into live data): our rule RULE_TANGENT (RENDER.md),
+; the table's end: 4095 below 6144 (part 4 [1023], -), else 0
 ; (part 4 [1023], +)
 @past:  cmp #>(6144 - 3072)
         lda #RULE_TANGENT

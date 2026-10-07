@@ -1,19 +1,19 @@
-; s2_menu.s: the menu engine and the main pages in MENUW (docs/SCREENS.md
-; 1.5.3, 2.1, 3; part s2menu1, docs/m11-parts/s2menu1.md). GPL-2:
-; rewritten from upstream's src/iigs/m_menu65.s (Doom8088: Apple IIgs
-; Edition, GPL-2): M_Init, M_StartControlPanel, M_DrawVersion,
-; M_SkullVersion, M_Ticker, M_Responder and its handlers, clearMenus,
-; setupMenu, startMessage, the main, new game, skill and options pages,
-; M_Drawer, menu, M_DrawSkull, skullPlace, M_SkullRect, drawMessage,
-; lineWidth, writeLine [R m_menu65.s:518-1593], and the settings pages'
-; frame uiSettings, uiAlign, uiCenter, bmWrite, bmBox, uiMain, vwKeys
-; [R :1602-1631, :1661-1755, :2716-2738, :2842-3001], which the options
-; page draws through; d_main65.s's uiDisplay [R i_viigs65.s:2047-2055].
+; s2_menu.s: the menu engine and the main pages in MENUW (docs/SCREENS.md,
+; the menu; part s2menu1). GPL-2: rewritten from upstream's
+; src/iigs/m_menu65.s (Doom8088: Apple IIgs Edition, GPL-2): M_Init,
+; M_StartControlPanel, M_DrawVersion, M_SkullVersion, M_Ticker, M_Responder
+; and its handlers, clearMenus, setupMenu, startMessage, the main, new game,
+; skill and options pages, M_Drawer, menu, M_DrawSkull, skullPlace,
+; M_SkullRect, drawMessage, lineWidth, writeLine [R m_menu65.s:518-1593],
+; and the settings pages' frame uiSettings, uiAlign, uiCenter, bmWrite,
+; bmBox, uiMain, vwKeys [R :1602-1631, :1661-1755, :2716-2738, :2842-3001],
+; which the options page draws through; d_main65.s's uiDisplay [R
+; i_viigs65.s:2047-2055].
 ;
 ; MENUW stays in W while a menu is up (the game is paused: no tic or
 ; render image runs [R d_main65.s:261-279]); its state is the block at
-; $BF00 (s2layout's M_*, and the native M_* of request S2MENU1-1), PALST
-; at S2M_PALST (request S2MENU1-2), both fetched by m_load and written
+; $BF00 (s2layout's M_*, and the native M_*), PALST
+; at S2M_PALST, both fetched by m_load and written
 ; back by m_save.
 ;
 ;   m_init      M_Init and uiInit's state (the lumps and the skulls' box
@@ -28,12 +28,22 @@
 ;   m_savedone  saveDone after the second half's save: C clear, the
 ;               message and the menu closes; C set, the failed save's
 ;               message (M_SaveFailed)
+;
+; SAVE SETTINGS (bmItem's item 4; docs/PLAY.md, "The settings file"):
+; setchg is G_SettingsChanged, the settings now (GAMMA, showMessages, the
+; effects' volume, SS_SETTINGS, PL_KEYTAB) against those the disk has
+; (SET_FILE in SET_BANK, which DLINIT keeps), into M_SETCHG before each
+; full drawing and before the item's routine: the item dim while they are
+; equal. Changed, the item requests REQ_SAVESET; the second half's
+; DLINIT dli_save writes the block and answers in M_SAVERES, which the
+; next m_frame takes (savedone): a failed write's message (M_SaveFailed),
+; the menu staying for another try, as upstream's
 ;   m_display   uiDisplay: the static screen (mv_static), else M_Drawer
 ;               in bands (mv_open the first time, mv_full), staticDrawn,
 ;               the finish (s2_finish)
-;   m_frame     a paused frame's work in 2.1's order: pl_poll, sc_update,
-;               fx_service, snd_refill, m_display (the second half runs
-;               m_ticker for the frame's tics and m_responder for its
+;   m_frame     a paused frame's work in the frame's order: pl_poll,
+;               sc_update, fx_service, snd_refill, m_display (the second half
+;               runs m_ticker for the frame's tics and m_responder for its
 ;               events before it)
 ;   m_page      M_Drawer's drawing into the band (mv_full calls it once a
 ;               band): the message, or the page, its items, uiSettings
@@ -53,9 +63,9 @@
 ;
 ; The settings pages' values past ON/OFF (the view, the thermometers), the
 ; slots of the load and save pages, the key setup page and the benchmark's
-; result are part s2menu2's: m2_page, m2_value, m2_bench (s2_menu2.s,
-; linked into the one MENUW since wave 6's integration). Zero page: S2M_* ($80-$AF), the drawers' S2_*;
-; sc_start uses $48-$74 (FXCHAN-4). A, X, Y changed.
+; result are part s2menu2's: m2_page, m2_value, m2_bench (s2_menu2.s, linked
+; into the one MENUW). Zero page: S2M_* ($80-$AF), the drawers' S2_*;
+; sc_start uses $48-$74. A, X, Y changed.
 
         .setcpu "65C02"
         .include "rlayout.inc"
@@ -68,6 +78,7 @@
         .export m_drawver, m_skullver, m_load, m_save, m_close
         .export m_dpatch, m_wline, m_wstr, m_align
         .import mv_open, mv_full, mv_close, mv_static, mv_drawn, mv_shade
+        .import mv_tables
         .import s2_vpatch, s2_mark, s2_mul160, s2_finish, s2_setpal
         .import s2_palget, s2_palput, far_get, far_put
         .import sc_start, sc_update, fx_service, snd_refill
@@ -111,7 +122,9 @@ SET_ARUN    = 0                 ; SS_SETTINGS' bytes (s2layout's field map)
 SET_MOUSE   = 2
 SET_MSPEED  = 3
 SET_MMOVE   = 4
-SET_MUSVOL  = 5                 ; snd_MusicVolume (S2MENU2-2)
+SET_MUSVOL  = 5                 ; snd_MusicVolume
+SET_N       = 6                 ; (detailLevel +1: the high detail only)
+RES_FAIL    = 1                 ; M_SAVERES (dl_init.s's dli_save)
 BOX_Y0      = 138               ; bmBox [R m_menu65.s:1661-1663]
 BOX_Y1      = 138 + FONT_H
 BOX_B0      = 30
@@ -228,8 +241,8 @@ m_ticker:
         lda M_BINDROW
         bmi @skull
         ldx PL_BIND             ; the input layer's bind state (the poll
-        cpx #PLB_WAIT           ;   writes the key it took over PLB_WAIT;
-        beq @skull              ;   wave 5's integration: S2MENU1-4)
+        cpx #PLB_WAIT           ;   writes the key it took over
+        beq @skull              ;   PLB_WAIT)
         cpx #PLB_IDLE           ; (PLB_IDLE: no key taken, nothing to
         bcs :+                  ;   bind)
         cpx #BIND_ESC
@@ -403,7 +416,8 @@ event:
         ; (on to sound)
 
 ; sound: S_StartSound(NULL, A) through sc_start [R :910-913]; C set
-; (the event eaten). The test build logs each sound (S2M_SNDLOG).
+; (the event eaten). With -D S2M_SNDLOG (no build here defines it) each
+; sound is also logged.
 sound:
         sta SM_GA
         stz SM_GA+1
@@ -704,7 +718,7 @@ r_musvol:
         sta S2M_K               ; uiVolume: the music's 0-15 in
         ldx #SET_MUSVOL         ;   SS_SETTINGS (S_SetMusicVolume: the
         jsr getset              ;   owner's mix stays as it is; the
-        ldx S2M_K               ;   release's MUSIC_MENU is 1, S2MENU2-2)
+        ldx S2M_K               ;   release's MUSIC_MENU is 1)
         bne @up
         cmp #0
         beq @done
@@ -732,7 +746,8 @@ r_vwitem:
         lda #REQ_BENCH
         ldx #0
         jmp request
-@save:  lda M_SETCHG            ; SAVE SETTINGS when they changed
+@save:  jsr setchg               ; SAVE SETTINGS when they changed
+        lda M_SETCHG
         beq :+
         lda #REQ_SAVESET
         ldx #0
@@ -809,7 +824,7 @@ m_savedone:
         jmp startmessage
 
 ; ---------------------------------------------------------------------------
-; m_frame: a paused frame (SCREENS.md 2.1); m_display: uiDisplay
+; m_frame: a paused frame (docs/SCREENS.md); m_display: uiDisplay
 ; [R i_viigs65.s:2047-2055] without the tic commands (the second half's).
 ; ---------------------------------------------------------------------------
 m_frame:
@@ -818,6 +833,9 @@ m_frame:
         jsr sc_update
         jsr fx_service
         jsr snd_refill
+        lda M_SAVERES           ; SAVE SETTINGS's answer
+        beq m_display
+        jsr savedone
 m_display:
         lda M_PALON
         beq @draw
@@ -831,9 +849,93 @@ m_display:
 :       lda M_PALON
         bne :+
         jsr mv_open
-:       jsr mv_full
+:       jsr setchg              ; (SAVE SETTINGS's shade)
+        jsr mv_full
 @drawn: jsr mv_drawn
         jmp s2_finish
+
+; savedone: dli_save's answer M_SAVERES taken, in the first frame after
+; MENUW came back into W with the menu's palette on: the gray map, the
+; menu palette's nibble table and the font's (mv_tables: W's, outside
+; the state block) built again from the saved screen's palettes, the
+; page drawn again (the item's shade); a failed write, M_SaveFailed's
+; message
+savedone:
+        lda M_PALON
+        beq :+
+        jsr mv_tables
+:       ldx M_SAVERES
+        stz M_SAVERES
+        jsr menuver
+        cpx #RES_FAIL
+        bne :+
+        lda #MSG_SAVEFAIL
+        jmp startmessage
+:       rts
+
+; setchg: G_SettingsChanged into M_SETCHG (0 the same, 1 changed): each
+; byte collect (dl_init.s) writes from the game's places against SET_FILE's
+setchg:
+        lda #SET_BANK
+        sta FA_BANK
+        lda #<(SET_FILE + SETF_GAMMA)       ; the settings' bytes 12-20
+        sta FA_SRC
+        lda #>(SET_FILE + SETF_GAMMA)
+        sta FA_SRC+1
+        lda #<set_kn
+        sta FA_DST
+        lda #>set_kn
+        sta FA_DST+1
+        lda #SETF_DETAIL + 1 - SETF_GAMMA
+        sta FA_N
+        jsr far_get
+        lda #<(SET_FILE + SETF_KEYS)        ; the keys
+        sta FA_SRC
+        lda #>(SET_FILE + SETF_KEYS)
+        sta FA_SRC+1
+        lda #<set_kk
+        sta FA_DST
+        lda #>set_kk
+        sta FA_DST+1
+        lda #128
+        sta FA_N
+        jsr far_get
+        ldx #0
+        jsr setptr              ; SS_SETTINGS' bytes
+        lda #SET_N
+        sta FA_N
+        lda #<set_ss
+        sta FA_DST
+        lda #>set_ss
+        sta FA_DST+1
+        jsr far_get
+        lda SM_GAMMA
+        cmp set_kn + SETF_GAMMA - SETF_GAMMA
+        bne @diff
+        lda SM_SHOWMSG
+        cmp set_kn + SETF_MESSAGES - SETF_GAMMA
+        bne @diff
+        lda SND_SFXVOL
+        cmp set_kn + SETF_SFXVOL - SETF_GAMMA
+        bne @diff
+        ldx #SET_N - 1
+@ss:    ldy ss_at,x
+        lda set_ss,x
+        cmp set_kn,y
+        bne @diff
+        dex
+        bpl @ss
+        ldx #127
+@key:   lda PL_KEYTAB,x
+        cmp set_kk,x
+        bne @diff
+        dex
+        bpl @key
+        lda #0
+        bra @set
+@diff:  lda #1
+@set:   sta M_SETCHG
+        rts
 
 ; ---------------------------------------------------------------------------
 ; m_page: M_Drawer [R m_menu65.s:1086-1128] into the band.
@@ -1427,7 +1529,7 @@ drawmsg:
 @done:  rts
 
 .ifdef S2M_SNDLOG
-; m_sndlog (test builds): the sound A appended to the log at S2M_SNDBUF
+; m_sndlog (-D S2M_SNDLOG only): the sound A appended to the log at S2M_SNDBUF
 ; (a count, then the sounds); keeps nothing
         .import s2m_sndbuf
 m_sndlog:
@@ -1560,3 +1662,17 @@ msg_savefail:
 ; the patches and the font (tools/native/s2menu1.py)
         S2M_PATCHES
         S2M_FONT
+
+; setchg's places: where each SS_SETTINGS byte (SET_ARUN .. SET_MUSVOL:
+; always run, detail, mouse, mouse speed, mouse move, music volume) is in
+; the file's bytes from SETF_GAMMA
+ss_at:  .byte SETF_RUN - SETF_GAMMA, SETF_DETAIL - SETF_GAMMA
+        .byte SETF_MOUSE - SETF_GAMMA, SETF_MSPEED - SETF_GAMMA
+        .byte SETF_MMOVE - SETF_GAMMA, SETF_MUSICVOL - SETF_GAMMA
+        .assert * - ss_at = SET_N, error, "ss_at"
+        .assert SET_ARUN = 0 && SET_MOUSE = 2 && SET_MSPEED = 3 && SET_MMOVE = 4 && SET_MUSVOL = 5, error, "SS_SETTINGS' bytes"
+
+        .segment "S2DATA"
+set_kn: .res SETF_DETAIL + 1 - SETF_GAMMA       ; SET_FILE's bytes 12-20,
+set_kk: .res 128                                ;   its keys,
+set_ss: .res SET_N                              ;   SS_SETTINGS' bytes

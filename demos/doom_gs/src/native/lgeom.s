@@ -1,9 +1,8 @@
-; lgeom.s: the level load's static steps (milestone 9, stage B;
-; docs/LEVELS.md 2.3): what upstream's loadLineDefs, groupLines and
+; lgeom.s: the level load's static steps (docs/LEVELS.md): what upstream's loadLineDefs, groupLines and
 ; P_InitFlood compute, and the colormaps of I_SetLevelPalette, made from
 ; the store's bytes and the copied level window, as tools/native/
 ; lderive.py and lstore.py's HostMachine define them (their bytes are
-; each map's window.img, checked against ref816's canonical state):
+; each map's window.img):
 ;
 ;   lg_lines    LINES: each compact line (the game lump's 15 bytes) into
 ;               its LVG0 record: v1, v2, dx, dy, the sides, the box (the
@@ -32,7 +31,7 @@
 ;               zero
 ;   lg_cmaps    CMAPS: colormaps A and B in LVC, A[i] = GSVIEW_A[COLORMAP
 ;               [i]] (i_viigs65.s:1063-1077), the same with B
-;   lg_gtabs    GTABS (milestone 10, docs/GAME.md 1.6; a game step: only in
+;   lg_gtabs    GTABS (docs/GAME.md; a game step: only in
 ;               nl_setup): LVS's tables: each line's front and back sector
 ;               (LNSECF, LNSECB: lg_prep's, the front twice for a one-sided
 ;               line: upstream's LNSEC) and each sector's REJECT row
@@ -73,7 +72,7 @@ BOX_LO_Y   = 6
         .segment "LOADW"
 
 ; ===========================================================================
-; GTABS (milestone 10)
+; GTABS
 ; ===========================================================================
 lg_gtabs:
         lda GS_GAME

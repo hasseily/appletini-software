@@ -6,7 +6,3 @@ build/
 # Python caches
 __pycache__/
 *.py[cod]
-
-# A local link to an extract of the vendor's assembler manual, which is
-# under copyright and lives in build/reference.
-docs/research/calypsi-assembler-chapter.txt

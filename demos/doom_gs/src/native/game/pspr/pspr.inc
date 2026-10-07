@@ -1,5 +1,5 @@
-; game/pspr/pspr.inc: part pspr's places (milestone 10, docs/GAME.md 2.4,
-; 4.4; docs/game-parts/pspr.md). GPL-2, the port's own.
+; game/pspr/pspr.inc: part pspr's places (docs/GAME.md). GPL-2, the port's
+; own.
 ;
 ; The part has no zero page of its own: its temporaries are GT_0-GT_6 (GT_7
 ; on is the object API's), its arguments GA_*. What its routines keep
@@ -10,7 +10,7 @@
 ; Conventions of the part's entries (each routine's comment has the rest):
 ;   - a psprite is its number: 0 the weapon (upstream's ps_weapon, PSPW),
 ;     1 the flash (ps_flash, PSPF); a weapon action takes it in GS_PSP
-;     (milestone 9's gw_setpsprite), tickPsprite in A
+;     (gweap.s's gw_setpsprite), tickPsprite in A
 ;   - a state is its number, "none" $FFFF in a psprite (gw_setpsprite)
 ;   - a mobj is its handle, a sector its number (a byte)
 
@@ -26,7 +26,7 @@ PS_V    = PS + 7                ; (1) FL_V: v, the sound blocks its entries
                                 ;   part with ML_SOUNDBLOCK
 PS_END  = PS + 8                ; (2) the end of its part (upstream's 1,s)
 PS_OTH  = PS + 10               ; (1) the entry's other sector
-PS_FLI  = PS + 11               ; (2) (request R3 refused): the flood
+PS_FLI  = PS + 11               ; (2) (pflood.s's header): the flood
 PS_FLE  = PS + 13               ; (2)   index's and entries' places as
                                 ;   lt_get entries, (at - G_LTABAT) / 2
 PS_T    = PS + 15               ; (2) the bob: hi16 of its first product
@@ -36,7 +36,7 @@ PS_CNT  = PS + 23               ; (1) checkAmmo: the count
 PS_ST   = PS + 24               ; (1) the flood's first sector
         .assert PS_ST + 1 <= PS + 32, error, "pspr's scratch block"
 
-; the flood's work stack (LEVELS.md 5.5: 512 entries, the bound of every
+; the flood's work stack (LEVELS.md: 512 entries, the bound of every
 ; E1 map; in recursiveSound's group, after its code: two planes of FL_DEPTH
 ; bytes, the entry's low byte, its second byte; a level's sector is the
 ; entry of the level below it, LEVELS.md's third byte not kept)
@@ -47,7 +47,7 @@ FL_V     = $80                  ; an entry's second byte, and PS_V: bit 7 v,
 FL_B     = $40                  ;   bit 6 the part with ML_SOUNDBLOCK, bits
                                 ;   0-5 the entry's high byte
 
-; the flood's stop code (request R4: GS_FLOOD in glayout.GS)
+; the flood's stop code (GS_FLOOD in glayout.GS)
 PS_GS_FLOOD = GS_FLOOD
 
 ; the player and its psprites (llayout.player_layout: upstream's player_t)

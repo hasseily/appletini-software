@@ -1,10 +1,10 @@
 /*
  * The compatibility core of a2vm: py65's 65C02 (py65 1.2.0,
- * py65/devices/mpu65c02.py and mpu6502.py), the core of the existing
- * port's model demos/doom/tools/a2sim.py.
+ * py65/devices/mpu65c02.py and mpu6502.py), the core of a2sim.py, the
+ * Python model of the earlier Appletini Doom port.
  *
  * It is not the W65C02S (that is cpu65c02_core.h). It reproduces what
- * py65 does, so that a run on a2vm matches one on a2sim.py access for
+ * py65 does, so that a run on a2vm matched one on a2sim.py access for
  * access and cycle for cycle:
  *
  *   - the memory accesses py65 makes, in its order: no dummy cycles; a

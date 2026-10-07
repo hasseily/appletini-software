@@ -1,5 +1,5 @@
 ; rlight.s: the sector light and the plane colours of the native renderer
-; (docs/RENDER.md 1.5; milestone 7, stage A): bspSub's plane colours with
+; (docs/RENDER.md): bspSub's plane colours with
 ; c21Floor's worldbottom (r_bsp65.s:627-763, r_wall65.s:1446-1463) and
 ; R_WallLight (r_bsp65.s:1036-1058). A GPL-2 derivative of Webifi's IIgs
 ; DOOM (build/upstream/src/iigs/r_bsp65.s, r_wall65.s): the same colours,

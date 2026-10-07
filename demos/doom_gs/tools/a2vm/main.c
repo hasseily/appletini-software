@@ -54,6 +54,13 @@
  *   --vidhd-check LIST  hex PCs, commas (at most 64): before each
  *                       instruction there, its copy compared with aux 0's
  *                       $2000-$9FFF
+ *   --blockdev SLOT:FILE[:ro]
+ *                       a ProDOS block device in SLOT (1-7; 7 may share
+ *                       the memory API's slot) whose blocks are FILE's
+ *                       (a .po/.hdv image, written in place; :ro write-
+ *                       protects it); its driver's calls at $Cn0A are
+ *                       serviced (README.md, "The block device"); with
+ *                       --prodos, ProDOS's DEVNUM and DEVADR name it
  *
  * Start
  *   --image FILE        memory records (A2VMIMG1, see README.md)
@@ -126,7 +133,7 @@
  *   --cost-pcmap FILE   a PC map of phases (cost.h, a2vm_cost_pcmap): while
  *                       the phase written is --cost-pcmap-when's (default
  *                       18), each instruction's phase is its PC's in the
- *                       map (milestone 10's timing report by subsystem)
+ *                       map (a timing report by subsystem)
  *   --cost-pcmap-when N the phase written under which the map holds
  *
  * Logs
@@ -557,6 +564,20 @@ static void parse(int argc, char **argv, options *o)
                 fail("--vidhd takes a slot, 1 to 7");
         } else if (!strcmp(arg, "--vidhd-check"))
             o->vidhd_check = value;
+        else if (!strcmp(arg, "--blockdev")) {
+            static char path[1024];
+            if (value[0] < '1' || value[0] > '7' || value[1] != ':' ||
+                !value[2])
+                fail("--blockdev takes SLOT:FILE[:ro], a slot 1 to 7");
+            o->config.blockdev_slot = value[0] - '0';
+            snprintf(path, sizeof path, "%s", value + 2);
+            size_t length = strlen(path);
+            if (length > 3 && !strcmp(path + length - 3, ":ro")) {
+                path[length - 3] = 0;
+                o->config.blockdev_ro = 1;
+            }
+            o->config.blockdev_path = path;
+        }
         else if (!strcmp(arg, "--lowest-s-in")) {
             o->lowest_s_in = value;
             o->lowest_s = 1;
@@ -604,6 +625,14 @@ static void parse(int argc, char **argv, options *o)
           o->config.vidhd_slot == o->config.mouse_slot) ||
          (o->config.amem && o->config.vidhd_slot == 7)))
         fail("--vidhd: slot %d holds another card", o->config.vidhd_slot);
+    if (o->config.blockdev_slot &&
+        (o->config.blockdev_slot == o->config.phasor_slot ||
+         o->config.blockdev_slot == o->config.vidhd_slot ||
+         ((o->config.mouse || o->config.mouse_plain || o->config.mouse_apple ||
+           o->config.mouse_rom) &&
+          o->config.blockdev_slot == o->config.mouse_slot)))
+        fail("--blockdev: slot %d holds another card",
+             o->config.blockdev_slot);
     if (!o->cycles_given)
         o->cycles = DEFAULT_CYCLES;
 }
@@ -1121,6 +1150,20 @@ static void write_state_body(FILE *out, a2vm *m)
     }
     if (m->vidhd.slot)
         vidhd_json(out, m);
+    if (m->blockdev.slot) {
+        const a2vm_blockdev *b = &m->blockdev;
+        fprintf(out, "  \"blockdev\": {\"slot\": %d, \"read_only\": %d, "
+                "\"blocks\": %u, \"calls\": %" PRIu64 ", \"statuses\": %"
+                PRIu64 ", \"reads\": %" PRIu64 ", \"writes\": %" PRIu64
+                ", \"errors\": %" PRIu64 ", \"last\": [%u, %u, %u, %u], "
+                "\"written\": ", b->slot, b->read_only, b->blocks, b->calls,
+                b->statuses, b->reads, b->writes, b->errors, b->last_command,
+                b->last_unit, b->last_block, b->last_error);
+        fputc('[', out);
+        for (unsigned i = 0; i < b->written_count; i++)
+            fprintf(out, "%s%u", i ? ", " : "", b->written[i]);
+        fputs("]},\n", out);
+    }
     if (m->write_log)
         fprintf(out, "  \"write_logged\": %" PRIu64 ",\n", m->write_logged);
     if (m->via_timers) {
@@ -1231,7 +1274,7 @@ static void write_ranges_image(a2vm *m, const char *path)
         fail("cannot write %s", path);
 }
 
-/* --snapshot-stream: every snapshot into one stream (milestone 10): a
+/* --snapshot-stream: every snapshot into one stream: a
    JSON line {"format": "a2vm-snapshot-stream 1", "ranges": "..."}; for
    each snapshot a JSON line {"snapshot": N, "name", "cycles", "pc",
    "bytes": L} and its L bytes, an A2VMIMG1 image of the ranges (what
@@ -1322,7 +1365,7 @@ static void snapshot(a2vm *m, const char *directory, const char *name,
 }
 
 /* A2VMSHR1, NEWVIDEO, aux bank 0 $2000-$9FFF, main $2000-$9FFF: what
-   tools/a2vm/shot.py needs for standard SHR and PAL256. */
+   a reader of the shot needs for standard SHR and PAL256. */
 static void shot(a2vm *m, const char *directory, const char *name)
 {
     static uint8_t data[9 + 2 * SHOT_BYTES];
@@ -1807,6 +1850,8 @@ int main(int argc, char **argv)
         set_register(m, o.regs[i]);
     for (unsigned i = 0; i < o.idle_count; i++)
         add_idle(m, o.idles[i]);
+    if (o.prodos)
+        a2vm_blockdev_global_page(m);   /* (after the image and loads) */
     a2vm_remap(m);
     if (o.cost) {
         if (o.cost_timed && o.bus_script)

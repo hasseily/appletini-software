@@ -1,6 +1,6 @@
-; gpos.s: the game core's things in the level (milestone 9, stage C;
-; docs/LEVELS.md 2.4; milestone 10's skeleton: the object API, the LR_USE
-; path, the node lists of play, docs/GAME.md 1.1, 3.1). A GPL-2 derivative
+; gpos.s: the game core's things in the level (docs/LEVELS.md; in play:
+; the object API, the LR_USE path, the node lists, docs/GAME.md). A GPL-2
+; derivative
 ; of upstream's r_iigs65.s (R_PointInSubsector and its walk, shiftMul) and
 ; p_map65.s (P_SetThingPosition, P_CreateSecNodeList with lineBlocks'
 ; PIT_GetSectors mode and its LR_USE path, walkRange, getSectors,
@@ -24,7 +24,7 @@
 ;   gp_secnodesmo P_CreateSecNodeList of mobj slot A:X (play: the same)
 ;   gp_secnodes   P_CreateSecNodeList(GC_MO) of the mobj LW_MOB: tmx, tmy
 ;                 (GM_TMX, GM_TMY) = its x, y, as upstream leaves them (the
-;                 tic phase only; teleport.md R4); each node of the old list (_s_sector_list, G_SECLIST: the thing's
+;                 tic phase only: a telefrag's drop needs them); each node of the old list (_s_sector_list, G_SECLIST: the thing's
 ;                 nodes P_UnsetThingPosition gave it) loses its thing;
 ;                 validcount + 1 (gv_inc); MP_MODE 1; with LR_USE set (the
 ;                 line record of P_CheckPosition's walk, mvNodes) LR_USE
@@ -403,7 +403,7 @@ gp_setposmo:
 
 ; ---------------------------------------------------------------------------
 ; gp_secnodesmo: P_CreateSecNodeList of mobj slot A:X (play: the entry the
-; routine harness and the parts call): its record into LW_MOB, GC_SEC its
+; parts call): its record into LW_MOB, GC_SEC its
 ; subsector's sector, gp_secnodes, the record back (mo_store). GC_MO = the
 ; slot.
 ; ---------------------------------------------------------------------------
@@ -453,10 +453,10 @@ blk_index:
 gp_secnodes:
 .ifndef LOADIMG
         ldx #7                  ; tmx, tmy = thing->x, y, left so as
-:       lda LW_MOB + TH_X,x     ;   upstream's (p_map65.s:2524-2531; wave 4
-        sta GM_TMX,x            ;   as integrated, teleport.md R4: a
-        dex                     ;   telefrag's drop moves the next stomps'
-        bpl :-                  ;   centre)
+:       lda LW_MOB + TH_X,x     ;   upstream's (p_map65.s:2524-2531: a
+        sta GM_TMX,x            ;   telefrag's drop moves the next
+        dex                     ;   stomps' centre)
+        bpl :-
         .assert TH_Y = TH_X + 4 && GM_TMY = GM_TMX + 4, error, "x, y"
 .endif
         lda G_SECLIST           ; each node of _s_sector_list: no thing

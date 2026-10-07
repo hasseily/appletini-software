@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
-"""The places of the playable game's glue (docs/PLAY.md 3): the main loop's
+"""The places of the playable game's glue (docs/PLAY.md): the main loop's
 resident kernel in the main card, its step buffer, the persistent block
 the main loop keeps in main memory, the bank DLBANK, the entry codes of
 the brain (the main loop's part in the tic image) and the kernel's step
 codes; check() against tools/native/rlayout.py, llayout.py, glayout.py and
 s2layout.py (all read only), and the generated include play.inc.
 
-Usage:  python3 tools/native/playlayout.py --check
-        python3 tools/native/playlayout.py --inc OUT/play.inc
-        python3 tools/native/playlayout.py --report
+Usage:  python3 tools/native/playlayout.py --inc OUT/play.inc
 
-Every address here is the port's own allocation (docs/PLAY.md 3), taken
-from what MEMORY_MAP.md sections 3.3, 4.2, 17 and 18 leave free:
+Every address here is the port's own allocation (docs/PLAY.md), taken
+from what docs/MEMORY_MAP.md leaves free:
 
   main $1F00-$1F7F   DLM, the main loop's persistent block (the boot clears
-                     $0C00-$1FFF; milestone 10's globals end at $1EFB,
-                     milestone 11's key table starts at $1F80)
+                     $0C00-$1FFF; the game's globals end at $1EFB,
+                     the key table starts at $1F80)
   card $FE7B-$FE7F   the kernel's five bytes (after the replay's BKNEAR,
                      which rcard's link ends at $FE7A: checked against the
                      link when it exists)
@@ -24,15 +22,17 @@ from what MEMORY_MAP.md sections 3.3, 4.2, 17 and 18 leave free:
                      RAMRD window, so they must be in the card)
   card $FF00-$FFF9   the kernel (pl_ready's place: DOOM.SYSTEM's boot ends
                      with jmp pl_ready, $FF00, which the second half
-                     replaces with the title loop: SCREENS.md 2.5), with
+                     replaces with the title loop: docs/SCREENS.md), with
                      the benchmark timing's bt_replay at BT_REPLAY
-  main $0844-$0877   the benchmark timing's bt_ext (BT_EXT: MEMORY_MAP.md
-                     3.2's free bytes; the brain writes it at each
-                     benchmark's start; docs/PLAY.md 15); its bt_mark in the
+  main $0844-$0877   the benchmark timing's bt_ext (BT_EXT: free bytes of
+                     docs/MEMORY_MAP.md; the brain writes it at each
+                     benchmark's start; docs/PLAY.md); its bt_mark in the
                      menu loop's main bytes (BT_MARK, BT_MARK2)
   bank 1            DLBANK: the static tables' PRIVATE request and their
                      sources, DLINIT's image (a spare bank: llayout.SPARE,
-                     s2layout.SPARE_FREE)
+                     s2layout.SPARE_FREE), and the settings file with
+                     what its save needs (s2layout's SET_FILE, SET_INFO:
+                     DOOM.SYSTEM writes them, DLINIT keeps them)
 """
 
 import argparse
@@ -57,7 +57,7 @@ DLBUF = (0xFE80, 0xFF00)        # the step list (one page)
 KVARS = (0xFE7B, 0xFE80)        # the kernel's own bytes
 KMAIN = (0x0880, 0x0900)        # the kernel's menu loop: read-only code in
 KMAIN2 = (0x0B94, 0x0C00)       #   main's free $0880-$08FF and $0B94-$0BFF
-                                #   (MEMORY_MAP.md 3.2), DLINIT's PRIVATE
+                                #   (docs/MEMORY_MAP.md), DLINIT's PRIVATE
                                 #   copy
 KVAR_FIELDS = [('KV_PTR', 1), ('KV_BANK', 1), ('KV_N', 1), ('KV_T', 2)]
 
@@ -66,7 +66,7 @@ STEPS = [
     ('K_END', 0),       # the step list's end: the next frame (TIC E_FRAME)
     ('K_LOAD', 1),      # bank, then page runs (first page, count; 0 ends):
                         #   far_pload; since the copy engine one memory-API
-                        #   request (am_runs, docs/SPEED.md 10)
+                        #   request (am_runs, docs/SPEED.md)
     ('K_CALL', 2),      # address (2), A, X: jsr (Y 0); A into DL_RES
     ('K_WLOAD', 3),     # far_wload (the render front end's window); since
                         #   the copy engine a stop: the brain's K_LOAD
@@ -137,7 +137,7 @@ DLM_FIELDS = [
     ('DL_BENCH', 1),            # the menu benchmark: 0 none, 1 runs, $80 its result to show
     ('DL_BVIEW', 2),            #   DL_VIEWS at its start; at its end the frames
     ('DL_BRT', 4),              #   at its end the realtics
-    # the benchmark's phase timing (docs/PLAY.md 15): VIA-A's timer 1
+    # the benchmark's phase timing (docs/PLAY.md): VIA-A's timer 1
     # read at the frame's phase boundaries while the benchmark runs
     ('BT_PH', 1),               # the phase being timed (PH_*), 0: off
     ('BT_NX', 1),               #   the phase after the tic phase's close
@@ -161,7 +161,7 @@ BT_MARK = 0x08CA                # the kernel's bt_mark (main KMAIN, after
                                 #   the menu loop's first part), its last
 BT_MARK2 = 0x0BE1               #   part (KMAIN2, after the loop's second)
 BT_EXT = (0x0844, 0x0878)       # its middle part: main's free $0844-$0877
-                                #   (MEMORY_MAP.md 3.2), which the brain's
+                                #   (docs/MEMORY_MAP.md), which the brain's
                                 #   bt_start writes before the timing
 BT_REPLAY = 0xFFC4              # its bt_replay (the card, after the
                                 #   kernel's step code)
@@ -184,8 +184,7 @@ DLB_TABLES_END = 0x2000
 DLINIT_LO = 0x6600              # DLINIT's image at its W addresses
 DLINIT_HI = 0x7000
 
-# the static tables (MEMORY_MAP.md 3.2, 5: "boot, PRIVATE"; design.md R7
-# item 15): main's CMPA, CMPB, TEXLO, XTVLO, TEXHI, XTVHI and aux 0's
+# the static tables (docs/MEMORY_MAP.md: "boot, PRIVATE"): main's CMPA, CMPB, TEXLO, XTVLO, TEXHI, XTVHI and aux 0's
 # drawers, ROWLO, FZDIR, ROWHI. The colormaps and FUZZDARK are each
 # level's (the load's PRIVATE requests).
 STATIC_MAIN = ((0x0800, 0x0844), (0x0900, 0x0B94))
@@ -204,8 +203,7 @@ DL_GROUPS = [('DLG_B', 1, 2),   # the brain: events, the tics, the loads
 # of the brain's never evicts it; game code's calls of the hooks evict and
 # restore their caller's group, gcall.s's fc_call. Each tic loads DLG_S
 # for the status bar's ticker; the HUD's ticker, s2t_hu.s, is in the core
-# since speed wave 2 (play.mk's PLAY_TIC), so no tic loads DLG_H for it:
-# docs/speed-parts/glue.md)
+# since speed wave 2 (play.mk's PLAY_TIC), so no tic loads DLG_H for it)
 
 # MAXTICS (upstream's tics.inc), the command ring (G_CMDS: CMDS of 8 B)
 MAXTICS = 4
@@ -252,7 +250,7 @@ def regions() -> List[Region]:
 
 
 def rcard_end() -> Optional[int]:
-    """The last card byte of milestone 8's rcard link in $F900-$FEFF (its
+    """The last card byte of the renderer's rcard link in $F900-$FEFF (its
     BKNEAR), when the link exists."""
     try:
         from native import render_check as RC
@@ -270,8 +268,8 @@ def check() -> List[str]:
     out = []
     if DLM_USED > DLM[1] - DLM[0]:
         out.append('DLM uses %d of %d B' % (DLM_USED, DLM[1] - DLM[0]))
-    # milestone 10's main regions (the globals, G_WSET, G_FPSSHOW after
-    # them) and milestone 11's key table
+    # the game's main regions (the globals, G_WSET, G_FPSSHOW after
+    # them) and the key table
     try:
         from native import glayout as GL
         for r in GL.regions():
@@ -326,6 +324,28 @@ def check() -> List[str]:
                (KMAIN, KMAIN2))
     if DLB_TABLES + size > DLB_TABLES_END:
         out.append('the static tables pass their room in DLBANK')
+    # the settings (s2layout's SET_*): in DLBANK, apart from its other
+    # places, both in a bank's room
+    if S.SET_BANK != DLBANK:
+        out.append('s2layout\'s SET_BANK %d is not DLBANK %d'
+                   % (S.SET_BANK, DLBANK))
+    lay = dict(S.SETTINGS_LAYOUT)
+    sets = ((S.SET_FILE, S.SET_FILE + S.SET_SIZE),
+            (S.SET_INFO, S.SET_INFO + lay['SI_SIZE']))
+    used = ((DLB_PRIV, DLB_PRIV + DLB_PRIVMAX),
+            (DLB_TABLES, DLB_TABLES_END), (DLINIT_LO, DLINIT_HI))
+    for lo, hi in sets:
+        if lo < 0x0200 or hi > 0xC000:
+            out.append('the settings\' $%04X-$%04X pass a bank\'s room'
+                       % (lo, hi - 1))
+        for ulo, uhi in used + tuple(s for s in sets if s != (lo, hi)):
+            if lo < uhi and ulo < hi:
+                out.append('the settings\' $%04X-$%04X meet DLBANK\'s '
+                           '$%04X-$%04X' % (lo, hi - 1, ulo, uhi - 1))
+    # DLINIT's settings buffers in W above its image: the file, the
+    # settings as saved, the slot holes (dl_init.s)
+    if DLINIT_HI + 2 * S.SET_SIZE + 64 > 0xC000:
+        out.append('DLINIT\'s settings buffers pass W')
     return out
 
 
@@ -359,7 +379,7 @@ def constants() -> List[Tuple[str, int]]:
 
 
 def inc_text() -> str:
-    lines = ['; Generated by tools/native/playlayout.py (docs/PLAY.md 3). '
+    lines = ['; Generated by tools/native/playlayout.py (docs/PLAY.md). '
              'Do not edit.', '']
     for name, value in constants():
         lines.append('%-16s= $%04X' % (name, value))
@@ -367,18 +387,6 @@ def inc_text() -> str:
     for name, off, slot in DL_GROUPS:
         lines.append('%s_SLOT = %d' % (name, slot))
     return '\n'.join(lines) + '\n'
-
-
-def report() -> List[str]:
-    out = ['DLM $%04X-$%04X: %d of %d B' % (DLM[0], DLM[1] - 1, DLM_USED,
-                                          DLM[1] - DLM[0])]
-    for name, size in DLM_FIELDS:
-        out.append('  $%04X %-14s %d' % (DLMA[name], name, size))
-    out.append('kernel $%04X-$%04X, step list $%04X-$%04X, its bytes '
-               '$%04X-$%04X' % (KERNEL[0], KERNEL[1] - 1, DLBUF[0],
-                                DLBUF[1] - 1, KVARS[0], KVARS[1] - 1))
-    out.append('DLBANK %d' % DLBANK)
-    return out
 
 
 def write_if_changed(path: Path, text: str) -> None:
@@ -389,9 +397,7 @@ def write_if_changed(path: Path, text: str) -> None:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('--check', action='store_true')
     parser.add_argument('--inc', type=Path)
-    parser.add_argument('--report', action='store_true')
     args = parser.parse_args(argv)
     problems = check()
     if problems:
@@ -400,10 +406,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 1
     if args.inc:
         write_if_changed(args.inc, inc_text())
-    if args.report:
-        print('\n'.join(report()))
-    if args.check:
-        print('playlayout check: ok')
     return 0
 
 

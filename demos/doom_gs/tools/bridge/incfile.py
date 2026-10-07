@@ -8,9 +8,7 @@ file or given by the caller, `+ - * / % << >> & | ^ ~` and parentheses.
 Lines inside `#if`/`#endif` are read as they come (the files use the
 guards only to be included once).
 
-Nothing is copied: the bridge reads the files in build/upstream at run
-time. tests/test_bridge.py checks every value against build/linkmap.json,
-whose values come from our own assembler (tools/v816).
+Nothing is copied: the files are read in build/upstream at run time.
 """
 
 import re

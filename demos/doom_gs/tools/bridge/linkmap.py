@@ -1,26 +1,19 @@
 """Symbols of upstream's game from build/linkmap.json (tools/v816).
 
 `Symbols` gives the address of `unit:label` (or a label that only one
-unit has), the data fragments with their labels and the size of each
-label (up to the next label of its fragment, or the fragment's end), and
-the exact label of an address. An address is never matched to the
-nearest label: a lookup is exact or it fails.
+unit has), the fragments with their labels, and each label with its size
+(up to the next label of its fragment, or the fragment's end).
 """
 
-import bisect
 import json
 from pathlib import Path
-from typing import Dict, Iterator, List, NamedTuple, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 BUILD = ROOT / 'build'
 LINKMAP = BUILD / 'linkmap.json'
 UPSTREAM = BUILD / 'upstream' / 'src' / 'iigs'
-
-# Label prefixes of the include files' constants, which the link map
-# keeps with each unit that includes them: not addresses.
-CONSTANT_PREFIXES = ('CONST_', 'OFS_', 'SIZEOF_', 'MM_')
 
 
 class Label(NamedTuple):
@@ -56,7 +49,6 @@ class Symbols:
             linkmap = json.loads(Path(path).read_text())
         game = linkmap['game']
         self.units: Dict[str, Dict[str, int]] = game['units']
-        self.sections = game['sections']
         self.fragments: List[Fragment] = []
         by_address: Dict[int, List[Label]] = {}
         for f in game['fragments']:
@@ -75,11 +67,7 @@ class Symbols:
                 f['unit'], f['section'], f['kind'], f['address'], f['size'],
                 tuple(labels)))
         self.fragments.sort(key=lambda f: f.address)
-        self._starts = [f.address for f in self.fragments]
         self.by_address = by_address
-
-    def __getitem__(self, ref: str) -> int:
-        return self.address(ref)
 
     def address(self, ref: str) -> int:
         """`unit:label` or a label that one unit alone has."""
@@ -95,9 +83,6 @@ class Symbols:
             raise SymbolError('%s: %d values' % (name, len(found)))
         return found.pop()
 
-    def constant(self, name: str) -> int:
-        return self.address(name)
-
     def label(self, ref: str) -> Label:
         """The label `unit:label` with its size (data or code)."""
         address = self.address(ref)
@@ -106,22 +91,3 @@ class Symbols:
             if label.name == name and (not unit or label.unit == unit):
                 return label
         raise SymbolError('%s is not a label of a placed fragment' % ref)
-
-    def fragment_at(self, address: int) -> Optional[Fragment]:
-        """The fragment holding the address (fragments do not overlap)."""
-        i = bisect.bisect_right(self._starts, address) - 1
-        if i >= 0:
-            f = self.fragments[i]
-            if f.address <= address < f.address + f.size:
-                return f
-        return None
-
-    def exact(self, address: int) -> List[Label]:
-        """The labels at exactly this address (never the nearest)."""
-        return list(self.by_address.get(address, []))
-
-    def data_fragments(self, units=None) -> Iterator[Fragment]:
-        for f in self.fragments:
-            if f.kind in ('bss', 'data') and (units is None or
-                                              f.unit in units):
-                yield f

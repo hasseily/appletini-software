@@ -1,7 +1,7 @@
-; s2_stt.s: part s2stbar's test image glue for the drawer (docs/m11-parts/
-; s2stbar.md). Not part of the game. Linked in P2DW's room with s2_st.s,
-; part s2draw's s2_draw.s and s2_pub.s, and part s2pal's s2_pal.s for
-; s2_begin (the SCBs and palettes are part s2pal's region).
+; s2_stt.s: part s2stbar's image glue for host runs of the drawer
+; (m11/s2stbar.mk). Not part of the game. Linked in P2DW's room with
+; s2_st.s, part s2draw's s2_draw.s and s2_pub.s, and part s2pal's s2_pal.s
+; for s2_begin (the SCBs and palettes are part s2pal's region).
 ;
 ; tools/native/s2stbar.py stages up to 32 frames in RamWorks:
 ;

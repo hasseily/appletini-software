@@ -1,11 +1,11 @@
-; s2_am.s: the automap's full mode, the image AMAPW (docs/SCREENS.md
-; 1.5.4, 4.1; part s2amap, docs/m11-parts/s2amap.md). A GPL-2 rewrite in
-; 65C02 of upstream's src/iigs/am_map65.s: AM_Stop, AM_Responder,
-; AM_Start, AM_findMinMaxBoundaries [R am_map65.s:224-553], AM_Drawer's
-; full mode with its byte lists (eraseOld, drawLines, showBytes,
-; clearStrip, clearView, plot's pixFull, rowColors) [R :1021-1100,
-; :1179-1306, :1337-1389, :1638-1662, :2843-2861]; the window, the ticker,
-; the walls and the line loops are s2_amline.s's (shared with OVLW).
+; s2_am.s: the automap's full mode, the image AMAPW (docs/SCREENS.md, the
+; automap; part s2amap). A GPL-2 rewrite in 65C02 of upstream's
+; src/iigs/am_map65.s: AM_Stop, AM_Responder, AM_Start,
+; AM_findMinMaxBoundaries [R am_map65.s:224-553], AM_Drawer's full mode with
+; its byte lists (eraseOld, drawLines, showBytes, clearStrip, clearView,
+; plot's pixFull, rowColors) [R :1021-1100, :1179-1306, :1337-1389,
+; :1638-1662, :2843-2861]; the window, the ticker, the walls and the line
+; loops are s2_amline.s's (shared with OVLW).
 ;
 ; Upstream draws the map into the back buffer and lists the bytes it
 ; wrote; the next frame blacks the old list's bytes, draws again and shows
@@ -23,13 +23,13 @@
 ;                  on); the state block from and to S2STATE
 ;   am_responder   AM_Responder: A = the event's type (0 down, 1 up),
 ;                  X, Y = its key (low, high); A = 1 when it took it
-;   am_tick        one AM_Ticker (the overlay's frames and the tests)
+;   am_tick        one AM_Ticker (the overlay's frames)
 ;   am_load, am_save   the state block from and to S2STATE (SS_AMAPW)
 ;
-; AMAPW holds neither the input poll nor the effect service: P2DW follows
-; it in every full-map frame (1.5.4). Its publishes end drained (RAMWRT
-; off). It never calls s2_begin: the frame's colours go out with P2DW,
-; which comes after (s2_begun is a byte that stays 1 here).
+; AMAPW holds neither the input poll nor the effect service: P2DW follows it
+; in every full-map frame (docs/SCREENS.md). Its publishes end drained
+; (RAMWRT off). It never calls s2_begin: the frame's colours go out with
+; P2DW, which comes after (s2_begun is a byte that stays 1 here).
 ;
 ; Places: s2_am.inc (zero page AMZ, W AMW, the state block), and W's
 ; runtime: the band $8E00-$A83F, the marks $A900 (s2_pub's DRB, DRE), the
@@ -73,7 +73,7 @@ INITSCALE = 45875               ; (int32_t) (0.7 * FRACUNIT)
 EV_KEYDOWN = 0
 EV_KEYUP   = 1
 ; the stops PL_AMPALS (a frame whose map rows use more than 4 palettes)
-; and PL_AMSEGS (more lines than SS_AMSEG holds) are s2.inc's (S2AMAP-4)
+; and PL_AMSEGS (more lines than SS_AMSEG holds) are s2.inc's
 
         .assert ST_END - AMST <= 256, error, "the state block's page"
         .assert RBASE + 168 <= AMSEGBUF, error, "RBASE"
@@ -121,7 +121,7 @@ stbank: lda #S2STATE
         rts
 
 ; am_mail: what the tic and the frames left in S2_MAIL: an AM_Stop of the
-; tics (R6), a view drawn without the overlay (upstream's display then
+; tics, a view drawn without the overlay (upstream's display then
 ; zeroes am_valid and am_band [R d_main65.s:497-503])
 am_mail:
         lda S2_MAIL

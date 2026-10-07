@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""build/native/DOOM.hdv, the playable game's boot disk (docs/PLAY.md 4,
-7): DOOM.SYSTEM (milestone 11's boot, src/native/pl_boot.s) with the
+"""build/native/DOOM.hdv, the playable game's boot disk (docs/PLAY.md):
+DOOM.SYSTEM (the boot, src/native/pl_boot.s) with the
 kernel in pl_ready's place, and every image and table of the game in
-RamWorks, from play.mk's links and the other milestones' builds (read
-only, but milestone 9's load image: play.mk runs level.mk first, which
+RamWorks, from play.mk's links and the other builds (render.mk, level.mk,
+m11.mk; read only, but the load image: play.mk runs level.mk first, which
 rebuilds it when a layout change left it out of date; --no-build skips
 that too).
 
@@ -15,13 +15,13 @@ Usage:  python3 tools/native/playdisk.py [--play DIR] [--out FILE]
 The disk (a ProDOS 2.4.3 volume DOOM, pldisk.py's writer) holds DOOM.SYSTEM,
 PRODOS, CATALOG, CRCLIST, LC.BIN (the card images: pldisk.card_images of
 the play link: S2's player, the effects' card part, pl_vbl, the kernel at
-$FF00; milestone 8's math, far layer, phase loader, replay), then the bank
+$FF00; the renderer's math, far layer, phase loader, replay), then the bank
 files:
 
-  the level store     milestone 9's TEXELS.n, PATCHES.n, MAPS.n, TABLES.n
+  the level store     level.mk's TEXELS.n, PATCHES.n, MAPS.n, TABLES.n
   CODE.1              the load image (LCODE), the render images
                       (WCODE_BANK, MCODE_BANK), the 2D images (MENUW,
-                      AMAPW, WIW, FINW, PALW: milestone 11's parts' builds;
+                      AMAPW, WIW, FINW, PALW: m11.mk's parts' builds;
                       P2DW: the play link's, with the frame glue), OVLW
   CODE.2              the tic image: W and the core in GCODE0 at W's
                       addresses, its groups packed after it (GCODE0 $0200,
@@ -40,9 +40,13 @@ files:
 --run boots the disk on a2vm (its MLI trap, the memory API unless
 --no-amem, the mouse card's VBL clock unless --mouse none or plain: then
 VIA-B's timer 1, a2vm --via-timers; --mouse apple: an AppleMouse II's
-VBL through its firmware, docs/PLAY.md 21; --vidhd SLOT: a VidHD there,
-docs/PLAY.md 22), --cost-timed under the Doom profile, the interrupt
-bounds of SCREENS.md 2.3) and plays SCRIPT: a2vm's input events (tools/
+VBL through its firmware, docs/PLAY.md; --vidhd SLOT: a VidHD there,
+docs/PLAY.md; --disk IMAGE: the MLI trap serves IMAGE's files instead of
+the build's, and IMAGE is a ProDOS block device in slot 7, a2vm
+--blockdev, which SAVE SETTINGS writes in place, --disk-ro write-
+protected; docs/PLAY.md, "The settings file"), --cost-timed under the
+Doom profile, the interrupt
+bounds of docs/SCREENS.md) and plays SCRIPT: a2vm's input events (tools/
 a2vm/README.md "Input events"), with the names of the play link's labels
 for pc events (pc @dl_halt ...). Every run is bounded (bounded.run: its
 time, its files' sizes) in a directory deleted after it (--keep keeps
@@ -57,7 +61,6 @@ import struct
 import subprocess
 import sys
 import tempfile
-import zlib
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
@@ -82,9 +85,8 @@ PLAY = NATIVE / 'play'
 PROFILES = {'f121': 'f121+phasor+window32',
             'fastpath': 'fastpath+phasor+window32',
             # for comparison (tools/a2vm/costs/appletini.json's variants):
-            # the cost model before the card's CALIB.hdv of 2026-10-03
-            # (docs/results/calib.md), and the card with its virtual
-            # Disk II inactive
+            # the cost model before the card's calibration of 2026-10-03,
+            # and the card with its virtual Disk II inactive
             'f121-precal': 'f121+phasor+window32+precal',
             'f121-nod2': 'f121+phasor+window32+nod2',
             # F1.2.2 (tools/a2vm/README.md, "F1.2.2: the profile f122"):
@@ -97,7 +99,7 @@ PROFILES = {'f121': 'f121+phasor+window32',
 # slot 2 (run's `mouse`): the Appletini's mouse card, none, a ROM with
 # the AppleMouse ID bytes and no Appletini registers (a2vm --mouse-plain),
 # or an AppleMouse II (a2vm --mouse-apple: its firmware's entry points
-# and VBL interrupt; docs/PLAY.md 21); without the Appletini's card the
+# and VBL interrupt; docs/PLAY.md); without the Appletini's card the
 # clock is VIA-B's timer 1 or the AppleMouse's VBL, and a2vm runs the
 # Phasor's timers (--via-timers: VIA-A's for the PAL/NTSC count)
 MICE = {'appletini': [], 'none': ['--no-mouse', '--via-timers'],
@@ -107,7 +109,7 @@ IRQ_BOUNDS = pldisk.IRQ_BOUNDS
 # with an AppleMouse II the handler also reads the //e's switches and
 # turns them off and back ($C000-$C01F), calls the firmware ($C200-$C2FF),
 # which borrows zero page $06 and uses slot 2's screen holes, which
-# ap_swap exchanges (MEMORY_MAP.md rule 2 as amended); $07 too: Apple's
+# ap_swap exchanges (docs/MEMORY_MAP.md); $07 too: Apple's
 # SERVEMOUSE runs an RTS at $06, whose dummy read on the 65C02 is $07
 # (a2vm --mouse-rom, 2026-10-04)
 APPLE_HOLES = [0x047A + 0x80 * k for k in range(8)]
@@ -136,7 +138,7 @@ class PlayError(Exception):
 
 def make(play: Optional[Path] = None) -> Path:
     """make -f play.mk (the links), with no warning. play.mk first runs
-    level.mk on build/native/levels/obj, so milestone 9's load image
+    level.mk on build/native/levels/obj, so the load image
     (LCODE, which links the runtime's state) is never stale on the
     disk."""
     play = play or PLAY
@@ -157,8 +159,8 @@ def missing() -> List[str]:
     out = pldisk.missing()
     for part, name in list(PK.M11_IMAGES.values()):
         if not (pldisk.M11 / part / ('%s.map' % name)).exists():
-            out.append('milestone 11\'s %s/%s (make -f m11.mk)' % (part,
-                                                                   name))
+            out.append('the 2D part %s/%s (make -f m11.mk)' % (part,
+                                                                name))
     if not umodel.WAD_PATH.exists():
         out.append('DOOM1.WAD (tools/fetch_upstream.py)')
     return out
@@ -171,7 +173,7 @@ def missing() -> List[str]:
 def group_problems(play: Path) -> List[str]:
     """The tic link's groups against their files (gcall.s's gr_load copies
     a group's byte length, not its last page's padding, so the slot's
-    bytes past it are the group before's: docs/SPEED.md 4, item 4): each
+    bytes past it are the group before's: docs/SPEED.md): each
     group's segments are stored (none bss) and end at its file's end, and
     every label in a slot lies in a group's segment or at its end (no
     name for the slot's bytes past a group)."""
@@ -215,8 +217,8 @@ def group_problems(play: Path) -> List[str]:
 
 def tic_segments(play: Path) -> List[Segment]:
     """W and the core in GCODE0 at W's addresses, the groups packed, the
-    group directory in the core (as tools/native/grun.py packs a test
-    image: grun.group_entry, each group's byte length), the glue's groups'
+    group directory in the core (grun.group_entry's entries, each
+    group's byte length), the glue's groups'
     slots in grp_slot."""
     from native import grun
     b = PK.tic_build(play)
@@ -269,7 +271,7 @@ def tic_segments(play: Path) -> List[Segment]:
 
 def static_sources(play: Path) -> Dict[Tuple[int, int], bytes]:
     """(space, address) -> bytes of every PRIVATE copy of DLINIT: the
-    static tables (rcard's main and aux 0 tables, MEMORY_MAP.md 3.2, 5) and
+    static tables (rcard's main and aux 0 tables, docs/MEMORY_MAP.md) and
     the kernel's menu loop (the play card link's KMAIN, KMAIN2)."""
     rc = RC.load_build(RC.OBJ, 'rcard')
     from native import layout as L5
@@ -286,7 +288,7 @@ def static_sources(play: Path) -> Dict[Tuple[int, int], bytes]:
     for lo, hi in PL.STATIC_AUX0[1:]:
         out[(1, lo)] = a08[lo - L5.AUX_TABLES:hi - L5.AUX_TABLES]
     # rtables.py's main and aux 0 tables below the card (tables.img, as
-    # milestone 8's runs load them over the link's: xtoviewangle's XTVLO
+    # the renderer's runs load them over the link's: xtoviewangle's XTVLO
     # and XTVHI in main $09A9, $0AF3); each must lie in a copied range
     for kind, bank, address, data in LC.Image.parse(
             (RC.TABLES / 'tables.img').read_bytes()):
@@ -406,7 +408,8 @@ def s2state_segment(play: Path) -> Segment:
     menu = sym['SS_MENUW'] - sym['M_CURRENT']   # MENUW's block, $BF00
     for i, text in enumerate(SAVE_TEXT):
         put(menu + sym['M_SAVESTR'] + 8 * i, text.encode('ascii'))
-    put(sym['SS_SETTINGS'], bytes([0, 0, 1, 5, 0, 12]))
+    put(sym['SS_SETTINGS'], bytes(pldisk.SETTINGS_DEFAULTS[n]
+                                  for n in pldisk.SS_SETTINGS_FIRST))
     return (S.S2STATE, lo, bytes(blk))
 
 
@@ -419,7 +422,7 @@ def sprbound() -> bytes:
     32,767 makes E $3FFF), at most $3FFF; a sprite with no frames (the
     release lacks its lumps) $3FFF. From DOOM1.WAD's patches: every lump
     of the game, where upstream's level set reads the resident ones only
-    (docs/PLAY.md 9: a sprite no thing of the level shows)."""
+    (docs/PLAY.md: a sprite no thing of the level shows)."""
     gd = umodel.game_data()
     defs = wadconv.sprite_defs(gd)
     nframes = LC.sprite_frames(gd.rel.memory, umodel.symbols())
@@ -511,7 +514,7 @@ class Disk(NamedTuple):
     main: bytes
 
 
-# The tic image's shared W (docs/SPEED.md 4, item 11): the kernel loads the
+# The tic image's shared W (docs/SPEED.md): the kernel loads the
 # tic image's core from page $66 when the frame's list ended with P2DW
 # (dl_disp.s kc_from), keeping P2DW's $6000-$65FF, so the two images must
 # link the same bytes there (MATHW and AUXW: the render front end's WCODE
@@ -706,15 +709,15 @@ def shared_w_problems(play: Path, main: bytes) -> List[str]:
 
 
 def frame_slot_problems(play: Path) -> List[str]:
-    """The frame slots' rule (docs/SPEED.md 9, MEMORY_MAP.md rule 3): no
+    """The frame slots' rule (docs/SPEED.md, docs/MEMORY_MAP.md): no
     absolute store of the tic image's code (the core, every group, the
     glue's: the link's debug file, dbg_stores) into main $2000-$5FFF, where
     the pinned groups run over the colormaps (a CPU store there is a video
     write, and a pinned group's store into its own bytes would be one);
     each pinned group's segments within its frame slot. (Indirect stores
-    are not seen here: the placement keeps gplace.NO_PIN's out of the frame
-    slots, and test_play_bench's benchmark finds the colormaps whole at
-    every replay.)"""
+    are not seen here: the placement, made with them kept out of the frame
+    slots, is fixed in gplace-f122.json, and the play benchmark found the
+    colormaps whole at every replay.)"""
     from native import gplacerec as REC
     b = PK.tic_build(play)
     lo, hi = GL.FRAME_REGION
@@ -763,8 +766,8 @@ def problems(play: Path, main: bytes) -> List[str]:
 
 def card_main(boot: pldisk.Boot, play: Path) -> Tuple[bytes, bytes]:
     """pldisk.card_images with the tic image's memory-API transport
-    (gcall.s AMEMLC, in bank 1 after the products: glayout.AMEM_LC; docs/
-    SPEED.md 10), which the kernel's loads and the tic phase's requests
+    (gcall.s AMEMLC, in bank 1 after the products: glayout.AMEM_LC;
+    docs/SPEED.md), which the kernel's loads and the tic phase's requests
     run from."""
     aux, main = pldisk.card_images(boot)
     tb = PK.tic_build(play)
@@ -782,7 +785,7 @@ def card_main(boot: pldisk.Boot, play: Path) -> Tuple[bytes, bytes]:
 
 
 def amem_cpu_problems(boot: pldisk.Boot, main: bytes) -> List[str]:
-    """The memory API's CPU version (docs/PLAY.md 19) writes the card's
+    """The memory API's CPU version (docs/PLAY.md) writes the card's
     glayout.AMEM_CPU ranges outside AMEMLC (AMEMCPUD in bank 1, AMEMCPUF
     in $E000-$FFFF) when DOOM.SYSTEM finds no API: they must be free in the
     play card, in no segment of its links (rcard's bank 1 and replay parts,
@@ -821,9 +824,9 @@ A2LI = bytes([0xC1, 0xB2, 0xCC, 0xE9])     # hi-ASCII 'A2Li' (rule 8)
 
 def a2li_problems(play: Path) -> List[str]:
     """Without the memory API a frame slot's group comes into main
-    $2000-$5FFF by CPU stores (docs/PLAY.md 19, MEMORY_MAP.md rule 3), and
+    $2000-$5FFF by CPU stores (docs/PLAY.md, docs/MEMORY_MAP.md), and
     on an Appletini the firmware reads $4078-$407C from its shadow of main
-    (rule 8: hi-ASCII 'A2Li' there arms its legacy modes or holds the
+    (docs/MEMORY_MAP.md: hi-ASCII 'A2Li' there arms its legacy modes or holds the
     frame): no group of the tic link may hold the signature at $4078."""
     from native import gplacerec as REC
     out = []
@@ -858,7 +861,7 @@ def with_patches(system: bytes, boot: pldisk.Boot, play: Path) -> bytes:
 
 
 def apple_card_problems(boot: pldisk.Boot, main: bytes) -> List[str]:
-    """An AppleMouse II's handler (docs/PLAY.md 21) goes into the play
+    """An AppleMouse II's handler (docs/PLAY.md) goes into the play
     card at pl_boot.s's ap_irq (pl_detect's place, to the end of FXC's
     area) and ap_swap (after S2's tables): ap_irq must be pl_detect, with
     only pl_detect and pl_wait (the boot's) after it in the card link;
@@ -944,7 +947,7 @@ def with_vidhd_patches(system: bytes, boot: pldisk.Boot,
                        play: Path) -> bytes:
     """DOOM.SYSTEM with a VidHD's records in vh_patch (vidhd.play_patches:
     what pl_boot.s's vh_boot writes when it finds a VidHD and nothing of
-    the Appletini's; docs/PLAY.md 22). vidhd.py checks every place: the
+    the Appletini's; docs/PLAY.md). vidhd.py checks every place: the
     bytes each record replaces, its rooms free and zero."""
     from native import amcpu, vidhd
     lab = boot.labels
@@ -960,6 +963,32 @@ def with_vidhd_patches(system: bytes, boot: pldisk.Boot,
     if any(system[at:at + size]):
         raise PlayError('vh_patch is not zero in the link')
     return system[:at] + data + system[at + size:]
+
+
+def settings_problems(files) -> List[str]:
+    """DOOM.SETTINGS's places (docs/PLAY.md, "The settings file"): no
+    bank file's segment reaches SET_BANK's SET_FILE and SET_INFO, which
+    DOOM.SYSTEM writes before it loads them; the file's defaults are the
+    game's (b_boot's showMessages and effects' volume, s2state_segment's
+    SS_SETTINGS, pl_keys.s's keys: plkeys.DEFAULTS, which pl_defaults'
+    table equals)."""
+    out = []
+    lay = dict(S.SETTINGS_LAYOUT)
+    places = ((S.SET_FILE, S.SET_FILE + S.SET_SIZE),
+              (S.SET_INFO, S.SET_INFO + lay['SI_SIZE']))
+    for bank, address, data in pldisk.segments_of(files):
+        if bank != S.SET_BANK:
+            continue
+        for lo, hi in places:
+            if address < hi and lo < address + len(data):
+                out.append('a segment $%04X-$%04X of bank %d meets the '
+                           'settings\' $%04X-$%04X' % (
+                               address, address + len(data) - 1, bank,
+                               lo, hi - 1))
+    d = pldisk.SETTINGS_DEFAULTS
+    if (d['SETF_MESSAGES'], d['SETF_SFXVOL'], d['SETF_GAMMA']) != (1, 15, 0):
+        out.append('DOOM.SETTINGS\'s defaults are not b_boot\'s')
+    return out
 
 
 def build(play: Path, out: Path = OUT) -> Disk:
@@ -983,6 +1012,11 @@ def build(play: Path, out: Path = OUT) -> Disk:
             ('CRCLIST', 0x06, 0x0000, pldisk.crc_file(entries)),
             ('LC.BIN', 0x06, 0x0000, aux + main)]
     disk += [(n, 0x06, 0x0000, d) for n, d in files]
+    bad = settings_problems(files)
+    if bad:
+        raise PlayError('; '.join(bad[:6]))
+    disk.append((pldisk.SETTINGS, pldisk.SETTINGS_TYPE, 0x0000,
+                 pldisk.settings_file()))
     everything = pldisk.write_disk(disk, out)
     return Disk(play, out, boot, everything, files, aux, main)
 
@@ -1010,7 +1044,7 @@ def labels(disk: Disk) -> Dict[str, int]:
 def symbols(play: Path) -> Dict[str, int]:
     """Every NAME = value of the play build's generated includes (gen/,
     tic/gen/: the layouts, the game's globals and constants, the routine
-    numbers), for the tests and the reports."""
+    numbers), for the checks and the runs."""
     out: Dict[str, int] = {}
     for d in (play / 'gen', play / 'tic' / 'gen'):
         for p in sorted(d.glob('*.inc')):
@@ -1048,26 +1082,23 @@ def script_events(disk: Disk, text: str) -> str:
 def run(disk: Disk, script: str, work: Path, profile: str = 'f121',
         seconds: float = 60.0, timeout: float = 1800.0,
         snap_ranges: str = 'main:0000-BFFF,lc,lc1,aux0:2000-9FFF',
-        extra: Sequence[str] = (), a2vm: Path = A2VM,
-        idle: str = 'exact', amem: bool = True,
-        mouse: str = 'appletini', vidhd: int = 0) -> Run:
+        amem: bool = True, mouse: str = 'appletini', vidhd: int = 0,
+        blockdev: Optional[Path] = None, blockdev_ro: bool = False) -> Run:
     """Boot the disk and play the script for at most `seconds` of model
-    time; the run's state, its snapshots and shots. `extra`: more a2vm
-    options (playtime.py's --pclog); `a2vm`: the machine to run; `amem`:
-    the memory API in slot 7 (a2vm --amem), else a //e with none, where
-    DOOM.SYSTEM's probe finds none and the CPU copies (docs/PLAY.md 19);
-    `mouse`: slot 2 (MICE; docs/PLAY.md 20); `vidhd`: a VidHD in that
-    slot (a2vm --vidhd; docs/PLAY.md 22), 0 none.
+    time; the run's state, its snapshots and shots. `amem`: the memory
+    API in slot 7 (a2vm --amem), else a //e with none, where DOOM.SYSTEM's
+    probe finds none and the CPU copies (docs/PLAY.md); `mouse`: slot
+    2 (MICE; docs/PLAY.md); `vidhd`: a VidHD in that slot (a2vm
+    --vidhd; docs/PLAY.md), 0 none; `blockdev`: an image in slot 7 as a
+    ProDOS block device (a2vm --blockdev; written in place unless
+    `blockdev_ro`), ProDOS's DEVNUM and DEVADR naming it.
 
-    `idle`: how a2vm skips the two loops that wait for a tic, the
-    kernel's menu wait (dl_mwait) and the brain's frame wait (dl_bwait).
-    'exact' (the default) skips to the next VBL only while the loop would
-    spin on the card: no tic due (I_GetTime's low word, CLK_TICS in the
-    main card, equal to DL_LASTM, the word both loops compare) and, for
-    dl_bwait, the brain's group in the slot that holds that address
-    (another group's code may sit there). 'old' is the unconditioned
-    skip of milestone 11 (docs/SPEED.md 1, "The measurement artifact"),
-    kept to measure it; 'none' skips nothing (the loops run)."""
+    a2vm skips the two loops that wait for a tic, the kernel's menu wait
+    (dl_mwait) and the brain's frame wait (dl_bwait), to the next VBL
+    only while the loop would spin on the card: no tic due (I_GetTime's
+    low word, CLK_TICS in the main card, equal to DL_LASTM, the word both
+    loops compare) and, for dl_bwait, the brain's group in the slot that
+    holds that address (another group's code may sit there)."""
     work = Path(work).resolve()
     work.mkdir(parents=True, exist_ok=True)
     manifest = []
@@ -1092,13 +1123,11 @@ def run(disk: Disk, script: str, work: Path, profile: str = 'f121',
     if len(slot) != 1:
         raise PlayError('dl_bwait $%04X is in no slot' % bwait)
     no_tic = 'eq=lc.%X,%X' % (sym['CLK_TICS'], sym['DL_LASTM'])
-    idles = {'exact': ['%X:vbl:main:%s' % (lab['dl_mwait'], no_tic),
-                       '%X:vbl:main:byte=%X,%X:%s' % (
-                           bwait, sym['SLOT_GRP'] + slot[0],
-                           sym['XS_DLG_BRAIN'], no_tic)],
-             'old': ['%X:vbl' % lab['dl_mwait'], '%X:vbl' % bwait],
-             'none': []}[idle]
-    args = [str(a2vm), '--rom', str(work / 'rom.bin'),
+    idles = ['%X:vbl:main:%s' % (lab['dl_mwait'], no_tic),
+             '%X:vbl:main:byte=%X,%X:%s' % (
+                 bwait, sym['SLOT_GRP'] + slot[0], sym['XS_DLG_BRAIN'],
+                 no_tic)]
+    args = [str(A2VM), '--rom', str(work / 'rom.bin'),
             '--core', 'w65c02s', '--via-ora-nh',
             '--image', str(work / 'poison.img'),
             '--prodos', str(work / 'prodos.txt'),
@@ -1122,9 +1151,11 @@ def run(disk: Disk, script: str, work: Path, profile: str = 'f121',
     args += MICE[mouse]
     if vidhd:
         args += ['--vidhd', str(vidhd)]
+    if blockdev:
+        args += ['--blockdev', '7:%s%s' % (Path(blockdev).resolve(),
+                                           ':ro' if blockdev_ro else '')]
     for spec in idles:
         args += ['--idle', spec]
-    args += list(extra)
     try:
         result = bounded.run(args, timeout=timeout, max_bytes=MAX_BYTES,
                              stdout=subprocess.PIPE,
@@ -1153,13 +1184,29 @@ def run(disk: Disk, script: str, work: Path, profile: str = 'f121',
     return Run(state, images, shots, writes, result.stdout[-4000:])
 
 
+def disk_of(disk: Disk, image: Path) -> Disk:
+    """`disk` with the files of the ProDOS image `image` (one of this
+    build: its DOOM.SYSTEM the link's, whose labels the run uses), in its
+    directory's order, for run's MLI trap (--disk)."""
+    vol = pldisk.prodosvol
+    img = vol.Image(Path(image).read_bytes())
+    _, entries, _ = vol.list_volume(img)
+    files = [(e['name'], e['file_type'], e['aux'], vol.read_file(img, e))
+             for e in entries]
+    mine = dict((n, d) for n, _, _, d in disk.files)
+    theirs = dict((n, d) for n, _, _, d in files)
+    if theirs.get(pldisk.SYSTEM) != mine.get(pldisk.SYSTEM):
+        raise PlayError('%s\'s DOOM.SYSTEM is not this build\'s' % image)
+    return disk._replace(files=files)
+
+
 def boot_halted(state: Dict[str, Any], images: Dict[str, Any],
                 lab: Dict[str, int]) -> str:
     """Why the run ended in the boot's stop (pl_boot.s bt_halt: a message
     on the screen, PL_STATUS its code, interrupts masked), or ''. The run
     does not stop there (a2vm's --stop-pc names an address, and the tic
     phase's frame slots run code in main $2000-$5FFF, where DOOM.SYSTEM's
-    bt_halt lies: docs/SPEED.md 9); a boot that stopped loops there to the
+    bt_halt lies: docs/SPEED.md); a boot that stopped loops there to the
     run's end, with the I flag set and its `bra` in the final snapshot."""
     pc = lab.get('bt_halt')
     if pc is None or state.get('pc') != pc:
@@ -1194,8 +1241,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         'clock VIA-B\'s timer 1), or an AppleMouse II (its '
                         'VBL the clock, through its firmware)')
     parser.add_argument('--vidhd', type=int, default=0, metavar='SLOT',
-                        help='a VidHD in SLOT (a2vm --vidhd; docs/PLAY.md '
-                        '22)')
+                        help='a VidHD in SLOT (a2vm --vidhd; docs/PLAY.md'
+                        ')')
+    parser.add_argument('--disk', type=Path, metavar='IMAGE',
+                        help='run IMAGE (a DOOM.hdv of this build): the MLI '
+                        'trap serves its files and it is a block device in '
+                        'slot 7 (a2vm --blockdev), written in place')
+    parser.add_argument('--disk-ro', action='store_true',
+                        help='with --disk: the block device write-protected')
     args = parser.parse_args(argv)
     gone = missing()
     if gone:
@@ -1210,13 +1263,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         disk = build(play, out)
         print('%s: %d B, %d bank files' % (out, out.stat().st_size,
                                            len(disk.bank_files)))
+        if args.disk:
+            disk = disk_of(disk, args.disk)
         if args.run:
             work = args.keep or Path(tempfile.mkdtemp(prefix='tmp-play-',
                                                       dir=str(BUILD)))
             try:
                 r = run(disk, args.run.read_text(), work, args.profile,
                         args.seconds, amem=not args.no_amem,
-                        mouse=args.mouse, vidhd=args.vidhd)
+                        mouse=args.mouse, vidhd=args.vidhd,
+                        blockdev=args.disk, blockdev_ro=args.disk_ro)
                 print(json.dumps(r.state, indent=1)[:2000])
             finally:
                 if not args.keep:

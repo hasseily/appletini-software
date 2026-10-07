@@ -1,5 +1,5 @@
-; game/tracel/tracel.s: part tracel of milestone 10 (docs/GAME.md 1.9, 2.4
-; row tracel; docs/game-parts/tracel.md): the intercepts of the lines a
+; game/tracel/tracel.s: part tracel of the game's tic code (docs/GAME.md:
+; the trace and its intercepts): the intercepts of the lines a
 ; trace crosses. GPL-2: rewritten from upstream's p_trace65.s
 ; (PIT_AddLineIntercepts:985, divlineSide:152, interceptVector3:242 with
 ; ivB, ivSlow, ivTest and its fixedDiv and fdLoop, ivProd, ivAxis,
@@ -7,7 +7,7 @@
 ; ivSetup:1875), Doom8088: Apple IIgs Edition. Nothing here comes from
 ; upstream's cal_integer.s: fixedDiv is p_trace65.s's own long division
 ; (p_trace65.s:398-541, 686-742), mirrored step by step, and the products
-; are milestone 6's (mul32, fixmul, umul16, umul16lo).
+; are math.s's (mul32, fixmul, umul16, umul16lo).
 ;
 ; The places (the trace, the intercepts, the zero page) are tracel.inc's.
 ; Every routine is upstream's, with its quirks:
@@ -38,8 +38,7 @@
 ;               while it is below a (it loops forever, p_trace65.s:430-438);
 ;               natively the result is $7FFFFFFF (C's FixedDiv for an
 ;               overflow of one sign) and GT_DIV0 counts it, the port's
-;               rule for its own divides (NATIVE.md 15.1 row 5, GAME.md
-;               3.6 T8): docs/game-parts/tracel.md, request R4.
+;               rule for its own divides (GAME.md).
 ;   ivProd      M_R = FixedMul(trace.d, dl.o >> 8) (X the axis: 0 trace.dx
 ;               and dl.dy, 4 trace.dy and dl.dx): in a shot (TL_IVON) with
 ;               dl.o in whole units in -4096..4095 the one product M (n << 3)
@@ -67,8 +66,7 @@
 ;   vsC         TL_VCV = C - VBV - VJ SQ, TL_VCT = -VJ SQ - VBTH of SIDE1
 ;               (part tracet's sideSetup) from TL_VSQ, TL_VAX, TL_VG.
 ;   vtxSlowL, lineCrossL, icInsertL: upstream's long-call wrappers have
-;               no native code (request R3, wave 2 as integrated:
-;               glayout.INLINED): their callers FCALL vtxSlow, lineCross,
+;               no native code: their callers FCALL vtxSlow, lineCross,
 ;               icInsert.
 ;
 ; Every call between the part's routines is an FCALL (the placement may

@@ -13,8 +13,7 @@ numbers that are unique in the unit:
   place of use is back in force after it (21.11.2);
 - an equate does not start a scope. The manual speaks of labels only;
   the sources decide it: they have references to local labels with an
-  equate between the reference and the label (the parser counts them,
-  and docs/FRONTEND_STATS.md has the number).
+  equate between the reference and the label (the parser counts them).
 After the last line, each reference to a local label must have its
 definition in the same scope, and a scope must not define a name twice.
 

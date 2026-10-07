@@ -1,6 +1,5 @@
-; gspec.s: the game core's specials at the start of a level (milestone 9,
-; stage C; docs/LEVELS.md 2.5; milestone 10's skeleton: the object API,
-; docs/GAME.md 3.1). A GPL-2 derivative of upstream's p_spec65.s
+; gspec.s: the game core's specials at the start of a level (docs/LEVELS.md;
+; in play: the object API, docs/GAME.md). A GPL-2 derivative of upstream's p_spec65.s
 ; (P_SpawnSpecials, addScroller, getNextSector) and p_lights65.s
 ; (P_SpawnLightFlash, P_SpawnStrobeFlash, P_SpawnGlowingLight,
 ; P_FindMinSurroundingLight).

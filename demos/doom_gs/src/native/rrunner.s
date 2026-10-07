@@ -1,14 +1,15 @@
-; RENDER.SYSTEM: the native renderer's whole frame on the card, for the
-; owner to run at milestone 12 (docs/RENDER-MASKED.md 4.6; milestone 8,
-; acceptance 2). tools/native/rdisk.py builds the disk, and runs it on
-; a2vm end to end (--check). Not part of the game.
+; RENDER.SYSTEM: the native renderer's whole frame on the card, written
+; as a standalone disk of recorded frames for the owner's hardware
+; (docs/RENDER-MASKED.md). Not part of the game: it is still linked into
+; rcard (render.mk), whose render images and tables the game disk takes
+; (playdisk.py), but this boot and runner are on no disk now.
 ;
 ; Boot (at $2000, under ProDOS): read CATALOG, then each data file it
 ; names; their records go into RamWorks banks (the level: segs, map,
 ; texels, the patch store, the sprite tables and weapon profiles, the
 ; render window's two images, the FSTEP and math tables, the staging of
 ; the static tables; and the frames' data), or, bank $FE, into the aux
-; card (the trig tables of MEMORY_MAP.md 4.3, with ALTZP on, interrupts
+; card (the trig tables of MEMORY_MAP.md, with ALTZP on, interrupts
 ; off, no stack or zero page in the loop). Then ProDOS is given up: the
 ; card image that follows this code in the file ($2800: main card bank 1
 ; $D000-$DFFF, bank 2 $D000-$DFFF, $E000-$FFFF) goes into the language
@@ -34,7 +35,7 @@
 ;   * SHR left and entered again, then a $Cxxx read: the data's SHR bytes
 ;     are out before the count (the fast path's lazy mirror flushes when
 ;     SHR is left; F1.2.1's drain ends before a $Cxxx access);
-;   * the whole frame (RENDER-MASKED.md 3.2 phases 1-13: the front
+;   * the whole frame (RENDER-MASKED.md: the front
 ;     end's window, nr_frame, the masked window, nm_masked, nm_bkload,
 ;     nb_frame), its VBLs counted;
 ;   * the CRC-32 of aux 0 $2000-$9FFF (zlib's) against the expected one
@@ -97,7 +98,7 @@ CATBUF          = $6C00         ; the catalog while booting (4 KB)
 DATABUF         = $7C00         ; file data, 8 KB at a time
 DATAMAX         = $2000
 
-; CATALOG (tools/native/rdisk.py): +0 frames, +1 data files, +2 the start
+; CATALOG: +0 frames, +1 data files, +2 the start
 ; mode (0 chained, 1 full), +3 the first frame's number (2), +5 PRIVATE
 ; descriptors, +6 store banks, +7 VBLs to show a frame; +16 the data
 ; files' names (16 bytes each: length, name); then the PRIVATE descriptors
@@ -558,7 +559,7 @@ rn_loop:
         sta     rn_t0+1
         cli
 run_frame:
-        jsr     far_wload               ; RENDER-MASKED.md 3.2 phases 1-13
+        jsr     far_wload               ; RENDER-MASKED.md
         jsr     nr_frame
         jsr     far_mload
         jsr     nm_masked
@@ -910,7 +911,7 @@ rq_len: .word   0
 rq_count:
         .byte   0, 0, 0
 
-; ---- the memory API (appletini-one README_MEMORY_API.md; as runner.s) ----
+; ---- the memory API (appletini-one README_MEMORY_API.md) ----
 
 ; amem_probe: C clear when slot 7 has the API with PRIVATE copies
 amem_probe:

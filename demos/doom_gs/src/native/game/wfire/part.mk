@@ -1,5 +1,5 @@
-# src/native/game/wfire/part.mk: part wfire of milestone 10 (wave 6;
-# docs/GAME.md 2.2 ACTTAB, 2.4; docs/game-parts/wfire.md): the player's
+# src/native/game/wfire/part.mk: part wfire of the game's tic code
+# (docs/GAME.md, ACTTAB): the player's
 # weapons firing: the ACTTAB actions A_FirePistol, A_FireShotgun,
 # A_FireCGun, A_FireMissile, A_Punch, A_Saw, the rocket
 # P_SpawnPlayerMissile (its aim retries), the hitscan's bulletSlope and

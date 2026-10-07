@@ -1,15 +1,16 @@
 ; lboot.s: LEVELS.SYSTEM, the level store's boot load and the level
-; loads on the card, for the owner to run at milestone 12 (milestone 9,
-; stage B; docs/LEVELS.md 1.7, 5.4). tools/native/ldisk.py builds the
-; disk and runs it on a2vm end to end (--check). Milestone 11's
-; DOOM.SYSTEM takes the same boot.
+; loads on the card, written as a standalone disk for the owner's
+; hardware (docs/LEVELS.md). It is still linked into lcard (level.mk),
+; whose load image (W and LW) the game disk takes (playdisk.py); this
+; boot and runner are on no disk now. DOOM.SYSTEM (pl_boot.s) takes the
+; same boot.
 ;
 ; Boot (at $2000, under ProDOS):
 ;   * the RamWorks probe: banks 1-126 must all be there (8 MB, bank 127
-;     excluded: NATIVE.md 15.1 row 8): each bank's number written to its
+;     excluded): each bank's number written to its
 ;     $0200, then each read back; a missing bank stops with a message;
-;   * CATALOG, then each bank file it names (demos/doom/src/kernel/
-;     loader.s's format, lstore.bank_file: "A2DM", version 1, a segment
+;   * CATALOG, then each bank file it names (the bank file
+;     format of the earlier Appletini Doom port, lstore.bank_file: "A2DM", version 1, a segment
 ;     count, 5 bytes a segment: bank, address, length; zero padding to
 ;     256 bytes; the bytes): each segment read through the MLI into a
 ;     main staging buffer, 8 KB at a time, and copied into its bank (CPU
@@ -26,13 +27,13 @@
 ; The runner (the card's $E000 part): the mouse card's VBL interrupt (the
 ; clock), the memory API's probe (COPY, FILL, PRIVATE), the load phase's
 ; image into W (far_pload from LCODE), then each entry of the catalog's
-; sequence, its VBLs counted: with a pre-state (stage C) that test
+; sequence, its VBLs counted: with a pre-state, that test
 ; pre-state (bank PRE_BANK, the file PRESTATE.1: the game globals block
 ; and the random indexes of the E dump of the map's tour-sk2 setup) and
 ; nl_setup, then the CRC-32 (zlib's) of the map's window ranges and of
 ; its setup state's ranges (bank CRC_BANK, the file CRCLIST.1, which
-; also holds each entry's expected CRCs); without one (stage B) nl_load;
-; run_loaded after each (where a2vm's harness takes its snapshot); at the
+; also holds each entry's expected CRCs); without one nl_load;
+; run_loaded after each (a label for a host run's snapshot); at the
 ; end (run_done) the text screen shows each entry's map, VBLs and CRCs
 ; with OK or BAD, and "SETUPS OK" or "CRCS DIFFER" (the text page is main
 ; $0400-$07FF, where the loads put colormap levels 32 and 33: the table
@@ -96,14 +97,14 @@ PROBE           = $0100         ; the probe's read, in page 1 (near with
 BANKS           = 126           ; the banks the game needs
 LIM_FIRST       = $60           ; the load image: W from $6000
 
-; CATALOG (tools/native/ldisk.py): +0 the bank files, +1 the entries;
+; CATALOG: +0 the bank files, +1 the entries;
 ; +16 the files' names (16 bytes each: length, name); then each entry's
 ; map, then each entry's pre-state ($FF: a load alone)
 C_FILES         = 0
 C_MAPS          = 1
 C_NAMES         = 16
 MAX_MAPS        = 40
-; CRCLIST (bank CRC_BANK, tools/native/ldisk.py): at CL_LISTS each map's
+; CRCLIST (bank CRC_BANK): at CL_LISTS each map's
 ; two range lists (window, state: their addresses in the bank, 4 bytes a
 ; map from map 1); at CL_EXPECT each entry's expected CRCs (window,
 ; state: 8 bytes); a list: its range count (a word), then 6 bytes a
@@ -676,7 +677,7 @@ run_pre:
 :       lda (bsrc),y
         sta PRND+1
         iny                     ; then validcount (the frame block's,
-        bne :+                  ;   G_VALID: milestone 10)
+        bne :+                  ;   G_VALID)
         inc bsrc+1
 :       lda (bsrc),y
         sta G_VALID

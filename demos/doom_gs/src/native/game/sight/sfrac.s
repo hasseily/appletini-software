@@ -1,9 +1,9 @@
-; game/sight/sfrac.s: the two-sided line's heights, part sight of milestone
-; 10 (docs/GAME.md 2.4). GPL-2: rewritten from upstream's p_sight65.s
+; game/sight/sfrac.s: the two-sided line's heights, part sight of the
+; game's tic code (docs/GAME.md). GPL-2: rewritten from upstream's p_sight65.s
 ; (zSetup:1061, sightSlope:1407, interceptFrac:1150, opening:985, pick,
 ; sameHeight, st32, shr8V, smul48), Doom8088: Apple IIgs Edition. The
 ; products, the reciprocal and _Mul32 upstream makes through m_fixed65.s
-; and m_recip65.s are milestone 6's (math.s: umul16, recipsmall, mul32);
+; and m_recip65.s are math.s's (umul16, recipsmall, mul32);
 ; smul48 and interceptFrac's own division are upstream's arithmetic,
 ; mirrored.
 ;

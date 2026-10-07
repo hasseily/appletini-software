@@ -1,11 +1,12 @@
-; game/flow/gflow.s: part flow of milestone 10 (docs/GAME.md 2.4, wave 1),
-; g_game65.s's game flow game-side: the action table's targets, the level
-; load up to the load and the load protocol's continuations (GAME.md 3.4),
+; game/flow/gflow.s: part flow of the game (docs/GAME.md, the parts; wave
+; 1), g_game65.s's game flow game-side: the action table's targets, the
+; level load up to the load and the load protocol's continuations
+; (docs/GAME.md, the load protocol),
 ; the exits, the new game, the demo playback, the completed level.
 ; GPL-2: rewritten from upstream's g_game65.s (Doom8088: Apple IIgs
-; Edition, GPL-2); every product and divide is milestone 6's math.s.
+; Edition, GPL-2); every product and divide is math.s's.
 ;
-; The native calls (args.json gives each entry's upstream inputs):
+; The native calls:
 ;
 ;   G_ExitLevel, G_SecretExitLevel, G_WorldDone, G_ReloadDefaults: none
 ;   G_DeferedInitNew   A:X = the skill (upstream's C)
@@ -16,8 +17,9 @@
 ;                      the action targets that load a level: each runs up
 ;                      to the load (doLoadLevel's part before bmLoad), sets
 ;                      G_LOADACT to the action (gameaction) and returns
-;                      A = GT_LOAD; the driver loads the level (nl_setup)
-;                      and calls g_resume, the continuation (GAME.md 3.4)
+;                      A = GT_LOAD; the kernel loads the level (dl_disp.s:
+;                      nl_setup) and calls g_resume, the continuation
+;                      (dl_brain.s's E_RESUME)
 ;   initNew            A:X = the skill, GA_0-1 = the map; A = GT_LOAD
 ;   readDemoHeader     A = GT_LOAD
 ;   checkOverrun       A:X = the header bytes needed
@@ -29,21 +31,20 @@
 ;   div1000            GA_0-3 = n: GA_4-7 = n / 1000, GA_0-3 = n % 1000
 ;                      (unsigned, udiv32)
 ;   g_resume           the continuation of G_LOADACT's action; A = 0. The
-;                      driver calls it in its routine-with-load mode; part
-;                      tic's G_Ticker calls it after a load and goes on at
-;                      its action loop's test of gameaction (the play
-;                      build's brain group, the test builds' driver area:
-;                      not the core, below)
+;                      brain's E_RESUME calls it after a load; part tic's
+;                      G_Ticker then goes on at its action loop's test of
+;                      gameaction (the brain's group: not the core, below)
 ;
-; What is not here, by design (GAME.md 0.1, 3.4): the keys' state
-; (gamekeydown), wipegamestate and automapmode are milestone 11's (input,
-; screens, automap: none is canonical state); P_SetSecnodeFirstpoolToNull
+; What is not here, by design (docs/GAME.md): the keys' state
+; (gamekeydown), wipegamestate and automapmode are the screens' and the
+; input's (docs/SCREENS.md, docs/PLAY.md: none is canonical state);
+; P_SetSecnodeFirstpoolToNull
 ; is the load's (lsetup.s gt_init frees the node pools); bmLoad is the
-; driver's load; W_GetNumForName is the demo bank's directory (DEMOB,
+; kernel's load; W_GetNumForName is the demo bank's directory (DEMOB,
 ; below); the timed demo's report (bmDone) is the hook G_TimeDemoEnd (the
-; play build's menu benchmark, ghook.s's stop) and I_Quit a stop.
+; play build's menu benchmark, dl_hook.s) and I_Quit a stop.
 ;
-; The demo bank (GAME.md 1.10: DEMOB holds the demo lump that plays). Its
+; The demo bank (docs/GAME.md: DEMOB holds the demo lump that plays). Its
 ; layout is glayout.py's (DEMOB_LAYOUT): a directory at DM_DIR, the count
 ; (1 byte),
 ; then DM_ESIZE bytes an entry: the name (the symbol number and the
@@ -78,7 +79,7 @@ PLR     = G_PLAYER
 
 ; the demo bank's directory: ggame.inc's DM_DIR, DM_ESIZE, DME_NAME (the
 ; symbol number (2), the offset (2)), DME_LUMP, DME_LEN, DME_ADDR (glayout
-; .py DEMOB_LAYOUT: docs/game-parts/flow.md request 1)
+; .py DEMOB_LAYOUT)
 DEMOMARKER = $80
 HEADER_BYTES = 13               ; version, skill, episode, map, 5 more,
                                 ;   the player, 3 (demo_p after them)
@@ -241,7 +242,7 @@ done:
 
 ; ===========================================================================
 ; doLoadLevel: G_DoLoadLevel up to the load: the level's game state, a
-; dead player reborn; then the load (the driver's, GAME.md 3.4) with the
+; dead player reborn; then the load (the kernel's, docs/GAME.md) with the
 ; action that started it. A = GT_LOAD.
 ; ===========================================================================
         ROUTINE doLoadLevel
@@ -439,7 +440,7 @@ pd_none:
         lda G_DEMOBUF+4
         adc #0
         sta G_DEMOP+4
-        lda G_GAMEACTION        ; a loaded game: milestone 11's
+        lda G_GAMEACTION        ; a loaded game: the menus'
         cmp #UGA_LOADGAME
         bne :+
         lda G_GAMEACTION+1
@@ -519,7 +520,7 @@ pd_none:
         sta GT_1
         ora GT_0
         beq @read
-        lda GT_0                ; (the message is milestone 11's printf)
+        lda GT_0                ; (the message is the screens' printf)
         cmp G_DEMOLEN
         lda GT_1
         sbc G_DEMOLEN+1
@@ -595,11 +596,11 @@ pd_none:
         bpl :-
         FCALL div1000           ; resultfps % 1000 and / 1000: bmDone's
         lda #GS_DEMOEND         ;   (the hook: the play build's menu
-        jmp G_TimeDemoEnd       ;   benchmark, the test builds' stop)
+        jmp G_TimeDemoEnd       ;   benchmark)
 @play:  lda G_DEMOPLAY
         ora G_DEMOPLAY+1
         beq @rts
-        lda G_SINGLEDEMO        ; a single demo: I_Quit (milestone 11)
+        lda G_SINGLEDEMO        ; a single demo: I_Quit (the screens')
         ora G_SINGLEDEMO+1
         beq :+
         lda #GS_DEMOEND
@@ -659,7 +660,7 @@ pd_none:
         stz PLR + PL_DAMAGECOUNT + 1
         stz PLR + PL_BONUSCOUNT
         stz PLR + PL_BONUSCOUNT + 1
-        lda G_GAMEMAP           ; (the automap's stop: milestone 11's)
+        lda G_GAMEMAP           ; (the automap's stop: the screens')
         cmp #9                  ; map 9 counts as the secret
         bne :+
         lda G_GAMEMAP+1
@@ -789,14 +790,13 @@ pars:   .byte 0, 30, 75, 120, 90, 165, 180, 180, 30, 165
         rts
 
 ; ===========================================================================
-; g_resume: the load protocol's continuation (GAME.md 3.4): doLoadLevel's
+; g_resume: the load protocol's continuation (docs/GAME.md): doLoadLevel's
 ; tail, then the tail of G_LOADACT's action. A = 0. Not in the core (the
-; frame slots, docs/SPEED.md 9: it runs once a load, so its 163 B went to
+; frame slots, docs/SPEED.md: it runs once a load, so its 163 B went to
 ; the placeable code): in the play build the brain's group (dl_brain.s's
-; E_RESUME calls it there, play.mk's PLAY_TIC), in the test builds the
-; driver's area in the card (gdriver.s's dg_resume, part tic's g_tresume
-; and the harness's fl_tresume call it there). Its calls are the hooks',
-; in the core.
+; E_RESUME calls it there, play.mk's PLAY_TIC); without PLAY_TIC (no
+; current build) the card's DRIVER segment. Its calls are the hooks', in
+; the core.
 ; ===========================================================================
 .ifdef PLAY_TIC
         .segment "DLGB"
@@ -808,8 +808,7 @@ FC_HERE .set $FF                ; (a glue group's: an FCALL from here goes
 FC_HERE .set 0
 .endif
 g_resume:
-        ; the load's textures (wave 1 as integrated; docs/game-parts/
-        ; flow.md request 6): upstream's R_GetTexture set
+        ; the load's textures: upstream's R_GetTexture set
         ; texturetranslation[n] = n for each texture the load made: the
         ; setup's (TXR_Ln) at every load, W_LevelDone's (TXR_Mn) only for
         ; another map than the window's (bmLoad's W_SET: G_WSET); only
@@ -886,9 +885,9 @@ txr_more:
 
 .ifdef TESTBUILD
 ; ===========================================================================
-; Test builds only: the part's harness entries (tools/native/gparts/
-; flowcheck.py). The driver's routine mode calls them; they are not part of
-; the game.
+; Only with -D TESTBUILD, which no current build defines: the entries of
+; the part's old check harness (a driver's routine mode called them); they
+; are not part of the game.
 ;
 ;   fl_timed    the routine fl_tgt (group fl_tgrp) with the driver's A, X, Y:
 ;               its group loaded into its slot, then the cost phase
@@ -905,7 +904,7 @@ txr_more:
 ;               call, the outputs into the record
 ; ===========================================================================
         ; test-only code goes in the card's driver area, not the core
-        ; (wave 1 as integrated: the core's room is the game's)
+        ; (the core's room is the game's)
         .segment "DRIVER"
 FC_HERE .set 0
         .export fl_timed, fl_tresume, fl_sweep, fl_tgt, fl_tgrp, fl_buf

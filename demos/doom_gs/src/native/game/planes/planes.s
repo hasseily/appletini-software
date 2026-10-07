@@ -1,5 +1,5 @@
-; game/planes/planes.s: part planes of milestone 10 (docs/GAME.md 2.4,
-; wave 4): the plane movers, the check of the things in a moving sector and
+; game/planes/planes.s: part planes of the game's tic code (docs/GAME.md):
+; the plane movers, the check of the things in a moving sector and
 ; the floor thinker. A GPL-2 derivative of upstream's p_floor65.s
 ; (T_MovePlaneFloor, T_MovePlaneCeiling with toDest, crushStep and
 ; restore; checkSector = P_CheckSector; changeSector = PIT_ChangeSector;
@@ -11,7 +11,7 @@
 ; of the routine that uses it); restore is a local subroutine of the
 ; movers.
 ;
-; The native interfaces (docs/game-parts/planes.md, "Interfaces"):
+; The native interfaces:
 ;
 ;   T_MovePlaneFloor, T_MovePlaneCeiling
 ;                   GA_0 = the sector, GA_2-5 = speed, GA_6-9 = dest
@@ -66,7 +66,7 @@
         .assert UC_MF_SHOOTABLE_HI = 0 && >UC_MF_SHOOTABLE_LO = 0, error, "MF_SHOOTABLE's byte (0)"
         .assert UC_MF_DROPPED_LO = 0 && >UC_MF_DROPPED_HI = 0, error, "MF_DROPPED's byte (2)"
         .assert SPFL_DIRECTION = SPFL_TYPE + 2, error, "the floor's fields"
-        ; the movers share their helpers (one group: planes.md request 2)
+        ; the movers share their helpers (one group)
         .assert GP_T_MovePlaneFloor_G = GP_T_MovePlaneCeiling_G, error, "T_MovePlaneFloor and T_MovePlaneCeiling in one group"
 
 ; ---------------------------------------------------------------------------

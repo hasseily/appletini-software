@@ -1,10 +1,10 @@
-; game/tracet/tracet.s: part tracet of milestone 10 (docs/GAME.md 1.9, 2.4
-; row tracet; docs/game-parts/tracet.md): the block steps of a long trace
+; game/tracet/tracet.s: part tracet of the game's tic code (docs/GAME.md:
+; the trace): the block steps of a long trace
 ; with the fast vertex sides, and their setup. GPL-2: rewritten from
 ; upstream's p_trace65.s (traceLines:1142 with its macros SIDE1 and VSIDE
 ; and tlSlow1, tlSlow2; traceThings:1407; thFast, thSide; sideSetup:860
 ; with vsPatch:1806; longTrace:817), Doom8088: Apple IIgs Edition. Nothing
-; here comes from upstream's cal_integer.s: the products are milestone 6's
+; here comes from upstream's cal_integer.s: the products are math.s's
 ; (umul16, mul8).
 ;
 ; The places (SIDE1's constants, the walks' state, the zero page) are
@@ -22,10 +22,9 @@
 ;               and C clear (the intercepts are full).
 ;               Upstream's count of the guard with the sides (G_IDT,
 ;               GSTAMP: p_trace65.s:1199-1213) is not here: the guard is
-;               dead in the release (GAME.md 3.5 R4; P_PathTraverse
-;               clears G_IDT before every walk, p_path65.s:271, and the
-;               only other writer is the guard, p_path65.s:612-614, 896):
-;               docs/game-parts/tracet.md, "The dead guard".
+;               dead in the release (P_PathTraverse clears G_IDT before
+;               every walk, p_path65.s:271, and the only other writer is
+;               the guard, p_path65.s:612-614, 896).
 ;   traceThings P_BlockThingsIterator(x, y, PIT_AddThingIntercepts) of
 ;               P_PathTraverse: the same arguments and result. Each thing
 ;               of the block in its order: thFast (0 not crossed: the

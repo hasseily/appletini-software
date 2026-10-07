@@ -1,5 +1,5 @@
-# src/native/game/chase/part.mk: part chase of milestone 10 (wave 6;
-# docs/GAME.md 2.4; docs/game-parts/chase.md): the monsters' chase
+# src/native/game/chase/part.mk: part chase of the game (wave 6;
+# docs/GAME.md, the parts): the monsters' chase
 # (A_Chase), their attacks (A_PosAttack, A_SPosAttack, A_TroopAttack,
 # A_SargAttack, A_CyberAttack, A_BruisAttack with the helpers lineAttack,
 # aimLine, spreadAngle, damageTarget, spawnMissile), the barrel's

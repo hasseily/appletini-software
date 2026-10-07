@@ -1,5 +1,5 @@
-; game/look/look.inc: part look's places (milestone 10, docs/GAME.md 2.4,
-; 4.4; docs/game-parts/look.md). GPL-2, the port's own.
+; game/look/look.inc: part look's places (docs/GAME.md, the parts;
+; zero page and scratch). GPL-2, the port's own.
 ;
 ; The part has no zero page of its own: its temporaries are GT_0-GT_6
 ; (GT_7 on is the object API's) and the math block, its arguments GA_*.

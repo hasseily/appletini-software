@@ -1,5 +1,5 @@
-; game/look/radius.s: part look's radius attack (milestone 10, docs/GAME.md
-; 2.4; docs/game-parts/look.md). A GPL-2 derivative of upstream's
+; game/look/radius.s: part look's radius attack (docs/GAME.md, the
+; parts). A GPL-2 derivative of upstream's
 ; p_attack65.s (P_RadiusAttack, PIT_RadiusAttack, blockPair, absDelta).
 ;
 ;   P_RadiusAttack  GA_0-1 the spot, GA_2-3 the source ($FFFF none), GA_4-5
@@ -22,7 +22,7 @@
 ;                 bombspot, bombsource, bombdamage - dist). C set (go on)
 ;
 ; blockPair and absDelta have no code of their own: their work is done in
-; place (request 1: glayout.INLINED).
+; place (glayout.INLINED).
 
         .setcpu "65C02"
         .macpack longbranch

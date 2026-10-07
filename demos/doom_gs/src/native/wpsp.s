@@ -1,5 +1,5 @@
 ; wpsp.s: the player's weapon, the part both images run (docs/RENDER-
-; MASKED.md 1.5, 1.7, 3.2; milestone 8, stage C): pspSprite's vissprite,
+; MASKED.md): pspSprite's vissprite,
 ; the profile's lookup and wpStart. A GPL-2 derivative of Webifi's IIgs
 ; DOOM (build/upstream/src/iigs/r_frame65.s psSetup, pspSprite,
 ; :669-854; r_sprite65.s wpFind, wpStart, :884-917, :1180-1257), written
@@ -34,7 +34,7 @@
 ;               A = 0: go; 1: no column or no post shows (nothing to do);
 ;               2: the old code (hi of 255 or more, a first column past the
 ;               patch, a post above row 0). The front end's (speed wave 2,
-;               RENDER-MASKED.md 6.2 optimisation 8): in a run of frames
+;               RENDER-MASKED.md): in a run of frames
 ;               that skip the weapon rows (the frame before skipped,
 ;               FR_SKIP) with this frame's vissprite the same (FRVIS =
 ;               WPREV) and its view bottom (WCLIP's column 0, outside the

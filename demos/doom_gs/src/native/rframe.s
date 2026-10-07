@@ -1,18 +1,20 @@
-; rframe.s: the frame of the native renderer's front end (docs/RENDER.md;
-; milestone 7): R_FillStamps (r_list65.s:153-203, without segMode: the
+; rframe.s: the frame of the native renderer's front end (docs/RENDER.md):
+; R_FillStamps (r_list65.s:153-203, without segMode: the
 ; full view only), R_RenderPlayerView to drawMasked (r_frame65.s:117-177),
 ; R_SetupFrame (setupFrame, :216-286), the clears at the frame's start
 ; (:125-169) and the weapon skip (weaponClipSame, :892-943). A GPL-2
 ; derivative of Webifi's IIgs DOOM (build/upstream/src/iigs/r_frame65.s,
 ; r_list65.s), written for the 65C02.
 ;
-; The weapon's clip pass itself (weaponClip) is milestone 8's stage C
-; (wclip.s nw_clip, docs/RENDER-MASKED.md 3.2 phase 3): FLOORCLIP, FRVIS,
-; MM_WPOK; milestone 7's seam (the reference's result put in its place by
-; the test driver) is gone.
+; The weapon's clip pass itself (weaponClip) is wclip.s's nw_clip
+; (docs/RENDER-MASKED.md): FLOORCLIP, FRVIS, MM_WPOK.
 ;
 ;   nr_frame    the frame block and the render inputs (RIN: the player's
-;               view, rlayout.py), the level, the persistent state. Out:
+;               view, rlayout.py), the level, the persistent state. A
+;               STATUS left by the frame before (the release build's cut,
+;               ST_RECORDS) is cleared and W_FSW with it: what a cut frame
+;               left out of its view is drawn again (no old fill spans, no
+;               weapon skip, as after a frame not shown). Out:
 ;               the spans' stamps, the weapon skip, then through nr_bsp
 ;               the records (staged whole: rec_start, the last batch
 ;               flushed at the end), the drawsegs and openings, the clips,
@@ -29,7 +31,7 @@
 ;               flash), no automap overlay, a weapon that is not the
 ;               shadow one (FRVIS's page 0) and the same vissprite as the
 ;               frame before's (WPREV, which becomes FRVIS: the 12 native
-;               bytes of RENDER-MASKED.md 1.7, whose compare is upstream's
+;               bytes of RENDER-MASKED.md, whose compare is upstream's
 ;               of its 42), else 0; WCLIP = FLOORCLIP at the first frame
 ;               that skips; W_WSK = FR_SKIP; no weapon: WPREV's patch
 ;               $FFFF (upstream's lump)
@@ -38,11 +40,11 @@
 ;               the fixed colormap's offset (n * 256) or $FFFF;
 ;               VIEWSIN, VIEWCOS = finesineapprox and finecosineapprox of
 ;               viewangle >> 19; VALIDCOUNT + 1 (gv_inc: gvalid.s, the
-;               game's one count, milestone 10)
+;               game's one count; a wrap clears every stamp, count 1)
 ;   nr_clear    SOLIDCOL all 0 (R_ClearClipSegs); CEILCLIP = viewtop + 1,
 ;               FLOORCLIP = viewbottom + 1 (the clip arrays hold the clips
 ;               + 1, as upstream's segvar.inc); no drawseg (R_ClearDrawSegs),
-;               no opening (R_ClearOpenings); milestone 8: no listed sector
+;               no opening (R_ClearOpenings); no listed sector
 ;               (SPRN 0: the walk lists them for the masked phase)
 
         .setcpu "65C02"
@@ -66,11 +68,15 @@
 
 nr_frame:
         MARK 2
-        jsr nr_fillstamps       ; (display, d_main65.s:485)
+        lda STATUS              ; the frame before was cut (the release
+        beq :+                  ;   build's ST_RECORDS, RENDER-MASKED.md
+        stz STATUS              ;   10): its view is not trusted, as when
+        stz W_FSW               ;   it was not shown (no old fill spans,
+:       jsr nr_fillstamps       ;   no weapon skip; display, d_main65.s:485)
         jsr nr_setup
         jsr nr_clear
-        MARK 17                 ; the weapon's clip pass (RENDER-MASKED.md
-        jsr nw_clip             ;   4.4: phase 17)
+        MARK 17                 ; the weapon's clip pass (RENDER-MASKED.md:
+        jsr nw_clip             ;   phase 17)
         MARK 2
         jsr nr_wskip
         jsr rec_start
@@ -235,8 +241,8 @@ nr_setup:
         sta VIEWCOS,x
         dex
         bpl :-
-        jmp gv_inc              ; a new validcount (milestone 10: one
-                                ;   count, the game's gvalid.s)
+        jmp gv_inc              ; a new validcount (one count, the
+                                ;   game's gvalid.s)
 @angle: lda VIEWA16+1           ; M_A = viewangle16 >> 3
         lsr a
         sta M_A+1
@@ -268,5 +274,5 @@ nr_clear:
         stz DSCOUNT
         stz LASTOPEN
         stz LASTOPEN+1
-        stz SPRN                ; no listed sector yet (milestone 8)
+        stz SPRN                ; no listed sector yet
         rts

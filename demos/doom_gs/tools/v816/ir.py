@@ -19,8 +19,6 @@ Addressing modes are recorded as written, not as decided:
 `prefix` holds dp, abs or long when the operand has one.
 """
 
-import dataclasses
-import json
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
@@ -180,31 +178,3 @@ class Unit:
     rtmodels: list = field(default_factory=list)
     macros: list = field(default_factory=list)
     errors: list = field(default_factory=list)
-
-    def items(self):
-        """All items of all fragments, in source order."""
-        for fragment in self.fragments:
-            yield from fragment.items
-
-
-def to_plain(value):
-    """`value` as dictionaries, lists, strings and numbers.
-
-    Each object of a data class becomes a dictionary with its class name
-    under "type"; bytes become a hexadecimal string."""
-    if dataclasses.is_dataclass(value):
-        plain = {'type': type(value).__name__}
-        for item in dataclasses.fields(value):
-            plain[item.name] = to_plain(getattr(value, item.name))
-        return plain
-    if isinstance(value, (list, tuple)):
-        return [to_plain(item) for item in value]
-    if isinstance(value, (bytes, bytearray)):
-        return {'type': 'bytes', 'hex': bytes(value).hex()}
-    return value
-
-
-def dump_json(unit, stream):
-    """Write `unit` to `stream` as JSON, for debugging."""
-    json.dump(to_plain(unit), stream, indent=1)
-    stream.write('\n')

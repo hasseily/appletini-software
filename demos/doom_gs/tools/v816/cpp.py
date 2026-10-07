@@ -3,8 +3,7 @@
 The Calypsi assembler runs its input through "a full-featured C
 preprocessor" (manual, 21.2.3). A system cpp is not safe for these
 sources, because "##" is the assembler's 16-bit immediate marker, so the
-port has its own. `clang -E` is used as a cross-check only
-(tools/v816/cppcheck.py).
+port has its own.
 
 What is implemented, with C semantics:
 - #include "file" and <file>; #define (object-like and function-like);
@@ -171,8 +170,8 @@ class Preprocessor:
 
     `include_paths` are the -I directories, in order. `defines` maps the
     names of the -D flags to their values (strings or integers). The
-    macro table is reset for each call of process_file or process_text,
-    as it is for each run of the assembler.
+    macro table is reset for each call of process_file, as it is for each
+    run of the assembler.
     """
 
     MAX_INCLUDE_DEPTH = 32
@@ -190,12 +189,6 @@ class Preprocessor:
         path = Path(path)
         self._reset(path.parent)
         return self._file(path, [])
-
-    def process_text(self, text, name='<text>', directory='.'):
-        """The output lines for `text`, as if read from a file `name` in
-        `directory`."""
-        self._reset(Path(directory))
-        return self._lines(text, name, Path(directory), [])
 
     def _reset(self, directory):
         self.main_directory = directory
@@ -672,8 +665,3 @@ def _character(text):
     if len(inner) == 2 and inner[0] == '\\' and inner[1] in _ESCAPES:
         return _ESCAPES[inner[1]]
     raise _ExpansionError('bad character constant %s in #if' % text)
-
-
-def render(lines):
-    """The output lines as one text, for comparison and debugging."""
-    return ''.join(line.text + '\n' for line in lines)

@@ -1,12 +1,12 @@
-; game/lines/lines.s: part lines of milestone 10 (docs/GAME.md 2.4, wave
-; 2): the special lines a thing uses or crosses, the dispatch of their
+; game/lines/lines.s: part lines of the game (docs/GAME.md, the parts;
+; wave 2): the special lines a thing uses or crosses, the dispatch of their
 ; handlers through LSTAB, the exits, the switch textures and the buttons.
 ; A GPL-2 derivative of upstream's p_switch65.s (P_UseSpecialLine,
 ; P_CrossSpecialLine, findSpecial with its tables usetab and crosstab,
 ; lnExit, P_ChangeSwitchTexture with startButton; the helpers swLine,
 ; swSide and isPlayer are done in place).
 ;
-; The native interfaces (docs/game-parts/lines.md, "Interfaces"):
+; The native interfaces:
 ;
 ;   P_UseSpecialLine    GA_0-1 = the thing (a mobj handle), GA_2-3 = the
 ;                       line (upstream's _Dp[0-3], _Dp[4-7]) -> A = 1 or 0
@@ -61,8 +61,7 @@
         .assert SIDE_SIZE = 8, error, "the side record"
 
 ; GTAB's switchlist and SW_IDX (GT_SWLIST, GT_SWIDX) and LSTAB's entry
-; numbers by handler (LSTAB_lnDoor ...) are ggame.inc's (requests 1 and 2,
-; wave 2 as integrated)
+; numbers by handler (LSTAB_lnDoor ...) are ggame.inc's
 ; ---------------------------------------------------------------------------
 
 BUTTONTIME = UC_TICRATE         ; p_switch65.s:21

@@ -1,19 +1,19 @@
 ; gcall.s: the code paging and the dispatch tables of the tic phase
-; (milestone 10, docs/GAME.md 2.2, 3.4, 4.3). GPL-2, the port's own; the
+; (docs/GAME.md, docs/SPEED.md). GPL-2, the port's own; the
 ; dispatch replaces upstream's callFn and callAction (p_tick65.s,
 ; p_pspr65.s), which are GPL-2 upstream.
 ;
 ;   fc_call     FCALL's stub for a target in another image (gplace.inc):
 ;               jsr fc_call / .byte group / .word target. The lazy
-;               restore (docs/SPEED.md 4, item 14): SLOT_NEED (the slot's
+;               restore (docs/SPEED.md): SLOT_NEED (the slot's
 ;               entry) is the group the slot's innermost active FCALL
 ;               frame needs, $FF none. The call saves it (a byte on the
 ;               stack: $80 | the slot for none) and makes the target's
 ;               group the need; the target's group is loaded into the
 ;               slot when another is there; the target runs; on its
 ;               return the saved need is the slot's again and is loaded
-;               when the slot now holds another, whoever the caller is
-;               (review 1). A slot no active frame needs is left as it
+;               when the slot now holds another, whoever the caller is.
+;               A slot no active frame needs is left as it
 ;               is: only a frame entered through fc_go runs in a slot, so
 ;               every frame that returns into a slot finds its group. A,
 ;               X, Y go to the target and back, and P comes back (a
@@ -26,20 +26,20 @@
 ;   act_num     A = the ACTTAB number of the action of the state LW_STATE
 ;               (0 none; a stop GS_ACTION for an action not in ACT_ADDR)
 ;   gr_load     group A into its slot, a W slot's or a frame slot's (slot
-;               FS_FIRST and up, main $2000-$5FFF: docs/GAME.md 4.1, 4.3):
+;               FS_FIRST and up, main $2000-$5FFF: docs/GAME.md):
 ;               its length (its image's whole pages from its bank, then
 ;               the used bytes of its last page) by one memory-API PRIVATE
-;               request (am_one; docs/SPEED.md 9 and 10); SLOT_GRP updated
+;               request (am_one; docs/SPEED.md); SLOT_GRP updated
 ;   fs_restore  the colormap bytes of every frame slot loaded since the
 ;               tic phase began, back from the level's copy in LVC: one
 ;               PRIVATE request, a descriptor a slot (at most 2,048 B
 ;               each, interrupts masked for the request), the slots
 ;               emptied, FS_DIRTY set. The play build's brain calls it at
-;               the tic phase's end (dl_brain.s), the test drivers before
-;               a frame (gdriver.s): every replay reads the colormaps
+;               the tic phase's end (dl_brain.s): every replay reads the
+;               colormaps
 ;   am_*        the memory API's transport (AMEMLC, in the main card: the
 ;               request's head and descriptor am_req, am_begin, am_push,
-;               am_fin, and the kernel's am_runs; docs/SPEED.md 10)
+;               am_fin, and the kernel's am_runs; docs/SPEED.md)
 ;   g_stop      A = a stop code: GS_STATUS = A, then BRK
 ;   ld_stop     the game core's stops in the tic image (LV_STATUS, BRK),
 ;               as lload.s's in the load image
@@ -47,9 +47,9 @@
 ; The group directory (grp_bank, grp_src, grp_pages, grp_tail: each group
 ; image's bank, first page, whole pages and the bytes it copies of the page
 ; after them: its byte length, rounded up to an even count, or to the page
-; when that copies faster) is the image's, written by the harness
-; (tools/native/grun.py) or the disk's builder (tools/native/playdisk.py)
-; where they put the images in GCODE0-1; grp_slot is the placement's
+; when that copies faster) is the image's, written by the disk's builder
+; (tools/native/playdisk.py, with tools/native/grun.py's entries) where it
+; puts the images in GCODE0-1; grp_slot is the placement's
 ; (gplace.inc).
 
         .setcpu "65C02"
@@ -69,10 +69,9 @@
         .import far_pload
         .export ACTTAB, THTAB, ITTAB, TRVTAB, LSTAB
 
-; the directory's entries: group 0 (none), the placement's groups (gplace.py
-; MAX_GROUPS, 43, at most: the disk's CODE.2 holds 49 segments), then the
-; play link's glue groups (playlayout.py DL_GROUPS: 5; playdisk.py checks
-; they fit) or the test builds' harness groups (glayout.py TEST_GROUPS: 3)
+; the directory's entries: group 0 (none), the placement's groups (43 at
+; most: the disk's CODE.2 holds 49 segments), then the play link's glue
+; groups (playlayout.py DL_GROUPS: 5; playdisk.py checks they fit)
 MAXGRP  = 43 + 5 + 1
         .assert GROUPS < MAXGRP, error, "too many groups"
 
@@ -275,9 +274,9 @@ act_num:
 ; slot's first page (both page aligned): its grp_pages whole pages (at
 ; least one: 0 marks a group the image does not hold) and, when grp_tail
 ; is not 0, the first grp_tail bytes of the page after them: the group's
-; length, not its last page's padding (docs/SPEED.md 4, item 4;
+; length, not its last page's padding (docs/SPEED.md;
 ; playdisk.py and grun.py choose the entry: grun.group_entry). One
-; memory-API PRIVATE request copies it (am_one: docs/SPEED.md 10; the
+; memory-API PRIVATE request copies it (am_one: docs/SPEED.md; the
 ; copy engine of F1.2.2 moves a byte in 0.038 us, the CPU in 0.231), into
 ; a W slot (main $9E00, $A600) as into a frame slot (the frame slots
 ; below). The slot's bytes past the group keep what they held: no group
@@ -285,9 +284,9 @@ act_num:
 ; playdisk.py checks). Changes A, X, Y and the far layer's zero page.
 ; ---------------------------------------------------------------------------
 gr_load:
-.ifdef TESTBUILD                ; (a test build's harness: the timing)
-.ifdef GPROF
-        ldy #2 * 28             ; the paging's phase (docs/GAME.md 5.4)
+.ifdef TESTBUILD                ; (profiling, with -D TESTBUILD -D GPROF,
+.ifdef GPROF                    ;   which the disk build does not define)
+        ldy #2 * 28             ; the paging's phase
         sty PHASE
 .endif
 .endif
@@ -309,14 +308,14 @@ gr_load:
         lda grp_bank,x
         ldy grp_src,x
         jsr am_one
-gr_loaded:                      ; (playtime.py times am_one to here)
+gr_loaded:                      ; (am_one's end)
         inc FC_LOADS
         bne :+
         inc FC_LOADS+1
 :
-.ifdef TESTBUILD                ; (a test build's harness: the timing)
+.ifdef TESTBUILD                ; (profiling: not in the disk build)
 .ifdef GPROF
-        ldy #2 * 30             ; the tic again (gdriver.s PH_TIC)
+        ldy #2 * 30             ; the tic phase again
         sty PHASE
 .endif
 .endif
@@ -351,13 +350,14 @@ am_one:
         jmp am_fin
 
 ; ---------------------------------------------------------------------------
-; The frame slots (docs/GAME.md 4.1, 4.3; docs/SPEED.md 9). A pinned group
+; The frame slots (docs/GAME.md, docs/SPEED.md). A pinned group
 ; (slot FS_FIRST and up: glayout.py frame_slots) has its own place in main
 ; $2000-$5FFF, colormaps A and B of light levels 0-31, which only the
-; replay reads (MEMORY_MAP.md 3.4). A CPU store there is a video write
-; (rule 3): the group comes in by the memory API's PRIVATE copy (gr_load),
-; which writes no capture record, and no group that stores into its own
-; bytes is pinned (gplace.py; playdisk.py checks the links). Before the tic
+; replay reads (docs/MEMORY_MAP.md). A CPU store there is a video write
+; (docs/MEMORY_MAP.md's rules): the group comes in by the memory API's
+; PRIVATE copy (gr_load), which writes no capture record, and no group
+; that stores into its own bytes is pinned (the placement,
+; gplace-f122.json; playdisk.py checks the links). Before the tic
 ; phase ends fs_restore copies the colormap bytes each loaded slot covered
 ; back from the level's copy in LVC (lg_cmaps's, the same bytes the load's
 ; PRIVATE request put there), so every replay finds its colormaps.
@@ -371,7 +371,7 @@ fs_restore:
         bit FS_DIRTY            ; (with no frame slot gr_load never sets it
         bmi @done               ;   and FS_DIRTY stays $FF: the loop is the
         ldx #0                  ;   same bytes in every placement, as
-        ldy #FS_FIRST + FSLOTS - 1      ;   gplace.py measures the core)
+        ldy #FS_FIRST + FSLOTS - 1      ;   the placement measured the core)
 @count: lda SLOT_GRP,y          ; the slots that hold a group: X (at least
         cmp #$FF                ;   one: FS_DIRTY is clear)
         beq :+
@@ -428,9 +428,9 @@ fs_src:
         .assert FS_FIRST + FSLOTS <= FS_FIRST + FS_MAX, error, "frame slots"
 
 ; ---------------------------------------------------------------------------
-; The memory API's transport (docs/SPEED.md 10; appletini-one
+; The memory API's transport (docs/SPEED.md; appletini-one
 ; README_MEMORY_API.md sections 3, 4 and 7), in the main card's bank 1
-; after MATHLC (AMEMLC, $DB5C-$DBFF: MEMORY_MAP.md 4.2), near in every
+; after MATHLC (AMEMLC, $DB5C-$DBFF: docs/MEMORY_MAP.md), near in every
 ; phase but the replay. A request may replace all of W, the core with it
 ; (the kernel's loads: K_TIC's core, the images of K_LOAD), and the code
 ; that waits for its result must survive it: so the card. The request
@@ -535,8 +535,8 @@ am_fin: lda #2                  ; execute
         bra am_sent
 @ready: lda SP_DATA             ; the result
         sta SP_POP
-am_sent:                        ; (the request done: playtime.py times
-        bit SP_RELEASE          ;   am_begin to here)
+am_sent:                        ; (the request done: from am_begin to
+        bit SP_RELEASE          ;   here)
         tax
         bne @stop
         plp
@@ -547,7 +547,7 @@ am_sent:                        ; (the request done: playtime.py times
         brk
 
 ; ---------------------------------------------------------------------------
-; Without the memory API (docs/PLAY.md 19, MEMORY_MAP.md rule 3): the same
+; Without the memory API (docs/PLAY.md, docs/MEMORY_MAP.md): the same
 ; requests done by the CPU, byte for byte, at the same points. Nothing runs
 ; these bytes while the API is there. When DOOM.SYSTEM's probe finds none,
 ; it writes them over the card (tools/native/amcpu.py's patch table):
@@ -703,7 +703,7 @@ ld_stop:
         .byte 0
 
 ; ---------------------------------------------------------------------------
-; The group directory: the image's (the harness and the boot write it);
+; The group directory: the image's (the disk's builder and the boot write it);
 ; grp_slot from the placement
 ; ---------------------------------------------------------------------------
 grp_slot:

@@ -1,10 +1,10 @@
-; game/geom/geom.inc: part geom's results (milestone 10, docs/GAME.md
-; 2.4 row geom, 4.4). GPL-2, the port's own. Included after ggame.inc.
+; game/geom/geom.inc: part geom's results (docs/GAME.md, the parts;
+; zero page and scratch). GPL-2, the port's own. Included after ggame.inc.
 ;
 ; The names hold the results upstream leaves in its near scratch of
-; p_map65.s and its callers read after the return (GAME.md 2.4 "Inputs and
-; outputs"); they live until the next call that writes them, as upstream's
-; near globals do:
+; p_map65.s and its callers read after the return (docs/GAME.md, the
+; parts' inputs and outputs); they live until the next call that writes them,
+; as upstream's near globals do:
 ;
 ;   GEO_OPENTOP, GEO_OPENBOT, GEO_OPENRANGE
 ;                   P_LineOpening's and P_LineOpeningXY's opentop,
@@ -23,10 +23,10 @@
 ;                   returns C clear, the only case its caller reads them,
 ;                   each is a block number below 256)
 ;
-; Wave 1 as integrated (request R3 of docs/game-parts/geom.md): these are
-; upstream's near scratch of p_map65.s, read by later parts (checkpos,
-; trymove, attack, xymove, player, pspr, teleport): the shared tic scratch
-; GM_* of ggame.inc (GW, never overlaid). SB_GEOM is no longer used.
+; These are upstream's near scratch of p_map65.s, read by later parts
+; (checkpos, trymove, attack, xymove, player, pspr, teleport): the shared
+; tic scratch GM_* of ggame.inc (GW, never overlaid). SB_GEOM is no longer
+; used.
 
 GEO_OPENTOP     = GM_OPENTOP
 GEO_OPENBOT     = GM_OPENBOT

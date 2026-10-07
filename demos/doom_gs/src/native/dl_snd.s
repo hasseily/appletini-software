@@ -1,4 +1,4 @@
-; dl_snd.s: the songs and the title loop (docs/PLAY.md 2), in the tic
+; dl_snd.s: the songs and the title loop (docs/PLAY.md), in the tic
 ; image's group DLG_SND, with s2t_st.s (the status bar's tic side, part
 ; s2stbar's) and its scratch block st_sb. A GPL-2 derivative of upstream's
 ; src/iigs/d_main65.s (D_DoAdvanceDemo), w_level65.s (W_NextDemo's steps)
@@ -9,9 +9,9 @@
 ;                 directory SONG_DIR in bank SONG_DIR_BANK, 3 bytes a
 ;                 song: its bank and address), X = SONG_LOOP or 0: S2's
 ;                 snd_start through fx_song (the effect player held while
-;                 chip 3 is rewritten: docs/SCREENS.md 0.1 F12), PAL or
+;                 chip 3 is rewritten: docs/SCREENS.md), PAL or
 ;                 NTSC from the clock's CLK_STD, full volume (the menu's
-;                 music volume changes no AY write: SCREENS.md 1.5.3).
+;                 music volume changes no AY write: docs/SCREENS.md).
 ;                 Nothing on a card without native mode (fx_init's FX_ON
 ;                 0: no music, no effects)
 ;   s_levelsong   musLevel: the level's song, looping; one that plays goes
@@ -179,8 +179,8 @@ s_rinit:
 
 ; ---------------------------------------------------------------------------
 ; s_level: the level's frame block fields after its load (upstream's
-; numnodes, numvertexes and the sky's slots, which the frame reads; the
-; harness injected them before): NUMNODES, NVERT, SKYBANK/SKYLO/SKYHI from
+; numnodes, numvertexes and the sky's slots, which the frame reads):
+; NUMNODES, NVERT, SKYBANK/SKYLO/SKYHI from
 ; the map's header in the store (its directory: STORE_DIR_BANK:STORE_DIR).
 ; A map the directory lacks: GS_ERROR (the load found it: never)
 ; ---------------------------------------------------------------------------

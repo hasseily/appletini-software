@@ -1,7 +1,6 @@
-; The native record replay of the DOOM GS port (docs/NATIVE.md section 5,
-; milestone 5): upstream's column records in, the 3D view's SHR bytes out,
-; on today's firmware (F1.2.1) with the gather-then-draw scheme of
-; docs/research/native-memory.md 5.2. README.md in this directory gives
+; The native record replay of the DOOM GS port: upstream's column records
+; in, the 3D view's SHR bytes out, on today's firmware (F1.2.1) with a
+; gather-then-draw scheme. README.md in this directory gives
 ; the design, the memory it uses and how it departs from docs/MEMORY_MAP.md.
 ;
 ; A GPL-2 derivative of Webifi's IIgs DOOM (build/upstream/src/iigs/
@@ -36,7 +35,10 @@
 ;           them: RAMRD on, one $C073 write per bank present, the copies,
 ;           RAMRD off.
 ;           When the next column does not fit the stage, the strip ends
-;           before it.
+;           before it. A column alone that does not fit (over 125 texture
+;           records): in the release build (-D RELEASE, render.mk's
+;           default) bucket.s's rp_cut draws its records before the one
+;           that did not fit, STATUS ST_RECORDS; without it, BRK.
 ;   draw    RAMWRT on: each column's records through the row blocks (bank
 ;           2), fills, the overlay drawer (aux 0, RAMRD on); covered-range
 ;           cuts as upstream's. Each K_FUZZ record goes into the fuzz
@@ -51,7 +53,7 @@
 ; Why the queue: on F1.2.1 a RAMRD write ($C002, $C003) waits until the
 ; firmware's coalescer has sent every screen byte written so far, and it
 ; scans each 256-byte page it sends whole, so a column's scattered bytes
-; take about 4 Apple cycles each (docs/results/fuzz-timing-2026-09-30.md).
+; take about 4 Apple cycles each (measured on the hardware).
 ; Around every fuzz record in place, that is two waits on scattered bytes;
 ; after the strip, one wait on its dense backlog.
 ;
@@ -76,12 +78,15 @@
         .include "layout.inc"
 
         .export nat_replay, nat_hot, nat_rcode, nat_aux
+        ; (for bucket.s's rp_cut, -D RELEASE)
+        .export run_descriptors, draw_strip, rp_drawn, gcol
+        .exportzp rp
 .ifdef RELEASE
-        .import bk_cut                  ; (the renderer's game build: bucket.s)
+        .import rp_cut                  ; (-D RELEASE: bucket.s, BKFAR)
 .endif
 
-; MARK n: in the profiling build (-D PROFILE, tools/native/replay_check.py
-; --breakdown), the cost phase n + 1 starts: 1 the gather's walk, 2 its
+; MARK n: in a profiling build (-D PROFILE, which no current build
+; defines), the cost phase n + 1 starts: 1 the gather's walk, 2 its
 ; copies, 3 the draw, 4 the copies' soft-switch writes (RAMRD, $C073).
 ; Keeps A and the carry.
 .macro MARK n
@@ -94,7 +99,7 @@
 .endmacro
 
 ; ---------------------------------------------------------------------------
-; zero page: $48-$6F (docs/MEMORY_MAP.md section 8)
+; zero page: $48-$6F (docs/MEMORY_MAP.md)
 ; ---------------------------------------------------------------------------
 .segment "RZP": zeropage
 rp:     .res 2          ; the record
@@ -231,20 +236,26 @@ nat_replay:
         bra     @next
 @over:
 .ifdef RELEASE
-        lda     gcol                    ; (the game build: a column alone
-        cmp     sc0                     ;   past the stage, @cut below)
-        beq     @cut
+        lda     gcol                    ; (-D RELEASE: a column alone
+        cmp     sc0                     ;   past the stage: bucket.s's
+        bne     :+                      ;   rp_cut draws what it gathered,
+        jmp     rp_cut                  ;   then @drawn)
+:
 .endif
         ldx     #4                      ; the column does not fit: the
 :       lda     cpl,x                   ;   strip ends before it (pl,
         sta     pl,x                    ;   gtop, gdx as at its start)
         dex
         bpl     :-
+.ifdef RELEASE
+        bra     @full
+.else
         lda     gcol
         cmp     sc0
         bne     @full
         brk                             ; one column larger than the stage
         .byte   $01
+.endif
 @full:  jsr     run_descriptors
         jsr     draw_strip
 @drawn: lda     gcol
@@ -254,37 +265,7 @@ nat_replay:
 :       bit     LCBANK1                 ; bank 1 again
         bit     LCBANK1
         rts
-.ifdef RELEASE
-        ; the renderer's game build (docs/RENDER-MASKED.md 6.1): a column
-        ; alone past the stage (over 125 texture records) keeps its records
-        ; before the one that did not fit (rp): its end is rp while the
-        ; strip of that column alone is drawn with what was gathered,
-        ; without a covered range (its covering record may be past the
-        ; cut); STATUS ST_RECORDS. Then the next strip.
-@cut:   ldx     gcol
-        inx
-        lda     COLLO,x                 ; the next column's start, kept
-        pha
-        lda     COLHI,x
-        pha
-        lda     rp
-        sta     COLLO,x
-        lda     rp+1
-        sta     COLHI,x
-        stx     gcol
-        dex
-        stz     CVFIRST,x
-        stz     CVEND,x
-        jsr     bk_cut
-        jsr     run_descriptors
-        jsr     draw_strip
-        ldx     gcol
-        pla
-        sta     COLHI,x
-        pla
-        sta     COLLO,x
-        bra     @drawn
-.endif
+rp_drawn = @drawn                       ; (rp_cut's way back)
 
 ; ---------------------------------------------------------------------------
 ; draw_strip: the columns sc0 .. gcol - 1, then their covered ranges 0

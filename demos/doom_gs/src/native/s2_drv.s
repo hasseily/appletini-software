@@ -1,7 +1,7 @@
-; s2_drv.s: the a2vm test driver of milestone 11's first half (docs/
-; SCREENS.md 4.4 "Test builds", 7.3 part s2lay). Not part of the game: it
-; lives in the card's $F900-$FEFF, the replay's place, which no 2D test
-; image has (src/native/ldriver.s is the model).
+; s2_drv.s: the a2vm driver that m11.mk links into the 2D images it runs on
+; the host (parts s2pal, s2amap, s2stbar, s2wi, s2fin, s2menu2). Not part of
+; the game: it lives in the card's $F900-$FEFF, the replay's place, which
+; none of those images has.
 ;
 ;   s2d_start   the IRQ vector (pl_vbl when the build links it, -D PL_VBL;
 ;               else a stub that acknowledges the mouse card's VBL and
@@ -17,10 +17,10 @@
 ;               (a2vm's stop). The driver writes S2S_RUN first and S2S_DONE
 ;               at the end; a routine that stops writes its own code; a BRK
 ;               that wrote none leaves S2S_RUN. The handler writes nothing
-;               outside the IRQ contract (MEMORY_MAP.md rule 2), so a BRK
+;               outside the IRQ contract (docs/MEMORY_MAP.md), so a BRK
 ;               in a RAMWRT window stops cleanly.
 ;
-; The harness (tools/native/s2run.py) writes the descriptors (DESC) into
+; The host run (tools/native/s2run.py) writes the descriptors (DESC) into
 ; the card's image before the run: the runs page, the loads, the calls.
 
         .setcpu "65C02"
@@ -96,7 +96,7 @@ s2d_next:
         jsr s2d_jump
         stz PHASE
         sei                     ; (no interrupt returns to the point: one
-s2d_called:                     ;   snapshot a call; request S2DRAW-3)
+s2d_called:                     ;   snapshot a call)
         cli
         inc s2d_k
         bra s2d_next
@@ -136,7 +136,7 @@ s2d_brk:
 s2d_stop:
         bra s2d_stop
 
-; the descriptors, which the harness writes: the runs page first (a
+; the descriptors, which the host run writes: the runs page first (a
 ; far_pload list does not cross a page)
         .segment "DESC"
 s2d_runs:

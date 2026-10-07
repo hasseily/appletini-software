@@ -1,6 +1,5 @@
-"""Bounded runs of the machines (the ground rules of docs/MILESTONES.md:
-every run that writes files has a bound, and a test fails rather than
-grows).
+"""Bounded runs of the machines (every run that writes files has a bound,
+and a run fails rather than grows).
 
 `run` is subprocess.run with three limits on the child and on everything
 it starts:
@@ -11,8 +10,7 @@ it starts:
   - `max_bytes`, the largest file any of them may write (RLIMIT_FSIZE): a
     write past it kills the writer with SIGXFSZ;
   - a CPU-time limit (RLIMIT_CPU) a little above the timeout, so a child
-    whose parent was killed from outside (a harness that timed out the
-    test suite) still stops on its own.
+    whose parent was killed from outside still stops on its own.
 
 After a normal end the group is killed too, so nothing the child left
 behind keeps running. Standard library only; POSIX (macOS, Linux).

@@ -1,12 +1,12 @@
-; game/checkpos/checkpos.inc: part checkpos's places (milestone 10,
-; docs/GAME.md 2.4 row checkpos, 4.4). GPL-2, the port's own. Included
+; game/checkpos/checkpos.inc: part checkpos's places (docs/GAME.md,
+; the parts; zero page and scratch). GPL-2, the port's own. Included
 ; after ggame.inc.
 ;
 ; p_map65.s's near scratch that this part writes and later parts read
 ; (trymove: tmthing, tmx, tmy, spechit, MP_TRY; teleport: tmthing, tmx,
 ; tmy, setBox's box; chasemove: the box and spechit) is GW's shared
-; GM_TMTHING, GM_TMX, GM_TMY, GM_TMBBOX, GM_SPECHIT, GM_MPTRY (request R1,
-; wave 3 as integrated: glayout.TIC_GW_FIELDS); the part's names for them:
+; GM_TMTHING, GM_TMX, GM_TMY, GM_TMBBOX, GM_SPECHIT, GM_MPTRY
+; (glayout.TIC_GW_FIELDS); the part's names for them:
 ;
 ;   CP_TMTHING  tmthing (a mobj handle)
 ;   CP_TMX      tmx (fixed_t)

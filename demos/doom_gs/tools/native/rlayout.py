@@ -1,21 +1,19 @@
 """Every address, bank, record layout and zero-page byte of the native
-renderer front end (milestone 7, docs/RENDER.md sections 1.3, 1.7, 1.8,
-2.1, 3.3 and 3.4), in one place.
+renderer front end (docs/RENDER.md), in one place.
 
 `include_text()` writes rlayout.inc for ca65 (src/native/render.mk runs
 `python3 tools/native/rlayout.py OUT/rlayout.inc`), so the assembler, the
-level converter (levelconv.py), the frame injection (framestate.py) and
-the harness (render_check.py) always agree. `check()` fails on an overlap
+level converter (levelconv.py) and the other layouts always agree. `check()` fails on an overlap
 between regions, on a zero-page byte outside its owner's range, on a
-frame block past 96 bytes, and on a region that collides with milestone
-5's (tools/native/layout.py); the build runs it.
+frame block past 96 bytes, and on a region that collides with the
+replay's (tools/native/layout.py); the build runs it.
 
-Milestone 8 (docs/RENDER-MASKED.md 1.3-1.10), stage A, adds the sprite
+The masked phase (docs/RENDER-MASKED.md), stage A, adds the sprite
 data (the patch store, the sprite tables, the render things), the masked
 phase's W map, zero page and image, the listed sectors (SPRSEC), the
 frame block's and render inputs' new fields, and the moved record spill.
 
-Milestone 7's stage A (this file's first version) owns the level layout,
+The front end's stage A (this file's first version) owns the level layout,
 the frame block, overlay 1 of the zero page, the far layer's bytes and
 the W scratch of the BSP walk. Stage B adds overlay 2 (the seg page, the hot
 part of the seg descriptor SEGD), the spill of the wall setup and the
@@ -37,15 +35,15 @@ sys.path.insert(0, str(HERE.parent))
 from native import layout as L5  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# RamWorks banks of the harness (RENDER.md 1.8). The game's allocation is
-# milestone 11's; a move is one edit here.
+# RamWorks banks of the renderer (RENDER.md). The game's allocation is
+# llayout.py's around them; a move is one edit here.
 # ---------------------------------------------------------------------------
 LVSEG = 6                       # segs
 LVMAP = 7                       # nodes, subsectors, vertex cache, sectors,
                                 #   sides, patchless bitmaps
 RENDB = 8                       # drawsegs, OPENHI (stage B)
-# The record spill (stage B), consecutive banks: milestone 8 moves it to
-# four banks (RENDER-MASKED.md 6.1), 9 and 10 are free
+# The record spill (stage B), consecutive banks: the masked phase moved it
+# to four banks (RENDER-MASKED.md), 9 and 10 are free
 RECSP = (51, 52, 53, 54)
 DRAWSEGS = 0x0200               #   RENDB: 128 drawsegs of DS_SIZE bytes
 MAXDRAWSEGS = 128
@@ -54,8 +52,10 @@ MAXOPENINGS = 2560
 OPENLO = 0x0C00                 # aux 0: the openings' low bytes
 STAGE, STAGE_END = 0xA000, 0xC000       # aux 0: the record staging
 TEX_FIRST, TEX_LAST = 11, 30    # texel slots, sky slots
-SEAM = 31                       # harness only: checkpoint A's lockstep
-                                #   data (milestone 8's stage C made the
+SEAM = 31                       # the bank of the renderer's former
+                                #   lockstep checks' data (no build here
+                                #   writes it; the masked phase's stage C
+                                #   made the
                                 #   weapon's clip pass native: the seam of
                                 #   floorclip, FR_VIS and MM_WPOK went)
 SEAM_HDR = 0x0200               #   +0: the reference's wall calls
@@ -64,22 +64,22 @@ SEAM_CALLREC = 16
 SEAM_MAXCALLS = 256
 SEAM_SOLID = SEAM_CALLS + SEAM_CALLREC * SEAM_MAXCALLS
 SEAM_SOLID_MAX = (0xC000 - SEAM_SOLID) // 160
-# milestone 8, stage B (RENDER-MASKED.md 4.2): the clip log of the test
-# builds (-D CLIPLOG), where the walk's lockstep build keeps SEAM_SOLID (the
-# two builds are exclusive): each nm_vis call's vissprite index (2 bytes,
-# $FFxx for the weapon's draw of psprite xx) and all of FLOORCLIP and
-# CEILCLIP as it starts
+# the masked phase, stage B (RENDER-MASKED.md): the clip log (only with
+# -D CLIPLOG, which the disk build does not define), where the walk's
+# former lockstep build kept SEAM_SOLID (the two were exclusive): each
+# nm_vis call's vissprite index (2 bytes, $FFxx for the weapon's draw of
+# psprite xx) and all of FLOORCLIP and CEILCLIP as it starts
 SEAM_CLIPLOG = SEAM_SOLID
 CLIPLOG_REC = 2 + 2 * 160
 CLIPLOG_MAX = 80 + 2
 CODE = (112, 113, 114, 115)     # the render window image (stage C):
 WCODE_BANK = CODE[0]            #   the image at its own addresses in the
                                 #   first (one bank holds it)
-MCODE_BANK = CODE[1]            # milestone 8: the masked phase's image
-MRTN_BANK = CODE[2]             # harness only (stage B's routine mode):
-                                #   W's drawseg copy and vissprites, loaded
-                                #   after the images
-# milestone 8 (RENDER-MASKED.md 1.10): the sprite data of a level
+MCODE_BANK = CODE[1]            # the masked phase's image
+MRTN_BANK = CODE[2]             # stage B's routine mode only (no build
+                                #   here uses it): W's drawseg copy and
+                                #   vissprites, loaded after the images
+# the masked phase (RENDER-MASKED.md): the sprite data of a level
 SPR_FIRST, SPR_LAST = 32, 47    # the patch store: lumps and their tails
 SPRT = 48                       # scale records, SPRBOUND, PHDR, SPRFR
 WPRO = 49                       # the weapons' profiles (stage C)
@@ -109,7 +109,7 @@ class Array(NamedTuple):
         return self.base + self.stride * index
 
 
-# ---- the records (RENDER.md 1.3) ----------------------------------------
+# ---- the records (RENDER.md) ----------------------------------------
 # Seg, 24 bytes: the end points, offset, angle, side, line (2 each), the
 # front and back sectors (1 each, $FF: one sided), the native numbers of
 # v1 and v2 (2 each), the line's peg flags (ML_DONTPEGTOP, ML_DONTPEGBOTTOM),
@@ -120,7 +120,7 @@ SEG = {'V1X': 0, 'V1Y': 2, 'V2X': 4, 'V2Y': 6, 'OFFSET': 8, 'ANGLE': 10,
 SEG_SIZE = 24
 # Node, 32 bytes: x, y, dx, dy, bbox[0] (top, bottom, left, right),
 # bbox[1], children[0], children[1] (bit 15: a subsector), pad. Speed wave
-# 2 (part frontend, RENDER-MASKED.md 6.2 optimisation 2): the pad's first
+# 2 (part frontend, RENDER-MASKED.md optimisation 2): the pad's first
 # two bytes are the box corner cache's tag (CCT: the stamp, then the key:
 # the case | $40 box 0, $80 box 1; the level's records have 0 there, no
 # stamp), which the walk reads with the node; in the walk's node frame
@@ -135,11 +135,11 @@ SUB_SIZE = 4
 # Sector, render part, 16 bytes: floor and ceiling heights (fixed_t),
 # floor and ceiling pics, light level (bytes), validcount (a word), pad.
 SEC = {'FLOOR': 0, 'CEIL': 4, 'FPIC': 8, 'CPIC': 9, 'LIGHT': 10,
-       'VALID': 11, 'THINGS': 13}      # milestone 8: the thing list's head
+       'VALID': 11, 'THINGS': 13}      # the thing list's head
 SEC_SIZE = 16                          #   (a RTHING slot, $FFFF: none)
 # Side, render part, 8 bytes: texture offset, row offset (words), top,
-# bottom, mid texture (bytes), and (milestone 9, docs/LEVELS.md 1.3:
-# "render-level 3") the side's sector, which the level load's GROUP step
+# bottom, mid texture (bytes), and (docs/LEVELS.md) the side's sector, which
+# the level load's GROUP step
 # reads (its pad until then; the renderer does not read it).
 SIDE = {'TEXOFS': 0, 'ROWOFS': 2, 'TOP': 4, 'BOTTOM': 5, 'MID': 6,
         'SECTOR': 7}
@@ -167,14 +167,14 @@ VAS = VAH + VTX_CAP             #   stamps
 VTX_STRIDE = VTX_CAP
 SECTORS = Array('sector', LVMAP, 0x8000, SEC_SIZE, 255)
 SIDES = Array('side', LVMAP, 0x9000, SIDE_SIZE, 1024)
-# Speed wave 2, part frontend (RENDER-MASKED.md 6.2 optimisation 2): the
+# Speed wave 2, part frontend (RENDER-MASKED.md optimisation 2): the
 # box corner cache in RENDB, after OPENHI. CCSTATE: the view's map unit
 # (x, y: 2 bytes each) its entries are for and their stamp (1-255; 0:
 # none). CCANG: 4 bytes a
 # node, the angles of the two corners of the box and case its tag names
 # (R_PointToAngle16 of the corner from the unit: they depend on nothing
 # else), at CCANG + 4 n = the node's address / 8 + $2000 (rbsp.s cc_rec).
-# Its own state, not the frame block's (95 of 96 B taken): no harness
+# Its own state, not the frame block's (95 of 96 B taken): nothing
 # injects it, so a frame injected whole never meets entries its view did
 # not make.
 CCSTATE, CCST_SIZE = 0x1C00, 5
@@ -188,7 +188,7 @@ TXFLAT_END = 0xC000
 assert VAS + VTX_CAP <= SECTORS.base
 assert SECTORS.end <= SIDES.base and SIDES.end <= TXFLAT
 
-# ---- milestone 8: the sprite data (RENDER-MASKED.md 1.3-1.8) -----------
+# ---- the masked phase: the sprite data (RENDER-MASKED.md) -------
 # SPRT: one 16-byte record a distance d = tz >> 16 (0-1280): xscale,
 # yscale, iscale (4 each), FQ's q (2) and r (1); SPRBOUND (4 x 55: E, E /
 # 2 + 2, as upstream's, injected each frame); PHDR, 16 bytes a patch of
@@ -213,17 +213,17 @@ SPRFR_BAD = 1
 SPRFRS = Array('sprite frame', SPRT, PHDRS.end, SPRFR_SIZE, 400)
 assert SCALES.end <= SPRBOUND_T and SPRBOUND_T + 4 * NUMSPRITES <= \
     PHDRS.base and SPRFRS.end <= BANK_ROOM[1]
-# RTHING (RTH): the render part of a mobj, by pool slot (1.8): x, y, z (4
+# RTHING (RTH): the render part of a mobj, by pool slot: x, y, z (4
 # each), the angle's high word, sprite, frame (bit 15 FF_FULLBRIGHT),
 # flags (bit 0 MF_SHADOW), snext (a slot, $FFFF: none)
 RTHING = {'X': 0, 'Y': 4, 'Z': 8, 'ANG': 12, 'SPR': 14, 'FRAME': 15,
           'FLAGS': 17, 'SNEXT': 18}
 RTHING_SIZE = 24
-# milestone 9 (docs/LEVELS.md 3.1): a slot is its mobj's: the pool's
+# the level part (docs/LEVELS.md): a slot is its mobj's: the pool's
 # slots, then the zone mobjs; 2,026 fill RTH's $0200-$BFFF (768 before)
 RTHINGS = Array('render thing', RTH, 0x0200, RTHING_SIZE, 2026)
 NO_THING = 0xFFFF
-# WPRO (stage C, RENDER-MASKED.md 1.5): WPIDX, each patch store index's
+# WPRO (stage C, RENDER-MASKED.md): WPIDX, each patch store index's
 # weapon profile (its address in WPRO; $FFFF: none, upstream's WP_NONE:
 # the draw takes R_DrawVisSprite), then the profiles, each upstream's
 # layout (r_sprite65.s:746-754) at its WPRO address: +0 width, +2 the
@@ -242,28 +242,27 @@ WP_MAXPOSTS = 14                # wbMake: a 15th post of a column: none
 NO_PROFILE = 0xFFFF
 
 # ---------------------------------------------------------------------------
-# Main memory (RENDER.md 1.7)
+# Main memory (RENDER.md)
 # ---------------------------------------------------------------------------
 SEGBUF = 0x0200                 # far bounce buffer: 5 segs of 24 bytes
 SEGBUF_SEGS = 5
 SPILL, SPILL_END = 0x0280, 0x0300
-PHASE = L5.PHASE                # $0300: the cost phase (test builds)
+PHASE = L5.PHASE                # $0300: the cost phase (a2vm's timing)
 FB, FB_END = 0x0310, 0x0370     # the render frame block, 96 bytes
 RIN, RIN_END = 0x0370, 0x03A0   # the render inputs: the player's view,
-                                #   which milestone 10's game state
-                                #   will keep (framestate.py writes it)
+                                #   which the game state keeps
 LVCOUNT = 0x03A0                # the level's counts of sectors and sides
                                 #   (words), for the bridge manifest of
                                 #   levelconv.py (sectors-sides.json)
-# The weapon's vissprite (milestone 8, stage C: RENDER-MASKED.md 1.7 as
-# built): pspSprite's fields, native, 12 bytes: the patch store index
+# The weapon's vissprite (the masked phase, stage C: RENDER-MASKED.md):
+# pspSprite's fields, native, 12 bytes: the patch store index
 # ($FFFF in WPREV: none, upstream's lump $FFFF), texturemid, x1, x2 (two
 # bytes: pspSprite stores it before the off-screen test, unclamped), the
 # high word of startfrac, the colormap as its record page (0: the shadow
 # weapon). FRVIS is persistent (upstream's FR_VIS keeps the fields a frame
 # does not write: an off-screen or absent weapon writes some or none, and
 # weaponClipSame compares all of them), next to WPREV in the weapon skip's
-# persistent area (MEMORY_MAP.md 3.3)
+# persistent area (MEMORY_MAP.md)
 FRVIS = 0x18B0
 FV = {'PATCH': 0, 'TMID': 2, 'X1': 6, 'X2': 7, 'SFRAC': 9, 'PAGE': 11}
 FV_SIZE = 12
@@ -278,16 +277,16 @@ DSX1, DSX2 = 0x1980, 0x1A00
 TEXTRANS = 0x1A80               # texturetranslation as bytes
 LNMAP = 0x1B80                  # ML_MAPPED of each line, a bit, 2,048
 LNMAP_LINES = 2048
-# milestone 8: in milestone 5's COLLO area until the bucket pass (the
+# the masked phase's: in the replay's COLLO area until the bucket pass (the
 # replay's COLLO/COLHI are written after the masked phase)
 UPOFS = 0x1680                  # upstream's page offset of each column's
                                 #   list (stage B)
 FRORD = 0x1720                  # the sort's order: vissprite indexes
 SPRSEC, SPRSEC_END = 0x1600, 0x1700     # aux 0: the listed sectors
 
-# W, the render window (RENDER.md 3.4)
+# W, the render window (RENDER.md)
 WCODE = 0x6000
-# Speed wave 1, part bucket (RENDER-MASKED.md 6.2 optimisation 10): each
+# Speed wave 1, part bucket (RENDER-MASKED.md optimisation 10): each
 # column's count of the bytes its kept records take in W (the staged size
 # less the column byte), 16 bits as two page-aligned planes, kept by
 # rec_room for every record the front end makes, from rec_start (FCNT,
@@ -306,7 +305,7 @@ FLATCM, FLATCM_END = 0xAFC0, 0xB400     # 34 x 32
 TXBANK, TXLO, TXHI, TXWM, TXHT = 0xB400, 0xB500, 0xB600, 0xB700, 0xB800
 TXTAB_END = 0xB900
 # The render window image the phase loader copies from WCODE_BANK each
-# frame (RENDER.md 3.4): the code from $6000 to its end, and the per-level
+# frame (RENDER.md): the code from $6000 to its end, and the per-level
 # tables. Whole pages: the tables' pages start at $AF00 (FLATCM at $AFC0)
 WTABLES_PAGE = 0xAF
 WTABLES_PAGES = (TXTAB_END >> 8) - WTABLES_PAGE
@@ -329,7 +328,7 @@ SWVAR, SWVAR_END = 0x0DA0, 0x0E00       # main: the wall setup's variables
 FAR_CARD = 0xDC43
 FAR_CARD_END = 0xE000
 
-# ---- W in the masked phase (RENDER-MASKED.md 1.10) ----------------------
+# ---- W in the masked phase (RENDER-MASKED.md) ----------------------
 # The front end's image starts with what both images run (MATHW, AUXW:
 # the math's render subset and the aux card's reads), which the masked
 # phase's load leaves in place; the masked code follows from MCODE.
@@ -364,7 +363,7 @@ MSEC_B = MSEC_F + 16            # 16
 DSB = MSEC_B + 16               # 32
 assert DSB + 32 <= FETCH_END
 MTABLES_PAGE, MTABLES_PAGES = TXMP >> 8, 2      # the masked load's tables
-# stage C: the weapon (RENDER-MASKED.md 1.5, 3.2). Its profile's table
+# stage C: the weapon (RENDER-MASKED.md). Its profile's table
 # entries of the columns drawn (2 bytes a column, at most 160) and one
 # column's list (at most 14 posts and the end byte) in W: in the front end
 # the node frames' (the clip pass runs before the walk), in the masked
@@ -384,14 +383,14 @@ assert YHTAB <= WPENT and WPBUF_END <= YHTAB_END
 WVIS = SEGB
 assert WVIS + 40 <= DSB
 
-# ---- after the masked phase (RENDER-MASKED.md 1.10, 3.4; stage C) -------
+# ---- after the masked phase (RENDER-MASKED.md; stage C) -------
 # The bucket pass, then the replay. Main memory the masked phase leaves
 # dead: the bucket pass's code that runs with RAMRD off, copied there from
 # the masked image by nm_bkload: BKFAR at $0C00-$0EFF (FLOORCLIP, CEILCLIP,
 # SOLIDCOL and the render scratch after each) and BKFAR2 at $0200-$02FF
 # (the walk's bounce buffer and the spill); CVDONE, the covered columns
-# whose record the scatter found (bit 0) and, in the game build, the
-# columns cut at the batch's limit (bit 7, RENDER-MASKED.md 6.1), over
+# whose record the scatter found (bit 0) and, in the release build, the
+# columns cut at the batch's limit (bit 7, RENDER-MASKED.md), over
 # DSX1; the batch list's sizes after it, over DSX2; its first columns in
 # zero page after its count BK_NB ($70).
 # The design's CVW arrays (over WTMP, which is persistent: RENDER-MASKED.md
@@ -402,16 +401,19 @@ BKFAR_RUN, BKFAR_END = 0x0C00, 0x0F00
 BKFAR2_RUN, BKFAR2_END = 0x0200, 0x0300
 STAGING_BYTES = (STAGE_END - STAGE) + len(RECSP) * (BANK_ROOM[1] -
                                                     BANK_ROOM[0])
-# The batches a frame can take (verified 2026-10-01). nb_bucket packs
-# whole columns: a batch ends when its next column would take it past
-# RECBUF_SPAN (8,192 W bytes), so two adjacent batches hold more than
-# 8,192 bytes between them; in the game build a batch also ends after a
-# column cut at the limit (6.1), which keeps at least 8,192 - 10 bytes (the
-# first record it refused had at most 11). A staged record of s bytes
-# takes s - 1 in W, s at most 12: W gets at most 11/12 of the staging. So
-# n batches hold at least (n // 2) * 8,182 bytes, and n is at most MAXB.
+# The batches a frame can take (verified 2026-10-01; the release build's
+# cut 2026-10-07). nb_bucket packs whole columns: a batch ends when its
+# next column would take it past RECBUF_SPAN (8,192 W bytes), so two
+# adjacent batches hold more than 8,192 bytes between them; in the release
+# build (render.mk's default) a column cut at the limit is alone in its
+# batch, so the batch before it may end early, but the cut column keeps
+# at least 8,192 - 11 bytes (walk 1 refuses a record that would take it to
+# 8,192, and a record has at most 11 bytes in W): any two adjacent batches
+# hold at least 8,181. A staged record of s bytes takes s - 1 in W, s at
+# most 12: W gets at most 11/12 of the staging. So n batches hold at least
+# (n // 2) * 8,181 bytes, and n is at most MAXB.
 RECBUF_SPAN = 0x2000
-BK_PAIR_MIN = RECBUF_SPAN - 10
+BK_PAIR_MIN = RECBUF_SPAN - 11
 W_BYTES_MAX = STAGING_BYTES * 11 // 12
 MAXB = 2 * (W_BYTES_MAX // BK_PAIR_MIN) + 1
 CVDONE = 0x1980
@@ -433,12 +435,7 @@ assert FCNTHI + 160 <= WTABLES_PAGE << 8 and MCNTHI + 160 <= MCODE
 assert BKFAR2_RUN == SEGBUF and BKFAR2_END == SPILL_END
 assert BK_LIST_END <= DSX2 + 0x80
 assert CVDONE == DSX1
-# RENDER-MASKED.md 6.1 item 1 (as restated 2026-10-01): the staging holds
-# at least STAGING_MARGIN times the largest staging of the captured frames
-# of acceptance 1; frame8.py measures it on every run and fails a report
-# under it (the synthetic extremes, upstream's pages all taken, must fit)
-STAGING_MARGIN = 8
-# The native vissprite (1.7), 40 bytes
+# The native vissprite, 40 bytes
 VISREC = {'X1': 0, 'X2': 1, 'SCALE': 2, 'GZ': 6, 'GZT': 10, 'TX': 12,
           'TY': 16, 'STARTFRAC': 20, 'XISCALE': 24, 'TMID': 28,
           'FSTEP': 32, 'PATCH': 34, 'PAGE': 36, 'SLOT': 37}
@@ -446,7 +443,7 @@ VISREC_SIZE = 40
 assert VIS + MAXVIS * VISREC_SIZE <= SPRB and SPRB + 4 * NUMSPRITES <= \
     FETCH
 
-# The aux card, F1.2.1 (RENDER.md 1.6; MEMORY_MAP.md 4.3 with the
+# The aux card, F1.2.1 (RENDER.md; MEMORY_MAP.md with the
 # viewangletox correction): read in ALTZP windows from W.
 AX_TAN3 = 0xD000                # finetangent part 3: low, high planes
 AX_VTOX = 0xD800                # viewangletox, 2,042 bytes, one plane
@@ -461,14 +458,14 @@ VIEWWIDTH = 160
 VIEWHEIGHT = 168
 CENTERY = 84
 PROJECTIONY = 160
-XTVLO, XTVHI = 0x09A9, 0x0AF3   # xtoviewangle (MEMORY_MAP.md 3.2)
+XTVLO, XTVHI = 0x09A9, 0x0AF3   # xtoviewangle (MEMORY_MAP.md)
 CLIPANGLE = 0x2008              # xtoviewangleTable[0]
 VIEWANGLETOXMAX = 1032
 PLANE_D = 10
 NF_SUBSECTOR = 0x8000
 
 # ---------------------------------------------------------------------------
-# Zero page (RENDER.md 3.3)
+# Zero page (RENDER.md)
 # ---------------------------------------------------------------------------
 ZP_FAR = (0x00, 0x06)
 ZP_PLATFORM = (0x08, 0x18)
@@ -508,7 +505,7 @@ OV1_A = [
     ('CC_ON', 1), ('CC_K', 1), ('CC_A', 4),
 ]
 # Overlay 2, stage B: the seg loop's page, the hot part of the seg
-# descriptor SEGD (RENDER.md 3.2, 3.3). The edges keep upstream's forms
+# descriptor SEGD (RENDER.md). The edges keep upstream's forms
 # (topfrac FRACUNIT - 1 more, bottomfrac and pixhigh FRACUNIT more, pixlow
 # FRACUNIT - 1 more, each one step early: r_seg65.s:15-17), each start
 # then its step, as in WPAGE.
@@ -560,7 +557,7 @@ SPILL_A = [
     # CCSTATE's copy for the frame)
     ('CC_ST', CCST_SIZE),
 ]
-# The wall setup's variables (main $0DA0-$0DFF, RENDER.md 1.7's render
+# The wall setup's variables (main $0DA0-$0DFF, RENDER.md's render
 # scratch): what R_StoreWallRange keeps in its znear
 SWVARS = [
     ('SW_START', 1), ('SW_LF', 1), ('SW_SIL', 1), ('SW_OPEN', 1),
@@ -573,7 +570,7 @@ SWVARS = [
 ]
 
 
-# The frame block, $0310-$036F (RENDER.md 2.1): what the frame's code
+# The frame block, $0310-$036F (RENDER.md): what the frame's code
 # computes and the persistent state of the renderer. Offsets from FB.
 FRAME_BLOCK = [
     ('VIEWX', 4), ('VIEWY', 4), ('VIEWZ', 4), ('VIEWANGLE', 4),
@@ -599,12 +596,12 @@ FRAME_BLOCK = [
     # "Stage B as built"), the staging's bank (0: aux 0)
     ('W_LCC', 2), ('W_LFC', 2), ('W_CEILW', 2), ('W_FLOORW', 2),
     ('DIDSOLID', 1), ('RW_STEP', 4), ('STG_BANK', 1),
-    # stage C: the sky's 256 slots (the level's: RENDER.md 1.4), bank and
+    # stage C: the sky's 256 slots (the level's: RENDER.md), bank and
     # address of slot 0
     ('SKYBANK', 1), ('SKYLO', 1), ('SKYHI', 1),
-    # milestone 8 (RENDER-MASKED.md 1.10): the listed sectors, the fuzz
+    # the masked phase (RENDER-MASKED.md): the listed sectors, the fuzz
     # position (persistent), the vissprites, the page model (stage B), the
-    # records staged (their sequence number) and the sticky drop (6.1)
+    # records staged (their sequence number) and the sticky drop
     ('SPRN', 1), ('FZPOS', 1), ('NVIS', 1), ('XPUSED', 1), ('UPFLUSH', 1),
     ('RECSEQ', 2), ('RECDROP', 1),
 ]
@@ -614,7 +611,7 @@ FRAME_BLOCK_SIZE = FB_END - FB
 RENDER_INPUTS = [
     ('PL_X', 4), ('PL_Y', 4), ('PL_ANGLE', 4), ('PL_VIEWZ', 4),
     ('PL_XLIGHT', 2), ('PL_FIXCM', 2), ('GAMMA', 2),
-    # milestone 8 (RENDER-MASKED.md 1.10, 2.1): each psprite's sprite,
+    # the masked phase (RENDER-MASKED.md): each psprite's sprite,
     # frame, sx (16 bits) and sy (32 bits), the player's sector light,
     # powers[pw_invisibility] (stage C reads them)
     ('PSP0_SPR', 1), ('PSP0_FRAME', 2), ('PSP0_SX', 2), ('PSP0_SY', 4),
@@ -622,34 +619,36 @@ RENDER_INPUTS = [
     ('PL_SECLIGHT', 1), ('PL_INVIS', 2),
 ]
 
-# Frame status codes (STATUS). Every build (there is no other yet)
-# stops the frame with BRK and the code after it. ST_DEPTH the node frames
-# are full and ST_TEXTURE a texture the level has no slots for: neither
-# happens on a level levelconv.py accepts (it checks the BSP's depth, and
-# converts the textures the level source made; RENDER.md 1.4). ST_RECORDS
-# the staging and the spill are full: the game's behaviour is milestone
-# 8's decision (RENDER.md 3.6, risk 14). Codes 3 and 4 were stage B's hooks
+# Frame status codes (STATUS). A stop sets one and executes BRK with the
+# code after it. ST_DEPTH the node frames are full and ST_TEXTURE a
+# texture the level has no slots for: neither happens on a level
+# levelconv.py accepts (it checks the BSP's depth, and converts the
+# textures the level source made; RENDER.md). ST_RECORDS the records do
+# not fit (the staging and the spill, a column past a batch or past the
+# replay's stage): the release build (render.mk's default, the disk's)
+# cuts the frame, sets ST_RECORDS and goes on; render.mk's stops build
+# stops (RENDER-MASKED.md 10). Codes 3 and 4 were stage B's hooks
 # for the sky and the patchless columns, 6 (ST_TANGENT) and 7 (ST_SINE)
 # its refusals of a column seen from behind: all four are no longer used.
 ST_OK, ST_DEPTH, ST_RECORDS = 0, 1, 2
 ST_TEXTURE = 5
-# milestone 8: a projected thing's frame that upstream reads past its
+# a projected thing's frame that upstream reads past its
 # sprite's frames (levelconv.py flags it: no map thing takes one)
 ST_SPRFRAME = 8
-# the bucket pass's prototype (stage A): more than 3 batches, a column past
-# a batch, a broken staging (RENDER-MASKED.md 3.4)
+# the bucket pass's prototype (stage A): more than MAXB batches, a broken
+# staging, and in the stops build a column past a batch (RENDER-MASKED.md)
 ST_BUCKET = 9
 # stage B: a masked post that ends after texture row 255 (upstream's mwTall:
 # I_Error; no texture of the game has one)
 ST_TALL = 10
 # the records (lists.inc): upstream's kinds, the native sizes with the
-# column byte, the page model (RENDER-MASKED.md 3.4)
+# column byte, the page model (RENDER-MASKED.md)
 K_TEXC, K_FUZZ = 6, 8
 TEXCREC_SIZE, FUZZREC_SIZE = 8, 5
 PAGE_ROOM = 254
 XP_PAGES = 50                   # the extra pages ($CE-$FF)
 
-# The rules of our own (RULES, a bit each; RENDER.md 3.9): where upstream
+# The rules of our own (RULES, a bit each; RENDER.md): where upstream
 # leaves its tables for a column seen from behind (a grazing view), the
 # native code takes a defined value and sets its bit. RULE_SINE:
 # R_ScaleFromGlobalAngle with sin(angleb) < 0 (upstream's sineLow reads its
@@ -660,7 +659,7 @@ XP_PAGES = 50                   # the extra pages ($CE-$FF)
 RULE_SINE, RULE_TANGENT = 1, 2
 
 # The render phase's stack budget with the IRQ's allowance on top
-# (MEMORY_MAP.md 2; the tests check the measured depth + IRQ_STACK)
+# (MEMORY_MAP.md: the measured depth + IRQ_STACK fits)
 RENDER_STACK, IRQ_STACK = 112, 24
 
 # The card's data of the far layer (far.s): the vertex-angle gather
@@ -681,7 +680,7 @@ def allocate(fields: Sequence[Tuple[str, int]], start: int, end: int
     return out
 
 
-# The masked phase's zero page (RENDER-MASKED.md 3.6): overlays 1 and 2,
+# The masked phase's zero page (RENDER-MASKED.md): overlays 1 and 2,
 # free once the walk ends. Stage A: the projection and the sort.
 OVM1 = [
     ('MP_SEC', 1),      # the listed sector being projected (its index)
@@ -744,7 +743,7 @@ OVD1 = [
     ('MD_T', 4),        # temporaries
 ]
 # overlay 2: R_DrawVisSprite's state (the loop page of upstream's WPAGE
-# names, wpage.inc:105-137) and the masked range's
+# names, upstream's wpage.inc:105-137) and the masked range's
 OVD2 = [
     ('V_FRAC', 4), ('V_XIS', 4), ('V_X', 1),
     ('V_SS', 4),        # spryscale
@@ -872,7 +871,7 @@ def regions() -> List[Region]:
         Region('w', DSBUF, DSBUF + DS_SIZE, 'drawseg buffer'),
         Region('main', SWVAR, SWVAR_END, 'wall setup variables'),
         Region('card1', FAR_CARD, FAR_CARD_END, 'far layer'),
-        # milestone 8: the masked phase's W (an overlay of the front end's
+        # the masked phase's W (an overlay of the front end's
         # W: the phases never overlap), in its own space
         Region('wm', MCODE, MCODE_END, 'masked code'),
         Region('wm', MCNTLO, MCNTLO + VIEWWIDTH, 'MCNTLO'),
@@ -913,20 +912,20 @@ def regions() -> List[Region]:
 
 def after_masked() -> List[Tuple[int, int, str]]:
     """Main memory the bucket pass takes after the masked phase (stage C:
-    RENDER-MASKED.md 1.10 as built)."""
+    RENDER-MASKED.md)."""
     return [(BKFAR_RUN, BKFAR_END, 'BKFAR'),
             (BKFAR2_RUN, BKFAR2_END, 'BKFAR2'),
             (BK_LIST, BK_LIST_END, 'the batch list\'s sizes'),
             (CVDONE, CVDONE + VIEWWIDTH, 'CVDONE')]
 
 
-# Regions in milestone 5's COLLO/COLHI during the render: the bucket pass
-# writes COLLO/COLHI after the masked phase (RENDER-MASKED.md 1.10)
+# Regions in the replay's COLLO/COLHI during the render: the bucket pass
+# writes COLLO/COLHI after the masked phase (RENDER-MASKED.md)
 MASKED_OVER_COL = ('UPOFS', 'FRORD')
 
 
 def check() -> None:
-    """Overlaps, bounds and collisions with milestone 5's regions."""
+    """Overlaps, bounds and collisions with the replay's regions."""
     rs = regions()
     for i, a in enumerate(rs):
         if a.end <= a.start:
@@ -964,7 +963,7 @@ def check() -> None:
         raise ValueError('the wall variables past $%04X' % SWVAR_END)
     if RECSP != tuple(range(RECSP[0], RECSP[0] + len(RECSP))):
         raise ValueError('the spill banks are not consecutive')
-    # milestone 5: the replay's tables and the spans/ranges/weapon places
+    # the replay's tables and the spans/ranges/weapon places
     # this layout shares must be where layout.py has them
     if (FSTOP, CVFIRST, WCLIP) != (L5.FSTOP, L5.CVFIRST, L5.WCLIP):
         raise ValueError('the spans moved from layout.py')
@@ -981,7 +980,7 @@ def check() -> None:
     # stage C: what the bucket pass and the replay take after the masked
     # phase must not touch the renderer's persistent state (the spans, the
     # covered ranges but by their owners, the weapon skip, the hot
-    # globals, the frame block and the render inputs) nor milestone 5's
+    # globals, the frame block and the render inputs) nor the
     # regions the replay reads
     persistent = [(SPANS, SPANS_END), (WCLIP, WCLIP + VIEWWIDTH),
                   (WPREV, WPREV + WPREV_USED), (FRVIS, FRVIS + FV_SIZE),
@@ -1057,7 +1056,7 @@ def constants() -> List[Tuple[str, int]]:
         ('ML_DONTPEGTOP', 8), ('ML_DONTPEGBOTTOM', 16),
         ('K_TEX', 0), ('K_FILL', 2), ('TEXREC_SIZE', 12),
         ('FILLREC_SIZE', 6),
-        # milestone 8, stage A
+        # the masked phase, stage A
         ('SPRT', SPRT), ('RTH', RTH), ('MCODE_BANK', MCODE_BANK),
         ('SCALEBASE', SCALES.base), ('SCALE_SIZE', SCALE_SIZE),
         ('SPRBOUND_T', SPRBOUND_T), ('PHDRBASE', PHDRS.base),
@@ -1143,181 +1142,6 @@ def include_text() -> str:
     for name, value in zeropage():
         lines.append('%-16s= $%02X' % (name, value))
     return '\n'.join(lines) + '\n'
-
-
-# ---------------------------------------------------------------------------
-# What the render code may write (render_check.py filters a2vm's write log
-# with it): storage, bank, [start, end) with the reason.
-# ---------------------------------------------------------------------------
-
-def corner_cache_writes() -> List[Tuple[str, int, int, int, str]]:
-    """Speed wave 2, part frontend: what the walk's box corner cache
-    writes: its state and angles (RENDB) and each node's tags (LVMAP, the
-    record's pad). Last in the allowed sets: the node's ranges are many and
-    rare."""
-    out = [('aux', RENDB, CCSTATE, CCSTATE + CCST_SIZE,
-            'the corner cache\'s state'),
-           ('aux', RENDB, CCANG, CCANG_END, 'the corner cache\'s angles')]
-    for n in range(NODES.capacity):
-        a = NODES.address(n) + NODE['CCT']
-        out.append(('aux', LVMAP, a, a + 2, 'node %d\'s corner tag' % n))
-    return out
-
-
-def allowed_writes(nsectors: int, nvertices: int
-                   ) -> List[Tuple[str, int, int, int, str]]:
-    """The fixed part. The card's own bytes the render code may write are
-    labels of the build (render_check.allowed_sets adds them: the vertex
-    gather's entries vg_n .. vg_d, the math's self-modified operands): the
-    rest of card bank 1 $DC00-$DFFF is code, the phase loader's included."""
-    return walk_writes(nsectors, nvertices) + corner_cache_writes()
-
-
-def walk_writes(nsectors: int, nvertices: int
-                ) -> List[Tuple[str, int, int, int, str]]:
-    """allowed_writes without the corner cache's."""
-    out = [
-        ('main', 0, ZP_FAR[0], ZP_FAR[1], 'far layer arguments'),
-        ('main', 0, ZP_OV1[0], ZP_OV1[1], 'overlay 1'),
-        ('main', 0, ZP_MATH[0], ZP_MATH[1], 'the math block'),
-        ('main', 0, SEGBUF, SEGBUF + SEGBUF_SEGS * SEG_SIZE,
-         'bounce buffer'),
-        ('main', 0, SPILL, SPILL_END, 'spill'),
-        ('main', 0, PHASE, PHASE + 1, 'cost phase'),
-        ('main', 0, FB, FB_END, 'frame block'),
-        ('main', 0, FLOORCLIP, FLOORCLIP + VIEWWIDTH, 'FLOORCLIP'),
-        ('main', 0, CEILCLIP, CEILCLIP + VIEWWIDTH, 'CEILCLIP'),
-        ('main', 0, SOLIDCOL, SOLIDCOL + VIEWWIDTH, 'SOLIDCOL'),
-        ('main', 0, NODEF, NODEF_END, 'node frames'),
-        ('main', 0, FSEC, FSEC + SEC_SIZE, 'sector frame'),
-        ('aux', LVMAP, VAL, VAL + nvertices, 'vertex angles'),
-        ('aux', LVMAP, VAH, VAH + nvertices, 'vertex angles'),
-        ('aux', LVMAP, VAS, VAS + nvertices, 'vertex stamps'),
-    ]
-    for s in range(nsectors):
-        a = SECTORS.address(s) + SEC['VALID']
-        out.append(('aux', LVMAP, a, a + 2, 'sector %d validcount' % s))
-    # stage C, the frame's own parts before the walk: the plane stamps
-    # (R_FillStamps: the stamps of the spans, every 128 frames) and the
-    # weapon skip (weaponClipSame: WPREV, WCLIP)
-    out += [
-        ('main', 0, L5.FSSTT, L5.FSSTT + VIEWWIDTH, 'top span stamps'),
-        ('main', 0, L5.FSSTB, L5.FSSTB + VIEWWIDTH, 'bottom span stamps'),
-        ('main', 0, WCLIP, WCLIP + VIEWWIDTH, 'WCLIP'),
-        ('main', 0, WPREV, WPREV + WPREV_USED, 'WPREV'),
-        # milestone 8, stage C: the weapon's clip pass (its vissprite, its
-        # zero page in overlay 2, its profile's buffers in the node
-        # frames: allowed above)
-        ('main', 0, FRVIS, FRVIS + FV_SIZE, 'FRVIS'),
-        ('main', 0, min(ZPW.values()), ZPW_END, 'the weapon\'s zero page'),
-        # milestone 8: the walk lists the sectors (SPRSEC)
-        ('aux', 0, SPRSEC, SPRSEC_END, 'SPRSEC'),
-    ]
-    return out
-
-
-def allowed_writes_masked(cliplog: bool = False
-                          ) -> List[Tuple[str, int, int, int, str]]:
-    """What the masked phase's code may write (stage A: the drawseg copy,
-    the projection and the sort; stage B: the sprites' and masked walls'
-    records, clips and marks), besides the card's own data
-    (render_check.allowed_sets adds those by label): its zero page, the
-    math block and FA_*, the frame block, the sort's order, its W data;
-    the clips, spans, covered ranges, the page model, WTMP, MCCLIP, the
-    record batch, staging and spill, the masked columns' marks in the
-    openings; the clip log of a test build."""
-    out = [
-        ('main', 0, FLOORCLIP, FLOORCLIP + VIEWWIDTH, 'FLOORCLIP'),
-        ('main', 0, CEILCLIP, CEILCLIP + VIEWWIDTH, 'CEILCLIP'),
-        ('main', 0, MCCLIP, MCCLIP + VIEWWIDTH, 'MCCLIP (SOLIDCOL)'),
-        ('main', 0, FSTOP, FSBOT + VIEWWIDTH, 'the spans\' rows'),
-        ('main', 0, CVFIRST, CV_END, 'covered ranges'),
-        ('main', 0, UPOFS, UPOFS + VIEWWIDTH, 'UPOFS'),
-        ('main', 0, WTMP, WTMP + VIEWWIDTH, 'WTMP'),
-        ('main', 0, BATCH, BATCH + 256, 'record batch'),
-        ('main', 0, YHTAB, MTC_END, 'YHTAB, CLIPBUF, MTCLO, MTCHI'),
-        # stage C: the weapon's draw (pspSprite of the flash writes FRVIS)
-        ('main', 0, FRVIS, FRVIS + FV_SIZE, 'FRVIS'),
-        ('aux', 0, OPENLO, OPENLO + MAXOPENINGS, 'masked columns (marks)'),
-        ('aux', RENDB, OPENHI, OPENHI + MAXOPENINGS, 'masked columns'),
-        ('aux', 0, STAGE, STAGE_END, 'record staging'),
-    ] + [('aux', b, 0x0200, STAGE_END, 'record spill') for b in RECSP]
-    if cliplog:
-        out.append(('aux', SEAM, SEAM_CLIPLOG,
-                    SEAM_CLIPLOG + CLIPLOG_REC * CLIPLOG_MAX, 'clip log'))
-    return out + [
-        ('main', 0, ZP_FAR[0], ZP_FAR[1], 'far layer arguments'),
-        ('main', 0, ZP_OV1[0], ZP_OV1[1], 'overlay 1'),
-        ('main', 0, ZP_OV2[0], ZP_OV2[1], 'overlay 2'),
-        ('main', 0, ZP_MATH[0], ZP_MATH[1], 'the math block'),
-        ('main', 0, PHASE, PHASE + 1, 'cost phase'),
-        ('main', 0, FB, FB_END, 'frame block'),
-        ('main', 0, FRORD, FRORD + MAXVIS, 'FRORD'),
-        # speed wave 1: the column counts (nm_masked's copy, mrec_room)
-        ('main', 0, MCNTLO, MCNTLO + VIEWWIDTH, 'MCNTLO'),
-        ('main', 0, MCNTHI, MCNTHI + VIEWWIDTH, 'MCNTHI'),
-        ('main', 0, DSW, DSW + DSW_MAX * DS_SIZE, 'DSW'),
-        ('main', 0, VIS, VIS + MAXVIS * VISREC_SIZE, 'vissprites'),
-        ('main', 0, SPRB, SPRB + 4 * NUMSPRITES, 'SPRBOUND'),
-        ('main', 0, FETCH, FETCH_END, 'fetch buffers'),
-        ('main', 0, SECLIST, SECLIST + 256, 'the listed sectors (W)'),
-    ]
-
-
-def allowed_writes_bucket() -> List[Tuple[str, int, int, int, str]]:
-    """What the bucket pass (stage C: bucket.s, its card parts and BKFAR)
-    may write: its zero page (overlay 1, $70-$AF), the far layer's
-    arguments, the batch list, COLLO/COLHI, the covered ranges (the
-    records' W addresses, a range cleared), CVDONE, page 1's bounce
-    buffer, W (the batches), RECW (a group's parked batches), the status
-    of a stop."""
-    return [
-        ('main', 0, ZP_OV1[0], ZP_OV1[1], 'overlay 1'),
-        ('main', 0, 0x70, 0xB0, 'the batch count, $70-$AF'),
-        ('main', 0, 0x0100, 0x01B4, 'the bounce buffer'),
-        ('main', 0, BK_LIST, BK_LIST_END, 'the batch list'),
-        ('main', 0, L5.COLLO, L5.COLHI + 161, 'COLLO, COLHI'),
-        ('main', 0, CVFIRST, CV_END, 'covered ranges'),
-        ('main', 0, CVDONE, CVDONE + VIEWWIDTH, 'CVDONE'),
-        ('main', 0, WCODE, 0xC000, 'the batches (W), the column counts '
-         '(MCNT: the game build\'s count again)'),
-        ('aux', RECW, 0x8000, 0xC000, 'the parked batches'),
-        ('main', 0, FB + FBO['STATUS'], FB + FBO['STATUS'] + 1, 'STATUS'),
-        ('main', 0, PHASE, PHASE + 1, 'cost phase'),
-    ]
-
-
-def allowed_writes_bkload() -> List[Tuple[str, int, int, int, str]]:
-    """nm_bkload (the masked image): BKFAR into main $0C00."""
-    return [('main', 0, BKFAR_RUN, BKFAR_END, 'BKFAR'),
-            ('main', 0, BKFAR2_RUN, BKFAR2_END, 'BKFAR2'),
-            ('main', 0, ZP_OV1[0], ZP_OV1[1], 'overlay 1')]
-
-
-def allowed_writes_b(nsectors: int, nvertices: int
-                     ) -> List[Tuple[str, int, int, int, str]]:
-    """What the front end with stage B's wall setup and seg loops may
-    write: stage A's set, and the seg page, the wall setup's variables,
-    the spans (not the covered ranges), the drawseg columns, LNMAP, the
-    record batch, W's scratch of the seg, the openings, the staging and
-    spill, the drawsegs and OPENHI."""
-    return walk_writes(nsectors, nvertices) + [
-        ('main', 0, ZP_OV2[0], ZP_OV2[1], 'overlay 2'),
-        ('main', 0, SWVAR, SWVAR_END, 'wall setup variables'),
-        ('main', 0, SPANS, SPANS_END, 'fill spans'),
-        ('main', 0, UPOFS, UPOFS + VIEWWIDTH, 'UPOFS (milestone 8)'),
-        # speed wave 1: the column counts (rec_start, rec_room)
-        ('main', 0, FCNTLO, FCNTLO + VIEWWIDTH, 'FCNTLO'),
-        ('main', 0, FCNTHI, FCNTHI + VIEWWIDTH, 'FCNTHI'),
-        ('main', 0, DSX1, DSX2 + 0x80, 'DSX1, DSX2'),
-        ('main', 0, LNMAP, LNMAP + LNMAP_LINES // 8, 'LNMAP'),
-        ('main', 0, BATCH, BATCH + 256, 'record batch'),
-        ('main', 0, FSTEPW, WSCR_END, 'W scratch of the seg'),
-        ('aux', 0, OPENLO, OPENLO + MAXOPENINGS, 'openings'),
-        ('aux', 0, STAGE, STAGE_END, 'record staging'),
-        ('aux', RENDB, DRAWSEGS, OPENHI + MAXOPENINGS, 'drawsegs, OPENHI'),
-    ] + [('aux', b, 0x0200, STAGE_END, 'record spill') for b in RECSP] + \
-        corner_cache_writes()
 
 
 def main(argv: Sequence[str]) -> int:

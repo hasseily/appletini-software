@@ -1,12 +1,12 @@
 ; game/damage/dweap.s: part damage's weapon down and the weapon records
-; (milestone 10, docs/GAME.md 2.4; docs/game-parts/damage.md). A GPL-2
+; (docs/GAME.md, the parts). A GPL-2
 ; derivative of upstream's p_pspr65.s (P_DropWeapon, lowerWeapon, wInfo,
 ; wInfoOf, weaponinfo).
 ;
 ;   P_DropWeapon  the player died: lowerWeapon
 ;   lowerWeapon   the weapon's psprite to its down state
 ;                 (setPsprite(ps_weapon, weaponinfo[readyweapon].downstate):
-;                 milestone 9's gw_setpsprite, its action through ACTTAB)
+;                 gw_setpsprite, its action through ACTTAB)
 ;   wInfo         X = A = the offset in weaponinfo of the ready weapon's
 ;                 record
 ;   wInfoOf       A = a weapon: X = A = its record's offset, 12 A (the low
@@ -14,7 +14,7 @@
 ;                 product is the record's near address less the table's)
 ;   weaponinfo    upstream's table (weaponinfo_t: ammo, up, down, ready,
 ;                 attack and flash states, a word each), in the core: a
-;                 caller of wInfo in any group reads it (request R2)
+;                 caller of wInfo in any group reads it
 
         .setcpu "65C02"
         .macpack longbranch
@@ -69,8 +69,7 @@
         .segment "GCORE"
 FC_HERE .set 0
 weaponinfo:                     ; the release's table (lgame.inc's U_WI_*:
-                                ;   llayout.py reads it; request R2, wave 2
-                                ;   as integrated)
+                                ;   llayout.py reads it)
 .repeat U_NUMWEAPONS, W
         .word .ident(.sprintf("U_WI_AMMO_%d", W))
         .word .ident(.sprintf("U_WI_UP_%d", W))

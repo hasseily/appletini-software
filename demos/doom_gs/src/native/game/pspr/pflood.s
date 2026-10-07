@@ -1,5 +1,5 @@
-; game/pspr/pflood.s: part pspr's sound flood (milestone 10, docs/GAME.md
-; 2.4, 4.1; docs/LEVELS.md 5.5; docs/game-parts/pspr.md). A GPL-2
+; game/pspr/pflood.s: part pspr's sound flood (docs/GAME.md; the flood
+; lists: docs/LEVELS.md). A GPL-2
 ; derivative of upstream's p_pspr65.s recursiveSound (P_RecursiveSound),
 ; made iterative with a work stack of 512 entries.
 ;
@@ -21,18 +21,18 @@
 ; return); here each level that passes the sound on pushes its entry and
 ; its part on a work stack of FL_DEPTH entries (two planes of FL_DEPTH
 ; bytes: the entry's low byte, its high bits with v and the part) in this
-; routine's group, after its code (docs/GAME.md 4.1: the group keeps its
+; routine's group, after its code (docs/GAME.md: the group keeps its
 ; data in its slot), and the callee's level runs in the same loop. A
 ; level's sector is not kept: it is the first level's (PS_ST) or the flood
-; entry of the level below it (LEVELS.md 5.5 planned 3 bytes an entry, the
+; entry of the level below it (LEVELS.md's plan had 3 bytes an entry, the
 ; sector too: 2 leave the group room for its code). The order of every stamp is upstream's. A flood deeper than
 ; FL_DEPTH is a stop (PS_GS_FLOOD, the sector in GS_ARG), never a silent
 ; cut: the deepest flood of an E1 map with every line open is 93, its bound
-; 500 (LEVELS.md 5.5).
+; 500 (LEVELS.md).
 ;
-; Two pieces of code kept here, marked where they are (docs/game-parts/
-; pspr.md R3 and R5, refused at wave 3's integration: the core is full,
-; and P_LineOpening's hot callers would load the flood's 1.9 KB group):
+; Two pieces of code kept here rather than in the core, marked where they
+; are (the core is full, and P_LineOpening's hot callers would load the
+; flood's 1.9 KB group):
 ;   - the flood lists (LVG1 FLIDX, FLENT) are read through the object API's
 ;     lt_get, whose entry i is the word at G_LTABAT + 2 i of LVG1, the
 ;     lists being after the line tables (llayout.py "LVG1": the line
@@ -70,7 +70,7 @@
         sta PS_V
         stz PS_SP               ; the work stack empty
         stz PS_SP+1
-        ldx #2                  ; (R3 refused) PS_FLI, PS_FLE: the
+        ldx #2                  ; (the header) PS_FLI, PS_FLE: the
 :       sec                     ;   index's and the entries' places as
         lda G_FLIDXAT,x         ;   lt_get entries
         sbc G_LTABAT
@@ -227,7 +227,7 @@ plane:  lda GT_3
         .assert <FL_DEPTH = 0, error, "the planes a whole number of pages"
 
 ; fl_ent: A = the flood entry A:X (a sector: LVG1 G_FLENTAT + the entry, a
-; byte), through lt_get (request R3 refused: the header)
+; byte), through lt_get (the header)
 fl_ent: sta GT_0                ; PS_FLE + the entry / 2
         txa
         lsr a
@@ -282,7 +282,7 @@ stamped:
 ; fl_end: PS_END = the end of PS_V's part (index word 1 or 3); fl_idx:
 ; A:X = word Y (0 the first entry, 1 the end of the entries without
 ; ML_SOUNDBLOCK, 2 the first with it, 3 the end) of PS_SEC's flood index
-; (LVG1 G_FLIDXAT + 8 s + 2 Y), through lt_get (request R3 refused)
+; (LVG1 G_FLIDXAT + 8 s + 2 Y), through lt_get (the header)
 fl_end: ldy #1
         bit PS_V
         bvc :+
@@ -313,8 +313,8 @@ fl_idx: sty GT_0                ; PS_FLI + 4 s + Y
 ; opening: C set when the opening of the sectors PS_OTH and PS_SEC is open
 ; (openrange > 0): openrange = min(the ceilings) - max(the floors), 32
 ; bits, the compares signed with the overflow corrected, as upstream's
-; openXY (p_map65.s:2412-2450). Request R5 (FCALL P_LineOpeningXY)
-; refused: the header
+; openXY (p_map65.s:2412-2450). Not an FCALL of P_LineOpeningXY: the
+; header
 opening:
         lda PS_SEC
         jsr sec_get

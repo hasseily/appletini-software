@@ -1,5 +1,5 @@
-; game/player/puse.s: part player's use of lines (milestone 10, docs/GAME.md
-; 2.2 TRVTAB, 2.4; docs/game-parts/player.md). A GPL-2 derivative of
+; game/player/puse.s: part player's use of lines (docs/GAME.md, TRVTAB).
+; A GPL-2 derivative of
 ; upstream's p_use65.s (P_UseLines with times64 and useRun,
 ; PTR_UseTraverse, PTR_NoWayTraverse).
 ;
@@ -21,7 +21,7 @@
 ; A traverser returns C set and A = 1 to go on, C clear and A = 0 to stop.
 ; useArg and lineArg have no code (the player's mobj handle is PY_THING,
 ; the intercept's line PY_LINE); useRun is pu_run, a local subroutine of
-; P_UseLines (request R2: INLINED).
+; P_UseLines.
 ;
 ; Every routine changes A, X, Y, GT_*, GA_*, the math's block and what its
 ; callees change.

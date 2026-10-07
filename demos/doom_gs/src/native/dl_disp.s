@@ -1,15 +1,15 @@
-; dl_disp.s: the frame's list (docs/PLAY.md 2.2), in the tic image's group
+; dl_disp.s: the frame's list (docs/PLAY.md), in the tic image's group
 ; DLG_DISP: d_main65.s's display (D_Display) as the steps the kernel runs
-; once the tic image has left W (docs/m11-parts/design.md R7), the other
+; once the tic image has left W, the other
 ; lists the brain hands the kernel (the boot's, a load's, the menu's, the
 ; automap's responder, the quit), and the render inputs of the player's
-; view (as the lockstep driver gdriver.s makes them: docs/GAME.md 3.4). A
+; view (docs/GAME.md). A
 ; GPL-2 derivative of upstream's src/iigs/d_main65.s (Doom8088: Apple IIgs
 ; Edition, GPL-2).
 ;
 ;   c_display   the frame by the game state: the intermission (WIW), the
 ;               finale (FINW), the title page (FINW, when it is new), a
-;               level's view (milestone 7's and 8's phases, OVLW with the
+;               level's view (the renderer's phases, OVLW with the
 ;               automap's overlay) or the full automap (AMAPW), then PALW
 ;               at a level's first frame or a new gamma, then P2DW's frame
 ;               (dl_p2d.s s2_frame: the poll, the effects, the palettes,
@@ -20,6 +20,9 @@
 ;               load image's nl_setup of G_GAMEMAP, the sign off, then
 ;               K_TIC E_RESUME
 ;   c_bootlist, c_menulist, c_cplist, c_amlist, c_quitlist
+;   c_setlist   SAVE SETTINGS (REQ_SAVESET): DLINIT's dli_save (the block
+;               written; its answer in MENUW's M_SAVERES), then the menu's
+;               frames again
 ;
 ; Each list ends the tic phase: the object API's caches back (go_flush)
 ; and the walk's planes back to MOBJP (the next image overwrites W); and
@@ -28,10 +31,10 @@
 ; kc_from: P2DW leaves the tic image's MATHW and AUXW in $6000-$65FF, and
 ; no list has a W step after P2DW's load; playdisk.py checks the bytes and
 ; P2DW's writes there), else from $60; each plane's pages below G_MOHWM
-; (planes_out; all three after a load, which sets a new G_MOHWM). The
-; speed plan's part ticloads (docs/speed-parts/ticloads.md).
+; (planes_out; all three after a load, which sets a new G_MOHWM)
+; (docs/SPEED.md).
 ;
-; While the menu benchmark is timed (docs/PLAY.md 15) a level frame's list
+; While the menu benchmark is timed (docs/PLAY.md) a level frame's list
 ; also calls the kernel's bt_mark at three boundaries (before K_MLOAD,
 ; after nb_frame, before K_END), and this group holds the timing's own
 ; routines (bt_start, bt_stop, bt_close: at the end of this file).
@@ -55,7 +58,8 @@
         .import am_req, am_begin, am_push, am_fin
         .importzp AMD_SRC, AMD_DST, AMD_COUNT, AM_DESC, AM_DESC_N
         .export c_display, c_loadlist, c_bootlist, c_menulist, c_cplist
-        .export c_amlist, c_quitlist, c_savelist, ri_make, planes_out
+        .export c_amlist, c_quitlist, c_savelist, c_setlist, ri_make
+        .export planes_out
         .export bt_start, bt_stop, bt_close
 
 PLR = G_PLAYER
@@ -94,7 +98,7 @@ FC_HERE .set DLG_DISP
 c_display:
         stz DL_STP
         lda #PH_REST            ; (the benchmark's timing: the phase after
-        sta BT_NX               ;   the tic phase, docs/PLAY.md 15)
+        sta BT_NX               ;   the tic phase, docs/PLAY.md)
         lda W_FSG               ; the old fill spans need the view shown
         sta W_FSW               ;   (WPAGE's W_FSG, W_FSW)
         stz W_FSG
@@ -175,20 +179,20 @@ c_level:
         beq :+
         ldx #AM_TITLEY
 :       stx VIEWBOT
-        inc DL_VIEWS            ; (the frame rate's count: docs/PLAY.md 8)
+        inc DL_VIEWS            ; (the frame rate's count: docs/PLAY.md)
         bne :+
         inc DL_VIEWS+1
 :       jsr ri_make
         lda #PH_3D              ; (timed: the front end after the tic
         sta BT_NX               ;   phase)
-        STLOAD img_wload        ; milestone 7's front end (far_wloadt's
+        STLOAD img_wload        ; the renderer's front end (far_wloadt's
                                 ;   runs: from $65, the tic image left
                                 ;   MATHW in $6000-$64FF, playdisk.py
                                 ;   asserts; by the copy engine)
         STCALL XS_nr_frame, #0
         lda #PH_MASK            ; (timed: the masked phase and the
         jsr st_mark             ;   bucket pass from here)
-        STLOAD img_mload        ; milestone 8's masked phase (far_mload's
+        STLOAD img_mload        ; the renderer's masked phase (far_mload's
                                 ;   runs)
         STCALL XS_nm_masked, #0
         lda AUTOMAP
@@ -248,7 +252,7 @@ c_poll: STLOAD img_p2dw
 ; The other lists
 ; ---------------------------------------------------------------------------
 
-; c_loadlist: a load (GAME.md 3.4): G_GAMEMAP's level, then E_RESUME
+; c_loadlist: a load (docs/GAME.md): G_GAMEMAP's level, then E_RESUME
 c_loadlist:
         stz DL_STP
         lda DL_FLAGS            ; F_LoadScreen (doWorldDone's)
@@ -337,6 +341,16 @@ c_savelist:
         STCALL KMAIN, #0
         jmp c_menu2
 
+; c_setlist: G_SaveSettings: DLINIT's dli_save, then MENUW again with
+; its state (M_SAVERES: the menu shows a failed write) and its frames
+c_setlist:
+        stz DL_STP
+        STLOAD img_dlinit
+        STCALL XS_dli_save, #0
+        STLOAD img_menuw
+        STCALL XS_m_load, #0
+        jmp c_menu2
+
 ; c_quitlist: I_Quit: DLINIT's quit (the music stops, the text screen),
 ; then the end
 c_quitlist:
@@ -373,7 +387,7 @@ st_callx:
         lda GT_2
         jmp st_byte
 ; st_mark: while the benchmark is timed (BT_PH not 0), a K_CALL of the
-; kernel's bt_mark with A = the phase that starts (docs/PLAY.md 15)
+; kernel's bt_mark with A = the phase that starts (docs/PLAY.md)
 st_mark:
         ldx BT_PH
         beq @off
@@ -415,7 +429,7 @@ st_load:
 
 ; ---------------------------------------------------------------------------
 ; ri_make: the render inputs (rlayout.py RENDER_INPUTS) from the game
-; state, as gdriver.s's (RENDER-MASKED.md 2.3): the player's mobj's x, y
+; state (docs/RENDER-MASKED.md): the player's mobj's x, y
 ; and angle; viewz, extralight, the fixed colormap, the invisibility power;
 ; each psprite's sprite, frame, sx, sy and PSPF; the player's sector's
 ; light. GAMMA is the menu's (it writes the render input).
@@ -555,7 +569,7 @@ kc_from:
 ; below G_MOHWM (1-3: one when it is 0, all three past the planes, as at the
 ; boot before a level's state is set), by one memory-API request, a
 ; descriptor a plane, from main to the bank (gcall.s's transport, its
-; template's spaces turned round and put back; docs/SPEED.md 10); and the
+; template's spaces turned round and put back; docs/SPEED.md); and the
 ; next K_TIC's planes list, the same pages (kpl_set). The slots past
 ; G_MOHWM in W then hold another image's bytes, never read: a slot becomes
 ; used (gt_pooltake raises G_MOHWM) before its planes are written
@@ -620,7 +634,7 @@ kpl_set:
         .include "playimg.inc"
 
 ; ---------------------------------------------------------------------------
-; The benchmark's phase timing (docs/PLAY.md 15). While it runs (from its
+; The benchmark's phase timing (docs/PLAY.md, the benchmark). While it runs (from its
 ; load's E_RESUME to G_TimeDemoEnd or Escape), the Phasor's VIA-A timer 1
 ; (pl_detect's; it counts the Apple bus cycles down, 65,536 a turn) is read
 ; at the frame's phase boundaries and the cycles go to five sums in DLM
@@ -650,7 +664,7 @@ BZ_E     = MT + 6               ; bt_close: the short span (4)
         .assert BT_J = BT_S + 25 && BT_SS = BT_S + 20, error, "BT_S .. BT_J"
 
 ; bt_ext: bt_mark's middle part (dl_kern.s), assembled for BT_EXT (main
-; $0844, free: MEMORY_MAP.md 3.2), where bt_start copies it. Y:X = the
+; $0844, free: docs/MEMORY_MAP.md), where bt_start copies it. Y:X = the
 ; cycles since the last boundary (mod 65,536). vbl_count's low byte kept;
 ; an interval of 3 VBLs or more may have passed the timer's turn (one of
 ; 2 or fewer lasts under 3 x 20,280 cycles and the VBL interrupt's

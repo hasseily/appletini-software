@@ -28,8 +28,7 @@ without a prefix, a constant without a prefix and an operand of rule 5
 occur only in instructions that have one size for the operand as
 written (stack relative, indirect through the direct page, jmp
 (abs)). Rules 4 and 5 are the examples of the manual; 8 bits for .tiny
-is an assumption. tests/test_imgmatch.py counts these cases, so a new
-upstream that depends on them will show.
+is an assumption.
 
 A branch to a place in the fragment of the branch is resolved at once,
 because the distance does not depend on the placement.

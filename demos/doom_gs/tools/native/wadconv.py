@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""The level converter of milestone 9 (docs/LEVELS.md 1, 6.1): DOOM1.WAD
+"""The level converter (docs/LEVELS.md): DOOM1.WAD
 and the release's level store to the native levels and the shared store,
 with no reference run.
 
-Usage:  python3 tools/native/wadconv.py [--maps 1-9] [--layout harness]
-        python3 tools/native/wadconv.py --store      (stage A's interfaces)
+Usage:  python3 tools/native/wadconv.py --store
 
-The inputs (docs/LEVELS.md 1.1): DOOM1.WAD for every lump it holds,
+The inputs (docs/LEVELS.md): DOOM1.WAD for every lump it holds,
 through our own transforms (maplumps.py); the release (build/release/
 doom-hd.hdv) for what upstream's build invented: each map's placement of
 its lumps in the level window (the store's entries), the per-map colour
@@ -15,35 +14,20 @@ SECTORS), the lump directory's order, and CM_COLD (r_data65.s: the
 textures whose composed columns avoid the replay's cache pages); the
 game's constant tables (states, weaponinfo, sprnames) from the release's
 memory by symbol. umodel.py rebuilds upstream's memory at the end of the
-load from them; this tool converts from that model:
-
-  --layout harness   per map, build/native/levels/conv/E1Mn/: the files
-                     of tools/native/levelconv.py (level.img, wtables.img,
-                     level.json, texmap.json, sectors-sides.json,
-                     mtables.img, patchmap.json, fuzzdark.bin) in format
-                     "render-level 3", the layout milestones 7 and 8 test
-                     with; inplay.json (docs/LEVELS.md 1.2)
-  --store            the game layout (docs/LEVELS.md 1.3-1.7): the shared
-                     texel and patch stores, each map's level part and
-                     load program, store.json, the bank files, each map's
-                     window.img, texmap.json and patchmap.json
-                     (lstore.py)
-
-level_check.py compares the harness layout with levelconv.py's output
-from ref816's end-of-load dumps (docs/LEVELS.md 5.3).
+load from them; this tool converts from that model, and --store writes
+the game layout (docs/LEVELS.md: the shared texel and patch
+stores, each map's level part and load program, store.json and the bank
+files; lstore.py).
 
 Where upstream's RAM holds history that no load of the map determines,
-the converter writes what the map's own load gives and the comparison
-names the difference (docs/LEVELS.md "Stage A as built"):
+the converter writes what the map's own load gives (docs/LEVELS.md):
 
   TXHT      upstream's textureheight is never cleared: it holds every
             texture loaded since the boot. The converter writes every
-            texture's height (TEXTURE1's); level_check.py requires
-            levelconv.py's entry to be 0 or equal, and equal for every
-            texture this map's load loads.
+            texture's height (TEXTURE1's).
   FLATCM    levelFlats writes the map's flats only (GSFLATn's count);
             the columns past them keep the map before's. The converter
-            writes 0 there; compared on the map's flats.
+            writes 0 there.
   SPRFR     a frame past a sprite's frames (flagged SPRFR_BAD: no map
             thing shows it) reads upstream's memory after the sprite's
             frames for its rotate and flipmask bytes; the converter
@@ -52,27 +36,20 @@ names the difference (docs/LEVELS.md "Stage A as built"):
 
 import argparse
 import hashlib
-import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from native import levelconv as LC, maplumps as ML, rlayout as R, \
-    umodel as U  # noqa: E402
+from native import levelconv as LC, rlayout as R, umodel as U  # noqa: E402
 
 ROOT = HERE.parent.parent
-OUT = ROOT / 'build' / 'native' / 'levels'
-CONV = OUT / 'conv'
 FORMAT = LC.FORMAT
 SLOT = LC.SLOT
 TAIL = LC.TAIL
 SKY_COLUMNS = LC.SKY_COLUMNS
-SKY_PIC_NUMBER = -2
-# offsets.inc: spriteframe_t (lumps, flipmask, rotate), 19 bytes
-SF_LUMPS = 8
 MAXSPRITEFRAMES = 29
 
 
@@ -269,7 +246,7 @@ def u16_le(b: bytes, at: int) -> int:
 
 
 # ---------------------------------------------------------------------------
-# The conversion, harness layout (levelconv.py's)
+# The conversion, the renderer's level layout (levelconv.py's)
 # ---------------------------------------------------------------------------
 
 def lump_bytes(ld: U.Load, lump: int) -> bytes:
@@ -277,8 +254,8 @@ def lump_bytes(ld: U.Load, lump: int) -> bytes:
 
 
 def convert(gd: U.GameData, ld: U.Load) -> Tuple[LC.Level, Dict[str, Any]]:
-    """The level in levelconv.py's layout, and the facts level_check.py
-    and inplay.json need (the textures loaded, the slots' sources)."""
+    """The level in levelconv.py's layout, and the facts inplay.json
+    needs (the textures loaded, the slots' sources)."""
     rel = gd.rel
     m = ld.mem
     md = MapData(ld)
@@ -514,8 +491,7 @@ def convert(gd: U.GameData, ld: U.Load) -> Tuple[LC.Level, Dict[str, Any]]:
         'sprites': sprite['info'],
     }
     texmap = {'format': 'render-texmap 1', 'slots': slots}
-    level = LC.Level(info, banks, wtables, texmap, LC.sector_side_manifest(),
-                     sprite['mtables'], sprite['patchmap'], fz)
+    level = LC.Level(info, banks, wtables, texmap, sprite['mtables'], fz)
     facts = {'loaded': sorted(cols.loaded), 'flats': nflats,
              'bad_frames': sprite['bad_frames'],
              'colormaps': colormaps(gsview, colormap)}
@@ -655,11 +631,8 @@ def sprite_part(gd: U.GameData, ld: U.Load, md: MapData,
             'txmp': {str(tex): {'lump': lump, 'why': why}
                      for tex, (lump, why) in txmp.items()},
             'tail': TAIL, 'weapons': weapons}
-    patchmap = {'format': 'render-patchmap 1',
-                'entries': [[e['bank'], e['at'], e['size'] + TAIL,
-                             e['address']] for e in store]}
     return {'checks': checks, 'info': info, 'mtables': mtables,
-            'patchmap': patchmap, 'txmp_wm': txmp_wm,
+            'txmp_wm': txmp_wm,
             'bad_frames': bad_frames}
 
 
@@ -724,7 +697,7 @@ def weapon_part(ld: U.Load, sym, frames, index, resident,
 
 
 # ---------------------------------------------------------------------------
-# inplay.json (docs/LEVELS.md 1.2)
+# inplay.json (docs/LEVELS.md)
 # ---------------------------------------------------------------------------
 
 def in_play(gd: U.GameData, ld: U.Load, level: LC.Level) -> Dict[str, Any]:
@@ -780,61 +753,18 @@ def in_play(gd: U.GameData, ld: U.Load, level: LC.Level) -> Dict[str, Any]:
 # main
 # ---------------------------------------------------------------------------
 
-def write_harness(level: LC.Level, inplay: Dict[str, Any], out: Path
-                  ) -> Path:
-    LC.write(level, out)
-    (out / 'inplay.json').write_text(json.dumps(inplay, indent=1) + '\n')
-    return out
-
-
-def parse_maps(text: str) -> List[int]:
-    out = []
-    for part in text.split(','):
-        if '-' in part:
-            a, b = part.split('-')
-            out += list(range(int(a), int(b) + 1))
-        else:
-            out.append(int(part))
-    return out
-
-
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('--maps', default='1-9')
-    parser.add_argument('--layout', choices=('harness',), default='harness')
-    parser.add_argument('--out', type=Path, default=CONV)
-    parser.add_argument('--store', action='store_true')
-    args = parser.parse_args(argv)
+    parser.add_argument('--store', action='store_true', required=True)
+    parser.parse_args(argv)
     for path in (U.RELEASE, U.WAD_PATH, U.LINKMAP):
         if not path.exists():
             print('%s is missing: run python3 tools/fetch_upstream.py and '
                   'python3 tools/v816/imgmatch.py first' % path,
                   file=sys.stderr)
             return 1
-    gd = U.game_data()
-    if args.store:
-        from native import lstore
-        return lstore.main_store(gd)
-    failed = False
-    for gamemap in parse_maps(args.maps):
-        try:
-            ld = U.load(gd, gamemap)
-            level, facts = convert(gd, ld)
-            inplay = in_play(gd, ld, level)
-        except (ConvError, U.ModelError, ML.LumpError) as error:
-            print('E1M%d: FAILED: %s' % (gamemap, error))
-            failed = True
-            continue
-        d = write_harness(level, inplay, args.out / ('e1m%d' % gamemap))
-        c = level.info['counts']
-        print('E1M%d: %d sectors, %d segs, %d textures, %d slots, %d patch '
-              'lumps, colmem $%06X; in play: %s -> %s' % (
-                  gamemap, c['sectors'], c['segs'], c['textures'],
-                  len(level.texmap['slots']),
-                  len(level.info['sprites']['store']),
-                  ld.columns.colmem,
-                  [t['name'] for t in inplay['textures']], d))
-    return 1 if failed else 0
+    from native import lstore
+    return lstore.main_store(U.game_data())
 
 
 if __name__ == '__main__':

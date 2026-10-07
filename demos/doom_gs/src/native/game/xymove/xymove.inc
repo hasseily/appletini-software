@@ -1,5 +1,5 @@
-; game/xymove/xymove.inc: part xymove's places (milestone 10, docs/GAME.md
-; 2.4 row xymove, 4.4; docs/game-parts/xymove.md). GPL-2, the port's own.
+; game/xymove/xymove.inc: part xymove's places (docs/GAME.md). GPL-2, the
+; port's own.
 ; Included after ggame.inc.
 ;
 ; The scratch block SB_XYMOVE (32 B): what P_XYMovement and the slide keep
@@ -21,7 +21,7 @@
 ; start from the mobj (x, y, radius and the momentum's signs), which no
 ; trace changes. hitSlideLine's lineangle, deltaangle and lengths
 ; (HS_LA, HS_DA, HS_LEN) are GT_0-11: between its products only
-; milestone 6's math runs, which keeps to the math block.
+; the native math runs, which keeps to the math block.
 
 XY              = SB_XYMOVE
 XY_MO           = XY + 0        ; 2
@@ -46,7 +46,6 @@ D_C             = 8
 
 ; levelconv.py's SKY_PIC: a ceiling pic of -2, upstream's skyflatnum
 ; (r_data65.s; tools/native/levelconv.py pic_byte): ggame.inc's SKY_PIC
-; (docs/game-parts/xymove.md, request R3; wave 5 as integrated)
 XY_SKYPIC       = SKY_PIC
 
 ; MAXMOVE (30.0) and its half, STOPSPEED ($1000), FRACUNIT / 4 ($4000):

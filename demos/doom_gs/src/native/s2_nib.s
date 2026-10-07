@@ -1,10 +1,9 @@
 ; s2_nib.s: the nibble tables, gamma and a picture's palettes
-; (docs/SCREENS.md 1.3, 1.5.7; part s2pal, docs/m11-parts/s2pal.md). The
-; shared object s2_nib, linked into MENUW, WIW, FINW and PALW (4.1's size
-; table). Written from upstream's src/iigs/i_viigs65.s: buildNibtab,
-; gammaColor, drawPicture's palette part (its rows, its palettes with
-; gamma, its nibble tables) [R i_viigs65.s:565-610, :705-736,
-; :1226-1295].
+; (docs/SCREENS.md, the palettes; part s2pal). The shared object s2_nib,
+; linked into MENUW, WIW, FINW and PALW. Written from upstream's
+; src/iigs/i_viigs65.s: buildNibtab, gammaColor, drawPicture's palette part
+; (its rows, its palettes with gamma, its nibble tables) [R
+; i_viigs65.s:565-610, :705-736, :1226-1295].
 ;
 ; The 16 nibble tables (upstream's NIBTAB) are S2NIB in bank S2PAL
 ; (S2P_NIB + palette * $400): a 1 KB table is built in W at s2_nbuf (the

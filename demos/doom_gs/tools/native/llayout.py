@@ -1,15 +1,15 @@
-"""The game layout of milestone 9 (docs/LEVELS.md 1.3, 1.6, 2.2, 3.2):
+"""The game layout (docs/LEVELS.md):
 the RamWorks bank map, the level window's records, the level store's
 format, in one place, in tools/native/rlayout.py's family (rlayout.py
-keeps the banks milestones 7 and 8 fixed; this module takes them from it
+keeps the renderer's banks fixed; this module takes them from it
 and places the rest around them; check() fails on a bank used twice or a
 record past its region).
 
-The banks (docs/LEVELS.md 1.6 as stage A measured it: 112 of 126 with
-the later milestones' budgets):
+The banks (docs/LEVELS.md as stage A measured it: 112 of 126 with
+the later parts' budgets):
 
-    1-5, 72-74, 91-97, 125, 126  spare (17; bank 5 holds the test
-                        pre-states of the harness and the test disk)
+    1-5, 72-74, 91-97, 125, 126  spare (17; 72-74, 91, 92 since taken
+                        by the game, below)
     6, 7, 8             LVSEG, LVMAP, RENDB (rlayout.py)
     9-31, 56-63         TEX: the texel store (one canonical slot block a
                         texture, 128 bytes a column: 31 banks, first fit
@@ -31,18 +31,18 @@ the later milestones' budgets):
                         design's 21 estimated without it)
     98, 99              LCODE (the load phase's image), GTAB (the game's
                         constant tables)
-    100-104, 105-110    songs and effects, 2D (milestone 11)
-    111                 LVS (milestone 10's sight and move tables)
+    100-104, 105-110    songs and effects, 2D (the screens)
+    111                 LVS (the game's sight and move tables)
     112-115             CODE (rlayout.py)
     116-122             FSTEP, MT_TBANK, MT_RLO, MT_RHI (rlayout.py)
-    123, 124            LOGTAB (milestone 10)
+    123, 124            LOGTAB (the game)
 
-Milestone 10's skeleton (docs/GAME.md 1, "Skeleton as built") makes these
-layouts final: banks 72, 73 (GCODE0, GCODE1: the tic phase's images), 74
-(MOBJP: the thinker walk's planes and the sight hint planes), 91 (DEMOB),
-92 (GTEST, test builds); the mobj's thinker next, function and tics leave
-group A for the planes; the specials get free lists; LVS gets LNSECF,
-LNSECB and RJROW (the GTABS step); the globals block gains section 1.5's
+The game (docs/GAME.md) makes these layouts final: banks 72, 73 (GCODE0,
+GCODE1: the tic phase's images), 74 (MOBJP: the thinker walk's planes and
+the sight hint planes), 91 (DEMOB), 92 (GTEST, reserved: no build uses it
+now); the mobj's thinker next, function and tics leave group A for the
+planes; the specials get free lists; LVS gets LNSECF,
+LNSECB and RJROW (the GTABS step); the globals block gains the game's
 globals; validcount is one count, the frame block's VALIDCOUNT (G_VALID
 is its alias). tools/native/glayout.py adds the tic phase.
 """
@@ -57,8 +57,8 @@ sys.path.insert(0, str(HERE.parent))
 
 from native import rlayout as R  # noqa: E402
 
-BANKS_TOTAL = 126               # RamWorks banks 1-126 (NATIVE.md 15.1 row
-                                #   8: 8 MB, bank 127 excluded; 0 is aux 0)
+BANKS_TOTAL = 126               # RamWorks banks 1-126 (8 MB, bank 127
+                                #   excluded; 0 is aux 0)
 ROOM = R.BANK_ROOM              # $0200-$BFFF of a bank
 ROOM_BYTES = ROOM[1] - ROOM[0]
 
@@ -70,8 +70,8 @@ RECSP, RECW = R.RECSP, R.RECW
 LVG0, LVG1, LVG2, LVC = 65, 66, 67, 68
 MOBJ = tuple(range(69, 72))     # stage C: 3 banks
 ZONE0, ZONE1 = 75, 76
-# milestone 10 (docs/GAME.md 1.10): the tic phase's code images, the
-# planes, the demo that plays, the test bank
+# the game (docs/GAME.md): the tic phase's code images, the
+# planes, the demo that plays, a reserved bank (GTEST, unused)
 GCODE0, GCODE1 = 72, 73
 MOBJP = 74
 DEMOB, GTEST = 91, 92
@@ -83,11 +83,11 @@ LVS = 111
 CODE = R.CODE
 TABLES = R.FSTEP_BANKS + (R.MT_TBANK, R.MT_RLO, R.MT_RHI)
 LOGTAB = (123, 124)
-# (1-5 stay first: ldisk.py's CRC_BANK is SPARE[3], PRE_BANK SPARE[4]: the
-# test data of milestone 9)
+# (1-5 stay first: CRC_BANK is SPARE[3], PRE_BANK SPARE[4], the names the
+# level part's earlier test data had; nothing in the disk build writes them)
 SPARE = (1, 2, 3, 4, 5, 93, 94, 95, 96, 97, 125, 126)
 
-# The persistent globals (MEMORY_MAP.md 3.1): the map whose variant
+# The persistent globals (MEMORY_MAP.md): the map whose variant
 # columns and tails are in the shared stores (0: the canonical ones); the
 # level's counts (words) after rlayout.LVCOUNT's sectors and sides: the
 # lines, subsectors, segs and nodes (the bridge manifest's counts; the
@@ -96,7 +96,7 @@ LV_VARMAP = 0x03A4
 LVCOUNT2 = 0x03A6
 LVCOUNT2_END = LVCOUNT2 + 8
 
-# ---- LVG0: the lines, 32 bytes (docs/LEVELS.md 3.2) -----------------------
+# ---- LVG0: the lines, 32 bytes (docs/LEVELS.md) -----------------------
 LINE = {'V1X': 0, 'V1Y': 2, 'V2X': 4, 'V2Y': 6, 'DX': 8, 'DY': 10,
         'SIDE0': 12, 'SIDE1': 14, 'TOP': 16, 'BOTTOM': 18, 'LEFT': 20,
         'RIGHT': 22, 'TAG': 24, 'SPECIAL': 25, 'FLAGS': 26, 'SLOPE': 27,
@@ -134,8 +134,8 @@ GSVIEW_SIZE = 1216              # 14 tints x 16 colours x 2, the pairs
                                 #   (256), A and B (256 each)
 LVC_FUZZ = LVC_GSVIEW + GSVIEW_SIZE
 LVC_END = LVC_FUZZ + 256
-# where the colormaps and FUZZDARK go (PRIVATE; MEMORY_MAP.md 3.2, 3.4,
-# 5): light levels 0-31 of A at main $2000, of B at $4000; levels 32 and
+# where the colormaps and FUZZDARK go (PRIVATE; MEMORY_MAP.md):
+# light levels 0-31 of A at main $2000, of B at $4000; levels 32 and
 # 33 of A at $0400, of B at $0600; FUZZDARK at aux 0 $0800 (the replay's)
 MAIN_CMAPA, MAIN_CMAPB = 0x2000, 0x4000
 MAIN_CMAPA_HI, MAIN_CMAPB_HI = 0x0400, 0x0600
@@ -164,14 +164,11 @@ def _gtab() -> Dict[str, Tuple[int, int]]:
 
 GT = _gtab()
 
-# ---- the level part's map things (docs/LEVELS.md 1.3), 8 bytes ----------
+# ---- the level part's map things (docs/LEVELS.md), 8 bytes ----------
 MTHING = {'X': 0, 'Y': 2, 'ANGLE': 4, 'OPTIONS': 5, 'KIND': 6}
 MTHING_SIZE = 8
 MT_PLAYER_START = 0xFE          # KIND: type 1, the player's start
 MT_NEVER = 0xFF                 #   a thing no skill spawns
-# the level part's compact sector (the game's form: special, tag)
-SECC_SIZE = 3
-
 # ---- the store (lstore.py) -----------------------------------------------
 STORE_MAGIC = b'LVST'
 STORE_VERSION = 1
@@ -180,16 +177,15 @@ CODEC_RAW = 0
 # a2vm models it): "AMEM" 1, a count (1-16), 0, 0, then 16-byte
 # descriptors: op (1 COPY, 2 FILL), flags (bit 0 PRIVATE), the source
 # (space, bank, address), the destination, the length, the fill byte
-AMEM_MAGIC = b'AMEM\x01'
 AMEM_MAX = 16
 AMEM_COPY, AMEM_FILL, AMEM_PRIVATE = 1, 2, 1
 REQUEST_BYTES = 45 * 1024       # the data of one request at most
-# the load program's steps (docs/LEVELS.md 2.2)
+# the load program's steps (docs/LEVELS.md)
 STEPS = {'END': 0, 'COPYREQ': 1, 'VARIANTS': 2, 'LINES': 3, 'GROUP': 4,
          'FLOOD': 5, 'CMAPS': 6, 'PRIVREQ': 7, 'SPAWN': 8, 'SPECIALS': 9,
-         # milestone 10: LVS's tables (lgeom.s lg_gtabs), a game step
+         # LVS's tables (lgeom.s lg_gtabs), a game step
          'GTABS': 10}
-# the bank file format (demos/doom/src/kernel/loader.s): "A2DM", a
+# the bank file format (the earlier Appletini Doom port's): "A2DM", a
 # segment count, segments of bank, address, length, then the bytes
 BANKFILE_MAGIC = b'A2DM'
 BANKFILE_MAX_SEGS = 49
@@ -237,11 +233,10 @@ LP_STEP = 3
 LINEC = {'V1X': 0, 'V1Y': 2, 'V2X': 4, 'V2Y': 6, 'SIDE0': 8, 'SIDE1': 10,
          'FLAGS': 12, 'SPECIAL': 13, 'TAG': 14}
 LINEC_SIZE = 15
-SECC_FIELDS = {'SPECIAL': 0, 'TAG': 1}
 ML_TWOSIDED, ML_SOUNDBLOCK = 4, 64
 GSVIEW_A = 14 * 16 * 2 + 256    # the GSVIEWn record's table A (B follows)
 
-# ---- stage B: the load phase (docs/LEVELS.md 2.2, 2.3, 4.2, 4.3) --------
+# ---- stage B: the load phase (docs/LEVELS.md) --------
 # Its stop codes, in LV_STATUS (main $03AE, after the level's counts): the
 # loader stores the code there and executes BRK (the renderer's rule)
 LV_STATUS = 0x03AE
@@ -254,10 +249,10 @@ LS = {'OK': 0, 'DIR': 1, 'MAP': 2, 'CODEC': 3, 'PROGRAM': 4, 'AMEM': 5,
       # or rows or more (P_InitBlockRows' I_Error)
       'THINGS': 11, 'ZONE': 12, 'SPECIALS': 13, 'NODES': 14, 'SECL': 15,
       'ACTION': 16, 'BLOCKMAP': 17,
-      # milestone 10: the game core in the load image: a slot past the
+      # the game core in the load image: a slot past the
       # planes, the object API misused (a dirty mark with no line got)
       'PLANES': 18, 'API': 19}
-# W in the load phase (MEMORY_MAP.md 3.5's mode window): MATHW and AUXW
+# W in the load phase (MEMORY_MAP.md's mode window): MATHW and AUXW
 # from $6000 (the render images' bytes), the load code from $6600 (to
 # $9FFF), then the data
 LW_CODE, LW_CODE_END = 0x6600, 0xA000
@@ -279,9 +274,9 @@ LW_DNLO, LW_DNHI = 0xB200, 0xB300
 # CMAPS's pages and FLOOD's zeros (after GROUP's scratch)
 LW_CMA, LW_CMB, LW_CMI, LW_CMO = 0xB400, 0xB500, 0xB600, 0xB700
 LW_ZERO = 0xB400
-LW_MOBJINFO = 0xB000            # reserved (4.2); stage C reads a record a spawn
+LW_MOBJINFO = 0xB000            # reserved; stage C reads a record a spawn
 #                                 (LW_MINFO, from GTAB) instead
-# the buffers (docs/LEVELS.md 4.2's $BC80-$BFFF)
+# the buffers (docs/LEVELS.md's $BC80-$BFFF)
 LW_HDR = 0xBC80                 # the map's header (LH_SIZE)
 LW_DIR = LW_HDR + 0xC0          # the store's directory (STORE_DIR_SIZE)
 LW_STEPS = LW_DIR + 0x40        # the program's head and steps
@@ -295,7 +290,7 @@ LW_SR = LW_LC + 16              # a sector's game record (32)
 LW_SUB = LW_SR + 32             # a subsector record (4)
 LW_BE = LW_SUB + 4              # a block entry, a word (8)
 LW_END = LW_BE + 8
-# the load's zero page (docs/LEVELS.md 4.3): $38-$41 the program, $48-$AF
+# the load's zero page (docs/LEVELS.md): $38-$41 the program, $48-$AF
 # the steps and the transport
 LZP1 = [('LP_MAP', 1), ('LP_STEP', 1), ('LP_NSTEP', 1), ('LP_NREQ', 1),
         ('LP_PB', 1), ('LP_ARG', 1), ('LP_P', 2), ('LP_N', 2)]
@@ -307,11 +302,10 @@ LZP2 = [('AM_P', 2), ('AM_N', 2), ('AM_W', 1),
         ('LG_FRESH', 1), ('LG_A', 4), ('LG_E', 2), ('LG_C', 2), ('LG_V', 2)]
 LZP1_RANGE = (0x38, 0x42)
 LZP2_RANGE = (0x48, 0xB0)
-LOAD_STACK = 128                # MEMORY_MAP.md 2: the level load's budget
-# the a2vm test driver's map list (ldriver.s, DESC): at most this many
+# a map list's length at most (the level part's former a2vm driver's)
 DL_MAX = 32
 
-# ---- stage C: the game state (docs/LEVELS.md 2.4-3.3) ---------------------
+# ---- stage C: the game state (docs/LEVELS.md) ---------------------
 # The mobjs: a slot is a RTHING slot (rlayout.RTHINGS: the render part, 24
 # bytes in RTH, its four spare bytes the angle's low word) and three game
 # parts of 24 bytes at the same address in MOBJA, MOBJB, MOBJC (slot i at
@@ -319,18 +313,16 @@ DL_MAX = 32
 # first (poolsize = the map's things, at most POOL_MAX), then the zone
 # mobjs. MOBJ's other three banks of the design (72-74) are spare.
 MOBJA, MOBJB, MOBJC = MOBJ[0], MOBJ[1], MOBJ[2]
-MOBJ_BANKS = (MOBJA, MOBJB, MOBJC)
 MOBJ_CAP = R.RTHINGS.capacity
 POOL_MAX = 512                  # TP_MAX (p_spawn65.s)
 MO_SIZE = 24
 TH_ANGLO = 20                   # RTHING: the angle's low word
-# group A (milestone 10, docs/GAME.md 1.2: the thinker next, the function
+# group A (docs/GAME.md: the thinker next, the function
 # and the tics are the planes' (MOBJP); their bytes 2-4 and 18-19 are
-# spare, so every other field keeps milestone 9's offset)
+# spare, so every other field keeps the level part's offset)
 MA = {'THPREV': 0, 'TYPE': 5, 'SPREV': 6,
       'BNEXT': 8, 'BPREV': 10, 'SUBSEC': 12, 'TOUCH': 14, 'STATE': 16,
       'HEALTH': 20, 'TARGET': 22}
-MA_SPARE = (2, 3, 4, 18, 19)
 MB = {'FLOORZ': 0, 'CEILZ': 4, 'DROPZ': 8, 'RADIUS': 12, 'HEIGHT': 16,
       'FLAGS': 20}
 MC = {'MOMX': 0, 'MOMY': 4, 'MOMZ': 8, 'MOVEDIR': 12, 'THRESH': 13,
@@ -371,7 +363,7 @@ SN_POOL = 32
 SNODES = R.Array('sector node', ZONE1, ROOM[0], SN_SIZE, SN_CAP)
 SN = {'SECTOR': 0, 'FREE': 1, 'THING': 2, 'TPREV': 4, 'TNEXT': 6,
       'SPREV': 8, 'SNEXT': 10, 'VISITED': 12}
-# The planes (milestone 10, docs/GAME.md 1.3, 1.6): bank MOBJP. The thinker
+# The planes (docs/GAME.md): bank MOBJP. The thinker
 # walk's four planes of PLANE_SLOTS bytes at the W addresses the tic phase
 # holds them at (far_pload copies their pages into W at the tic phase's
 # start; the load image reaches them far): TNL, TNH (the next thinker's
@@ -381,11 +373,10 @@ SN = {'SECTOR': 0, 'FREE': 1, 'THING': 2, 'TPREV': 4, 'TNEXT': 6,
 # 0 none: upstream's SIGHTHINT) of HINT_SLOTS.
 PLANE_SLOTS = 768
 PL_TNL, PL_TNH, PL_KIND, PL_TICS = 0xB400, 0xB700, 0xBA00, 0xBD00
-PLANES_W = (PL_TNL, PL_TICS + PLANE_SLOTS)
 HINT_SLOTS = 2048
 PL_HINTL, PL_HINTH = ROOM[0], ROOM[0] + HINT_SLOTS
 KIND_CLEAN = 0x80
-# LVS (milestone 10, docs/GAME.md 1.6): each line's front and back sector
+# LVS (docs/GAME.md): each line's front and back sector
 # (a byte each, the front twice for a one-sided line: upstream's LNSEC),
 # each sector's REJECT row (sector x numsectors, 2 bytes: upstream's
 # SS_ROW by sector), made by the load's GTABS step
@@ -406,11 +397,7 @@ FN = {'NONE': 0, 'MOBJ': 1, 'BRAINLESS': 2, 'REMOVETHING': 3,
       'REMOVETHINKER': 4, 'PLAT': 5, 'DOOR': 6, 'FLOOR': 7, 'FLASH': 8,
       'STROBE': 9, 'GLOW': 10, 'SCROLL': 11, 'FREE': 12}
 FN_FREE_NAME = '(free)'
-# each special kind's function
-SPEC_FN = {'plat': 'PLAT', 'door': 'DOOR', 'floor': 'FLOOR',
-           'lightflash': 'FLASH', 'strobe': 'STROBE', 'glow': 'GLOW',
-           'scroll': 'SCROLL'}
-# The game globals (MEMORY_MAP.md 3.3's hot game globals, after TEXTRANS
+# The game globals (MEMORY_MAP.md's hot game globals, after TEXTRANS
 # and LNMAP): main $1C80-$1FFF, the player first. P_Random's and
 # M_Random's indexes stay at main $03EE, $03EF (MATH.md).
 LNMAP = R.LNMAP                 # rlayout: ML_MAPPED, a bit a line (2,048:
@@ -435,14 +422,15 @@ GLOBAL_FIELDS = [
     ('G_DSKILL', 2), ('G_SAVESLOT', 2), ('G_SECRETEXIT', 2),
     ('G_DEFDEMO', 5), ('G_CMDS', 64), ('G_PREVSTATE', 2),
     ('G_MENUACTIVE', 2),
-    # milestone 10 (docs/GAME.md 1.5): each special kind's free list (a
+    # the game (docs/GAME.md): each special kind's free list (a
     # head, $FFFF none), the zone mobjs' free list (through the TNL, TNH
     # planes) and the planes' high-water slot; P_CheckSight's last pair
     # and answer ($FFFE: stale, names no object); the line record of
     # lineBlocks (LR_N lines * 2 or $FF, LR_LINES 2 * the line, as
     # upstream's); the action that started a load (the load protocol);
     # showMessages and _g_message_dontfuckwithme; wi_stuff65.s's game-side
-    # counters (WI_*); the lockstep and test state (GT_*)
+    # counters (WI_*); the game's checking state (GT_*: the demo stream,
+    # the tic count, the flags)
     ('G_SPFREE', 2 * len(SPEC_KINDS)), ('G_ZMFREE', 2), ('G_MOHWM', 2),
     ('CS_PREV1', 2), ('CS_PREV2', 2), ('CS_PREVR', 1),
     ('G_LROK', 1), ('G_LRUSE', 1), ('G_LRN', 1), ('G_LRLINES', 48),
@@ -460,74 +448,25 @@ GLOBAL_FIELDS = [
     ('GT_STREAM', 2), ('GT_TIMEP', 2), ('GT_SNDLOG', 2), ('GT_HITLOG', 2),
     ('GT_REKEY', 2), ('GT_TIC', 4), ('GT_FLAGS', 1)]
 G = R.allocate(GLOBAL_FIELDS, GBLOCK, GBLOCK_END)
-# validcount is one count (docs/GAME.md 1.7): the frame block's VALIDCOUNT;
+# validcount is one count (docs/GAME.md): the frame block's VALIDCOUNT;
 # G_VALID is its name in the game's sources
 G_VALID = R.FRAME['VALIDCOUNT']
 GLOBALS_END = max(G[n] + s for n, s in GLOBAL_FIELDS)
 PRND, MRND = 0x03EE, 0x03EF     # math.inc MT_PRND, MT_MRND
-# the canonical globals and where they are: (field, size) or a level
-# count's address, or a GTAB table (the boot's constants)
-GLOBAL_PLACE = {
-    'g_game65.s:_g_gameaction': 'G_GAMEACTION',
-    'g_game65.s:_g_gamestate': 'G_GAMESTATE',
-    'g_game65.s:_g_gameskill': 'G_GAMESKILL',
-    'g_game65.s:_g_gamemap': 'G_GAMEMAP',
-    'g_game65.s:_g_gametic': 'G_GAMETIC', 'g_game65.s:_g_basetic': 'G_BASETIC',
-    'g_game65.s:_g_totalkills': 'G_TOTALKILLS',
-    'g_game65.s:_g_totallive': 'G_TOTALLIVE',
-    'g_game65.s:_g_totalitems': 'G_TOTALITEMS',
-    'g_game65.s:_g_totalsecret': 'G_TOTALSECRET',
-    'g_game65.s:_g_wminfo': 'G_WMINFO',
-    'g_game65.s:_g_respawnmonsters': 'G_RESPAWN',
-    'g_game65.s:_g_usergame': 'G_USERGAME',
-    'g_game65.s:_g_timingdemo': 'G_TIMINGDEMO',
-    'g_game65.s:_g_demoplayback': 'G_DEMOPLAY',
-    'g_game65.s:_g_singledemo': 'G_SINGLEDEMO',
-    'g_game65.s:demobuffer': 'G_DEMOBUF', 'g_game65.s:demolength': 'G_DEMOLEN',
-    'g_game65.s:demo_p': 'G_DEMOP', 'g_game65.s:starttime': 'G_STARTTIME',
-    'g_game65.s:totalleveltimes': 'G_TOTALTIMES',
-    'g_game65.s:d_skill': 'G_DSKILL', 'g_game65.s:savegameslot': 'G_SAVESLOT',
-    'g_game65.s:secretexit': 'G_SECRETEXIT',
-    'g_game65.s:defdemoname': 'G_DEFDEMO', 'g_game65.s:cmds': 'G_CMDS',
-    'g_game65.s:prevgamestate': 'G_PREVSTATE',
-    'm_menu65.s:_g_menuactive': 'G_MENUACTIVE',
-    'p_think65.s:_g_leveltime': 'G_LEVELTIME',
-    'p_think65.s:_g_thinkerclasscap': 'G_THFIRST',
-    'p_map65.s:validcount': 'G_VALID',
-    'p_map65.s:LR_OK': 'G_LROK', 'p_map65.s:LR_USE': 'G_LRUSE',
-    'p_map65.s:LR_N': 'G_LRN', 'p_map65.s:LR_LINES': 'G_LRLINES',
-    'p_sight65.s:CS_PREV1': 'CS_PREV1', 'p_sight65.s:CS_PREV2': 'CS_PREV2',
-    'p_sight65.s:CS_PREVR': 'CS_PREVR',
-    'p_map65.s:_g_ceilingline': 'G_CEILLINE',
-    'p_map65.s:_s_sector_list': 'G_SECLIST', 'p_map65.s:SN_FREE': 'G_SNFREE',
-    'p_map65.s:MP_CLOB': 'G_MPCLOB',
-    'p_setup65.s:_g_bmapwidth': 'G_BMW', 'p_setup65.s:_g_bmapheight': 'G_BMH',
-    'p_setup65.s:_g_bmaporgx': 'G_BMORGX',
-    'p_setup65.s:_g_bmaporgy': 'G_BMORGY',
-    'p_setup65.s:_g_blockmap': 'G_BMAP',
-    'p_setup65.s:_g_thingPoolSize': 'G_POOLN',
-    'p_sight65.s:LOGP': 'G_LOGP'}
-# the canonical caches the native layout does not keep (docs/LEVELS.md 5.2
-# exclusion 4: no leaf; the comparison skips them). Milestone 10 keeps the
-# line record (LR_*), P_CheckSight's pair (CS_PREV*) and mobj.sightline
-# (docs/GAME.md 0.3 facts 2-4); TP_HW and the dead guard's state stay out
-# (GAME.md 3.5, R4 and R5)
-NOT_KEPT = ('p_spawn65.s:TP_HW', 'p_path65.s:GW_TAG', 'p_path65.s:G_ID')
-NOT_KEPT_FIELDS = ('line.gstamp',)
-# the native's "stale" handle (docs/GAME.md 1.8): a CS_PREV that names no
+# the native's "stale" handle (docs/GAME.md): a CS_PREV that names no
 # object
 STALE = 0xFFFE
-# the test pre-states (harness and test disk only: the game has none): the
-# game globals block, then P_Random's and M_Random's indexes, one record a
-# setup in a spare bank (docs/LEVELS.md 5.4)
+# the pre-states (a record format kept from the level part's former test
+# disk; the game writes none): the game globals block, then P_Random's and
+# M_Random's indexes, one record a setup in a spare bank
 PRE_BANK = SPARE[4]
 PRE_RECORD = 0x0410
 PRE_RND = GLOBALS_END - GBLOCK      # (the block's used part)
-# milestone 10: then validcount (the frame block's VALIDCOUNT, G_VALID)
+# then validcount (the frame block's VALIDCOUNT, G_VALID)
 PRE_VALID = PRE_RND + 2
 PRE_MAX = (ROOM_BYTES) // PRE_RECORD
-# ---- milestone 10: the object API and the game core's buffers --------------
-# (docs/GAME.md 3.4, 4.1). The game core runs in the load image (nl_setup)
+# ---- the object API and the game core's buffers ---------------------------
+# (docs/GAME.md). The game core runs in the load image (nl_setup)
 # and in the tic images, so its buffers and the API's caches have the same
 # places in both: main $0C00-$0EFF (the mobj cache, 8 lines of RTHING and
 # groups A, B, C), $1680-$17FF (the sector cache, 8 lines of the render
@@ -568,9 +507,8 @@ LW_MOB, LW_MINFO, LW_STATE = GWA['LW_MOB'], GWA['LW_MINFO'], GWA['LW_STATE']
 LW_NODEB, LW_MT, LW_SREC = GWA['LW_NODEB'], GWA['LW_MT'], GWA['LW_SREC']
 LW_SPEC, LW_SN, LW_LINEB = GWA['LW_SPEC'], GWA['LW_SN'], GWA['LW_LINEB']
 MO_XTICS, MO_XFUNC = 4 * MO_SIZE, 4 * MO_SIZE + 2   # (LW_MOB + offset)
-LW_GAME_END = GW_USED
 # stage C's zero page: the game core's ($18-$37: the same bytes in
-# milestone 10's tic phase) and the spawn's (after the load's LZP2)
+# the tic phase) and the spawn's (after the load's LZP2)
 LZPG = [('GC_MO', 2), ('GC_H', 2), ('GC_T', 2), ('GC_P', 2), ('GC_SEC', 1),
         ('GC_K', 1), ('GC_X', 4), ('GC_Y', 4), ('GC_V', 4), ('GC_W', 4),
         ('GC_PREV', 2), ('GC_N', 2), ('GC_S', 2)]
@@ -583,7 +521,6 @@ LZPS = [('GS_I', 2), ('GS_N', 2), ('GS_SB', 1), ('GS_SA', 2),
         ('GS_SIDE', 1), ('GS_NSEC', 1), ('GS_BP', 1), ('GS_BLEFT', 2),
         ('GS_PSP', 1), ('GS_ST', 2), ('GS_CNT', 1), ('GS_GAME', 1),
         ('GS_L', 4), ('GS_S1', 1), ('GS_K', 2)]
-GAME_STACK = LOAD_STACK         # the setup's budget: the load's
 MATH_ZP = (0xB0, 0xD8)          # math.inc's block (the spawn's products)
 
 
@@ -630,11 +567,11 @@ def bank_map() -> List[Tuple[int, str]]:
     put(CODE, 'CODE')
     put(TABLES, 'tables')
     put(LOGTAB, 'LOGTAB')
-    # milestone 10 (docs/GAME.md 1.10)
+    # the game (docs/GAME.md)
     put((GCODE0, GCODE1), 'GCODE')
     put([MOBJP], 'MOBJP')
     put([DEMOB], 'DEMOB')
-    put([GTEST], 'GTEST (test builds)')
+    put([GTEST], 'GTEST (reserved)')
     for b in SPARE:
         if b in uses:
             raise ValueError('spare bank %d is used by %s' % (b, uses[b]))
@@ -650,10 +587,10 @@ def check() -> None:
         raise ValueError('GTAB past $BFFF')
     if SECGS.end > ROOM[1]:
         raise ValueError('the sectors\' game part past $BFFF')
-    # milestones 7 and 8's banks are where rlayout.py has them
+    # the renderer's banks are where rlayout.py has them
     if (R.LVSEG, R.LVMAP, R.RENDB, R.SPRT, R.WPRO, R.RTH) != \
             (6, 7, 8, 48, 49, 50):
-        raise ValueError('a bank of milestones 7 and 8 moved')
+        raise ValueError('a bank of the renderer moved')
     if not 0x03A4 >= R.LVCOUNT + 4:
         raise ValueError('LV_VARMAP overlaps the level counts')
     if not LVCOUNT2_END <= LV_STATUS < LV_AMEM < 0x03EE:
@@ -690,8 +627,8 @@ def check() -> None:
             raise ValueError('a %s passes its record' % kind)
     if SPEC_HANDLE <= MOBJ_CAP or SPEC_HANDLE + SPEC_CAP >= 0xFFFF:
         raise ValueError('the thinker handles overlap')
-    # milestone 10: the API's W in the load image's dead scratch (GROUP's
-    # and FLOOD's), the main caches in render scratch MEMORY_MAP.md 3.3
+    # the API's W in the load image's dead scratch (GROUP's and
+    # FLOOD's), the main caches in render scratch MEMORY_MAP.md
     # marks not persistent (glayout.py checks the tic phase's map)
     if GW < LW_FSTLO or GW_END > LW_DNHI + 0x100 or GW_END > LW_CMA:
         raise ValueError('the API\'s W is not the load\'s dead scratch')
@@ -802,32 +739,6 @@ def include_text() -> str:
     return '\n'.join(lines) + '\n'
 
 
-def allowed_writes_load(counts: Dict[str, int], lvg1: Dict[str, int]
-                        ) -> List[Tuple[str, int, int, int, str]]:
-    """What the load's CPU code (the steps, the transport, the far layer
-    it calls) may write in a load of a map with these counts and LVG1
-    bases (docs/LEVELS.md 6.2: no stray write): storage, bank, [start,
-    end), why. The memory API's copies are not CPU writes: the harness
-    checks them against window.img."""
-    nsec, nsub = counts['sectors'], counts['subsectors']
-    out = [('main', 0, R.ZP_FAR[0], R.ZP_FAR[1], 'far layer arguments'),
-           ('main', 0, LZP1_RANGE[0], LZP1_RANGE[1], 'the load\'s zero page'),
-           ('main', 0, LZP2_RANGE[0], LZP2_RANGE[1], 'the load\'s zero page'),
-           ('main', 0, LV_VARMAP, LV_VARMAP + 1, 'LV_VARMAP'),
-           ('main', 0, LV_STATUS, LV_AMEM + 1, 'the stop code'),
-           ('main', 0, LW_REQ, 0xC000, 'the load\'s W data'),
-           ('aux', LVG0, LINES.base, LINES.address(counts['lines']),
-            'LINES'),
-           ('aux', LVG1, SECGS.base, lvg1['BLINKS'], 'GROUP, FLOOD'),
-           ('aux', LVC, LVC_CMAPA, LVC_GSVIEW, 'CMAPS')]
-    for i in range(nsub):
-        a = R.SUBS.address(i) + R.SUB['SECTOR']
-        out.append(('aux', LVMAP, a, a + 1, 'GROUP: subsector %d' % i))
-    if nsec > R.SECTORS.capacity:
-        raise ValueError('%d sectors' % nsec)
-    return out
-
-
 def main(argv: Sequence[str]) -> int:
     if len(argv) == 2 and argv[0] == '--game':
         Path(argv[1]).parent.mkdir(parents=True, exist_ok=True)
@@ -843,123 +754,8 @@ def main(argv: Sequence[str]) -> int:
 
 
 # ---------------------------------------------------------------------------
-# native-level 1: the bridge manifest of the level's static kinds
-# ---------------------------------------------------------------------------
-
-def manifest_static() -> Dict:
-    """A bridge-port-layout 1 manifest (tools/bridge/layout.py: records
-    with a stride) of the static fields of the level window's records, as
-    the load leaves them: segs, nodes, subsectors (their counts and first
-    segs), lines, sides (offsets and textures), sectors (heights, pics,
-    light from the render part; the sound origin, line count, tag and
-    old special from the game part). The references (a side's and a
-    subsector's sector as a byte, a sector's line table, the flood lists
-    in their pool) need encodings of their own (docs/LEVELS.md 3.3: stage
-    C); lderive.py and lstore.HostMachine check them meanwhile."""
-    def planes(bank: int, base: int, offset: int, size: int) -> List[str]:
-        return ['aux:%02X:%04X' % (bank, base + offset + k)
-                for k in range(size)]
-
-    def leaf(path, bank, base, stride, offset, size, signed):
-        return {'path': list(path), 'enc': {'enc': 'int', 'bytes': size,
-                                            'signed': signed},
-                'planes': planes(bank, base, offset, size),
-                'stride': stride}
-
-    def count(at: int) -> List[str]:
-        return ['main:%04X' % at, 'main:%04X' % (at + 1)]
-    S, N, U = R.SEGS, R.NODES, R.SUBS
-    seg = [leaf(('v1', 0), LVSEG, S.base, S.stride, 0, 2, True),
-           leaf(('v1', 1), LVSEG, S.base, S.stride, 2, 2, True),
-           leaf(('v2', 0), LVSEG, S.base, S.stride, 4, 2, True),
-           leaf(('v2', 1), LVSEG, S.base, S.stride, 6, 2, True),
-           leaf(('offset',), LVSEG, S.base, S.stride, 8, 2, True),
-           leaf(('angle',), LVSEG, S.base, S.stride, 10, 2, False),
-           leaf(('sidenum',), LVSEG, S.base, S.stride, 12, 2, True),
-           leaf(('linenum',), LVSEG, S.base, S.stride, 14, 2, True),
-           leaf(('frontsectornum',), LVSEG, S.base, S.stride, 16, 1, False),
-           leaf(('backsectornum',), LVSEG, S.base, S.stride, 17, 1, False)]
-    node = [leaf((k,), LVMAP, N.base, N.stride, 2 * i, 2, True)
-            for i, k in enumerate(('x', 'y', 'dx', 'dy'))]
-    node += [leaf(('bbox', i), LVMAP, N.base, N.stride, 8 + 2 * i, 2, True)
-             for i in range(8)]
-    node += [leaf(('children', i), LVMAP, N.base, N.stride, 24 + 2 * i, 2,
-                  False) for i in range(2)]
-    sub = [leaf(('numlines',), LVMAP, U.base, U.stride, 1, 1, False),
-           leaf(('firstline',), LVMAP, U.base, U.stride, 2, 2, False)]
-    L = LINE
-    line = [leaf(('v1', 0), LVG0, LINES.base, LINE_SIZE, L['V1X'], 2, True),
-            leaf(('v1', 1), LVG0, LINES.base, LINE_SIZE, L['V1Y'], 2, True),
-            leaf(('v2', 0), LVG0, LINES.base, LINE_SIZE, L['V2X'], 2, True),
-            leaf(('v2', 1), LVG0, LINES.base, LINE_SIZE, L['V2Y'], 2, True),
-            leaf(('dx',), LVG0, LINES.base, LINE_SIZE, L['DX'], 2, True),
-            leaf(('dy',), LVG0, LINES.base, LINE_SIZE, L['DY'], 2, True),
-            leaf(('sidenum', 0), LVG0, LINES.base, LINE_SIZE, L['SIDE0'], 2,
-                 True),
-            leaf(('sidenum', 1), LVG0, LINES.base, LINE_SIZE, L['SIDE1'], 2,
-                 True)]
-    line += [leaf(('bbox', i), LVG0, LINES.base, LINE_SIZE, L[k], 2, True)
-             for i, k in enumerate(('TOP', 'BOTTOM', 'LEFT', 'RIGHT'))]
-    line += [leaf(('tag',), LVG0, LINES.base, LINE_SIZE, L['TAG'], 1, True),
-             leaf(('special',), LVG0, LINES.base, LINE_SIZE, L['SPECIAL'],
-                  1, True),
-             leaf(('flags',), LVG0, LINES.base, LINE_SIZE, L['FLAGS'], 1,
-                  False),
-             leaf(('slopetype',), LVG0, LINES.base, LINE_SIZE, L['SLOPE'],
-                  1, False)]
-    D, E = R.SIDES, R.SECTORS
-    side = [leaf(('textureoffset',), LVMAP, D.base, D.stride, 0, 2, True),
-            leaf(('rowoffset',), LVMAP, D.base, D.stride, 2, 2, True),
-            leaf(('toptexture',), LVMAP, D.base, D.stride, R.SIDE['TOP'], 1,
-                 False),
-            leaf(('bottomtexture',), LVMAP, D.base, D.stride,
-                 R.SIDE['BOTTOM'], 1, False),
-            leaf(('midtexture',), LVMAP, D.base, D.stride, R.SIDE['MID'], 1,
-                 False)]
-    G = SECG
-    sector = [leaf(('floorheight',), LVMAP, E.base, E.stride, 0, 4, True),
-              leaf(('ceilingheight',), LVMAP, E.base, E.stride, 4, 4, True),
-              leaf(('floorpic',), LVMAP, E.base, E.stride, R.SEC['FPIC'], 1,
-                   True),
-              leaf(('ceilingpic',), LVMAP, E.base, E.stride, R.SEC['CPIC'],
-                   1, True),
-              leaf(('lightlevel',), LVMAP, E.base, E.stride,
-                   R.SEC['LIGHT'], 1, False),
-              leaf(('soundorg', 0), LVG1, SECGS.base, SECG_SIZE,
-                   G['SOUNDX'], 4, True),
-              leaf(('soundorg', 1), LVG1, SECGS.base, SECG_SIZE,
-                   G['SOUNDY'], 4, True),
-              leaf(('linecount',), LVG1, SECGS.base, SECG_SIZE, G['LCOUNT'],
-                   2, True),
-              leaf(('oldspecial',), LVG1, SECGS.base, SECG_SIZE,
-                   G['OLDSPECIAL'], 1, True),
-              leaf(('tag',), LVG1, SECGS.base, SECG_SIZE, G['TAG'], 2,
-                   True)]
-    kinds = {
-        'seg': {'capacity': S.capacity, 'count': count(LVCOUNT2 + 4),
-                'leaves': seg},
-        'node': {'capacity': N.capacity, 'count': count(LVCOUNT2 + 6),
-                 'leaves': node},
-        'subsector': {'capacity': U.capacity, 'count': count(LVCOUNT2 + 2),
-                      'leaves': sub},
-        'line': {'capacity': LINES.capacity, 'count': count(LVCOUNT2),
-                 'leaves': line},
-        'side': {'capacity': D.capacity, 'count': count(R.LVCOUNT + 2),
-                 'leaves': side},
-        'sector': {'capacity': E.capacity, 'count': count(R.LVCOUNT),
-                   'leaves': sector},
-    }
-    return {'format': 'bridge-port-layout 1', 'name': 'native-level-1',
-            'note': 'the static fields of the native level window '
-                    '(tools/native/llayout.py; milestone 9 stage A)',
-            'symbols': [], 'tables': [], 'lists': {}, 'pools': {},
-            'kinds': kinds, 'globals': {'leaves': []}}
-
-
-
-# ---------------------------------------------------------------------------
-# Stage C: native-level 1 whole (docs/LEVELS.md 3.2, 3.3): every canonical
-# object and global the setup leaves, per map
+# Stage C: upstream's structures laid out natively (the player, the
+# buttons) for lgame.inc
 # ---------------------------------------------------------------------------
 
 def _schema():
@@ -967,12 +763,6 @@ def _schema():
     includes)."""
     from bridge import upstream
     return upstream.Schema()
-
-
-def _hex_planes(storage: str, bank: int, address: int, n: int) -> List[str]:
-    if storage == 'main':
-        return ['main:%04X' % (address + k) for k in range(n)]
-    return ['aux:%02X:%04X' % (bank, address + k) for k in range(n)]
 
 
 def _int(size: int, signed: bool) -> Dict[str, Any]:
@@ -1034,14 +824,7 @@ def mobj_ranges(poolsize: int) -> List[Dict[str, Any]]:
             {'lo': poolsize, 'n': MOBJ_CAP - poolsize, 'kind': 'zmobj'}]
 
 
-def special_ranges() -> List[Dict[str, Any]]:
-    return [{'lo': SPEC_HANDLE + lo, 'n': n, 'kind': k}
-            for k, (lo, n) in SPEC_RANGE.items()]
-
-
 STATE_RANGE = [{'lo': 0, 'n': NUMSTATES, 'kind': 'state'}]
-SECTOR_RANGE = [{'lo': 0, 'n': R.SECTORS.capacity, 'kind': 'sector'}]
-SECNODE_RANGE = [{'lo': 0, 'n': SN_CAP, 'kind': 'secnode'}]
 
 
 def player_layout(poolsize: int = 1) -> List[Tuple[Tuple, Dict, int]]:
@@ -1082,402 +865,6 @@ def offset_names(prefix: str, layout) -> List[Tuple[str, int]]:
             for path, _, at in layout]
 
 
-def manifest(header: Dict[str, Any], symbols: Sequence[str] = ()
-             ) -> Dict[str, Any]:
-    """native-level 1 for a loaded and set-up map with this store header
-    (store.json's): a bridge-port-layout 1 manifest of every canonical
-    object and global the native layout holds. The caches the native
-    layout does not keep (NOT_KEPT, NOT_KEPT_FIELDS) have no leaf."""
-    from bridge import schema
-    sch = _schema()
-    c = header['counts']
-    v = header['lvg1']
-    pool = c['things']
-    nlines, nsides, nsubs = c['lines'], c['sides'], c['subsectors']
-    kinds: Dict[str, Any] = {}
-
-    def L(path, enc, storage, bank, address, stride=1, when=None,
-          planes=None):
-        n = _width(enc)
-        out = {'path': list(path), 'enc': enc,
-               'planes': planes if planes is not None else
-               _hex_planes(storage, bank, address, n)}
-        if stride != 1:
-            out['stride'] = stride
-        if when:
-            out['when'] = list(when)
-        return out
-
-    def count(address: int) -> List[str]:
-        return ['main:%04X' % address, 'main:%04X' % (address + 1)]
-    mref = handle(mobj_ranges(pool))
-    thref = handle(mobj_ranges(pool) + special_ranges())
-    spref = handle(special_ranges())
-    sec1 = handle(SECTOR_RANGE, 1)
-    node2 = handle(SECNODE_RANGE)
-    line2 = handle([{'lo': 0, 'n': nlines, 'kind': 'line'}])
-
-    def lst(name, ranges):
-        return {'enc': 'list', 'list': name, 'bytes': 2, 'ranges': ranges}
-    # -- the static kinds of stage B, with their references
-    st = manifest_static()['kinds']
-    for k in ('seg', 'node'):
-        kinds[k] = st[k]
-    U, E, D = R.SUBS, R.SECTORS, R.SIDES
-    kinds['subsector'] = st['subsector']
-    kinds['subsector']['leaves'].append(L(
-        ('sector',), sec1, 'aux', R.LVMAP, U.base + R.SUB['SECTOR'],
-        U.stride))
-    kinds['side'] = st['side']
-    kinds['side']['leaves'].append(L(
-        ('sector',), sec1, 'aux', R.LVMAP, D.base + R.SIDE['SECTOR'],
-        D.stride))
-    LN = LINE
-    line = [x for x in st['line']['leaves']
-            if x['path'] not in (['tag'], ['special'])]
-    line += [L(('tag',), {'enc': 'sxbyte'}, 'aux', LVG0,
-               LINES.base + LN['TAG'], LINE_SIZE),
-             L(('special',), {'enc': 'sxbyte'}, 'aux', LVG0,
-               LINES.base + LN['SPECIAL'], LINE_SIZE),
-             L(('validcount',), _int(2, False), 'aux', LVG0,
-               LINES.base + LN['VALID'], LINE_SIZE),
-             L(('r_validcount',), _int(2, False), 'aux', LVG0,
-               LINES.base + LN['RVALID'], LINE_SIZE),
-             L(('r_flags',), {'enc': 'bit',
-                              'value': sch.c['CONST_ML_MAPPED']},
-               'main', 0, LNMAP)]
-    kinds['line'] = dict(st['line'], leaves=line)
-    G2 = SECG
-    sector = [x for x in st['sector']['leaves']
-              if x['path'] not in (['oldspecial'],)]
-    sector += [
-        L(('validcount',), _int(2, False), 'aux', R.LVMAP,
-          E.base + R.SEC['VALID'], E.stride),
-        L(('thinglist',), lst('sector_things', mobj_ranges(pool)), 'aux',
-          R.LVMAP, E.base + R.SEC['THINGS'], E.stride),
-        L(('soundtarget',), mref, 'aux', LVG1, SECGS.base + G2['TARGET'],
-          SECG_SIZE),
-        L(('lines',), handle([{'lo': 0, 'n': max(c['linetable'], 1),
-                                'kind': 'linebuf'}]), 'aux', LVG1,
-          SECGS.base + G2['LFIRST'], SECG_SIZE),
-        L(('floordata',), spref, 'aux', LVG1, SECGS.base + G2['FLOORD'],
-          SECG_SIZE),
-        L(('ceilingdata',), spref, 'aux', LVG1, SECGS.base + G2['CEILD'],
-          SECG_SIZE),
-        L(('touching_thinglist',), lst('sector_nodes', SECNODE_RANGE),
-          'aux', LVG1, SECGS.base + G2['TOUCH'], SECG_SIZE),
-        L(('special',), {'enc': 'sxbyte'}, 'aux', LVG1,
-          SECGS.base + G2['SPECIAL'], SECG_SIZE),
-        L(('oldspecial',), {'enc': 'sxbyte'}, 'aux', LVG1,
-          SECGS.base + G2['OLDSPECIAL'], SECG_SIZE),
-        L(('soundtraversed',), _int(1, True), 'aux', LVG1,
-          SECGS.base + G2['TRAVERSED'], SECG_SIZE),
-        L(('flood',), {'enc': 'seq', 'pool': 'flood', 'form': 'end'}, 'aux',
-          LVG1, v['FLIDX'], FLIDX_SIZE),
-        L(('flood_sb',), {'enc': 'seq', 'pool': 'flood', 'form': 'end'},
-          'aux', LVG1, v['FLIDX'] + 4, FLIDX_SIZE)]
-    kinds['sector'] = dict(st['sector'], leaves=sector)
-    kinds['blocklink'] = {
-        'capacity': 0x10000, 'count': count(G['G_BLOCKS']),
-        'leaves': [L(('things',), lst('block_things', mobj_ranges(pool)),
-                     'aux', LVG1, v['BLINKS'], 2)]}
-    kinds['linebuf'] = {
-        'capacity': 0x10000, 'count': count(G['G_LTABN']),
-        'leaves': [L(('line',), line2, 'aux', LVG1, v['LTAB'], 2)]}
-    for kind, length, lump, base in (
-            ('blockmap', 'G_BMLEN', 'G_BMLUMP', BLOCKMAP),
-            ('reject', 'G_REJLEN', 'G_REJLUMP', header['reject'])):
-        kinds[kind] = {'capacity': 1, 'count': 1, 'leaves': [
-            {'path': ['bytes'], 'enc': {'enc': 'blob', 'max': ROOM_BYTES},
-             'planes': ['main:%04X' % G[length],
-                        'main:%04X' % (G[length] + 1),
-                        'aux:%02X:%04X' % (LVG2, base)]},
-            L(('lump',), _int(2, False), 'main', 0, G[lump])]}
-    # -- the mobjs: RTHING and the three game parts, by slot
-    T = R.RTHING
-    RB = R.RTHINGS.base
-
-    def mobj_leaves(first: int, pooled: bool) -> List[Dict[str, Any]]:
-        b = RB + MO_SIZE * first
-
-        def plane(*bases: int) -> List[str]:
-            return ['aux:%02X:%04X' % (MOBJP, a + first) for a in bases]
-        out = [
-            L(('function',), {'enc': 'enum', 'values': list(FUNCS),
-                              'mask': 0xFF ^ KIND_CLEAN}, 'aux', MOBJP, 0,
-              planes=plane(PL_KIND)),
-            L(('x',), _int(4, True), 'aux', R.RTH, b + T['X'], MO_SIZE),
-            L(('y',), _int(4, True), 'aux', R.RTH, b + T['Y'], MO_SIZE),
-            L(('z',), _int(4, True), 'aux', R.RTH, b + T['Z'], MO_SIZE),
-            L(('angle',), _int(4, False), 'aux', R.RTH, b, MO_SIZE, planes=[
-                'aux:%02X:%04X' % (R.RTH, b + a) for a in
-                (TH_ANGLO, TH_ANGLO + 1, T['ANG'], T['ANG'] + 1)]),
-            L(('sprite',), _int(1, False), 'aux', R.RTH, b + T['SPR'],
-              MO_SIZE),
-            L(('frame',), _int(2, True), 'aux', R.RTH, b + T['FRAME'],
-              MO_SIZE),
-            L(('subsector',), handle([{'lo': 0, 'n': nsubs,
-                                       'kind': 'subsector'}]), 'aux',
-              MOBJA, b + MA['SUBSEC'], MO_SIZE)]
-        for name, k in (('floorz', 'FLOORZ'), ('ceilingz', 'CEILZ'),
-                        ('dropoffz', 'DROPZ'), ('radius', 'RADIUS'),
-                        ('height', 'HEIGHT')):
-            out.append(L((name,), _int(4, True), 'aux', MOBJB, b + MB[k],
-                         MO_SIZE))
-        for name, k in (('momx', 'MOMX'), ('momy', 'MOMY'),
-                        ('momz', 'MOMZ')):
-            out.append(L((name,), _int(4, True), 'aux', MOBJC, b + MC[k],
-                         MO_SIZE))
-        out += [
-            L(('health',), _int(2, True), 'aux', MOBJA, b + MA['HEALTH'],
-              MO_SIZE),
-            L(('type',), _int(1, False), 'aux', MOBJA, b + MA['TYPE'],
-              MO_SIZE),
-            L(('tics',), {'enc': 'sxbyte'}, 'aux', MOBJP, 0,
-              planes=plane(PL_TICS)),
-            L(('state',), handle(STATE_RANGE), 'aux', MOBJA,
-              b + MA['STATE'], MO_SIZE),
-            L(('flags',), _int(4, False), 'aux', MOBJB, b + MB['FLAGS'],
-              MO_SIZE),
-            L(('target',), mref, 'aux', MOBJA, b + MA['TARGET'], MO_SIZE),
-            L(('movedir',), _int(1, False), 'aux', MOBJC,
-              b + MC['MOVEDIR'], MO_SIZE),
-            L(('threshold',), _int(1, False), 'aux', MOBJC,
-              b + MC['THRESH'], MO_SIZE),
-            L(('pursuecount',), _int(2, True), 'aux', MOBJC,
-              b + MC['PURSUE'], MO_SIZE),
-            L(('movecount',), _int(2, True), 'aux', MOBJC,
-              b + MC['MOVEC'], MO_SIZE),
-            L(('reactiontime',), _int(2, True), 'aux', MOBJC,
-              b + MC['REACT'], MO_SIZE),
-            L(('lastenemy',), mref, 'aux', MOBJC, b + MC['LASTEN'],
-              MO_SIZE),
-            L(('sightline',), _int(2, False), 'aux', MOBJC, b + MC['SIGHT'],
-              MO_SIZE),
-            L(('touching_sectorlist',), lst('thing_nodes', SECNODE_RANGE),
-              'aux', MOBJA, b + MA['TOUCH'], MO_SIZE,
-              when=('free', 0) if pooled else None),
-            L(('@thinkers.next',), thref, 'aux', MOBJP, 0,
-              planes=plane(PL_TNL, PL_TNH)),
-            L(('@thinkers.prev',), thref, 'aux', MOBJA, b + MA['THPREV'],
-              MO_SIZE),
-            L(('@sector_things.next',), mref, 'aux', R.RTH,
-              b + T['SNEXT'], MO_SIZE),
-            L(('@sector_things.prev',), mref, 'aux', MOBJA,
-              b + MA['SPREV'], MO_SIZE),
-            L(('@block_things.next',), mref, 'aux', MOBJA, b + MA['BNEXT'],
-              MO_SIZE),
-            L(('@block_things.prev',), mref, 'aux', MOBJA, b + MA['BPREV'],
-              MO_SIZE)]
-        if pooled:
-            out.append(L(('free',), {'enc': 'bit', 'value': 1}, 'main', 0,
-                         G['G_TPBITS']))
-        return out
-    kinds['mobj'] = {'capacity': POOL_MAX, 'count': count(G['G_POOLN']),
-                     'leaves': mobj_leaves(0, True)}
-    kinds['zmobj'] = {'capacity': MOBJ_CAP - pool,
-                      'count': count(G['G_ZMN']),
-                      'leaves': mobj_leaves(pool, False),
-                      # a zone slot on G_ZMFREE's list is no object
-                      'select': {'path': ['function'],
-                                 'not': [FN_FREE_NAME]}}
-    # -- the sector nodes
-    S = SNODES.base
-    free0 = ('free', 0)
-    kinds['secnode'] = {'capacity': SN_CAP, 'count': count(G['G_SNHWM']),
-                        'leaves': [
-        L(('m_sector',), sec1, 'aux', ZONE1, S + SN['SECTOR'], SN_SIZE,
-          when=free0),
-        L(('m_thing',), mref, 'aux', ZONE1, S + SN['THING'], SN_SIZE,
-          when=free0),
-        L(('visited',), _int(2, True), 'aux', ZONE1, S + SN['VISITED'],
-          SN_SIZE, when=free0),
-        L(('free',), _int(1, False), 'aux', ZONE1, S + SN['FREE'],
-          SN_SIZE)] + [
-        L(('@%s.%s' % (name, d),), node2, 'aux', ZONE1, S + SN[f], SN_SIZE)
-        for name, d, f in (('thing_nodes', 'next', 'TNEXT'),
-                           ('thing_nodes', 'prev', 'TPREV'),
-                           ('sector_nodes', 'next', 'SNEXT'),
-                           ('sector_nodes', 'prev', 'SPREV'),
-                           ('sector_list', 'next', 'TNEXT'),
-                           ('sector_list', 'prev', 'TPREV'),
-                           ('sn_free', 'next', 'TNEXT'))]}
-    # -- the specials, a range of slots a kind
-    types = {'lightflash': 'LIGHTFLASH', 'strobe': 'STROBE', 'glow': 'GLOW',
-             'scroll': 'SCROLL', 'plat': 'PLAT', 'door': 'DOOR',
-             'floor': 'FLOOR'}
-    for k, (lo, n) in SPEC_RANGE.items():
-        b = SPECS.base + SPEC_SIZE * lo
-        st_ = sch.structs[types[k]]
-        leaves = [L(('function',), {'enc': 'enum', 'values': list(FUNCS)},
-                    'aux', ZONE0, b + SP['FUNC'], SPEC_SIZE),
-                  L(('@thinkers.next',), thref, 'aux', ZONE0,
-                    b + SP['THNEXT'], SPEC_SIZE),
-                  L(('@thinkers.prev',), thref, 'aux', ZONE0,
-                    b + SP['THPREV'], SPEC_SIZE)]
-        offs = dict(SP_KIND[k], SECTOR=SP['SECTOR'])
-        for f in st_.fields:
-            if f.cls == 'thinker':
-                continue
-            at = b + offs[f.name.upper().replace('TEXTUREOFFSET', 'SIDE')]
-            t_ = f.type
-            from bridge.fields import Int, Ref
-            if isinstance(t_, Int):
-                enc = _int(t_.size, t_.signed)
-            elif isinstance(t_, Ref) and t_.targets == ('sector',):
-                enc = sec1
-            elif isinstance(t_, Ref) and t_.targets == ('side',):
-                enc = handle([{'lo': 0, 'n': nsides, 'kind': 'side',
-                               'field': 'textureoffset'}])
-            elif isinstance(t_, Ref) and t_.targets == ('line',):
-                enc = line2
-            elif isinstance(t_, Ref) and t_.targets == ('',):
-                enc = handle([], 1)
-            else:
-                raise ValueError('%s.%s: %r' % (k, f.name, t_))
-            leaves.append(L((f.name,), enc, 'aux', ZONE0, at, SPEC_SIZE))
-        kinds[k] = {'capacity': n,
-                    'count': count(G['G_SPN'] + 2 * list(SPEC_RANGE).index(
-                        k)),
-                    'leaves': leaves,
-                    # a slot is an object of the kind while its function is
-                    # the kind's: a free slot (on G_SPFREE's list) has
-                    # none, a special waiting for its removal is "removed"
-                    'select': {'path': ['function'],
-                               'in': [FUNCS[FN[SPEC_FN[k]]]]}}
-    # -- the player and the buttons
-    pl = player_layout(pool)
-    kinds['player'] = {'capacity': 1, 'count': 1, 'leaves': [
-        L(path, enc, 'main', 0, G['G_PLAYER'] + at) for path, enc, at in pl]}
-    bl = button_layout(nlines)
-    bsize = _size_of(bl)
-    kinds['button'] = {'capacity': sch.c['CONST_MAXBUTTONS'],
-                       'count': sch.c['CONST_MAXBUTTONS'], 'leaves': [
-        L(path, enc, 'main', 0, G['G_BUTTONS'] + at, bsize)
-        for path, enc, at in bl]}
-    # -- the globals
-    gl: List[Dict[str, Any]] = []
-    counts_at = {'p_setup65.s:_g_numsectors': R.LVCOUNT,
-                 'p_setup65.s:numsides': R.LVCOUNT + 2,
-                 'p_setup65.s:_g_numlines': LVCOUNT2,
-                 'p_setup65.s:numsubsectors': LVCOUNT2 + 2,
-                 'p_setup65.s:numnodes': LVCOUNT2 + 6}
-    gtab_at = {'p_switch65.s:switchlist': GT['SWITCHLIST'][0],
-               'p_switch65.s:SW_IDX': GT['SW_IDX'][0],
-               'p_spec65.s:animated_texture_basepic': GT['BASEPIC'][0]}
-    lists = {'p_think65.s:_g_thinkerclasscap': ('thinkers', thref),
-             'p_map65.s:_s_sector_list': ('sector_list', node2),
-             'p_map65.s:SN_FREE': ('sn_free', node2)}
-    for unit, labels in list(schema.GLOBALS.items()) + list(
-            schema.EXTERNAL_GLOBALS.items()):
-        for label, text in labels.items():
-            name = '%s:%s' % (unit, label)
-            if name in NOT_KEPT or text.startswith('object:'):
-                continue
-            if text.startswith('cache:'):
-                text = text[6:]
-            if name in ('p_sight65.s:CS_PREV1', 'p_sight65.s:CS_PREV2'):
-                gl.append(L((name,), dict(mref, stale=STALE), 'main', 0,
-                            gplace(GLOBAL_PLACE[name])))
-                continue
-            if name in ('p_sight65.s:CS_PREVR', 'p_map65.s:LR_OK',
-                        'p_map65.s:LR_USE', 'p_map65.s:LR_N'):
-                gl.append(L((name,), _int(1, False), 'main', 0,
-                            gplace(GLOBAL_PLACE[name])))
-                continue
-            if name == 'p_map65.s:LR_LINES':
-                for i in range(24):
-                    gl.append(L((name, i), _int(2, False), 'main', 0,
-                                G['G_LRLINES'] + 2 * i))
-                continue
-            if text.startswith('table:'):
-                gl.append({'path': [name], 'enc': {'enc': 'table',
-                                                   'kind': text[6:]},
-                           'planes': []})
-                continue
-            if name in lists:
-                lname, enc = lists[name]
-                gl.append(L((name,), dict(enc, enc='list', list=lname),
-                            'main', 0, gplace(GLOBAL_PLACE[name])))
-                continue
-            if name == 'm_random65.s:prndindex':
-                gl.append(L((name,), _int(1, False), 'main', 0, PRND))
-                continue
-            if name == 'm_random65.s:rndindex':
-                gl.append(L((name,), _int(1, False), 'main', 0, MRND))
-                continue
-            if name in counts_at:
-                gl.append(L((name,), _int(2, False), 'main', 0,
-                            counts_at[name]))
-                continue
-            t_ = sch.structs[text] if text in sch.structs else \
-                schema.field_type(text, sch.structs)
-            if name in gtab_at:
-                for path, enc, at in native_struct_type(t_, (name,)):
-                    gl.append(L(path, enc, 'aux', GTAB, gtab_at[name] + at))
-                continue
-            if name == 'p_setup65.s:_g_blockmap':
-                enc = handle([{'lo': BLOCKMAP, 'n': ROOM[1] - BLOCKMAP,
-                               'kind': 'blockmap', 'id': 0}])
-            elif name == 'p_sight65.s:LOGP':
-                enc = handle([{'lo': 0, 'n': 1, 'kind': 'table',
-                               'id': 'MM_LOGTAB'}])
-            elif name == 'p_map65.s:_g_ceilingline':
-                enc = line2
-            else:
-                enc = None
-            place = gplace(GLOBAL_PLACE[name])
-            if enc is not None:
-                gl.append(L((name,), enc, 'main', 0, place))
-                continue
-            for path, enc2, at in native_struct_type(
-                    t_, (name,), refenc=lambda p_, r_: _ref_any(
-                        list(r_.targets))):
-                gl.append(L(path, enc2, 'main', 0, place + at))
-    symbol_list = list(symbols)
-    lists_json = {name: {'elements': list(d.elements),
-                         'prev': d.prev is not None}
-                  for name, d in schema.LISTS.items()}
-    return {'format': 'bridge-port-layout 1', 'name': 'native-level-1',
-            'note': 'the native level window and game state of E1M%d after '
-                    'nl_setup (tools/native/llayout.py; milestone 9 '
-                    'stage C, the final layouts of milestone 10\'s '
-                    'skeleton)' % header['map'],
-            # a special waiting for its removal (function
-            # P_RemoveThinkerDelayed) stays in its kind's slot: the reader
-            # gives it the kind "removed"; the writer puts a removed
-            # special after the home kind's objects
-            'removed': {'function': FUNCS[FN['REMOVETHINKER']],
-                        'kinds': list(SPEC_RANGE), 'home': 'scroll'},
-            'symbols': symbol_list, 'tables': [], 'lists': lists_json,
-            'pools': {'flood': {
-                'capacity': max(c['flood'], 1),
-                'codes': [['sector', None]], 'enc': sec1,
-                'planes': ['aux:%02X:%04X' % (LVG1, v['FLENT'])],
-                'count': []}},
-            'kinds': kinds, 'globals': {'leaves': gl}}
-
-
-def native_struct_type(t, path: Tuple, refenc=None) -> List[Tuple]:
-    """native_struct for any type (a structure, an array or a number)."""
-    from bridge.fields import Sub
-    from bridge.fields import Struct as BStruct
-    from bridge.fields import Field as BField
-    if isinstance(t, Sub):
-        return native_struct(t.struct, refenc, path)
-    if isinstance(t, BStruct):
-        return native_struct(t, refenc, path)
-    wrapper = BStruct('wrap', t.length, [BField('x', 0, t)])
-    out = native_struct(wrapper, refenc, ())
-    return [(path + p[1:], enc, at) for p, enc, at in out]
-
-
-def gplace(name: str) -> int:
-    """A game global's main address (G_VALID: the frame block's
-    VALIDCOUNT)."""
-    return G_VALID if name == 'G_VALID' else G[name]
-
-
 def symbol_list() -> List[str]:
     """The labelled constants a reference to a symbol can name (the
     manifest's "symbols", as native_v1's)."""
@@ -1485,48 +872,6 @@ def symbol_list() -> List[str]:
     sym = Symbols()
     return sorted(lb.ref for f in sym.fragments if f.kind == 'rodata'
                   for lb in f.labels)
-
-
-def allowed_writes_setup(header: Dict[str, Any]
-                         ) -> List[Tuple[str, int, int, int, str]]:
-    """What nl_setup's CPU code may write (the load's, allowed_writes_load,
-    and the setup's): storage, bank, [start, end), why."""
-    c = header['counts']
-    v = header['lvg1']
-    out = list(allowed_writes_load(c, v))
-    out += [('main', 0, LZPG_RANGE[0], LZPG_RANGE[1], 'the game core\'s ZP'),
-            ('main', 0, MATH_ZP[0], MATH_ZP[1], 'the math\'s block'),
-            ('main', 0, GBLOCK, GLOBALS_END, 'the game globals'),
-            ('main', 0, LNMAP, LNMAP_END, 'LNMAP (r_flags)'),
-            ('main', 0, PRND, PRND + 1, 'P_Random\'s index'),
-            # milestone 10: validcount (the frame block's), the object
-            # API's caches and state, the planes, LVS (GTABS)
-            ('main', 0, G_VALID, G_VALID + 2, 'validcount'),
-            ('main', 0, MOC, MOC + MOC_LINES * MOC_LINE, 'the mobj cache'),
-            ('main', 0, SCC, SCC + SCC_LINES * SCC_LINE,
-             'the sector cache'),
-            ('main', 0, RT_STATE, RT_END, 'the runtime\'s state'),
-            ('main', 0, BL_BUF, BL_BUF + 0x100, 'bl_get\'s buffer'),
-            ('aux', MOBJP, PL_TNL, PL_TICS + PLANE_SLOTS, 'the planes'),
-            ('aux', LVS, LVS_LNSECF, LVS_END, 'GTABS')]
-    for bank in (R.RTH,) + MOBJ_BANKS:
-        out.append(('aux', bank, R.RTHINGS.base, R.RTHINGS.end,
-                    'the mobjs'))
-    nb = c['blocks']
-    out += [('aux', LVG1, v['BLINKS'], v['BLINKS'] + 2 * nb, 'the blocks\' '
-             'thing lists'),
-            ('aux', ZONE0, SPECS.base, SPECS.end, 'the specials'),
-            ('aux', ZONE1, SNODES.base, SNODES.end, 'the sector nodes')]
-    # (milestone 10: the object API writes a sector's render record back
-    # whole, the values it did not change included)
-    out.append(('aux', R.LVMAP, R.SECTORS.base,
-                R.SECTORS.address(c['sectors'] - 1) + R.SEC_SIZE,
-                'the sectors\' render records (the object API\'s '
-                'write-backs)'))
-    for i in range(c['lines']):
-        a = LINES.address(i) + LINE['VALID']
-        out.append(('aux', LVG0, a, a + 2, 'line %d\'s stamp' % i))
-    return out
 
 
 def game_constants() -> List[Tuple[str, int]]:
@@ -1555,7 +900,7 @@ def game_constants() -> List[Tuple[str, int]]:
         ('LW_NODEB', LW_NODEB), ('LW_MT', LW_MT),
         ('LW_SREC', LW_SREC), ('LW_SPEC', LW_SPEC), ('LW_SN', LW_SN),
         ('LW_LINEB', LW_LINEB),
-        # milestone 10: the final layouts' and the object API's places
+        # the final layouts' and the object API's places
         ('MOBJP', MOBJP), ('LVS', LVS), ('PLANE_SLOTS', PLANE_SLOTS),
         ('PL_TNL', PL_TNL), ('PL_TNH', PL_TNH), ('PL_KIND', PL_KIND),
         ('PL_TICS', PL_TICS), ('PL_HINTL', PL_HINTL), ('PL_HINTH', PL_HINTH),
@@ -1639,8 +984,7 @@ def game_constants() -> List[Tuple[str, int]]:
                        ('g_game65.s', 'INITIAL_BULLETS'),
                        ('p_spec65.s', 'FASTDARK'),
                        ('p_spec65.s', 'SLOWDARK'),
-                       # the pickups' and the cheats' (milestone 10, wave 2
-                       # as integrated: docs/game-parts/pickup.md P1)
+                       # the pickups' and the cheats'
                        ('p_inter65.s', 'BONUSADD'),
                        ('m_cheat65.s', 'GOD_HEALTH'),
                        ('m_cheat65.s', 'IDFA_ARMOR'),
@@ -1648,8 +992,8 @@ def game_constants() -> List[Tuple[str, int]]:
                        ('m_cheat65.s', 'NUMCHEATS')):
         out.append(('U_' + name, c.local(unit, name) & 0xFFFF))
     out.append(('U_A_RAISE', sch.symbols.address('p_pspr65.s:A_Raise')))
-    # the weapons (weaponinfo's six fields: milestone 10's part damage
-    # writes its table from them, docs/game-parts/damage.md R2) and the
+    # the weapons (weaponinfo's six fields: the game's part damage
+    # writes its table from them) and the
     # ammunition maxima, the release's tables (p_pspr65.s weaponinfo: 6
     # words a weapon; p_inter65.s maxammo)
     rel = U.Release()
@@ -1667,7 +1011,7 @@ def game_constants() -> List[Tuple[str, int]]:
         out.append(('U_MAXAMMO_%d' % k, struct.unpack_from('<H', mx,
                                                            2 * k)[0]))
     # the pickups' tables (p_inter65.s clipAmmo, halfClip, powerTics: the
-    # release's; docs/game-parts/pickup.md P1)
+    # release's)
     for name, sym in (('U_CLIPAMMO', 'clipAmmo'), ('U_HALFCLIP', 'halfClip')):
         t = rel.table('p_inter65.s:' + sym, 2 * na)
         for k in range(na):

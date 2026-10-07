@@ -6,11 +6,12 @@ Usage:  python3 tools/native/rowgen.py OUTDIR
 Writes, for src/native/replay.s to include (ca65, cc65 2.18):
 
   OUTDIR/layout.inc   every address and constant of tools/native/layout.py
-  OUTDIR/restore.inc  the card runner's PRIVATE copy descriptors
+  OUTDIR/restore.inc  a card runner's PRIVATE copy descriptors (no source of
+                      the disk build includes it)
   OUTDIR/rows.s       the segments below
 
 This is our own generator, written from the pixel semantics of the records
-(docs/NATIVE.md 5.1; upstream's tools/gendraw.py is not used). Segments:
+(upstream's tools/gendraw.py is not used). Segments:
 
   TEXBLK   texture row pairs at $D000, 36 bytes a pair of rows 2p, 2p+1:
 

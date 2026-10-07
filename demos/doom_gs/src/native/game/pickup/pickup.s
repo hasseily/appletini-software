@@ -1,9 +1,9 @@
-; game/pickup/pickup.s: part pickup's pickups (milestone 10, docs/GAME.md
-; 2.2, 2.4; docs/game-parts/pickup.md). A GPL-2 derivative of upstream's
+; game/pickup/pickup.s: part pickup's pickups (docs/GAME.md). A GPL-2
+; derivative of upstream's
 ; p_inter65.s (Doom8088: Apple IIgs Edition, GPL-2): P_TouchSpecialThing
 ; with pickTab's cases, P_GivePower and the give functions. The one
 ; product (giveAmmo's clips times clipammo, and P_GiveArmor's type times
-; 100) is milestone 6's umul16lo, as upstream's IIGS_MulLo16.
+; 100) is math.s's umul16lo, as upstream's IIGS_MulLo16.
 ;
 ;   P_TouchSpecialThing  GA_0-1 = the special thing, GA_2-3 = the toucher
 ;                (mobj slots): out of reach (the toucher's height below
@@ -692,8 +692,8 @@ pk_half:
         sta PK_WPN
         stx PK_DROP
         asl a                   ; weaponinfo[weapon].ammo: damage's table
-        adc PK_WPN              ;   in the core (12 bytes a weapon; damage.md
-        asl a                   ;   R2, wave 2 as integrated)
+        adc PK_WPN              ;   in the core (12 bytes a weapon)
+        asl a
         asl a
         tax
         lda weaponinfo + UO_WI_AMMO,x

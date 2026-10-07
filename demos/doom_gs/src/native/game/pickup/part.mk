@@ -1,8 +1,7 @@
-# src/native/game/pickup/part.mk: part pickup of milestone 10 (docs/GAME.md
-# 2.4, wave 2): p_inter65.s's pickups (P_TouchSpecialThing, its pickTab
+# src/native/game/pickup/part.mk: part pickup of the game's tic code
+# (docs/GAME.md): p_inter65.s's pickups (P_TouchSpecialThing, its pickTab
 # cases, P_GivePower and the give functions) and m_cheat65.s's cheats'
 # effects (C_Responder with the cheat as an event number, power, giveAmmo).
-# Its record: docs/game-parts/pickup.md.
 PART := pickup
 WAVE := 2
 pickup_SRC := game/pickup/pickup.s game/pickup/cheat.s

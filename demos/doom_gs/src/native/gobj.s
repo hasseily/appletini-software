@@ -1,5 +1,5 @@
-; gobj.s: the object API (milestone 10, docs/GAME.md 1.1, 3.4): the parts
-; and milestone 9's game core read and write the game's objects only
+; gobj.s: the object API (docs/GAME.md): the parts
+; and the level's game core read and write the game's objects only
 ; through it. GPL-2, the port's own.
 ;
 ;   mo_get      A:X = a mobj slot: its RTHING and groups A, B, C in a line
@@ -37,9 +37,7 @@
 ;               planes; pl_put writes the four back; pl_setn the next only;
 ;               a slot of PLANE_SLOTS or more is a stop (GS_PLANES)
 ;
-; The tic images' uncached records (wave 1 as integrated, docs/GAME.md;
-; docs/game-parts/geom.md R2, mobjstate.md R2, secfind.md requests 1-2,
-; sight.md R2), not in the load image. API_W (GW) is the word some of them
+; The tic images' uncached records (docs/GAME.md), not in the load image. API_W (GW) is the word some of them
 ; take or give:
 ;   sd_get      A:X = a side: its LVMAP record (SIDE_SIZE) into SD_BUF, its
 ;               address in SD_AT; sd_put: SD_BUF back to the side last got
@@ -65,7 +63,7 @@
 ; Every get, store and flush changes A, X, Y, the API's temporaries
 ; (GO_*, among GT_*) and the far layer's arguments (FA_*); nothing else.
 ;
-; Speed wave 2 (part objapi, docs/speed-parts/objapi.md): a get looks for
+; The caches' speed (docs/SPEED.md): a get looks for
 ; its tag in the recency order, most recent first (most gets are of the
 ; line last got), and moves the line to the front in the same pass. A miss
 ; copies all its records in one window, and the victim's dirty records in
@@ -76,9 +74,9 @@
 ; destination, a length each), one RWBANK write a descriptor. bl_get's
 ; 256 bytes go through it too (two descriptors); the other uncached
 ; fetches (28 bytes at most) stay with far_get, which costs less for so
-; few bytes (measured: docs/speed-parts/objapi.md). The counters (GO_HITS,
-; GO_MISS, GO_WBACK: gselftest.py reads them) are kept in the test builds
-; only, GO_WBACK counting the write-back windows.
+; few bytes (measured). The counters (GO_HITS, GO_MISS, GO_WBACK) are
+; kept only with -D TESTBUILD, which the disk build does not define,
+; GO_WBACK counting the write-back windows.
 ;
 ; The load image (nl_setup) links it too, assembled with -D LOADIMG: the
 ; planes are then reached far in bank MOBJP (W holds the load's data), the
@@ -115,7 +113,7 @@
         .assert MOC_LINES = 8 && SCC_LINES = 8 && LNC_LINES = 8, error,  "eight lines"
         .assert SPC_LINES <= 8, error, "the special lines"
 
-; COUNT: a counter of the test builds one up (GO_HITS, GO_MISS, GO_WBACK)
+; COUNT: a counter one up (GO_HITS, GO_MISS, GO_WBACK), with TESTBUILD only
 .macro COUNT counter
 .ifdef TESTBUILD
         jsr count_hit + (counter - GO_HITS) / 2 * 9
@@ -178,7 +176,7 @@ pw_n    = pw_dh + PW_MAX
 pw_get: lda #<RAMRDON
         ldy #<RAMRDOFF
         bra pw_set
-pw_put: COUNT GO_WBACK          ; (the test builds: a write-back window)
+pw_put: COUNT GO_WBACK          ; (TESTBUILD: a write-back window)
         lda #<RAMWRTON
         ldy #<RAMWRTOFF
 pw_set: sta pw_on
@@ -248,8 +246,8 @@ mo_dirty:
         lda #GS_API
         jmp stop
 
-; mo_tagged: carry set when slot A:X has a line (X: the line), for the
-; tests (the recency order unchanged); in the test driver's card part
+; mo_tagged: carry set when slot A:X has a line (X: the line), the
+; recency order unchanged; TESTBUILD only, in a driver's DRIVER segment
 .ifdef TESTBUILD
         .segment "DRIVER"
 mo_tagged:
@@ -1490,9 +1488,8 @@ go_stamps0:
 @done:  rts
         .assert LN_RVALID = LN_VALID + 2, error, "the line's two stamps"
 
-; the counters of the test builds (gselftest.py reads them): three
-; routines of 9 bytes, in GO_HITS's order (COUNT), in the test driver's
-; card part
+; the counters (TESTBUILD only): three routines of 9 bytes, in GO_HITS's
+; order (COUNT), in a driver's DRIVER segment
 .ifdef TESTBUILD
         .segment "DRIVER"
 count_hit:
@@ -1528,7 +1525,7 @@ stop:
 .endif
 
 ; ===========================================================================
-; The planes (docs/GAME.md 1.3): in W in the tic phase, far (bank MOBJP)
+; The planes (docs/GAME.md): in W in the tic phase, far (bank MOBJP)
 ; in the load image
 ; ===========================================================================
 

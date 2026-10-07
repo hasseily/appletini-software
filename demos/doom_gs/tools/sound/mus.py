@@ -1,11 +1,6 @@
-#!/usr/bin/env python3
 """The WAD directory and the MUS songs of DOOM (DMX's music format).
 
-Usage:  python3 tools/sound/mus.py [--wad FILE] [SONG ...]
-
-Lists the songs of the WAD (default: build/upstream/data/DOOM1.WAD, put
-there by tools/fetch_upstream.py) and, for each song, its header and the
-count of each kind of event.
+The WAD is build/upstream/data/DOOM1.WAD (tools/fetch_upstream.py).
 
 Written from the published layouts, with no code from upstream.
 
@@ -50,16 +45,14 @@ is not documented). The parser is strict: anything outside the ranges
 above is a MusError with the offset of the byte.
 """
 
-import argparse
 import struct
 import sys
-from collections import Counter, namedtuple
+from collections import namedtuple
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WAD_PATH = ROOT / 'build' / 'upstream' / 'data' / 'DOOM1.WAD'
 
-TICK_HZ = 140
 MAGIC = b'MUS\x1a'
 HEADER_SIZE = 16
 PERCUSSION = 15
@@ -119,24 +112,6 @@ class Song:
         self.instruments = instruments
         self.events = events
         self.size = size
-
-    @property
-    def length_ticks(self):
-        """The tick of the score end."""
-        return self.events[-1].tick
-
-    @property
-    def seconds(self):
-        return self.length_ticks / TICK_HZ
-
-    def counts(self):
-        """Events by kind, controllers as 'ctrl N', system as 'sys N'."""
-        counts = Counter()
-        for e in self.events:
-            counts[e.kind] += 1
-            if e.kind in ('ctrl', 'sys'):
-                counts['%s %d' % (e.kind, e.a)] += 1
-        return counts
 
 
 def _u16(data, offset):
@@ -272,9 +247,6 @@ class Wad:
         with open(path, 'rb') as f:
             return cls(f.read())
 
-    def names(self, prefix=''):
-        return [n for n, _, _ in self.lumps if n.startswith(prefix)]
-
     def lump(self, name):
         """The bytes of the first lump of that name; KeyError if none."""
         for n, offset, size in self.lumps:
@@ -282,38 +254,5 @@ class Wad:
                 return self.data[offset:offset + size]
         raise KeyError(name)
 
-    def songs(self):
-        """The names of the music lumps (D_*), in directory order."""
-        return self.names('D_')
-
     def song(self, name):
         return parse(self.lump(name), name)
-
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    parser.add_argument('--wad', default=str(WAD_PATH))
-    parser.add_argument('songs', nargs='*')
-    args = parser.parse_args(argv)
-    wad = Wad.open(args.wad)
-    names = args.songs or wad.songs()
-    print('%s: %s, %d lumps, %d songs'
-          % (args.wad, wad.kind, len(wad.lumps), len(wad.songs())))
-    print('upstream song list: %s' % ' '.join(
-        '%d=%s' % (i, n) for i, n in enumerate(UPSTREAM_SONGS)))
-    print()
-    print('%-9s %6s %7s %6s %6s %6s %5s %5s  %s' % (
-        'song', 'bytes', 'seconds', 'events', 'on', 'off', 'bends', 'ctrls',
-        'instruments'))
-    for name in names:
-        song = wad.song(name)
-        c = song.counts()
-        print('%-9s %6d %7.1f %6d %6d %6d %5d %5d  %s' % (
-            name, song.size, song.seconds, len(song.events), c['on'],
-            c['off'], c['bend'], c['ctrl'],
-            ' '.join(str(i) for i in song.instruments)))
-    return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

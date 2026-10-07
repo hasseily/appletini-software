@@ -1,88 +1,32 @@
 # a2vm: the model of the Appletini target
 
 `a2vm` is a fast model of the port's target, an enhanced Apple //e with
-an Appletini card, to run port code on the host (milestone 3.1 of
-[`docs/MILESTONES.md`](../../docs/MILESTONES.md)). Stage 3.1a built its
-W65C02S core, checked against a public per-opcode vector set; stage 3.1b
-the machine around it: the //e memory map with 128 RamWorks banks, the
-devices, a trap of the ProDOS MLI, and a compatibility mode in which a run
-matches the existing Doom port's model, `demos/doom/tools/a2sim.py`,
-cycle for cycle; stage 3.1c its cost model, the time a run takes on the
-card, access by access, under the firmware as it is (F1.2.1) and with
-the changes of the firmware design (below, "The cost model"). Milestone 6
-added what routine tests need (a write log, the lowest S, snapshots of
-chosen ranges, events at the Nth visit of a PC) and the firmware
-design's zero-page bank pair with two profiles, `f121zp` and `fastzp`
-(below, "Milestone 6 additions"). All of it is opt-in: without the new
-options every run is what it was, byte for byte.
+an Appletini card, to run port code on the host. It has an exact
+W65C02S core, the //e memory map with 128 RamWorks banks, the devices
+DOOM uses (mouse card, Phasor, memory API, VidHD, a ProDOS block device),
+a trap of the ProDOS MLI, and a cost model: the time a run takes on the card, access by
+access, in TURBO mode. `tools/native/playdisk.py --run` plays `DOOM.hdv`
+on it; `tools/native/lrun.py` runs the level load on it.
 
 | File | What it is |
 | --- | --- |
 | `cpu65c02.h` | The W65C02S core's interface: registers, bus callbacks, cycle kinds |
 | `cpu65c02_core.h` | The core itself, included once per bus |
 | `cpu65c02.c` | The core connected through function pointers, and the parts without bus cycles |
-| `py65core.h` | The compatibility core: py65's 65C02, the core `a2sim.py` runs on |
-| `a2vm.h`, `a2vm.c` | The machine: memory map, soft switches, keyboard, game port, mouse card, Phasor, memory API, `a2sim.py`'s timing, interrupt delivery and idle skipping |
-| `prodos.h`, `prodos.c` | The MLI stand-in, `a2sim.py`'s `FakeProDOS` |
+| `py65core.h` | The compatibility core: py65's 65C02 (BSD licence, see the top-level README) |
+| `a2vm.h`, `a2vm.c` | The machine: memory map, soft switches, keyboard, game port, mouse cards, Phasor, VidHD, memory API, the block device, timing, interrupt delivery and idle skipping |
+| `prodos.h`, `prodos.c` | The MLI stand-in |
 | `cost.h`, `cost.c` | The cost model: every bus access charged in fabric clocks of the Appletini, with its TURBO caches, RamWorks line cache, PSRAM admission, bus cycles, video mirror and memory API |
-| `costs/appletini.json` | The cost parameters, each with its source in the firmware or `docs/firmware/`, and the profiles `f121`, `f122` (F1.2.2) and `fastpath`, and `f121zp` and `fastzp` with the zero-page pair |
-| `costs.py` | A profile as the "name value" lines `--cost` reads; `PROFILE+VARIANT` adds the variants (the slot-4 slowdown, NTSC, the virtual Disk II inactive, the model before the card's calibration) |
-| `cost_report.py` | The report on the existing port: frame and phase times under both profiles, against the hardware measurement |
-| `main.c` | The command line: start-up, runs, input events, snapshots, screen dumps, bus scripts |
-| `shot.py` | A screen dump or snapshot to a PNG (standard SHR and PAL256), with zlib only |
-| `doom.py` | Runs the existing Doom port (`demos/doom`) on a2vm, started as its `run_doom.py` starts it |
-| `compare_a2sim.py` | Runs the existing port on a2vm and on `a2sim.py` and compares them (needs `build/venv`) |
-| `py65_diff.py` | Compares the compatibility core with py65 on random cases (needs `build/venv`) |
-| `py65check.c` | The compatibility core on a flat memory, for `py65_diff.py` |
-| `fetch_vectors.py` | Fetches the SingleStepTests WDC 65C02 vectors into `build/vectors/` |
-| `vectors.c` | Runs the vectors and compares state, cycle counts and the bus |
-| `viatest.py` | The tests of `--via-timers` (`make viatest`): the VIAs' timer-1 registers against `via6522.v`'s logic stepped a bus cycle at a time, the interrupt on both cores, the idle skip, and nothing changed without the option |
-| `selftest.c` | What the vectors do not cover: IRQ, NMI, BRK, WAI, STP, reset, cycle kinds, the data_ea classification of every opcode against the Appletini core's states, `cpu65c02_run`, lengths, datasheet cycles, exhaustive decimal mode |
-| `bench.c` | Instructions per second of the core on the host |
-| `vm816.c` | The checks of the 65816 interpreter of `src/vm` on a2vm: the SingleStepTests 65816 vectors, a lockstep with `tools/ref816`'s core on random programs, and a self test ([`src/vm/README.md`](../../src/vm/README.md)); with `--cost`, the cost of each case under a cost profile |
-| `game816.c` | The interpreter on upstream's game, with the game's map: the first contact (the release image from its entry point, in lockstep with `tools/ref816`'s IIgs up to the first I/O access), the game's own instructions sampled by `ref816` run one by one and measured, and the cost of a change of code page |
-| `interpreter_report.py`, `interpreter_template.md` | Make those measurements and write [`docs/INTERPRETER.md`](../../docs/INTERPRETER.md) |
-| `Makefile` | `all`, `selftest`, `vectors`, `sample`, `bench`, `compare`, `costreport`, `vmsample`, `vmvectors`, `vmselftest`, `contact`, `interpreter`, `clean`; builds into `build/a2vm` |
+| `costs/appletini.json` | The cost parameters, each with its source in the firmware, and the profiles `f121`, `f122`, `fastpath`, `f121zp` and `fastzp` |
+| `costs.py` | A profile as the "name value" lines `--cost` reads; `PROFILE+VARIANT` adds the variants |
+| `main.c` | The command line: start-up, runs, input events, snapshots, screen dumps, logs, bus scripts |
+| `Makefile` | `all` (the default) and `clean`; builds `build/a2vm/a2vm` |
 
-Build and check:
+Build:
 
-    python3 tools/a2vm/fetch_vectors.py
-    make -C tools/a2vm clean all vectors selftest bench
-    python3 -m unittest discover -s tests
+    make -C tools/a2vm
 
-Run the existing port (its build in `demos/doom/build/hardware-20260926-textured-pal`,
-its data in `demos/doom/build/data`, the ROM from appletini-one):
-
-    python3 tools/a2vm/doom.py --frames 20 --shot         # fast install
-    python3 tools/a2vm/doom.py --frames 1 --prodos        # through the loader
-
-The interpreter on the game (`game816`, with the memory image of
-`tools/ref816/make_image.py`) and its cost report:
-
-    make -C tools/a2vm contact           # the first contact, as JSON
-    python3 tools/a2vm/interpreter_report.py [--run]   # docs/INTERPRETER.md
-
-`tests/test_a2vm.py` tests the core and its harness; `tests/test_a2vm_machine.py`
-the machine (below); `tests/test_a2vm_cost.py` the cost model;
-`tests/test_a2vm_harness.py` the write log, the lowest S, range snapshots
-and visit events; `tests/test_a2vm_zpbank.py` the zero-page pair;
-`tests/test_interpreter.py` the cost measurements, `game816` and the
-report. They build everything from scratch.
-
-### The comparison environment
-
-The comparisons with `a2sim.py` need its Python packages, py65 and
-Pillow, which the port's own tools never import. They live in a virtual
-environment under `build/`:
-
-    python3 -m venv build/venv && build/venv/bin/pip install py65 Pillow
-    make -C tools/a2vm compare           # 20 frames, the loader boot, then
-                                         # 20 frames with the memory API and
-                                         # the cost model on
-    build/venv/bin/python tools/a2vm/py65_diff.py
-
-Without `build/venv` the tests that need it skip with a message; the rest
-of the tests run on the standard library alone.
+(`build.sh` does it too.)
 
 ## The W65C02S core
 
@@ -100,7 +44,7 @@ first. Each callback gets the kind of its cycle:
 | `CPU65C02_DUMMY` | Reads whose value the chip ignores: the extra cycles of implied, indexed, read-modify-write, stack, branch and decimal instructions, the discarded fetch of an interrupt entry, and the cycles of WAI and STP |
 
 A flag, `CPU65C02_EA`, marks the cycles of the Appletini core's six
-"data_ea" states (`w65c02_core.sv:1049-1069`), those at an instruction's
+"data_ea" states (`w65c02_core.sv`), those at an instruction's
 effective address: `CPU65C02_DATA_EA` for `ST_MEM_READ`, `ST_RMW_READ`,
 `ST_MEM_WRITE` and `ST_RMW_WRITE`, `CPU65C02_DUMMY_EA` for `ST_RMW_MODIFY`
 (the read-modify-write's second read) and `ST_DECIMAL_EXTRA` (the decimal
@@ -109,14 +53,11 @@ Nothing else is EA: opcodes, operands, dummy reads of PC, the same-page
 `STA a,X` false read of its target (`ST_INDEX_DUMMY`), zero-page
 pointers, the zero-page reads of BBR and BBS, JMP `(a)` and `(a,X)`
 pointers, the stack and the vectors. `CPU65C02_BASE_KIND(kind)` gives the
-kind without the flag. The zero-page bank pair redirects only EA cycles;
-`selftest.c` checks the flag on every opcode in both decimal modes
-against a table of the core's decode and states.
+kind without the flag. The zero-page bank pair redirects only EA cycles.
 
-The 65C02 makes no dummy writes. The kinds are what the cost model of a
-later stage classes: the Appletini's core, in its TURBO mode, drops dummy
-reads outside `$C000-$CFFF` (`README_TURBO.md` in appletini-one), and a
-dummy read of a soft switch still switches it.
+The 65C02 makes no dummy writes. The cost model uses the kinds: the
+Appletini's core, in TURBO mode, drops dummy reads outside
+`$C000-$CFFF`, and a dummy read of a soft switch still switches it.
 
 `cpu65c02_step` runs one instruction, an interrupt entry, or one cycle of
 waiting or of being stopped. `cpu65c02_run(cpu, until)` steps until
@@ -124,110 +65,84 @@ waiting or of being stopped. `cpu65c02_run(cpu, until)` steps until
 after the current instruction. IRQ is a level with one bit per source
 (`cpu65c02_set_irq`); NMI is an edge (`cpu65c02_nmi`).
 
-**Two builds.** `cpu65c02_core.h` holds the whole core and is included
-once per bus, with four macros: `C02_PREFIX`, `C02_LINKAGE`,
-`C02_READ(cpu, address, kind)` and `C02_WRITE(cpu, address, value, kind)`.
-`cpu65c02.c` includes it with the function pointers of `cpu65c02.h`; a
-machine can include it with its own inline bus, and the kind is then a
-constant the compiler folds. `bench.c` does both.
+`cpu65c02_core.h` holds the whole core and is included once per bus,
+with four macros: `C02_PREFIX`, `C02_LINKAGE`, `C02_READ(cpu, address,
+kind)` and `C02_WRITE(cpu, address, value, kind)`. `cpu65c02.c` includes
+it with the function pointers of `cpu65c02.h`; a machine can include it
+with its own inline bus, and the kind is then a constant the compiler
+folds.
 
 ### What it follows
 
 In order of authority:
 
 1. **The Appletini's own core**, `hdl/apple/w65c02_core.sv` in
-   [hasseily/appletini-one](https://github.com/hasseily/appletini-one)
-   (`origin/main`, F1.2.1). It is the chip this models. Its README says it
-   passes all 2,540,000 cases of the vector set below, bus cycles
-   included, with one correction (below), and Klaus Dormann's functional,
-   extended-opcode and exhaustive CMOS decimal tests.
-2. **The WDC W65C02S datasheet** (westerndesigncenter.com), tables 4-1,
-   5-2, 6-4 and 7-1.
+   [hasseily/appletini-one](https://github.com/hasseily/appletini-one).
+   It is the chip this models.
+2. **The WDC W65C02S datasheet**, tables 4-1, 5-2, 6-4 and 7-1.
 3. **The [SingleStepTests 65x02](https://github.com/SingleStepTests/65x02)
-   vectors**, directory `wdc65c02/v1`, at commit `2f6980a` (2025-05-10),
-   the revision the Appletini core was checked against.
+   vectors**, directory `wdc65c02/v1`, at commit `2f6980a`, the revision
+   the Appletini core was checked against.
 
 Where they differ:
 
-| Case | Datasheet | Vector set | Appletini core | This core |
-| --- | --- | --- | --- | --- |
-| `$5C`, reserved NOP | 3 bytes, **8 cycles** (table 7-1) | 3 bytes, 4 cycles: two operand reads, then the last byte again | as the set | as the set and the Appletini core. The self test names the difference. |
-| `STA a,X` and `STA a,Y`, index on the same page: the fourth cycle | not stated; table 7-1 says a page crossing reads the last instruction byte | reads the last instruction byte | reads the **target address**, the NMOS false read (`ST_INDEX_DUMMY`); its harness corrects these cases of the set (`scripts/test_w65c02_core.py`, `normalize_known_cycle_quirks`) | as the Appletini core. The harness lists the 10,029 cases as a known issue. |
-| Decimal `ADC #` and `SBC #`: the extra cycle | one more cycle, address not stated | reads `$007F` (ADC) or `$0000` (SBC) | as the set | as the set |
-| Decimal ADC and SBC on memory: the extra cycle | one more cycle, address not stated | reads the operand's address again | as the set | as the set |
+| Case | Datasheet | Vector set | Appletini core and this core |
+| --- | --- | --- | --- |
+| `$5C`, reserved NOP | 3 bytes, 8 cycles | 3 bytes, 4 cycles: two operand reads, then the last byte again | as the set |
+| `STA a,X` and `STA a,Y`, index on the same page: the fourth cycle | not stated | reads the last instruction byte | reads the target address, the NMOS false read (`ST_INDEX_DUMMY`) |
+| Decimal `ADC #` and `SBC #`: the extra cycle | not stated | reads `$007F` (ADC) or `$0000` (SBC) | as the set |
+| Decimal ADC and SBC on memory: the extra cycle | not stated | reads the operand's address again | as the set |
 
-Other behaviour the vectors do not reach, taken from the Appletini core
-and checked by `selftest.c`:
+Behaviour the vectors do not reach, taken from the Appletini core:
 
 - **Interrupts** are sampled at each opcode fetch with the flags the
   previous instruction left: an IRQ pending across `CLI` is taken right
-  after it, with no one-instruction delay. The entry takes 7 cycles: the
-  discarded fetch, a read of PC, three pushes (P with B clear), the two
-  vector bytes; I is set and D cleared. NMI wins over IRQ.
+  after it. The entry takes 7 cycles: the discarded fetch, a read of PC,
+  three pushes (P with B clear), the two vector bytes; I is set and D
+  cleared. NMI wins over IRQ.
 - **BRK** reads its signature byte, pushes PC + 2 and P with B set, and
   takes the IRQ vector; D is cleared.
 - **WAI** is the opcode fetch and a read of the next byte, then one cycle
-  a step reading PC while waiting (3 cycles with the first waiting one, as
-  the datasheet counts). An active IRQ or an NMI ends the wait at the end
-  of a waiting cycle; with I set an IRQ resumes at the next instruction
-  without being taken, otherwise the interrupt is entered in 6 more
-  cycles.
+  a step reading PC while waiting. An active IRQ or an NMI ends the wait;
+  with I set an IRQ resumes at the next instruction without being taken,
+  otherwise the interrupt is entered in 6 more cycles.
 - **STP** is the same two cycles, then one cycle a step until reset.
 - **Reset** is 7 cycles: two reads at PC, three stack reads moving S down
   by 3, the vector at `$FFFC`. I is set, D cleared; A, X, Y and the other
   flags are kept. It leaves WAI and STP and forgets a pending NMI.
 - **P** has bit 5 set and bit 4 clear in the register. PHP and BRK push
-  bit 4 set, interrupts clear. The set gives bit 4 set in the initial P of
-  some cases and expects it carried through; the core keeps any bit it is
-  given, and PLP and RTI clear it.
+  bit 4 set, interrupts clear; PLP and RTI clear it.
 
-Not modelled: the SO pin (not connected on the Apple //e), RDY and bus
-stalls (the cost model will charge them), and the TURBO shortcuts of the
-Appletini core (the cost model will charge them from the cycle kinds).
+Not modelled: the SO pin (not connected on the //e) and RDY. Bus stalls
+and the TURBO shortcuts are the cost model's.
 
-### Results of the core
-
-On an Apple M3 Pro with Apple clang 21, `-O2`:
-
-| Check | Result |
-| --- | --- |
-| Build | No warnings with `-std=c11 -Wall -Wextra -pedantic` |
-| Vectors (`make vectors`) | 256 files (the 2 of WAI and STP are empty in the set), 2,540,000 cases: 0 state failures, 0 cycle-count failures, 0 bus failures; 10,029 known issues, all `STA a,X`/`STA a,Y` on the same page (5,022 and 5,007), where only the address of the dummy read differs; 0.2 s |
-| Self test (`make selftest`) | All checks pass, including 262,144 decimal ADC and SBC cases against the Appletini core's formulation, and every opcode's base cycle count against the datasheet with `$5C` the only difference |
-| Speed (`make bench`, 10<sup>9</sup> cycles) | Inlined bus: 217 to 220 million instructions a second (750 MHz of 65C02 cycles). Function pointers: 185 to 188 million, flat RAM or a machine-shaped bus with a page table, an I/O trap and counts by kind. The three runs end in the same state. |
-
-The mix of the bench program is 3.45 cycles an instruction; per cycle,
-29% opcode fetches, 29% operand reads, 26% data accesses, 16% dummy
-reads.
+On an Apple M3 Pro the core runs about 185 million instructions a second
+through function pointers, 217 million with an inlined bus.
 
 ## The machine
 
-Everything follows `demos/doom/tools/a2sim.py` (its module doc and its
-`Machine`, `MouseCard`, `Phasor`, `FakeProDOS` and `FakeSmartPortMemory`
-classes), rule for rule, so that the two can be compared. Where
-`a2sim.py` departs from the hardware, a2vm departs the same way; the
-departures are listed below.
+The machine's rules were first written to match `a2sim.py`, the Python
+model of an earlier Doom port, so that the two could be compared cycle
+for cycle. That model is no longer in this repository, but its rules
+remain the defaults: `--core py65` and `--speed turbo` reproduce it, and
+"Compatibility mode" below lists where it departs from the hardware. The
+DOOM GS runs (`playdisk.py`) use the exact core and the cost model's
+clock.
 
 ### Memory
 
 | Area | Model |
 | --- | --- |
 | Main | 64 KB. `$0000-$01FF` from the selected aux bank with ALTZP; `$0200-$BFFF` reads from aux with RAMRD and writes to aux with RAMWRT, except that with 80STORE `$0400-$07FF` (and `$2000-$3FFF` with HIRES) follow PAGE2 |
-| RamWorks | 128 banks of 64 KB (`--banks` 1-128), selected by writes to `$C071` or `$C073`: bank = (value & `$7F`) modulo the bank count. Bank 0 is the base aux memory. All 128 banks exist whatever `--banks` says, as `a2sim.py` creates any bank it is given data for |
+| RamWorks | 128 banks of 64 KB (`--banks` 1-128), selected by writes to `$C071` or `$C073`: bank = (value & `$7F`) modulo the bank count. Bank 0 is the base aux memory |
 | Language card | `$C080-$C08F`: bit 3 selects bank 1, `(low & 3) in (0, 3)` enables reads, write enable needs two reads of an odd address (a write resets the pre-write). With ALTZP off, main's card: 16 KB for `$C000-$FFFF` (bank 2 at `$D000`) plus 4 KB of bank 1. With ALTZP on, the selected aux bank's own `$C000-$FFFF`, bank 1 `$D000-$DFFF` at its physical `$C000-$CFFF` |
-| ROM | 16 KB for `$C000-$FFFF` (`--rom`, the Apple //e enhanced ROM of appletini-one's `docs/`) |
-
-A test harness may set `write_hook`, an observer of every CPU write (the
-address, the storage byte it reaches, the value); it changes nothing, and
-is NULL in every other run. `vm816.c` uses it to see each write the
-interpreter makes, and `--write-log` to write its log.
+| ROM | 16 KB for `$C000-$FFFF` (`--rom`). `playdisk.py` gives an all-zero ROM |
 
 Reads and writes go through page tables rebuilt whenever a switch that
 moves memory changes; `$C000-$CFFF` and write-protected language-card
-pages take a slow path. Writes are counted as `a2sim.py` counts them
-(video writes to `$0400-$0BFF` and `$2000-$5FFF` of main, and to
-`$0400-$0BFF` and `$2000-$9FFF` of aux bank 0; SHR writes the latter
-above `$2000`).
+pages take a slow path. Video writes (to `$0400-$0BFF` and `$2000-$5FFF`
+of main, and to `$0400-$0BFF` and `$2000-$9FFF` of aux bank 0) are
+counted; SHR writes are the latter above `$2000`.
 
 ### Devices
 
@@ -236,228 +151,94 @@ above `$2000`).
 | `$C000`, `$C010` | Keyboard: a queue of taps, each due at a cycle (`key`), and a held key (`hold`, `release`) whose "any key down" bit shows in `$C010` |
 | `$C000-$C00F` writes | 80STORE, RAMRD, RAMWRT, INTCXROM, ALTZP, SLOTC3ROM, 80COL, ALTCHARSET |
 | `$C013-$C01F` | The status of the switches in bit 7, the keyboard latch in bits 0-6 |
-| `$C019` | 0 in vertical blanking (the last 70 of 262 lines of a frame), `$80` otherwise |
+| `$C019` | 0 in vertical blanking, `$80` otherwise |
 | `$C029` | NEWVIDEO, read and write |
 | `$C030` | Speaker, counted |
 | `$C050-$C057` | TEXT, MIXED, PAGE2, HIRES |
 | `$C061-$C063` | Buttons: Open Apple, Solid Apple, button 2 |
 | `$C064-$C067`, `$C070` | Paddles: 1,400 cycles of the 1 MHz bus clock from the trigger |
-| `$C0A0-$C0AF`, `$C200-$C2FF` | The Appletini mouse card in slot 2 (`mouse_card.sv`): status, position, buttons, sequence, clamps, commands, mode, acknowledge, its slot ROM. A VBL interrupt (mode bit 3) is raised at the start of each vertical blanking and delivered while I is clear, until the program acknowledges it |
-| `$C200-$C2FF` with `--mouse-apple` | An AppleMouse II in slot 2 ("The AppleMouse II", below) instead of the Appletini's card: its ID bytes, its entry table, each firmware call serviced at its entry; its VBL interrupt |
-| `$C0C0-$C0CF`, `$C400-$C4FF` | The Phasor in slot 4 (none with `--no-phasor`): mode switch, two 6522 VIAs (ports, directions, timer 1 as a free-running counter; with `--via-timers` timer 1 as the card's 6522 runs it, with its interrupt: "The VIA timers" below), four AY chips' registers through the VIA port protocol in Mockingboard and native modes, the SSI-263's phoneme timer. No sound |
-| `$C700-$C7FF`, `$CFF0-$CFF2`, `$CFFF` | With `--amem`, the memory API of appletini-one's `README_MEMORY_API.md`, version 1, behind its raw FIFO transport, as `FakeSmartPortMemory` models it: the slot-7 ROM ID bytes, C8 selection and release, STATUS with the 32-byte capability block, CONTROL with COPY, FILL and PRIVATE, and every validation error: `$21` (unsupported selector, command or firmware), `$60` (unavailable), `$61` (header), `$62` (descriptor), `$63` (range), `$64` (overlap), `$65` (PRIVATE required). All descriptors are checked before any is executed. `--amem-unsupported` and `--amem-unavailable` select the two failing firmware answers |
+| `$C0A0-$C0AF`, `$C200-$C2FF` | The Appletini mouse card in slot 2 (`mouse_card.sv`): status, position, buttons, sequence, clamps, commands, mode, acknowledge, its slot ROM. A VBL interrupt (mode bit 3) is raised at the start of each vertical blanking and delivered while I is clear, until the program acknowledges it. `--no-mouse` leaves slot 2 empty; `--mouse-plain` gives it a ROM with the AppleMouse ID bytes and no registers |
+| `$C200-$C2FF` with `--mouse-apple` or `--mouse-rom` | An AppleMouse II (below) |
+| `$C0C0-$C0CF`, `$C400-$C4FF` | The Phasor in slot 4 (none with `--no-phasor`): mode switch, two 6522 VIAs (ports, directions, timer 1 as a free-running counter, or with `--via-timers` as the card's 6522 runs it), four AY chips' registers through the VIA port protocol in Mockingboard and native modes, the SSI-263's phoneme timer. No sound |
+| `$C700-$C7FF`, `$CFF0-$CFF2`, `$CFFF` | With `--amem`, the memory API of appletini-one's `README_MEMORY_API.md`, version 1, behind its raw FIFO transport: the slot-7 ROM ID bytes, C8 selection and release, STATUS with the 32-byte capability block, CONTROL with COPY, FILL and PRIVATE, and every validation error (`$21`, `$60`-`$65`). All descriptors are checked before any is executed. `--amem-unsupported` and `--amem-unavailable` select the two failing firmware answers |
+| `$Cn00-$CnFF` with `--vidhd SLOT` | A VidHD (below) |
+| `$Cn00-$CnFF` with `--blockdev SLOT:FILE` | A ProDOS block device on an image file (below) |
 
 ### Time and interrupts
 
-A frame is 1,250,000 cycles with `--speed turbo` (the default, `a2sim.py`'s
-"historical synthetic budget") or 17,030 × N with `--speed N`. Line 0
-starts a frame; vertical blanking starts at line 192. With `turbo` each
-access to `$C000-$CFFF` adds 73 cycles (`--io-cycles` changes it), added
-at the access, so a read of `$C019` sees them.
+Without the cost model's clock (`--cost-timed`), a frame is 1,250,000
+cycles with `--speed turbo` (the default) or 17,030 × N with `--speed N`.
+Line 0 starts a frame; vertical blanking starts at line 192. With
+`turbo` each access to `$C000-$CFFF` adds 73 cycles (`--io-cycles`
+changes it). With `--cost-timed` the machine runs on the cost model's
+clock instead: the PAL (or NTSC) frame, `$C019`, the VBL interrupt and
+the idle skips follow it.
 
-Each step does what `a2sim.Machine.step` does: the VBL event when its
-cycle has come, then the mouse card's interrupt when it is pending and I
-is clear, then the idle skip, then one instruction. `--idle PC:KIND`
-declares an idle loop: when the CPU reaches PC and the conditions hold,
-the clock moves to the next VBL (`vbl`) or the next line 0 (`line0`)
-instead of the loop running, and the skipped cycles are counted.
+Each step delivers the VBL event when its cycle has come, then a pending
+interrupt when I is clear, then the idle skip, then one instruction.
+`--idle PC:KIND` declares an idle loop: when the CPU reaches PC and the
+conditions hold, the clock moves to the next VBL (`vbl`) or the next
+line 0 (`line0`) instead of the loop running, and the skipped cycles are
+counted.
 
 The conditions, each after a colon: `main` (ALTZP off), `invbl` (in
 vertical blanking), `eq=A,B` (the 16-bit words at A and B equal; an
 address is main memory, or the main language card's `$C000-$FFFE` written
 `lc.ADDR`) and `byte=A,V` (the main byte at A holds V; at most four a
 loop). A skip is exact only while the loop would spin until the next
-interrupt: the conditions must say so. The play build's two tic waits are
-the example (`tools/native/playdisk.py` run, docs/SPEED.md 1): the
-kernel's `dl_mwait` and the brain's `dl_bwait` spin while I_GetTime's low
-word (`CLK_TICS`, in the main card) equals `DL_LASTM`, and `dl_bwait`
-lives in a paged slot, so it is skipped only while that slot's
-`SLOT_GRP` byte names the brain's group:
+interrupt: the conditions must say so. `playdisk.py` skips the kernel's
+`dl_mwait` and the brain's `dl_bwait`, which spin while I_GetTime's low
+word (`CLK_TICS`, in the main card) equals `DL_LASTM`; `dl_bwait` lives
+in a paged slot, so it is skipped only while that slot's `SLOT_GRP` byte
+names the brain's group:
 
     --idle BD0:vbl:main:eq=lc.E407,1F01
     --idle A66C:vbl:main:byte=19EE,1D:eq=lc.E407,1F01
 
-(addresses of the build of 2026-10-02; `playdisk.run` reads them from
-the link's labels and symbols). Without the two conditions the skip of
-`dl_bwait` jumped to the next VBL when a tic was already due, and
-whenever another group's instruction sat at that address: 9.9 ms a frame
-standing still, up to 49.5 ms a frame after a re-placement.
+(the addresses of one build; `playdisk.py` reads them from the link's
+labels and symbols).
 
 ### The VIA timers
 
 With `--via-timers` each of the Phasor's two VIAs has timer 1 as
 appletini-one's `hdl/apple/via6522.v` runs it, stepped once an Apple bus
-cycle (the card's `via_timer_clock`, `sss_en`, `mockingboard.sv:86`):
+cycle:
 
 - T1C-L and T1L-L write the low latch, T1L-H the high latch (and clear
   IFR bit 6), T1C-H the high latch, then loads the counter with the
   latch, clears IFR bit 6 and arms the one-shot.
 - Loaded with N, the counter reads N, N-1 ... 0, $FFFF, then the latch L
   again: a time-out every L + 2 cycles. A read returns the counter before
-  its step in that cycle (`timer1_bus_value`).
+  its step in that cycle.
 - A time-out sets IFR bit 6 in free-run mode (ACR bit 6), and in one-shot
   mode the first one after the T1C-H write only. Reading T1C-L, writing
   T1C-H or T1L-H, or writing IFR with bit 6 set clears it; in Phasor
-  native mode the T1C-L read also steps the counter once more
-  (`mockingboard.sv:87-97`).
+  native mode the T1C-L read also steps the counter once more.
 - IFR reads bit 7 set when a flag is set whose IER bit is set; IER reads
-  bit 7 set; ACR, IER and IFR write as on the 6522. The VIA's IRQ (any
-  flag with its IER bit) reaches the CPU like the mouse card's, on both
-  cores, and an idle skip ends at the next time-out when an IER bit 6 is
-  set.
+  bit 7 set. The VIA's IRQ reaches the CPU like the mouse card's, and an
+  idle skip ends at the next time-out when an IER bit 6 is set.
 - Only timer 1 flags: timer 2, the shift register and CA1, CA2, CB1, CB2
-  never set theirs; PB7 output (ACR bit 7) is not modelled.
+  never set theirs; PB7 output is not modelled.
 
-The state JSON then has `via_timers`, each VIA's latch, ACR, IFR, IER,
-the one-shot's arming, and the counter's origin (`load` at bus clock
-`start`) and next flag (`flag_bus`, -1 for none).
+The state JSON then has `via_timers`: each VIA's latch, ACR, IFR, IER,
+the one-shot's arming, and the counter's origin and next flag.
 
-### The two cores
-
-`--core py65` (the default) is the compatibility core, `py65core.h`: it
-does what py65 1.2.0's `MPU65C02` does, access for access and cycle for
-cycle. `py65_diff.py` checks it against py65 itself on 5,120 single steps
-(20 of each opcode) and 60 runs of 200 steps, comparing registers,
-cycles, and every memory access with its address and value, in order.
-
-`--core w65c02s` is the exact core of `cpu65c02_core.h`, one cycle a bus
-access, dummy reads included. The machine is the same; the MLI trap is
-taken at the step boundary (with the JSR's 6 cycles), and the mouse
-card's interrupt goes to the core's IRQ line. It runs the existing port
-(`doom.py --core w65c02s`) but is not compared with `a2sim.py`, which has
-no such core.
-
-### Where a2sim.py (and so compatibility mode) departs from the hardware
-
-These are properties of the model the existing port was developed on.
-a2vm reproduces them in compatibility mode; the cost model of a later
-stage will not.
-
-- **py65's cycle counts.** `DEC abs` takes 3 cycles, the read-modify-write
-  `a,X` forms always 7, `BRA` 2 (3 across a page), `BIT a,X` no page
-  penalty; decimal ADC and SBC take no extra cycle. The 62 opcodes py65
-  leaves out (`BBR`, `BBS`, `STP` and the reserved NOPs) are two-byte
-  NOPs of 0 cycles.
-- **py65's accesses.** No dummy cycles at all (the W65C02S reads its
-  operand's address again in read-modify-write instructions, so
-  `INC $C083` enables language-card writes on the chip but not in
-  py65); JSR pushes before it reads its operand's high byte; `(zp)` at
-  `$FF` reads its high byte from `$0100`.
-- **py65's flags.** Decimal ADC and SBC set N, Z and V from the binary
-  sum, as the NMOS 6502 does; P keeps bit 4 (set by reset, PLP and RTI,
-  cleared by an interrupt).
-- **The I/O surcharge.** 73 cycles an access to `$C000-$CFFF` in `turbo`,
-  instruction fetches from slot ROM included; none at numeric speeds.
-- **Slot decoding.** `$C100-$CFFF` reads fall to the internal ROM unless
-  the mouse card, the Phasor or the memory API answers; the Phasor
-  answers at any address whose bits 8-10 are 4, `$CC00-$CCFF` included.
-- **The VIAs' register 15.** A write to ORA without handshake (`$Cn0F`,
-  `$Cn1F`, `$Cn8F`) changes nothing in `a2sim.Phasor`; the card's 6522
-  sets ORA (`hdl/apple/via6522.v:149`), and the drivers send AY data that
-  way. `--via-ora-nh` (off by default) follows the card.
-- **The memory API.** `FakeSmartPortMemory` leaves the result fields of
-  the capability block (offsets 16-31 but 20-21) at zero, keeps the ready
-  bit set after the first request, and rejects with an assertion a
-  request the README leaves undefined or tolerates: another command
-  byte family than 2, nonzero parameter padding (the firmware ignores
-  it), a STATUS with trailing bytes, a CONTROL whose length word differs
-  from the bytes sent, a pop of an empty reply. a2vm ends the run there
-  ("halt", reason `amem-malformed: ...`).
-- **ProDOS.** `FakeProDOS` services `JSR $BF00` itself: the call's bytes
-  and parameter block are read from main memory whatever the soft
-  switches say, the call is taken during the JSR's operand fetch, and
-  files live in the volume directory only.
-
-### Where a2vm departs from a2sim.py
-
-Only where `a2sim.py` would stop with a Python exception: a word read at
-`$FFFF` (py65 indexes `$10000`; a2vm wraps), an MLI call whose buffer runs
-past `$FFFF` (Python's bytearray would grow; a2vm halts with
-`prodos-fault`), a volume `build_disk` cannot build (it raises; a2vm
-halts). Files a program writes stay in memory (`FakeProDOS` can mirror
-them to a host directory; a2vm cannot). `a2sim.py`'s logs of mouse and
-AY accesses are counted, not kept. The text and HGR screens are not
-rendered.
-
-## Running it
-
-    build/a2vm/a2vm --rom ROM [options]
-
-`main.c` lists every option. The main ones:
-
-| Option | What it does |
-| --- | --- |
-| `--image FILE` | Memory records, `A2VMIMG1` then records of kind (1 byte: 0 main, 1 aux bank, 2 main LC with `$C000-$FFFF` addresses, 3 main LC bank 1 with `$D000-$DFFF` addresses), bank (1), address (2), length (4) and the bytes, all little endian |
-| `--load ADDR:FILE`, `--load-aux BANK:ADDR:FILE` | A binary into main memory or an aux bank |
-| `--reg pc=HEX` (and `a x y s p`), `--switch NAME=N` | Registers; switches, language-card state, `bank`, `newvideo` |
-| `--prodos FILE` | The MLI trap, with the files of FILE, one a line: `NAME TYPE AUX PATH` (hex type and aux), in the order of the volume directory |
-| `--idle PC:vbl` or `PC:line0`, with `:main`, `:invbl`, `:eq=A,B` | An idle loop to skip, and when (ALTZP off; in vertical blanking; the main words at A and B equal) |
-| `--boundary ADDR`, `--boundaries N` | A frame boundary (the CPU at ADDR after a step, ALTZP off), and how many to run |
-| `--cycles N`, `--stop-pc ADDR[:main]` | Other ends of the run. Without `--cycles` a run stops at 20,000,000,000 cycles (about two minutes on the host) with end `cycle-cap` and exit status 3, so that a run whose boundary never comes (a bug) ends; `--cycles none` runs with no limit |
-| `--stop-word ADDR:N` | Another end: the 32-bit little-endian main word at ADDR (hex), once it has been below N after a step, is at least N (end `stop-word`). A game's tic counter: the run ends once a measured stretch is over, whatever the memory held before the game set the counter |
-| `--pclog FILE`, `--pclog-pcs`, `--pclog-bytes`, `--pclog-from`, `--pclog-limit` | The PC log (below) |
-| `--every-limit N` | At most N snapshots or shots of each `pc ADDR@*` event (default 100, 840 MB of whole-RAM snapshots); the visit after them ends the run with an error (status 2) |
-| `--input FILE` | Input events, below |
-| `--snapshot-dir DIR`, `--snapshot-boundaries`, `--final-snapshot` | Snapshots: `NAME.json` (the state) and `NAME.ram` (main 64 KB, main LC 16 KB, main LC bank 1 4 KB, then the 128 aux banks) |
-| `--state FILE` | The final state, as JSON, with the reason the run ended and its host time |
-| `--bus-script FILE` | Run bus commands instead of the CPU (below) |
-| `--ay-log FILE` | The AY log (below): each AY register write that reaches a chip, each chip reset, each interrupt and each RTI, with the time |
-| `--via-ora-nh` | A write to a Phasor VIA's register 15, ORA without handshake, sets ORA, as the card's 6522 does (`hdl/apple/via6522.v:149`). Off by default: `a2sim.py` ignores the register, and the comparison with it must stay exact |
-| `--via-timers` | Each Phasor VIA's timer 1 as the card's 6522 runs it, with its interrupt ("The VIA timers", below). Off by default: `a2sim.py` has a free-running counter only, and the comparison with it must stay exact |
-| `--phasor-mb-only` | The Phasor locked to Mockingboard mode, as the card's `audio_control` bit 26 does (`hdl/apple/mockingboard.sv:38-41`): accesses to `$C0C0-$C0CF` do not change its mode, so it keeps one AY behind each VIA. Off by default |
-| `--irq-bounds LO-HI[,LO-HI...]` | Interrupt bounds (below): the address ranges (hex, at most 24) an interrupt handler may read or write; any other access halts the run |
-| `--mouse-apple`, `--no-phasor` | Slot 2 an AppleMouse II ("The AppleMouse II", below; needs `--core w65c02s`); slot 4 empty |
-| `--mouse-rom FILE` | Slot 2 an AppleMouse II that runs Apple's ROM, FILE ("The AppleMouse II's ROM", below); it replaces the other slot-2 options |
-| `--mouse-no-vbl` | With `--mouse-rom`: the controller never sees a VBL, so mode `$09` never interrupts, as GSSquared's card at 33.3 MHz |
-| `--vidhd SLOT`, `--vidhd-check PCS` | A VidHD in SLOT ("The VidHD", below), and the PCs (hex, commas, at most 64) where its copy of the screen is compared with aux 0's |
-
-**Input events**, one a line, `WHEN ACTION`. `WHEN` is `start`,
-`boundary N` (after the Nth boundary's snapshot), `cycle N` (after the
-first step that reaches cycle N) or `pc ADDR[:main][@N|@*]` (the CPU is at
-ADDR after a step, with ALTZP off for `:main`: the first such visit, the
-Nth with `@N`, every one with `@*`). Each event fires once (an `@*` event
-at every visit), in the file's order among those due; several events at
-one PC all fire at their visits, so a routine called K times needs one
-call site, not K (`pc CALL@1 snapshot before1`, `pc CALL@2 snapshot
-before2`, or `pc CALL@* snapshot before`). An `@*` event's snapshots and
-shots are named `NAME-0001`, `NAME-0002`, by visit. Actions: `key K` (a tap, due now), `hold K`, `release`,
-`mouse DX DY` (the PS's delta path), `mouse-to X Y`, `buttons L R`,
-`oa 0|1`, `ca 0|1` (Open and Solid Apple), `snapshot NAME`, `shot NAME`
-(a screen dump for `shot.py`: `A2VMSHR1`, NEWVIDEO, aux bank 0 then main
-`$2000-$9FFF`), `stop`. K is a character or a number.
-
-**Bus scripts**, for the tests: `read ADDR`, `write ADDR VALUE` (the CPU
-bus, with every side effect), `peek KIND BANK ADDR`, `poke KIND BANK ADDR
-VALUE` (storage without side effects; kinds `main`, `aux`, `lc`, `lc1`),
-`map` (the page tables: what reads and writes of each page reach), `lc`,
-`counts`, `clock N`, `run STEPS`, `reg NAME=HEX`, `press KEY CYCLE`,
-`hold KEY`, `release`, `mouse DX DY`, `mouse-to X Y`, `buttons L R`,
-`button N VALUE`, `dump FILE` (the RAM, as a snapshot's), `state`,
-`cost` (the model's clock and counters; with the slot-4 slowdown on, also
-`slow_hits`, `slow_cycles`, `slow_clocks` and `slow_left`); and for the
-zero-page pair `read-ea ADDR` and `write-ea ADDR VALUE` (a data access at
-an effective address, as the core's `ST_MEM_READ` and `ST_MEM_WRITE`
-make it, which the pair redirects), `zpbank` (its state and counters),
-`zpbank-arm 0|1`, `reset` (the CPU's RESET sequence, which turns the
-pair off; the //e's switches are not reset, as `a2sim.py` has no RES#).
+`--via-ora-nh` makes a write to a VIA's register 15 (ORA without
+handshake) set ORA, as the card's 6522 does (the drivers send AY data
+that way); without it the write is ignored. `--phasor-mb-only` locks the
+Phasor to Mockingboard mode, as the card's `audio_control` bit 26 does.
 
 ### The AppleMouse II
 
-`--mouse-apple` (2026-10-04, for DOOM GS's `docs/PLAY.md` 21) puts in
-slot 2 an AppleMouse II as a program sees it through its firmware, as
-GSSquared and AppleWin run Apple's ROM 342-0270: the slot ROM reads
-`BIT $FF58` at `$C200`, the ID bytes (`$C205` `$38`, `$C207` `$18`,
+`--mouse-apple` (needs `--core w65c02s`) puts in slot 2 an AppleMouse II
+as a program sees it through its firmware, ROM 342-0270: the slot ROM
+reads `BIT $FF58` at `$C200`, the ID bytes (`$C205` `$38`, `$C207` `$18`,
 `$C20B` `$01`, `$C20C` `$20`, `$C2FB` `$D6`) and the entry table at
-`$C212-$C219` with that ROM's offsets (SETMOUSE `$B3`, SERVEMOUSE `$C4`,
-READMOUSE `$9B`, CLEARMOUSE `$A4`, POSMOUSE `$C0`, CLAMPMOUSE `$8A`,
-HOMEMOUSE `$DD`, INITMOUSE `$BC`), an RTS at each entry. When the exact
+`$C212-$C219` with that ROM's offsets, an RTS at each entry. When the
 core is about to run an entry (INTCXROM off), a2vm does the call at a
-high level, as the firmware leaves memory (slot n's holes: X `$0478+n`
-and `$0578+n`, Y `$04F8+n` and `$05F8+n`, `$0678+n` and `$06F8+n` the
-firmware's bank and command bytes, status `$0778+n`, mode `$07F8+n`),
-through the CPU's bus, so that RAMRD, RAMWRT, 80STORE and the interrupt
-bounds apply to them as to the real firmware's stores; then an RTS
-(6 cycles), C clear for success:
+high level, through the CPU's bus and the firmware's screen holes (slot
+n: X `$0478+n` and `$0578+n`, Y `$04F8+n` and `$05F8+n`, status
+`$0778+n`, mode `$07F8+n`), then an RTS, C clear for success:
 
 | Entry | What a2vm does |
 | --- | --- |
@@ -468,98 +249,248 @@ bounds apply to them as to the real firmware's stores; then an RTS
 | CLAMPMOUSE | A = 0 (X) or 1 (Y): the window from `$0478`/`$0578` (minimum) and `$04F8`/`$05F8` (maximum) |
 | CLEARMOUSE, HOMEMOUSE, INITMOUSE | X, Y to 0 or the windows' minimum; INITMOUSE also the windows 0-1023 and the mode 0 |
 
-Its position, buttons, clamps and mode are the mouse card's structure,
-so the input events `mouse`, `mouse-to` and `buttons` move it (while the
-mode's bit 0 is on), and a VBL interrupt is raised at each vertical
-blanking while the mode's bit 3 is on, delivered while I is clear until
-SERVEMOUSE releases it. The final state's `applemouse` gives it with
-the count of calls to each entry. The model does not run Apple's ROM or
-its 6805: the firmware's own stack (about 6 bytes) and time are not
-there, and nothing of it is reached through `$C0A0-$C0AF`.
+The input events `mouse`, `mouse-to` and `buttons` move it, and a VBL
+interrupt is raised at each vertical blanking while the mode's bit 3 is
+on, until SERVEMOUSE releases it. The final state's `applemouse` gives
+it with the count of calls to each entry. The firmware's own stack and
+time are not modelled.
 
 ### The AppleMouse II's ROM
 
-`--mouse-rom FILE` (2026-10-04, for DOOM GS's freeze on GSSquared after
-`APPLEMOUSE VBL CLOCK,`) puts in slot 2 an AppleMouse II that runs
-Apple's own firmware: FILE is the 2 KB ROM 342-0270-C, read at start-up
-from where it is (GSSquared's `assets/roms/cards/applemouseiii/`); it is
-never copied into this repository. The card is GSSquared's
-`applemouseiii` (`PIA6520.cpp`, `MouseController.cpp`,
-`applemouseiii.cpp`, from A2Pico's mouse-interface) in C, with the same
-protocol and the same timing:
+`--mouse-rom FILE` puts in slot 2 an AppleMouse II that runs Apple's own
+firmware: FILE is the 2 KB ROM 342-0270-C, read from where it is (for
+example GSSquared's `assets/roms/cards/applemouseiii/`); it is never
+copied into this repository. The card follows GSSquared's
+`applemouseiii` (`PIA6520.cpp`, `MouseController.cpp`):
 
 - `$Cn00-$CnFF` shows the ROM's bank `(ORB & DDRB & $0E) >> 1`, from the
-  next read after the PIA write that changes it (the firmware switches
-  banks under its own PC);
-- `$C0n0-$C0nF` is the 6520 (the address's low two bits: port A or its
-  DDR, CRA, port B or its DDR, CRB; bit 2 of CRx picks the port);
-- the 6805 is the controller's `run()`: before and after each PIA read,
-  after each PIA write and at each VBL, nothing in between, so it
-  answers at once. Port B bit 5 (WRREQUEST) hands it a byte of port A
-  and it raises bit 7 (WRACK); with bits 4, 5 and 7 low it puts the next
-  reply byte on port A with bit 6 (RDREADY), which bit 4 (RDACK)
-  consumes. The commands (SETMOUSE `$0m`, READMOUSE `$10`, SERVEMOUSE
-  `$20`, CLEARMOUSE, POSMOUSE, INITMOUSE, CLAMPMOUSE, HOMEMOUSE,
-  TIMEMOUSE, `$Fx` reads of its memory) are `MouseController.cpp`'s;
-- at each vertical blanking (line 192, a2vm's VBL event), with the
-  mode's bit 3 on, the VBL bit is set in its interrupt state; the slot's
-  interrupt rises when a bit of VBL, button or movement appears in a
-  state that had none, and falls at SERVEMOUSE and INITMOUSE (as in
-  GSSquared, INITMOUSE does not clear the state's bits).
+  next read after the PIA write that changes it;
+- `$C0n0-$C0nF` is the 6520;
+- the 6805 runs before and after each PIA read, after each PIA write and
+  at each VBL, so it answers at once, with `MouseController.cpp`'s
+  protocol and commands;
+- at each vertical blanking, with the mode's bit 3 on, the VBL bit is
+  set in its interrupt state; the slot's interrupt rises when a bit of
+  VBL, button or movement appears in a state that had none, and falls at
+  SERVEMOUSE and INITMOUSE.
 
-The input events `mouse`, `mouse-to` and `buttons` reach it as
-GSSquared's host mouse does (moves in steps of -128..127, button 0 the
-left, 1 the right). The firmware needs the //e's ROM: INITMOUSE reads
-`$FBB3` and, when it is not `$06`, takes the II+ path, which clears
-`$2000-$3FFF`; a run with an all-zero `--rom` fails there. The final
-state's `mouserom` gives the position, mode, interrupt state and line,
-the bank, the PIA's registers, and counts: commands by their high
-nibble, interrupts raised and released, VBLs, PIA accesses, bank
-changes. Both cores run it.
+The input events reach it as GSSquared's host mouse does. The firmware
+needs the //e's ROM: INITMOUSE reads `$FBB3` and, when it is not `$06`,
+takes the II+ path, which clears `$2000-$3FFF`. The final state's
+`mouserom` gives its position, mode, interrupt state, bank, PIA
+registers and counts. Both cores run it.
 
-`--mouse-no-vbl` (2026-10-04) keeps a2vm's VBL from the controller
-(`vbls` stays 0), which is what GSSquared's card does at 33.3 MHz: its
-`EventTimer::scheduleEvent` rejects a time in 14M ticks that is below
-the CPU's cycle count, and at 33.3 MHz the CPU count runs about 2.33
-times ahead, so the card's VBL is never re-scheduled after the first
-frame (DOOM GS's `docs/PLAY.md` 22).
+`--mouse-no-vbl` keeps a2vm's VBL from the controller, as GSSquared's
+card behaves at 33.3 MHz (its event timer drops the VBL; `docs/PLAY.md`).
 
 ### The VidHD
 
-`--vidhd SLOT` (2026-10-05, for DOOM GS's `docs/PLAY.md` 22) puts in a
-slot (1-7, not the Phasor's, the mouse's or the memory API's) a VidHD as
-DOOM sees it on a //e with RamWorks: its slot ROM reads `$24 $EA $4C` at
-`$Cn00-$Cn02` and 0 after (AppleWin's `VidHD.cpp` `IORead`, GSSquared's
-`vidhd.cpp`; slot 3's only with SLOTC3ROM on, the //e's own ROM
-otherwise, with INTCXROM off), and it keeps its own 32 KB copy of the
-SHR screen. Every CPU write that reaches aux memory at `$2000-$9FFF`
-(RAMWRT, or 80STORE with PAGE2 and HIRES for `$2000-$3FFF`), whatever
-the RamWorks bank (the card sees the bus and the //e's switches, not
-`$C073`), goes into the copy when its copy of the IIgs SHADOW register
-`$C035` (0 at power-on, every write taken) lets it: `$2000-$3FFF` when
-bit 3 is 0 or bits 1 and 4 are both 0, `$4000-$5FFF` the same with bit
-2, `$6000-$9FFF` when bit 3 is 0. The final state's `vidhd` holds:
-`c035_writes`, `shadow`; `fed` (writes taken); `foreign` (taken from a
-bank other than 0: they corrupt the picture) and `foreign_after` (those
-after the first `$C035` write, a program's); `unshadowed` (aux 0's
-writes not taken: the picture goes stale); `speaker` (accesses of
-`$C030-$C03F`, each a //e speaker toggle), `pairs` (an access followed
-by another in the very next instruction: back to back, the speaker put
-back), `unpaired` and `pending` (one left at the end); with
-`--vidhd-check`, `checks` (each PC: its visits and those where the copy
-differed from aux 0's `$2000-$9FFF`), `mismatches`, `between` (a
-histogram of the `$C035` writes between two visits of the first PC,
-31 and more in the last), and `differ_now`; and the first eight of each
-kind as `[pc, address, bank, count, clock]` notes. A final snapshot also
-writes the copy as `vidhd.shr` (`shot.py`'s format). Without the option
-nothing of this exists and every run is what it was (the write path
-tests one more flag; the cost model's video-write flag is untouched).
+`--vidhd SLOT` puts in a slot (1-7, not the Phasor's, the mouse's or the
+memory API's) a VidHD as DOOM sees it on a //e with RamWorks: its slot
+ROM reads `$24 $EA $4C` at `$Cn00-$Cn02` and 0 after (slot 3's only with
+SLOTC3ROM on), and it keeps its own 32 KB copy of the SHR screen. Every
+CPU write that reaches aux memory at `$2000-$9FFF`, whatever the RamWorks
+bank (the card sees the bus, not `$C073`), goes into the copy when its
+copy of the IIgs SHADOW register `$C035` (0 at power-on) lets it:
+`$2000-$3FFF` when bit 3 is 0 or bits 1 and 4 are both 0, `$4000-$5FFF`
+the same with bit 2, `$6000-$9FFF` when bit 3 is 0.
+
+The final state's `vidhd` holds `c035_writes`, `shadow`, `fed` (writes
+taken), `foreign` (taken from a bank other than 0: they corrupt the
+picture) and `foreign_after` (those after the program's first `$C035`
+write), `unshadowed` (aux 0's writes not taken: the picture goes stale),
+`speaker`, `pairs`, `unpaired` and `pending` (accesses of `$C030-$C03F`,
+paired when back to back); with `--vidhd-check PCS` (hex, commas, at
+most 64), `checks` (each PC: its visits and those where the copy
+differed from aux 0's `$2000-$9FFF`), `mismatches`, `between` and
+`differ_now`. A final snapshot also writes the copy as `vidhd.shr`.
+
+### The block device
+
+`--blockdev SLOT:FILE[:ro]` (needs `--core w65c02s`) puts in a slot (1-7,
+not the Phasor's, the mouse's or the VidHD's) a ProDOS block device with
+one drive whose blocks are FILE's 512-byte blocks (a `.po` or `.hdv`
+image). Its slot ROM has a ProDOS block device's ID bytes (`$Cn01` `$20`,
+`$Cn03` `$00`, `$Cn05` `$03`, `$Cn07` `$01`: not a SmartPort) and its
+driver's entry at `$Cn0A` (`$CnFF` `$0A`, an RTS there). In slot 7 with
+`--amem` the memory API's ROM serves (`$C707` `$00`), as on the
+Appletini, whose SmartPort firmware has the ProDOS entry `$C70A` beside
+the API's FIFO. When the core is about to run the entry (INTCXROM off),
+a2vm does the call with ProDOS's protocol, through the bus (so the //e's
+switches apply to zero page and the buffer):
+
+| Zero page | |
+| --- | --- |
+| `$42` | the command: 0 STATUS (X, Y the block count; `$2B` when write-protected), 1 READ, 2 WRITE, 3 FORMAT (nothing); else `$01` |
+| `$43` | the unit, DSSS0000: another slot or drive 2 is `$28` (no device) |
+| `$44-$45` | the 512-byte buffer |
+| `$46-$47` | the block: past the image `$27` (I/O error) |
+
+It writes MSLOT (`$07F8`) with `$Cn` as the Appletini's firmware does,
+then returns as an RTS would: A the error, C set on one (`$2B` for a
+WRITE with `:ro`). A WRITE goes to FILE at once (`fflush`), so the image
+holds it when the run ends. In slot 7 with `--amem` the API's `$C800`
+space stays selected after the call, as the firmware leaves it.
+
+With `--prodos` it also writes ProDOS's global page as after a boot from
+it, after the `--image` and `--load` options: `DEVNUM` (`$BF30`) its
+slot's drive 1, its `DEVADR` entry (`$BF10` + 2n) `$Cn0A`. The MLI trap
+still serves the `--prodos` files (not the image's): `playdisk.py --disk
+IMAGE` gives it the image's own files (docs/PLAY.md, "The settings
+file"). The final state then has `blockdev`: the slot, `read_only`, the
+image's `blocks`, the `calls`, `statuses`, `reads`, `writes` and
+`errors`, the `last` call (command, unit, block, error) and `written`
+(the blocks written, the first 16). Without `--blockdev` nothing of this
+exists and every run is as it was.
+
+### Compatibility mode
+
+`--core py65` (the default) is `py65core.h`: it does what py65 1.2.0's
+`MPU65C02` does, access for access and cycle for cycle. `--core w65c02s`
+is the exact core, one cycle a bus access, dummy reads included; the MLI
+trap is then taken at the step boundary.
+
+The compatibility core and the default timing keep these departures from
+the hardware:
+
+- **py65's cycle counts.** `DEC abs` takes 3 cycles, the read-modify-write
+  `a,X` forms always 7, `BRA` 2 (3 across a page), `BIT a,X` no page
+  penalty; decimal ADC and SBC take no extra cycle. `BBR`, `BBS`, `STP`
+  and the reserved NOPs are two-byte NOPs of 0 cycles.
+- **py65's accesses.** No dummy cycles at all (so `INC $C083` enables
+  language-card writes on the chip but not here); JSR pushes before it
+  reads its operand's high byte; `(zp)` at `$FF` reads its high byte from
+  `$0100`.
+- **py65's flags.** Decimal ADC and SBC set N, Z and V from the binary
+  sum; P keeps bit 4.
+- **The I/O surcharge.** 73 cycles an access to `$C000-$CFFF` in `turbo`.
+- **Slot decoding.** `$C100-$CFFF` reads fall to the internal ROM unless
+  a card answers; the Phasor answers at any address whose bits 8-10 are
+  4, `$CC00-$CCFF` included.
+- **The memory API** leaves the result fields of the capability block at
+  zero, keeps the ready bit set after the first request, and ends the run
+  ("halt", `amem-malformed: ...`) on a request the firmware's README
+  leaves undefined or tolerates.
+- **ProDOS.** The trap services `JSR $BF00` itself: the call's bytes and
+  parameter block are read from main memory whatever the soft switches
+  say, and files live in the volume directory only. Files a program
+  writes stay in memory.
+
+## Running it
+
+    build/a2vm/a2vm --rom ROM [options]
+
+The comment at the top of `main.c` lists every option. The main ones:
+
+| Option | What it does |
+| --- | --- |
+| `--image FILE` | Memory records, `A2VMIMG1` then records of kind (1 byte: 0 main, 1 aux bank, 2 main LC with `$C000-$FFFF` addresses, 3 main LC bank 1 with `$D000-$DFFF` addresses), bank (1), address (2), length (4) and the bytes, all little endian |
+| `--load ADDR:FILE`, `--load-aux BANK:ADDR:FILE` | A binary into main memory or an aux bank |
+| `--reg pc=HEX` (and `a x y s p`), `--switch NAME=N` | Registers; switches, language-card state, `bank`, `newvideo` |
+| `--prodos FILE` | The MLI trap, with the files of FILE, one a line: `NAME TYPE AUX PATH` (hex type and aux), in the order of the volume directory. `--volume NAME` and `--launched NAME` set the volume and the system file's name it reports |
+| `--core py65\|w65c02s`, `--speed turbo\|N`, `--io-cycles N`, `--banks N` | The core and the timing (above) |
+| `--idle SPEC` | An idle loop to skip (above) |
+| `--boundary ADDR`, `--boundaries N` | A frame boundary (the CPU at ADDR after a step, ALTZP off), and how many to run |
+| `--cycles N\|none`, `--stop-pc ADDR[:main]` | Other ends of the run. Without `--cycles` a run stops at 20,000,000,000 cycles with end `cycle-cap` and exit status 3; `none` runs with no limit. `--stop-pc` may be given more than once |
+| `--stop-word ADDR:N` | Another end: the 32-bit little-endian main word at ADDR (hex), once it has been below N after a step, is at least N (end `stop-word`) |
+| `--input FILE` | Input events, below |
+| `--every-limit N` | At most N snapshots or shots of each `pc ADDR@*` event (default 100); the visit after them ends the run with exit status 2 |
+| `--snapshot-dir DIR`, `--snapshot-boundaries`, `--final-snapshot` | Snapshots: `NAME.json` (the state) and `NAME.ram` (main 64 KB, main LC 16 KB, main LC bank 1 4 KB, then the 128 aux banks) |
+| `--snapshot-ranges`, `--snapshot-stream`, `--snapshot-limit` | Snapshots of some ranges only, and a stream of them (below) |
+| `--state FILE` | The final state, as JSON, with the reason the run ended and its host time (default: standard output) |
+| `--bus-script FILE` | Run bus commands instead of the CPU (below) |
+| `--amem`, `--amem-unsupported`, `--amem-unavailable` | The memory API in slot 7 |
+| `--no-mouse`, `--mouse-plain`, `--mouse-apple`, `--mouse-rom FILE`, `--mouse-no-vbl` | Slot 2 (above) |
+| `--no-phasor`, `--via-timers`, `--via-ora-nh`, `--phasor-mb-only` | Slot 4 (above) |
+| `--vidhd SLOT`, `--vidhd-check PCS` | A VidHD (above) |
+| `--blockdev SLOT:FILE[:ro]` | A ProDOS block device on FILE (above) |
+| `--zpbank` | Arm the zero-page bank pair (below) |
+| `--cost FILE`, `--cost-timed`, `--cost-phase ADDR`, `--cost-report FILE`, `--cost-pcmap FILE`, `--cost-pcmap-when N` | The cost model (below) |
+| `--ay-log FILE`, `--pclog FILE`, `--write-log RANGES`, `--lowest-s` | Logs (below) |
+| `--irq-bounds LO-HI[,LO-HI...]` | Interrupt bounds (below) |
+
+Exit status: 0 for a run that ended normally, 1 for a halt, 2 for an
+error (a bad option or file, a limit on snapshots), 3 for the cycle cap.
+
+### Input events
+
+`--input FILE` gives events, one a line, `WHEN ACTION`. `WHEN` is
+`start`, `boundary N` (after the Nth boundary's snapshot), `cycle N`
+(after the first step that reaches cycle N) or `pc ADDR[:main][@N|@*]`
+(the CPU is at ADDR after a step, with ALTZP off for `:main`: the first
+such visit, the Nth with `@N`, every one with `@*`). Each event fires
+once (an `@*` event at every visit), in the file's order among those
+due; several events at one PC all fire at their visits, so a routine
+called K times needs one call site (`pc CALL@1 snapshot before1`,
+`pc CALL@2 snapshot before2`, or `pc CALL@* snapshot before`). An `@*`
+event's snapshots and shots are named `NAME-0001`, `NAME-0002`, by
+visit.
+
+Actions: `key K` (a tap, due now), `hold K`, `release`, `mouse DX DY` (a
+move by a delta), `mouse-to X Y`, `buttons L R`, `oa 0|1`, `ca 0|1`
+(Open and Solid Apple), `snapshot NAME`, `shot NAME` (a screen dump:
+`A2VMSHR1`, NEWVIDEO, aux bank 0 then main `$2000-$9FFF`), `stop`. K is
+a character or a number (one character is that character: `key 0x08` is
+the left arrow, `key 8` the digit; a number is C's `strtoull` base 0).
+
+`playdisk.py --run SCRIPT` takes a file of these events and lets a pc
+event name a label of the play link: `pc @dl_halt ...`.
+
+### Bus scripts
+
+`--bus-script FILE` runs commands instead of the CPU and prints their
+results: `read ADDR`, `write ADDR VALUE` (the CPU bus, with every side
+effect), `peek KIND BANK ADDR`, `poke KIND BANK ADDR VALUE` (storage
+without side effects; kinds `main`, `aux`, `lc`, `lc1`), `map` (what
+reads and writes of each page reach), `lc`, `counts`, `clock N`,
+`run STEPS`, `reg NAME=HEX`, `press KEY CYCLE`, `hold KEY`, `release`,
+`mouse DX DY`, `mouse-to X Y`, `buttons L R`, `button N VALUE`,
+`dump FILE` (the RAM, as a snapshot's), `state`, `cost` (the model's
+clock and counters); and for the zero-page pair `read-ea ADDR` and
+`write-ea ADDR VALUE` (a data access at an effective address, which the
+pair redirects), `zpbank`, `zpbank-arm 0|1` and `reset` (the CPU's RESET
+sequence, which turns the pair off; the //e's switches are not reset).
+
+### Ranges
+
+`--write-log` and `--snapshot-ranges` take RANGES: items separated by
+commas, each `WHERE[:LO[-HI]]` with hex addresses (the whole of WHERE
+without them), at most 256.
+
+| WHERE | Storage | Addresses |
+| --- | --- | --- |
+| `main` | Main memory | `0000-FFFF` (`C000-FFFF` is never written) |
+| `auxN`, `auxN-M` | RamWorks banks N to M (0-127; 0 is the base aux memory) | `0000-FFFF`; an aux bank's language card is its `C000-FFFF` (bank 2 at `D000`, bank 1 at `C000-CFFF`) |
+| `lc` | Main language card, bank 2 at `$D000` | `C000-FFFF` |
+| `lc1` | Main language card bank 1 | `D000-DFFF` |
+| `cpu` | The CPU's address, whatever it reaches: write log only | `0000-FFFF` |
+
+A storage range holds a write by the byte it reaches (so a write the
+zero-page pair redirects is in `aux5`, not `main`); a `cpu` range by its
+address.
+
+### Range snapshots and the snapshot stream
+
+`--snapshot-ranges RANGES` makes every snapshot `NAME.json` and
+`NAME.img` in place of `NAME.ram`: `NAME.img` is an `A2VMIMG1` image (the
+format of `--image`) with one record for each range and bank, so
+`--image` loads it back. A full snapshot is 8.4 MB.
+
+`--snapshot-stream FILE` (it needs `--snapshot-ranges`) writes every
+snapshot into one stream instead of files, so a reader can digest each
+as it comes; `-` is the standard output (with `--state FILE`). The
+stream is a JSON line `{"format": "a2vm-snapshot-stream 1", "ranges":
+"..."}`; for each snapshot a JSON line `{"snapshot": N, "name", "cycles",
+"pc", "bytes": L}` followed by its L bytes, the `A2VMIMG1` image; and a
+last line `{"end": REASON, "snapshots": N}`. `--snapshot-limit BYTES`
+(default 1 GiB) bounds it: a snapshot that would pass the limit is not
+written, the stream ends with `{"end": "snapshot-limit", ...}` and the
+run with exit status 2.
 
 ### The AY log
 
-`--ay-log FILE` (milestone S2, for the music player of `src/sound`)
-writes one line for each event below, in the order the machine makes
-them. It only observes; without it nothing is written or changed.
+`--ay-log FILE` writes one line for each event below, in the order the
+machine makes them. It only observes.
 
     # a2vm ay-log 1 (tools/a2vm/README.md, "The AY log")
     # w CPU_CYCLES APPLE_CYCLE CLOCK CHIP REG VALUE
@@ -574,25 +505,23 @@ them. It only observes; without it nothing is written or changed.
 
 | Line | When |
 | --- | --- |
-| `w` | An AY register write reaches a chip: a VIA's ORB write with function 6 (write) on a chip that is selected, as `a2sim.Phasor` decides it. `CHIP` is 0-3 (0 and 1 behind VIA-A, 2 and 3 behind VIA-B, the drivers' numbering), `REG` the chip's latched register (0-15), `VALUE` the byte (decimal) |
+| `w` | An AY register write reaches a chip: a VIA's ORB write with function 6 (write) on a selected chip. `CHIP` is 0-3 (0 and 1 behind VIA-A, 2 and 3 behind VIA-B), `REG` the chip's latched register (0-15), `VALUE` the byte (decimal) |
 | `reset` | A VIA's ORB goes to reset (bit 2 low): both chips behind it are cleared; one line a chip |
-| `irq` | The machine delivers an interrupt; `N` counts them from 1 (the state's `irqs`) |
+| `irq` | The machine delivers an interrupt; `N` counts them from 1 |
 | `rti` | An RTI instruction ran (logged after it) |
 
-The time fields: `CPU_CYCLES`, the core's cycle count; `APPLE_CYCLE`, the
-machine's 1 MHz bus clock (`a2vm_bus_clock`); `CLOCK`, the cost model's
-clock in fabric clocks (133.333 MHz) when `--cost` is on, else `-`. With
-`--cost-timed` the machine runs on that clock, so it is the time on the
-card. The writes of an interrupt are the `w` lines between its `irq` and
-the next `rti`; `tools/sound/run65.py` groups them so.
+`CPU_CYCLES` is the core's cycle count; `APPLE_CYCLE` the machine's
+1 MHz bus clock; `CLOCK` the cost model's clock in fabric clocks
+(133.333 MHz) when `--cost` is on, else `-`. With `--cost-timed` it is
+the time on the card. The writes of an interrupt are the `w` lines
+between its `irq` and the next `rti`.
 
 ### The PC log
 
-`--pclog FILE` (the speed plan, 2026-10-02: `tools/native/playtime.py`)
-writes a line before each instruction run at one of the PCs of
-`--pclog-pcs LIST` (hex, commas, at most 64), after the idle skip; not
-for an interrupt's entry, nor while the CPU waits (WAI) or is stopped.
-It only observes: a run with it is the same run.
+`--pclog FILE` writes a line before each instruction run at one of the
+PCs of `--pclog-pcs LIST` (hex, commas, at most 64), after the idle
+skip; not for an interrupt's entry, nor while the CPU waits or is
+stopped. It only observes.
 
     # a2vm pclog 1 (tools/a2vm/README.md, "The PC log")
     # pcs FF52,FF7F,823A
@@ -605,62 +534,18 @@ It only observes: a run with it is the same run.
 `--cost-timed`, else the core's cycles); `PC` to `S` are hex, the
 registers before the instruction; `ALTZP` 0 or 1; then one hex byte for
 each address of `--pclog-bytes LIST` (at most 16), read without side
-effects from main memory, or from the main language card for `lc.ADDR`
-(`$C000-$FFFF`). `--pclog-from N` starts the log at clock N.
-`--pclog-limit N` (default 1,000,000 lines, about 50 MB) bounds it: the
-visit that would be line N + 1 halts the run (`pclog: past --pclog-limit
-N lines`, end `halt`, exit status 1), so a log is complete or the run
-fails.
-
-### Interrupt bounds
-
-`--irq-bounds RANGES` (milestone S2) checks an interrupt contract such as
-the music player's (`docs/research/native-sound.md` 4.3: the interrupt
-touches only the zero page, the stack, the language card and I/O, so
-RAMRD, RAMWRT and `$C073` may be anything when it comes). From the first
-instruction of a handler to the end of its RTI, every bus access of the
-CPU (opcode, operand, data, stack, dummy) must fall in one of the
-ranges; the first that does not halts the run with `irq-bounds: read
-$0843 in an interrupt, pc $E123` (state `end` "halt", exit status 1).
-The interrupt entry's own cycles (its two reads of the interrupted
-program's PC, the pushes, the vector) are not checked, nor is anything
-outside handlers. It only observes: a run that stays inside is unchanged.
-`tools/sound/run65.py` passes `0000-01FF,C0A0-C0AF,C400-C4FF,D000-FFFF`
-(the zero page and stack, the mouse card, the Phasor, the card), which
-also refuses a mapping switch in the handler.
-
-## Milestone 6 additions
-
-Each is opt-in; a run without the option writes the same state, the same
-snapshots and the same cost report as before (`tests/test_a2vm_cost.py`
-checks the existing port under every profile).
-
-### Ranges
-
-`--write-log` and `--snapshot-ranges` take RANGES: items separated by
-commas, each `WHERE[:LO[-HI]]` with hex addresses (the whole of WHERE
-without them), at most 256.
-
-| WHERE | Storage | Addresses |
-| --- | --- | --- |
-| `main` | Main memory | `0000-FFFF` (`C000-FFFF` is never written) |
-| `auxN`, `auxN-M` | RamWorks banks N to M (0-127; 0 is the base aux memory) | `0000-FFFF`; an aux bank's language card is its `C000-FFFF` (bank 2 at `D000`, bank 1 at `C000-CFFF`) |
-| `lc` | Main language card: `$C000-$FFFF` as a2sim's `lc[False]`, bank 2 at `$D000` | `C000-FFFF` |
-| `lc1` | Main language card bank 1 | `D000-DFFF` |
-| `cpu` | The CPU's address, whatever it reaches (I/O, a write-protected card): write log only | `0000-FFFF` |
-
-A storage range holds a write by the byte it reaches (so a write the
-zero-page pair redirects is in `aux5`, not `main`); a `cpu` range by its
-address.
+effects from main memory, or from the main language card for `lc.ADDR`.
+`--pclog-from N` starts the log at clock N. `--pclog-limit N` (default
+1,000,000 lines) bounds it: the visit that would be line N + 1 halts the
+run (exit status 1), so a log is complete or the run fails.
 
 ### The write log
 
 `--write-log RANGES` writes a line for every CPU write that reaches the
 ranges, to `--write-log-file FILE` (default `writes.log` in the
 `--snapshot-dir`). It only observes; the state gets `write_logged`, the
-number of lines. `--write-log-limit N` bounds the log at N lines (default
-10,000,000, about 500 MB): the write that would be line N + 1 halts the
-run (end `halt`, exit status 1, the halt naming the limit).
+number of lines. `--write-log-limit N` (default 10,000,000) bounds it:
+the write that would be line N + 1 halts the run.
 
     # a2vm write-log 1 (tools/a2vm/README.md, "The write log")
     # ranges main:4000-40FF,aux0:4000,cpu:C004-C005
@@ -669,32 +554,23 @@ run (end `halt`, exit status 1, the halt naming the limit).
     w 16 16 0808 C005 io - - - 11
     w 20 20 080B 4000 aux 0 4000 00 11
 
-(The first line is a store of the value already there.) `CLOCK` is the
-machine's clock (the state's `cycles`; with `--cost-timed`
-the cost model's clock, in fabric clocks) before the write, `CPU_CYCLES`
-the core's cycle count, `PC` the instruction's (an interrupt entry's
-pushes carry the interrupted PC), `ADDRESS` the CPU's; then the storage
-the byte is in (`main`, `aux`, `lc`, `lc1`, or `io` for a write that
-reaches none), its bank and offset in that storage (decimal bank, hex
-offset), the value it held and the value written, in hex. Every write is
-logged, the stores of the value already there included: that is what a
-comparison of snapshots cannot see. Bus-script `write` and `write-ea` are
-CPU writes; `poke` and the memory API are not.
-
-`tools/native/replay_check.py` logs the ranges its replay may not write
-(`tools/native/a2run.py` `stray_ranges`) and fails on any line inside a
-call.
+`CLOCK` is the machine's clock before the write, `CPU_CYCLES` the core's
+cycle count, `PC` the instruction's (an interrupt entry's pushes carry
+the interrupted PC), `ADDRESS` the CPU's; then the storage the byte is
+in (`main`, `aux`, `lc`, `lc1`, or `io` for a write that reaches none),
+its bank (decimal) and offset (hex), the value it held and the value
+written. Stores of the value already there are logged too. Bus-script
+`write` and `write-ea` are CPU writes; `poke` and the memory API are
+not.
 
 ### The lowest S
 
-`--lowest-s` adds to the final state (and the final snapshot) the lowest
-S the run reached, the PC of the step that reached it (the instruction,
-or the interrupt entry, that started there), its clock and the number of
-steps; the start's S counts. `--lowest-s-in LO-HI[,LO-HI...]` (hex, at
-most 16) also gives, for each PC range, the lowest S seen before or
-after a step that started inside it: a routine's stack depth, with the
-entry of an interrupt that lands inside it but not the handler's own
-instructions (give the handler's range too).
+`--lowest-s` adds to the final state the lowest S the run reached, the
+PC of the step that reached it, its clock and the number of steps.
+`--lowest-s-in LO-HI[,LO-HI...]` (hex, at most 16) also gives, for each
+PC range, the lowest S seen before or after a step that started inside
+it: a routine's stack depth, with the entry of an interrupt that lands
+inside it but not the handler's own instructions.
 
     "lowest_s": {"s": 248, "pc": 2081, "cycles": 45, "steps": 10,
                  "ranges": [{"low": 2064, "high": 2069, "s": 250, "pc": 2065,
@@ -702,240 +578,119 @@ instructions (give the handler's range too).
 
 `s` is `null` for a range never entered.
 
-### Range snapshots
+### Interrupt bounds
 
-`--snapshot-ranges RANGES` makes every snapshot (at boundaries, at events,
-the final one) `NAME.json` and `NAME.img` in place of `NAME.ram`:
-`NAME.img` is an `A2VMIMG1` image (the format of `--image`) with one
-record for each range and bank, so `--image` loads it back. A full
-snapshot is 8.4 MB; a tic's game state is a few hundred KB.
-
-### The snapshot stream
-
-`--snapshot-stream FILE` (milestone 10's tic-level harness,
-`docs/GAME.md` 3.6) writes every snapshot of `--snapshot-ranges` (which
-it needs) into one stream instead of files, so a reader can digest each
-as it comes (a named pipe) and nothing is stored whole; `-` is the
-standard output (with `--state FILE`). The stream is a JSON line
-`{"format": "a2vm-snapshot-stream 1", "ranges": "..."}`; for each
-snapshot a JSON line `{"snapshot": N, "name", "cycles", "pc", "bytes":
-L}` followed by its L bytes, the `A2VMIMG1` image `NAME.img` would hold;
-and a last line `{"end": REASON, "snapshots": N}` (the run's end
-reason). `--snapshot-limit BYTES` (default 1 GiB) bounds it: a snapshot
-that would take the stream past the limit is not written, the stream
-ends with `{"end": "snapshot-limit", ...}` and the run with exit status
-2. `tests/test_a2vm_harness.py` checks both.
+`--irq-bounds RANGES` (hex `LO-HI`, commas, at most 24) checks an
+interrupt contract: from the first instruction of a handler to the end
+of its RTI, every bus access of the CPU (opcode, operand, data, stack,
+dummy) must fall in one of the ranges; the first that does not halts the
+run with `irq-bounds: read $0843 in an interrupt, pc $E123` (exit status
+1). The interrupt entry's own cycles are not checked, nor is anything
+outside handlers. `playdisk.py` passes the bounds of `docs/SCREENS.md`
+2.3 (with an AppleMouse II, also its firmware's ranges and screen
+holes).
 
 ### The zero-page bank pair
 
-The firmware design's pair (`docs/firmware/zpbank-spec.md` as corrected
-by `zpbank-review.md`; the design document's change 5; `NATIVE.md` 4.5
-and 15.1, main zero page only). It is not in F1.2.1. `--zpbank` arms it
-(the firmware's kill switch on, which a PS profile key does on the
-card); so do the cost profiles `f121zp` and `fastzp`. It needs the exact
-core (`--core w65c02s`: the compatibility core does not class its
-cycles) and 128 RamWorks banks. Armed, nothing changes until a program
-writes `$C069`:
+The pair is a proposed firmware feature, not in F1.2.1 or F1.2.2:
+`$C069` makes a pair of zero-page bytes name the RamWorks banks that
+data reads and writes at `$0200-$BFFF` go to. `--zpbank` arms it; so do
+the cost profiles `f121zp` and `fastzp`. It needs `--core w65c02s` and
+128 RamWorks banks. Armed, nothing changes until a program writes
+`$C069`:
 
-| Rule | Model | Source |
-| --- | --- | --- |
-| Enable | A CPU write of V to `$C069`: `$00` or `$FF` turn the pair off, `$01-$FE` make V the pair's first byte (`zp_rd`) and V+1 its second (`zp_wr`); every such write clears both registers. The write stays an ordinary I/O write (a bus cycle in the cost model); reads of `$C069` are unchanged | review section 2, findings 9; spec 2.2 |
-| Watch | While the pair is on, a CPU write whose byte is main zero page (ALTZP off) to `zp_rd` or `zp_wr` loads that register; a write to aux zero page (ALTZP on, any `$C073` bank) does not; pokes and the memory API never do. The value applies at once (the RTL applies it one edge later; the first data access it can affect is 4 cycles after the write) | review finding 2 (D4 corrected); spec 2.3, 2.4 |
-| Values | 1-126: the `$C073` bank of that number (physical bank value+1); 0 and 127-255 follow the switches | review finding 1 |
-| Redirect | A data_ea cycle (the core's `ST_MEM_READ`, `ST_DECIMAL_EXTRA`, `ST_RMW_READ`, `ST_RMW_MODIFY` for reads, `ST_MEM_WRITE`, `ST_RMW_WRITE` for writes; `CPU65C02_EA` above) to `$0200-$BFFF` goes to the bank of `zp_rd` (reads) or `zp_wr` (writes) when that register is not 0, whatever RAMRD, RAMWRT, 80STORE and PAGE2 say. Never opcodes, operands, dummy PC reads, the same-page `STA a,X` false read, JMP `(a)` and `(a,X)` pointers, vectors, the stack, zero page, `$C000-$FFFF`. A redirected write is never a video write (its bank is PSRAM) | review section 2, findings 7, 8; spec 1.2 (D1), 3.1, 3.4 (D2); `globals.sv:263-269` |
-| `$C071`, `$C073` | Leave the pair alone; a zero direction follows them | spec 3.4 |
-| Reset | Off at power-on, at the CPU's RESET (`reset` bus verb) and when disarmed; kept across everything else (holds, speed changes) | spec section 4, review section 2 |
+| Rule | Model |
+| --- | --- |
+| Enable | A CPU write of V to `$C069`: `$00` or `$FF` turn the pair off, `$01-$FE` make V the pair's first byte (`zp_rd`) and V+1 its second (`zp_wr`); every such write clears both registers. The write stays an ordinary I/O write; reads of `$C069` are unchanged |
+| Watch | While the pair is on, a CPU write to main zero page (ALTZP off) at `zp_rd` or `zp_wr` loads that register; a write to aux zero page does not; pokes and the memory API never do. The value applies at once |
+| Values | 1-126: the `$C073` bank of that number; 0 and 127-255 follow the switches |
+| Redirect | A data_ea cycle (`CPU65C02_EA` above) to `$0200-$BFFF` goes to the bank of `zp_rd` (reads) or `zp_wr` (writes) when that register is not 0, whatever RAMRD, RAMWRT, 80STORE and PAGE2 say. Never opcodes, operands, dummy PC reads, the same-page `STA a,X` false read, JMP pointers, vectors, the stack, zero page, `$C000-$FFFF`. A redirected write is never a video write |
+| `$C071`, `$C073` | Leave the pair alone; a zero register follows them |
+| Reset | Off at power-on, at the CPU's RESET (`reset` bus verb) and when disarmed |
 
 Counters in the state (`"zpbank"`, only with the pair armed) and in the
 cost report (`zpb_*`): `$C069` writes, register loads, redirected reads
-and writes (bus cycles, the RMW's second read and the decimal cycle
-included), redirected accesses made with the PC in `$C100-$CFFF` or in
-the ROM (a breach of the software contract: firmware running with the
-pair set), and memory API requests made with a register nonzero.
-
-**Cost.** A redirected access is charged as a RamWorks access of its bank
-(5 clocks on a line hit, the path CAPTURE, TURBO_DONE, ROUTE, RW_LOOKUP,
-RW_DONE of spec section 6), never a TURBO cache hit or fill; the pair is
-not part of the translation state, so it never invalidates the TURBO
-caches; the `$C069` write is an ordinary bus cycle (no private serve, no
-barrier exemption: spec 2.2). The profiles:
-
-| Profile | What it is |
-| --- | --- |
-| `f121zp` | F1.2.1 with the pair alone: every parameter f121's, plus `zp_pair` 1. One RamWorks line, so a copy between two banks misses on every byte |
-| `fastzp` | The firmware design with the pair in place of the read bank: fastpath's parameters with `read_bank` 0 and `zp_pair` 1. NATIVE.md's "Design + pair" |
-
-`zp_pair` is the one cost parameter that describes the machine as well
-as its costs: a profile with it arms the pair, and `--zpbank` with a
-profile without it is refused. `cost_report.py` runs `f121` and
-`fastpath` only: the existing port never writes `$C069`, so the pair
-profiles give the same run there (`tests/test_a2vm_cost.py`).
-
-The pair is checked by `tests/test_a2vm_zpbank.py`: the enable, the
-watch, the values, the scope and priority, the reset rules; the review's
-cases (an aux zero-page write does not load the pair, `$FF` disables,
-127-255 follow); the spec's detection probe as a program (present when
-armed, absent otherwise); each of the 74 opcodes that address
-`$0200-$BFFF` through a mode the pair can redirect, reading bank 5 and
-writing bank 9 exactly as the core's data_ea table says; the same-page
-`STA a,X` false read, JMP `(a)` and `(a,X)`, BRK and a read-modify-write
-across two banks; and the cost rules. Not modelled: the RTL's one-edge
-delay of a load (no instruction can see it), a SmartPort call's fallback
-(a2vm's memory API reaches no zero page and ignores the pair, as the
-card's does), the debug register and the feature bit.
-
-## The comparison with a2sim.py
-
-`compare_a2sim.py` starts the existing port's banked hardware build on
-both machines as `run_doom.py` does: "fast" puts the data files, the code
-banks and the images in place and starts at `kernel_start`
-(`doom.Build.image` writes exactly what `run_doom.Doom.install_fast`
-does, and the first comparison checks it); "prodos" boots `DOOM.SYSTEM`
-through the MLI trap and the port's own loader. `a2sim.py` runs through
-`run_doom.Doom` (its machine, fake ProDOS and idle hooks). Both get the
-same input at the same frame boundaries (W held, mouse turns, the fire
-button, Open Apple, a space tap, S held).
-
-At the start, at every frame boundary (the CPU at `present_done` with
-ALTZP off, the end of a rendered frame), optionally every N cycles, and
-at the end, it compares the RAM of main memory, the main language card
-and every RamWorks bank, byte for byte; every soft switch and the
-language-card state; the registers; the cycle count; the time
-bookkeeping (next VBL, idle cycles, interrupts, I/O accesses, video and
-SHR writes); keyboard, buttons, paddles; every field of the mouse card,
-the Phasor and the memory API; and the fake ProDOS (prefix, open files
-and marks, the calls and their errors, every file's length and CRC). At
-the last boundary it compares the screen `shot.py` renders from a2vm with
-`a2sim.py`'s `shr_image()`, pixel for pixel. Then it runs a2vm again
-without snapshots, checks it ends on the same cycle, and times it.
-
-### Results
-
-On an Apple M3 Pro, Apple clang 21, Python 3.14, py65 1.2.0, the existing
-port's build `hardware-20260926-textured-pal` (build id `e2676d7e`):
-
-| Run | Frames | Cycles | Comparisons | Result | a2sim.py | a2vm | Ratio |
-| --- | ---: | ---: | ---: | --- | ---: | ---: | ---: |
-| Fast install, `turbo` | 20 | 251,486,113 | 22 | match | 56.4 s | 0.815 s | 69x |
-| Fast install, `turbo`, memory API | 20 | 217,367,454 | 22 | match | 49.3 s | 0.734 s | 67x |
-| Fast install, `--speed 33` | 20 | 237,395,601 | 22 | match | 57.2 s | 0.890 s | 64x |
-| ProDOS loader boot to the first frame, `turbo`, every 5 M cycles | 1 | 124,032,560 | 28 | match | 32.5 s | 0.418 s | 78x |
-| Stage 3.1c build, fast install, `turbo` (the cost hooks compiled in, off) | 20 | 251,486,113 | 22 | match | 56.7 s | 0.958 s | 59x |
-| Stage 3.1c build, fast install, `turbo`, memory API, cost model `f121` on (observing) | 20 | 217,367,454 | 22 | match | 49.0 s | 1.480 s | 33x |
-
-The a2sim.py times exclude the comparisons; they run under the
-comparison's loop, which checks for the boundary and the events after
-each step as `run_doom.py`'s loop does (about 4.5 million cycles a
-second). The a2vm times are its run loop alone (`host_seconds`); with
-start-up and loading they are 1% to 4% longer. The loader boot makes 778
-MLI calls; the memory-API run makes five requests at start-up (the probe
-and the first phase swaps) and three a frame.
-
-`py65_diff.py`: 5,180 cases, 44,815 accesses compared, 0 failures.
-
-### The tests
-
-`tests/test_a2vm_machine.py`:
-
-- **Memory map**: all 64 combinations of 80STORE, RAMRD, RAMWRT, ALTZP,
-  PAGE2 and HIRES, with each of the 8 language-card states (bank, read,
-  write, set through `$C08x` reads) and 4 bank values (with 128 banks,
-  and aliasing with 3), against a Python model written from `a2sim.py`'s
-  rules: the page tables, then a read and a write of 23 addresses a
-  combination through the bus, checked in the storage the model names,
-  and the video and SHR write counts. The language card's switch
-  sequence on 600 random accesses.
-- **Devices**: switch status reads, `$C019` at the edges of vertical
-  blanking with the surcharge counted first, keyboard taps and holds,
-  buttons and paddles, the mouse card (ID bytes, moves, clamps, status,
-  acknowledge), its VBL interrupt reaching a program.
-- **Memory API**: each validation error, COPY and FILL, nothing written
-  before every descriptor is checked, the FIFO transport, and the
-  requests that end the run.
-- **ProDOS**: a program making 42 MLI calls with hand-made expectations
-  (errors, carry, data, marks, info, prefix, on-line, destroy, too many
-  files, QUIT), and the volume directory against the existing port's
-  `tools/build_disk.py` before and after the program changes the files.
-- **Screens**: `shot.py` on hand-made standard and PAL256 screens.
-
-`viatest.py` (`make viatest`), `--via-timers`: 80 random sequences of
-accesses to VIA-B's timer-1 registers, in Mockingboard and native mode,
-against a model stepping `via6522.v`'s timer-1 logic a cycle at a time
-(every read's value, cycle for cycle); a program whose handler checks and
-acknowledges IFR bit 6 gets one interrupt every latch + 2 bus cycles (998,
-17,028 and 20,278) on both cores, none with IER clear, and as many with
-an idle loop of the VBL kind; without the option the registers read as
-before and no interrupt comes.
-- **With build/venv**, against `a2sim.py` itself: random programs of 1,200
-  loads, stores and read-modify-writes over every soft switch, the slots
-  and memory, with keyboard, mouse and button input between them, at
-  three speeds (the whole state and RAM must match); the ProDOS program;
-  60 random memory API requests; `py65_diff.py`; and short runs of the
-  existing port (3 million cycles fast and through the loader, and one
-  where a2vm is given a different I/O surcharge, which must be seen).
+and writes, redirected accesses made with the PC in `$C100-$CFFF` or in
+the ROM (firmware running with the pair set), and memory API requests
+made with a register nonzero. A redirected access is charged as a
+RamWorks access of its bank, never a TURBO cache hit or fill.
 
 ## The cost model
 
 `cost.h` and `cost.c` charge every bus access of a run with what it costs
 on the Appletini in TURBO mode, in fabric clocks (133.333 MHz), as the
-vTW core routes it (`hdl/apple/vtw_core_top.sv` of appletini-one,
-`origin/main`, F1.2.1). The parameters come from
-`costs/appletini.json`; each cites the RTL line or the document in
-`docs/firmware/` it comes from. They are derived from the RTL and the
-firmware documents; on 2026-10-03 the card's CALIB.hdv corrected six of
-them (below, "Calibration on the card"), and each of those cites the
-card's figures too.
+vTW core routes it (`hdl/apple/vtw_core_top.sv` of appletini-one). TURBO
+batches video writes through the mirror and its coalescer; the model
+follows that batching, not a synchronous 1 MHz bus write for each byte.
+The parameters come from `costs/appletini.json`; each cites the RTL line
+it comes from.
 
 | Access | What the model does | Clocks (F1.2.1) |
 | --- | --- | --- |
 | Fast memory (main, base aux, ROM) | The TURBO caches of `vtw_turbo_cache.sv`: a 32-word read cache indexed as the RTL folds the address, a 32-entry write page table; a video write never takes a fast entry | read hit 2, read miss 4, write hit 2, write miss 5, video write 6 |
-| A dummy read | Omitted outside `$C000-$CFFF` (the TURBO core's shortcuts, `w65c02_core.sv:903-967`): no access; kept, as a real access, in I/O. With the virtual Disk II active (`d2_replay`, the card as measured), the step that stands for it waits while `disk2_card.sv` replays its cycles | 2, 1 for the second of a pair; 0 with the variant `nod2` |
+| A dummy read | Omitted outside `$C000-$CFFF` (the TURBO core's shortcuts): no access; kept, as a real access, in I/O. With the virtual Disk II active (`d2_replay`), the step that stands for it waits while `disk2_card.sv` replays its cycles | 2, 1 for the second of a pair; 0 with the variant `nod2` |
 | Extended memory (RamWorks banks 1-127) | The 8-byte write-allocate line (or 16 lines, fastpath), write-back; a miss is a PSRAM operation admitted once an Apple cycle inside a 37-clock window from tap 30 (`psram_simple.sv`), a dirty victim two | hit 5, clean miss 35 with the window open, about 131 sustained, dirty about 260 |
 | `$Cxxx` | A real bus cycle launched at the next `drive_en` (tap 9), answered 4 clocks after the data snap; or a private shortcut: `$C011-$C01F` reads, the slot-7 SmartPort window, internal ROM | 123-254; private 3 to 6 |
-| The video mirror | Each video write leaves a byte for the motherboard, "active" or deferred as `vtw_video_policy.sv` decides, coalesced while it waits. Active bytes go through the coalescer (`vtw_video_coalescer.sv`, every firmware since F1.1.0; `coalescer` 1): its scanner selects the dirty pages in address order, one page a clock, takes every byte of a selected page, dirty or not, in two clocks, and queues the dirty ones for the bus (508 entries before it reports full), which takes one an Apple cycle; the next `$Cxxx` access waits until the scan is done and the queue empty. An exposure access flushes every pending byte | 131.3 a byte when a page has 4 or more dirty bytes; at least 513 a page scanned below that, so a column of the 3D view (one byte a 160-byte row, 1.6 a page) drains at about 4 Apple cycles a byte |
-| A mapping change | Clears both TURBO caches (and every ARM write to the shadow counts as one, as the card's counter does) | the misses that follow |
-| A memory API request | The hold (the mirror and the line flushed first), then the ARM's work as `memory_api_hw.c` does it: AXI register accesses per 4 bytes of fast memory, one PSRAM line an Apple cycle by DMA, in 504-byte chunks | 0.135 us an AXI access, fitted to the hardware (below) |
+| The video mirror | Each video write leaves a byte for the motherboard, "active" or deferred as `vtw_video_policy.sv` decides, coalesced while it waits. Active bytes go through the coalescer (`vtw_video_coalescer.sv`; `coalescer` 1): its scanner selects the dirty pages in address order, one page a clock, takes every byte of a selected page in two clocks, and queues the dirty ones for the bus (508 entries before it reports full), which takes one an Apple cycle; the next `$Cxxx` access waits until the scan is done and the queue empty. An exposure access flushes every pending byte | 131.3 a byte when a page has 4 or more dirty bytes; at least 513 a page scanned below that, so a column of the 3D view (one byte a 160-byte row) drains at about 4 Apple cycles a byte |
+| A mapping change | Clears both TURBO caches | the misses that follow |
+| A memory API request | The hold (the mirror and the line flushed first), then the ARM's work as `memory_api_hw.c` does it: AXI register accesses per 4 bytes of fast memory, one PSRAM line an Apple cycle by DMA, in 504-byte chunks; with `amem_engine` (f122) the FPGA copy engine | 0.135 us an AXI access |
 
-The model **only observes**: it never changes what the machine does (the
-one exception, `zp_pair` of the pair profiles, arms the zero-page pair:
-"Milestone 6 additions" below). With
-`--cost-timed` its clock becomes the machine's (the PAL video frame,
-`$C019`, the mouse card's VBL interrupt and the idle skips follow it);
-without it the model runs beside a2sim.py's timeline, and
-`make compare` checks that a run with the model on still matches
-a2sim.py byte for byte. Phases are the values the port's profiling build
-writes to its `profile_stage` byte (`--cost-phase`). With `--cost-phase`
-the final report also gives, by phase, the core's cycles
-(`phase_cycles`: the accesses charged and the dummy reads TURBO omits)
-and the soft-switch accesses (`phase_io`: `io_accesses` of the phase);
-a run without it writes the same report as before (milestone 7, stage C;
-`tools/native/render_check.py --frame-mode --timing`). There are 32
-phases (0-31; a larger value counts in 31): milestone 8 numbers the
-renderer's to 18 (`docs/RENDER-MASKED.md` 4.4); the reports' `phases`
-lists have 32 entries.
+The model **only observes**: it never changes what the machine does
+(except `zp_pair` of the pair profiles, which arms the zero-page pair).
+With `--cost-timed` its clock becomes the machine's. `--cost-report FILE`
+writes a JSON line at every frame boundary: the model's clocks, by
+phase, and its counters.
 
-**The PC map of phases** (milestone 10's timing report, `docs/GAME.md`
-"Acceptance"): `--cost-pcmap FILE` with `--cost-pcmap-when N` (default
-18): while the phase last written to the `--cost-phase` byte is N, each
-instruction's phase is its PC's in the map, so a run is cut by the code
-that runs (the innermost routine) with no marks in it. The file's lines
-are `LO HI PHASE` (hex addresses, a decimal phase: code at a fixed
-place) or `LO HI PHASE SLOT GROUP` (code paged into a window: it holds
-while main `SLOT` holds `GROUP`, the tic image's `SLOT_GRP`); a PC the
+**Phases.** `--cost-phase ADDR` names a main-memory byte whose writes
+(ALTZP off) mark phases: the phase is the value written / 2. There are
+32 phases (0-31; a larger value counts in 31); the report's `phases`
+lists have 32 entries, and with `--cost-phase` it also gives, by phase,
+the core's cycles (`phase_cycles`) and the soft-switch accesses
+(`phase_io`). The port's phase byte is `$0300` (`tools/native/layout.py`
+`PHASE`); its numbering is in `docs/RENDER-MASKED.md` and
+`tools/native/s2layout.py`.
+
+**The PC map of phases.** `--cost-pcmap FILE` with `--cost-pcmap-when N`
+(default 18): while the phase last written is N, each instruction's
+phase is its PC's in the map, so a run is cut by the code that runs with
+no marks in it. The file's lines are `LO HI PHASE` (hex addresses, a
+decimal phase: code at a fixed place) or `LO HI PHASE SLOT GROUP` (code
+paged into a window: it holds while main `SLOT` holds `GROUP`); a PC the
 map lacks keeps the written phase; a write of any other phase turns the
-map off until N is written again. `tools/native/ticrun.py`'s
-`pcmap_text` writes the map of a tic image. The model still only
-observes.
+map off until N is written again.
 
-    python3 tools/a2vm/doom.py --frames 21 --core w65c02s --amem --cost f121 --timed
-    python3 tools/a2vm/cost_report.py          # both profiles, the tables below
+### The profiles
 
-### The two profiles
+`costs.py` turns a profile into the lines `--cost` reads:
 
-`f121` is F1.2.1 as it is. `fastpath` is F1.2.1 with the seven changes of
-the firmware design. The design document ("vTW Memory Fast Path: Design")
-was not read for this model; the seven changes and their effects are taken
-from the corrected summaries of the reviews in `docs/firmware/`:
+    python3 -c 'import sys; sys.path.insert(0, "tools"); from a2vm import costs; print(costs.text("f122+nod2"))'
+
+| Profile | What it is |
+| --- | --- |
+| `f121` | Firmware F1.2.1 as it is |
+| `f122` | F1.2.2 (below) |
+| `fastpath` | F1.2.1 with the seven changes of the vTW fast-path firmware design (below) |
+| `f121zp` | F1.2.1 with the zero-page pair: every parameter f121's, plus `zp_pair` 1 |
+| `fastzp` | fastpath with the pair in place of the read bank: `read_bank` 0 and `zp_pair` 1 |
+
+| Variant | What it sets |
+| --- | --- |
+| `phasor` | The virtual Phasor on: the slot-4 slowdown (below), window 512 |
+| `window32` | The slowdown's window 32 cycles (`vtw.slowdown.cycles`) |
+| `fws1` | FW-S1, a proposal: VIA ORB and ORA-without-handshake writes open no window |
+| `nod2` | The card with its virtual Disk II inactive (no `d2_replay`) |
+| `ntsc` | An NTSC //e: the frame of 262 lines |
+| `precal` | The model before the card's calibration, for comparison |
+
+`playdisk.py --profile` names the combinations it runs: `f121`
+(`f121+phasor+window32`, the default), `fastpath`, `f121-precal`,
+`f121-nod2`, `f122`, `f122-nod2` and `f122-nod2-ntsc`.
+
+`zp_pair` is the one parameter that describes the machine as well as its
+costs: a profile with it arms the pair, and `--zpbank` with a profile
+without it is refused.
+
+The fast-path design's seven changes, as `fastpath` models them:
 
 1. relaxed PSRAM admission while the vTW owns the bus (a miss 35 clocks);
 2. a 16-line fully associative RamWorks line cache;
@@ -943,323 +698,109 @@ from the corrected summaries of the reviews in `docs/firmware/`:
    physical page);
 4. quiet RAMRD, ALTZP, `$C08x` and `$C071/$C073` (3 clocks), with a
    reconciler that replays them before any other bus access and flushes
-   the aux mirror bytes before a bank replay (rules O1, O2, O4);
+   the aux mirror bytes before a bank replay;
 5. a lazy mirror class for SHR writes, flushed only by leaving SHR, a
    physical bank write or a hold whose destination is in the SHR range;
-6. the private read bank `$C069` (the existing port never writes it);
+6. the private read bank `$C069`;
 7. `$C071/$C073` in `vtw_is_bank_steer` (no cost in TURBO).
 
-### Calibration on the card (2026-10-03)
+### Calibration on the card
 
-`CALIB.hdv` (`tools/native/calibdisk.py`, `docs/results/calib.md`)
-timed 44 operations on the owner's card (PAL //e, the DOOM profile):
-the CPU in fast memory and in RamWorks banks, line misses, the switches,
-the game's far windows and copies, the SHR drain. Against it the model
-was right wherever the bus set the time and 7-39% fast wherever code ran
-between accesses. Six parameters changed; every line is now within 0.6%
-of the card, and the menu's BENCHMARK of both speed waves' DOOM.hdv within
-0.4% of the card's FPS (`docs/SPEED.md` 5):
+The parameters are derived from the RTL. On 2026-10-03 a calibration
+disk timed 44 operations on the owner's card (PAL //e): the CPU in fast
+memory and in RamWorks banks, line misses, the switches, far windows and
+copies, the SHR drain. Six parameters changed; every operation is now
+within 0.6% of the card, and the menu's BENCHMARK within 0.4% of the
+card's FPS (`docs/SPEED.md`):
 
 | Parameter | Before | Now | What it is |
 | --- | --: | --: | --- |
-| `d2_replay` | (new) 0 | 1 | The virtual Disk II in slot 6 is active on the owner's card (`disk2.slot6.enabled`; off by default) and replays, one a clock, the 65C02 cycles each TURBO step stands for, holding the next step until it has (`disk2_card.sv:374-412`, `vtw_core_top.sv:1524`, `:1907`). A step that omitted k dummy reads delays the next one k + 1 clocks: REG's `dey / bne` takes 10.3 clocks on the card, 6.3 without |
-| `bus_drive_tap` | 8 | 9 | drive_en is registered (`apple_bus_wrapper.sv:622`) |
-| `bus_done` | 2 | 4 | data_en and resp_valid_q are registered, then X_BUS and X_BUS_DONE (`apple_bus_wrapper.sv:657-659`, `vtw_bus_engine.sv:726`, `vtw_core_top.sv:2125-2159`): two switch writes in a row take one Apple cycle more, as on the card |
-| `admit_offset` | 6 | 30 | addr_en is tap 25 (`apple_bus_wrapper.sv:101`, `:625-639`), not tap 3 |
-| `admit_window` | 40 | 37 | the window's 40 count from addr_en, not from the arming (`psram_simple.sv:239`, `:318-328`) |
-| `slow_done` | 1 | 3 | a cycle paced at 1 MHz ends on the third clock after the data snap: data_en and `pace_tick_pending_q` are registered (`vtw_core_top.sv:1850-1856`, `:1514`), as for `bus_done`; no CALIB line can tell it (WIN moves 0.011 us) |
+| `d2_replay` | (new) 0 | 1 | The virtual Disk II in slot 6 is active on the owner's card and replays, one a clock, the 65C02 cycles each TURBO step stands for, holding the next step until it has. A step that omitted k dummy reads delays the next one k + 1 clocks |
+| `bus_drive_tap` | 8 | 9 | drive_en is registered (`apple_bus_wrapper.sv`) |
+| `bus_done` | 2 | 4 | data_en and resp_valid_q are registered: two switch writes in a row take one Apple cycle more, as on the card |
+| `admit_offset` | 6 | 30 | addr_en is tap 25, not tap 3 |
+| `admit_window` | 40 | 37 | the window's 40 count from addr_en, not from the arming (`psram_simple.sv`) |
+| `slow_done` | 1 | 3 | a cycle paced at 1 MHz ends on the third clock after the data snap |
 
-Two variants keep the comparison: `precal`, the model before the card
-(`playtime.py --profile f121-precal`; the A2VM column of the card's first
-CALIB.hdv), and `nod2`, the card with its virtual Disk II inactive
-(`disk2.slot6.enabled=off` or `vtw.disk2.acceleration.disabled=on`;
-`--profile f121-nod2`): wave 2's benchmark 3.609 FPS there against 3.004
-as the card is set, a prediction not yet checked on the card. The tap
-corrections move the existing port's frame (below) by under 0.1 ms:
-it is 248.6 ms with `f121+nod2` and with `precal`, and 261.6 ms with
-`f121`. Its v12 capture matches `nod2`, as if that card had no active
-Disk II; `cost_report.py` still compares it with `f121` (within the 25%
-of MILESTONES.md 3.1 and the counters within 10%).
+The variant `precal` restores the values before; `nod2` is the card with
+its virtual Disk II inactive (`disk2.slot6.enabled=off` or
+`vtw.disk2.acceleration.disabled=on`).
 
-### F1.2.2: the profile `f122` (2026-10-03)
+One value is fitted, not derived: `axi_us`, the latency of the ARM's
+AXI register accesses (0.135 us), set against a frame of an earlier port
+timed on the card.
 
-Firmware F1.2.2 (appletini-one `3101934`, "Speed up TURBO paging and bump
-firmware to F1.2.2") changes two things on the TURBO path, and nothing in
-`vtw_core_top.sv`, the bus engine or the PSRAM driver:
+### F1.2.2: the profile `f122`
 
-1. `psram_simple.sv:256-257`: while the vTW owns the bus (S_RUN), every
-   background op is admitted as soon as the driver is free, not once an
-   Apple cycle in the window. A RamWorks line miss is then `rw_request`
-   + `psram_read` clocks (35), back-to-back reads 32 apart (the driver's
-   CE rest); a dirty victim's write 24 more. `relaxed_admission` 1, the
-   fast-path design's change 1. A captured aux write's RMW is admitted on
-   the clock after its byte lands (`:400-417`, `:453-478`), ahead of the
-   vTW port: `rmw_queue` 1 (it moves nothing in the wave 2 benchmark);
+Firmware F1.2.2 (appletini-one `3101934`) changes two things on the
+TURBO path:
+
+1. `psram_simple.sv`: while the vTW owns the bus, every background op is
+   admitted as soon as the driver is free, not once an Apple cycle in the
+   window. A RamWorks line miss is then 35 clocks, back-to-back reads 32
+   apart; a dirty victim's write 24 more (`relaxed_admission` 1). A
+   captured aux write's RMW is admitted on the clock after its byte lands
+   (`rmw_queue` 1);
 2. the memory API's descriptors run on `vtw_copy_engine.sv`, one command
-   each (`memory_api.c:169-191`, `memory_api_hw.c:331-414`): `amem_engine`
-   1. The model runs the engine state by state (`copy_engine` in
-   `cost.c`): an aligned copy from a RamWorks bank to main takes 41 clocks
-   a line (NEXT, SOURCE, the line read's PS_REQ and PS_WAIT, 30 clocks
-   with `copy_read_wait`, SOURCE again, DEST, SH_WRITE, ADVANCE, then the
-   second word's five states), 0.0384 us a byte; the ARM's 12 reads and 4
-   writes before START and its polls of 5 reads (`amem_copy_*`).
+   each (`amem_engine` 1). The model runs the engine state by state
+   (`copy_engine` in `cost.c`): an aligned copy from a RamWorks bank to
+   main takes 41 clocks a line, 0.0384 us a byte, plus the ARM's register
+   accesses before START and its polls (`amem_copy_*`).
 
-One value is fitted: `ps_dispatch_us` (f122), the ARM's own time a
-request beyond the AXI accesses the model counts, 25.9 us from the
-card's PRIVATE lines (below). The card ran with the virtual Disk II's
-acceleration off: compare `f122+nod2` (`playtime.py --profile f122-nod2`
-once `playdisk.py` names it).
-
-On the card (CALIB.hdv `ceb663d6` and wave 2's DOOM.hdv `f92c81ae`, both
-on F1.2.2, PAL, Disk II acceleration off): page 1's 44 lines within 0.6%
-but SW C073 (2.954 against 2.909 us, +1.5%) and PUT RW24 (15.754 against
-15.567, +1.2%), both whole-Apple-cycle phase cases that `f121+nod2`
-gives the same (the bus path did not change); the BENCHMARK 3.829 FPS
-against 3.830, its rows TIC 189.5, 3D 21.9, MASK 13.8, DRAW 31.4, REST
-4.9 against 189.4, 21.9, 13.8, 31.4, 4.9. Page 2's PRIVATE copies:
-256 B 56.1 us against 62.2 (to `$2000`) and 57.0 (to `$6000`), 2 KB
-125.0 against 119.9 and 128.7, eight 2 KB requests 124.4 against 124.4
-and 120.2 a request, 16 KB 676.4 against 786.1 and 1135.4. The card's
-two columns are the same work (the engine and the ARM take the same
-path to either page); the 16K lines time 10 requests a measurement,
-about 8-11 ms, under one HDMI frame, so the ARM's frame-periodic work
-(the compositor's 16-row slices, `compositor.c:668-700`, the main loop's
-USB and sensor polls, all between two `smartport_service_poll` calls)
-falls whole into one span or the other.
-
-### Results: the existing port, E1M1 standing still
-
-(Measured before the calibration above; the same figures with
-`f121+nod2` and `fastpath+nod2`.) The build `hardware-20260926-textured-pal`
-(`e2676d7e`, the v12 build measured on hardware), fast install, memory
-API on, no input, the exact
-W65C02S core, on the model's clock (`--cost-timed`). The first frame loads
-the level; the 20 frames after it are reported. Each run takes 1.6 s on an
-Apple M3 Pro.
-
-| Profile | Mean ms a frame | Median | Range | Frames a second | Against 248 ms measured |
-| --- | ---: | ---: | --- | ---: | ---: |
-| f121 | 248.6 | 241.2 | 236.9-275.3 | 4.02 | +0.2% |
-| fastpath | 188.6 | 188.9 | 184.3-194.5 | 5.30 | -23.9% |
-
-**The f121 total is fitted, not predicted.** One parameter, `axi_us`, the
-latency of the ARM's AXI register accesses, is set so that this frame
-matches the 248 ms measured by host time. The copy phases rest on it: they
-are almost all memory API requests (120,192 bytes a frame in three
-requests), and the model charges them as `memory_api_hw.c` runs them, 6
-register accesses per 4 bytes written to fast memory and 12 per 4 bytes
-read. The only figure the firmware documents give, a code review's "~16K
-added register reads add ~5-16ms" (0.305 to 0.98 us a read), does not fit
-the capture:
-
-| axi_us | f121 ms a frame | game_copy + render_copy ms |
-| ---: | ---: | ---: |
-| 0.100 | 238.6 | 38.3 |
-| 0.120 | 243.6 | 43.3 |
-| **0.135 (fitted)** | **248.6** | **47.0** |
-| 0.140 | 249.6 | 48.2 |
-| 0.160 | 253.1 | 53.2 |
-| 0.200 | 263.6 | 63.1 |
-| 0.305 | 289.8 | 89.1 |
-| 0.980 | 457.3 | 256.4 |
-
-Two routes give the same value. The frame matches 248.0 ms at 0.133 us.
-The copy phases match the hardware's at 0.137 us: its VBL-sampled 40.5 ms
-plus the 6.9 ms a frame that sampling loses, because the ARM's holds merge
-VBL interrupts (its VBL counter lost 1.7 s of 60). Milestone 0 measures
-`axi_us` directly.
-
-What stays an independent check is every phase that does not copy, and
-the card's counters. The per-phase comparison, against the VBL-sampled
-phases of the same hardware capture (`docs/research/existing-port.md`
-section 5):
-
-| Phase | Hardware ms (v12, sampled) | f121 ms | f121 / hardware | fastpath ms |
-| --- | ---: | ---: | ---: | ---: |
-| walls | 78.6 | 78.9 | 1.00 | 61.8 |
-| planes | 33.6 | 33.0 | 0.98 | 27.6 |
-| game_tics | 32.5 | 31.3 | 0.96 | 7.3 |
-| blit | 24.0 | 26.5 | 1.10 | 4.3 |
-| render_copy | 22.3 | 27.3 | 1.22 | 22.1 |
-| game_copy | 18.2 | 19.7 | 1.08 | 41.6 |
-| masked | 16.3 | 16.6 | 1.02 | 12.7 |
-| packet | 9.4 | 7.4 | 0.79 | 6.6 |
-| things | 4.0 | 3.6 | 0.90 | 3.1 |
-| debug | 1.5 | 1.5 | 0.97 | 0.2 |
-| setup | 0.7 | 0.3 | 0.48 | 0.3 |
-| idle | 0.0 | 0.0 | - | 0.0 |
-| present_wait | 0.0 | 2.5 | - | 1.0 |
-| **total** | **241.1** (248.0 by host time) | **248.6** | 1.00 | **188.6** |
-
-Every phase the CPU runs comes within 11% of the hardware, except the two
-short ones (packet, setup). Those phases do not depend on `axi_us`.
-present_wait and idle cannot be seen by the hardware's sampling: they only
-run between the VBL interrupt and line 0.
-
-The event counts, against the card's own `vtw status` counters before and
-after the same capture (in its profile JSON; per frame of 248 ms):
-
-| Counter a frame | Hardware (`vtw status`) | f121 | f121 / hardware | fastpath |
-| --- | ---: | ---: | ---: | ---: |
-| steps (core cycles) | 6634040 | 6431431 | 0.97 | 6426674 |
-| read_hits | 4690791 | 4531640 | 0.97 | 4538899 |
-| misses | 1384441 | 1366474 | 0.99 | 1338967 |
-| invalidations | 25680 | 25354 | 0.99 | 20003 |
-| video_wait (clocks) | 4396035 | 4267487 | 0.97 | 133520 |
-| bus_cycles | 5597 | 5630 | 1.01 | 324 |
-| posted | 36970 | 36452 | 0.99 | 27701 |
-
-That capture ran on F1.1.4 (its timing candidate), not F1.2.1; the
-counters agreeing within 3% suggests the paths the model follows are the
-same.
-
-**The coalescer's page scan (modelled since 2026-09-30) leaves this
-calibration where it was:** 248.6 ms f121 and 188.6 ms fastpath with the
-scan and without it (`coalescer` 0), the fits at 0.133 and 0.137 us, and
-every phase within 0.1 ms; the video waits grow by 3,433 clocks a frame
-(0.08%), the sweep by at most 0.6 ms. The port writes its frame a
-whole row at a time, so its pages are full when the scanner takes them;
-the scan costs only scattered writes, such as the native replay's fuzz
-columns (`src/native/README.md`). So `axi_us` was not fitted again. The
-tables above are the run with the scan.
-
-**Fastpath against the F1.2.1 profile: +31.8% frames a second**
-(248.6 to 188.6 ms), a little above MILESTONES.md's estimate of +20% to
-+30% from firmware alone. Where it comes from: the game tics (code and zero
-page in RamWorks banks: 31.3 to 7.3 ms, from the 16-line cache and the
-relaxed admission), the blit (26.5 to 4.3 ms: no drain), walls, planes and
-masked (fewer and cheaper misses, no bank-switch bus cycles or
-invalidations), and the copies (the memory API's hold no longer waits for
-the drain). What it loses: **one lazy flush a frame, 27.3 ms**, in
-game_copy. The port's memory API helper selects bank 122 with `$C073` (now
-quiet) to reach its overlay page, and its next `bit $CFFF`, a real bus
-cycle, makes the reconciler replay that bank, which must first flush the
-whole pending SHR frame (rule O4). Without that flush, by restoring `$C073`
-to 0 before the exchange in the port, or by exempting slot 7 from the
-reconciler in the firmware, the frame would be about 161 ms (+54%; the
-flush subtracted, not run).
-
-The compatibility core with the model only observing (a2sim.py's timeline,
-py65's accesses without dummy reads, idle skips not charged) gives 243.9 ms
-a frame for the same frames.
+One value is fitted: `ps_dispatch_us`, the ARM's own time a request
+beyond the AXI accesses the model counts, 25.9 us. Checked on the card
+on F1.2.2 with the virtual Disk II's acceleration off (`f122+nod2`):
+the calibration disk's operations within 0.6% but two whole-Apple-cycle
+phase cases (+1.5% and +1.2%), and the BENCHMARK's FPS and rows within
+0.1 ms.
 
 ### The slot-4 slowdown
 
-Milestone S2 adds the firmware's slowdown of slot 4, **off unless a run
-asks for it**: f121 and fastpath keep `slowdown_slot4 0`, the firmware's
-default (the virtual Phasor is off by default, `config_menu.c:93`), so
-every run and every check above is unchanged. The variants of
-`costs/appletini.json` turn it on (`costs.py f121+phasor`, and
-`+window32`, `+fws1`; `+ntsc` is an NTSC //e).
+The firmware's slowdown of slot 4 is **off unless a profile asks for
+it**: f121, f122 and fastpath keep `slowdown_slot4 0`, the firmware's
+default (the virtual Phasor is off by default). The variant `phasor`
+turns it on; DOOM's profiles all use `phasor+window32`.
 
-What the firmware does, from its source (appletini-one F1.2.1):
+What the firmware does (appletini-one, `config_menu.c` and
+`vtw_core_top.sv`):
 
-- With the virtual Phasor enabled, `config_menu_apply_vtw_slowdown` puts
-  slot 4 into the slowdown mask "regardless of the per-slot config", with
-  the window `vtw_slowdown_cycles`, 512 by default (`ps_sources/frontend/
-  config_menu.c:4660-4692`, `:76`). A window of 0 then becomes 512
-  (`:4681-4683`); the profile key `vtw.slowdown.cycles` sets 1-65,535
-  (`:3550-3552`).
-- A **hit** is any access to `$C400-$C4FF` (`sd_iosel`: `$Cn00-$CnFF` of
-  slot n, whatever INTCXROM says) or `$C0C0-$C0CF` (`sd_slot_io`), read
-  or write, that the core completes (`vtw_core_top.sv:1119-1144`). A hit
-  loads `slow_cnt_q` with the window; every other completed CPU cycle
-  takes one off (`:1884-1898`). While it is not zero the effective speed
-  is 1 MHz (`:1153-1171`).
-- At 1 MHz a cycle completes only after an Apple data strobe that came
-  after the previous cycle ended (`pace_tick_pending_q`, `:1849-1856`;
-  `pace_ok`, `:1159-1162`), so each cycle is one Apple cycle, 0.985 us on
-  PAL. The core does not take its TURBO shortcuts: an instruction whose
-  opcode fetch ran slow keeps all its dummy cycles to its end, even when
-  the window closes inside it (`instruction_turbo_q`, `w65c02_core.sv:
-  1250`, `:903-967`). The TURBO caches are still filled on the way
-  (`turbo_map_fill`, `turbo_byte_fill`, `:1212-1215`).
+- With the virtual Phasor enabled, slot 4 is in the slowdown mask with
+  the window `vtw_slowdown_cycles`, 512 by default; the profile key
+  `vtw.slowdown.cycles` sets 1-65,535.
+- A **hit** is any access to `$C400-$C4FF` or `$C0C0-$C0CF`, read or
+  write, that the core completes. A hit loads the counter with the
+  window; every other completed CPU cycle takes one off. While it is not
+  zero the effective speed is 1 MHz.
+- At 1 MHz each cycle is one Apple cycle, 0.985 us on PAL. The core does
+  not take its TURBO shortcuts: an instruction whose opcode fetch ran
+  slow keeps all its dummy cycles, even when the window closes inside
+  it. The TURBO caches are still filled on the way.
 
-The model: `slow_left` is `slow_cnt_q`. With the window open, every cycle
+The model: `slow_left` is the counter. With the window open, every cycle
 (dummy reads included) is charged its normal path, then paced to the
-first data strobe after the previous cycle's end plus `slow_done` (1
-clock); I/O keeps its bus-cycle timing, which already ends at a strobe.
-A hit reloads the window after its own cycle. An idle skip (`--idle`)
-uses the window up as the skipped cycles would have. **FW-S1**
-(`slowdown_via_exempt`, a proposal, `docs/firmware/fws1-spec.md` as
-`fws1-review.md` corrects it): writes to a VIA's ORB and ORA without
-handshake (registers 0 and F) open no window; reads, writes to every other
-register (the review found that exempt IFR, IER and ORA writes cause a
-second interrupt in TURBO), writes with address bit 5 or 6 set (they also
-reach the SSI-263, `mockingboard.sv:100-103`) and the mode switch still
-do. `tests/test_sound_player65.py` checks the
-window at its edges (exactly 512 or 32 slow cycles, then TURBO; a hit
-inside the window reloads it), the regions, FW-S1's exemptions, and that
-f121 and fastpath have no window.
-
-Against `docs/research/native-sound.md` 2.3, the RTL agrees on the regions,
-the window and its length in CPU cycles (each an Apple cycle at 1 MHz), and
-on what FW-S1 would exempt. It adds what the design did not say: a hit's
-own cycle runs at the speed it had, the reload does not count down in the
-hit's cycle, a slow instruction keeps its dummy cycles, a window of 0
-cannot be set while the Phasor is on, and some `$C4xx` addresses also
-write the SSI-263.
-
-### Checks
-
-`tests/test_a2vm_cost.py`:
-
-- the parameter file: every value has a source, every profile sets the
-  same parameters, a2vm rejects a missing, unknown or malformed one;
-- the TURBO path against the firmware's benchmark
-  (`hdl/sim/tb_vtw_turbo.sv:717-747`, `README_TURBO.md:32-35`): the
-  16-byte copy loop, 218 accesses a pass, takes **436 clocks a warm pass,
-  as the RTL simulation measured** (with `nod2`: the simulation has no
-  Disk II; 532 with `f121`, its 48 omitted dummy reads at 2 clocks); its
-  cold pass, 462 clocks, is explained miss by miss (the RTL's 474 also
-  counts the core's reset);
-- micro-cases through bus scripts: cache hits and misses and their
-  invalidation; a `$C073` write at every phase, 122 to 253 clocks; a
-  RamWorks miss, a sustained miss, a dirty victim, under both profiles;
-  the mirror's barrier, coalescing, deferred bytes and exposure flushes;
-  the coalescer's page scan (a 168-row column drains in 53,760-55,760
-  clocks with its writes, as the RTL's 54,745; 168 contiguous bytes in
-  168 Apple cycles; with `coalescer` 0 the column drains as 168
-  contiguous bytes do);
-  the quiet switches, the reconciler, the lazy class; the memory API's
-  cost per chunk, and its hold flushing the mirror;
-- with the existing port: a run with the model observing matches a run
-  without it (state and all RAM), and under the pair profiles a run of
-  the exact core matches the plain one but for the pair's state, all
-  zero; timed runs are deterministic; the 20 frames meet MILESTONES.md
-  3.1 item 4 and the counters stay within 10% of the card's.
+first data strobe after the previous cycle's end plus `slow_done`; I/O
+keeps its bus-cycle timing. A hit reloads the window after its own
+cycle. An idle skip uses the window up as the skipped cycles would have.
+**FW-S1** (`fws1`, a proposal): writes to a VIA's ORB and ORA without
+handshake (registers 0 and F) open no window; reads, writes to every
+other register, writes with address bit 5 or 6 set (they also reach the
+SSI-263) and the mode switch still do. The bus script's `cost` gives
+`slow_hits`, `slow_cycles`, `slow_clocks` and `slow_left`.
 
 ### What the model does not do
 
 - It assumes the renderer's capture stream always accepts a video write
-  (the ARM consumer is not modelled; lazy-mirror-spec.md section 6).
-- The coalescer's page scan is modelled for active bytes only
-  (`coalescer` 1): deferred and lazy bytes keep the flush model, one byte
-  an Apple cycle, without the scan (a flush drains whole screens, whose
-  pages are full: assumed, not checked). The snapshot collision (a write
-  to the byte being fetched is retried, `vtw_video_coalescer.sv:76-81`)
-  and the bitmap clear after a reset (131,072 clocks) are not modelled.
-  Until 2026-09-30 the model took the scan as free, one byte an Apple
-  cycle ("at least 131 clocks a byte", read-bank-review.md 11), which
-  made the native replay's frames with fuzz 11-40% faster than the card
-  (demo-10: 34.3 ms against 48.1). With the scan, a Verilator run of the
-  RTL (`vtw_core_top` in a copy of `tb_vtw_turbo`'s harness) and the
-  model agree within 1% on micro-benchmarks and on the replay's draw
-  phase on all 13 captured frames
-  (`docs/results/fuzz-timing-2026-09-30.md`).
-- The PS's latency to take a SmartPort request is 0 plus its AXI reads
-  (bounded by the v12 batching result, well under 1 ms a request); AXI
-  writes cost what reads do.
-- Slow regions other than slot 4, the Disk II, the USB joystick: off, as
-  in the measured setup (the port touches none of them in a frame). The
-  slot-4 slowdown of the virtual Phasor is modelled (above) but off in
-  f121, fastpath, f121zp and fastzp.
-- The first access after a mapping change (`turbo_invalidate` still high
-  at X_CAPTURE) is charged as a normal miss.
-- The Disk II's replay assumes the drive stopped: with it spinning, its
-  sequencer can hold the core longer (`vtw_sequencer_ready`,
-  `disk2_card.sv:593-599`). The decimal cycle of ADC and SBC
-  (`ST_DECIMAL_EXTRA`, a real step on the card) is taken as an omitted
-  dummy read.
+  (the ARM consumer is not modelled).
+- The coalescer's page scan is modelled for active bytes only: deferred
+  and lazy bytes keep the flush model, one byte an Apple cycle. The
+  snapshot collision (a write to the byte being fetched is retried) and
+  the bitmap clear after a reset are not modelled.
+- The PS's latency to take a SmartPort request is 0 plus its AXI reads;
+  AXI writes cost what reads do.
+- Slow regions other than slot 4, and the USB joystick, are off.
+- The first access after a mapping change is charged as a normal miss.
+- The Disk II's replay assumes the drive stopped. The decimal cycle of
+  ADC and SBC (a real step on the card) is taken as an omitted dummy
+  read.
 - Refresh, PHI0 stretching and the long Apple cycle are not modelled: an
   Apple cycle is 131.28 fabric clocks (PAL, 64 us a line of 65 cycles).

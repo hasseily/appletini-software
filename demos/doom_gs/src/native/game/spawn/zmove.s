@@ -1,5 +1,5 @@
-; game/spawn/zmove.s: part spawn's height move (milestone 10, docs/GAME.md
-; 2.4; docs/game-parts/spawn.md). A GPL-2 derivative of upstream's
+; game/spawn/zmove.s: part spawn's height move (docs/GAME.md). A GPL-2
+; derivative of upstream's
 ; p_mobj65.s (P_ZMovement with TICSTEP 1, missileHit, shr3, isPlayer).
 ;
 ;   P_ZMovement  A:X = a mobj: the player's squat (a player below its

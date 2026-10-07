@@ -1,5 +1,5 @@
-; game/geom/giter.s: the block iterators of part geom (milestone 10,
-; docs/GAME.md 2.2, 2.4 row geom). A GPL-2 derivative of upstream's
+; game/geom/giter.s: the block iterators of part geom (docs/GAME.md: the
+; dispatch tables, the parts). A GPL-2 derivative of upstream's
 ; p_map65.s (P_BlockLinesIterator with callLN, P_BlockThingsIterator with
 ; callLN2). The callbacks go through the dispatch table ITTAB (DCALL): its
 ; mechanism is this part's, its entries the parts' that own the callbacks
@@ -12,7 +12,7 @@
 ;                          the callback said stop; also 1 for a block off the
 ;                          map. The block's list (LVG2's blockmap through
 ;                          bl_get: the word at 4 + block is the list's place,
-;                          LEVELS.md 2.4) from its second entry (the first is
+;                          docs/LEVELS.md) from its second entry (the first is
 ;                          the list's 0) to $FFFF; a line whose stamp is
 ;                          validcount is skipped, any other is stamped with
 ;                          validcount and given to the callback
@@ -26,10 +26,8 @@
 ; across it (as upstream keeps LS, LN and the list position there), and the
 ; block list's window in BL_BUF is fetched again after it.
 ;
-; Wave 1 as integrated (docs/game-parts/geom.md R1, R2): every callback,
-; the harness's recording one included (grec.s gt_record_it takes GA_0..1),
-; goes through DCALL; a block's first thing comes from the object API
-; (bk_get).
+; Every callback goes through DCALL; a block's first thing comes from the
+; object API (bk_get).
 
         .setcpu "65C02"
         .macpack longbranch

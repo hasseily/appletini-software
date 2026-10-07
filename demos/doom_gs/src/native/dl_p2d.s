@@ -1,11 +1,10 @@
-; dl_p2d.s: P2DW's frame glue (docs/PLAY.md 2.2; docs/m11-parts/design.md
-; R7 items 3 and 7: s2_frame, "the second half's"), linked in P2DW's room
+; dl_p2d.s: P2DW's frame glue (docs/PLAY.md, docs/SCREENS.md: s2_frame),
+; linked in P2DW's room
 ; with part s2stbar's s2_st, part s2hud's s2_hu, part s2draw's s2_draw and
 ; s2_pub, part s2pal's s2_pal, part plinput's pl_poll and part fxplay's
-; fx_service (src/native/m11/s2int.mk's list, whose s2_p2dwl.s it
-; replaces: the same places). GPL-2, the port's own.
+; fx_service. GPL-2, the port's own.
 ;
-;   s2_frame  a level frame's 2D (SCREENS.md 2.1; R7 item 7's order): the
+;   s2_frame  a level frame's 2D (docs/SCREENS.md's order): the
 ;             input poll, the effect service and S2's snd_refill first;
 ;             PALST and P2DW's own block from S2STATE; I_ViewPalette (0,
 ;             or AMAP_PAL in a full-map frame: A bit 0); stripEarly's

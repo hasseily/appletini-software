@@ -1,5 +1,5 @@
-; game/chase/chase.inc: part chase's places (milestone 10, docs/GAME.md
-; 2.4, 4.4; docs/game-parts/chase.md). GPL-2, the port's own.
+; game/chase/chase.inc: part chase's places (docs/GAME.md, the parts;
+; zero page and scratch). GPL-2, the port's own.
 ;
 ; The part has no zero page of its own: its temporaries are GT_0-GT_3, its
 ; arguments GA_*. What its routines keep across a call is in the scratch

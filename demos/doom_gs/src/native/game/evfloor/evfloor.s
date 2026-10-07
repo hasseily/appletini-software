@@ -1,11 +1,11 @@
-; game/evfloor/evfloor.s: part evfloor of milestone 10 (docs/GAME.md 2.4,
-; wave 4): the floors, the stairs and the donut a line starts. A GPL-2
+; game/evfloor/evfloor.s: part evfloor of the game (docs/GAME.md, the
+; parts; wave 4): the floors, the stairs and the donut a line starts. A GPL-2
 ; derivative of upstream's p_floor65.s (EV_DoFloor, EV_BuildStairs,
 ; EV_DoDonut, newFloor; the helpers floorUp (with floorDown), setDest,
 ; stairStep, nextStep and halfSpeed as routines, the others done in place)
 ; and p_switch65.s (lnFloor, lnStairs, lnDonut: LSTAB's floor entries).
 ;
-; The native interfaces (docs/game-parts/evfloor.md 1.2):
+; The native interfaces:
 ;
 ;   EV_DoFloor      A:X = the line, Y = the floor type (upstream's _Dp[0-3]
 ;                   and C) -> A = 1 when a floor started, else 0

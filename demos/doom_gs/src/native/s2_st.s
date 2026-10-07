@@ -1,11 +1,11 @@
-; s2_st.s: the status bar's drawer (docs/SCREENS.md 1.5.1; part s2stbar,
-; docs/m11-parts/s2stbar.md), in the per-frame 2D image P2DW. Written from
-; upstream's src/iigs/st_stuff65.s (ST_Drawer, refresh, diffDraw,
-; ST_diffNum, ST_diffIcon, restoreRect, STlib_updateMultIcon,
-; STlib_drawNum, the percent signs, stHide) and i_viigs65.s
-; (I_RestoreStatusRect, I_SaveStatusBackground, V_DrawRaw's status bar),
-; with upstream's back buffer replaced by the status band in W (rows
-; 168-199 at P2DW_RT0) composed and published by part s2draw's drawers.
+; s2_st.s: the status bar's drawer (docs/SCREENS.md, the status bar; part
+; s2stbar), in the per-frame 2D image P2DW. Written from upstream's
+; src/iigs/st_stuff65.s (ST_Drawer, refresh, diffDraw, ST_diffNum,
+; ST_diffIcon, restoreRect, STlib_updateMultIcon, STlib_drawNum, the percent
+; signs, stHide) and i_viigs65.s (I_RestoreStatusRect,
+; I_SaveStatusBackground, V_DrawRaw's status bar), with upstream's back
+; buffer replaced by the status band in W (rows 168-199 at P2DW_RT0)
+; composed and published by part s2draw's drawers.
 ;
 ;   st_drawer   ST_Drawer: the menu up: stHide (the bar's rows black and
 ;               marked; the message strip's too when a message is on or
@@ -38,7 +38,7 @@
 ; ST_FACEINDEX, ST_KEYBOXES, ST_READY (W_READY's value pointer: an ammo
 ; index, $FE LARGEAMMO, $FF the frame rate) in the card (part s2stbar's
 ; tic side writes them); STCACHE and STBUF in S2STATE. It reads the
-; player at G_PLAYER (milestone 10's), G_MENUACTIVE, PALST's SCBs, the
+; player at G_PLAYER (the game's), G_MENUACTIVE, PALST's SCBs, the
 ; 2D store's patches through GFXDIR (part s2data), and STBAR, STARMS.
 
         .setcpu "65C02"

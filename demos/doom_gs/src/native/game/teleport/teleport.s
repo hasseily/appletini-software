@@ -1,11 +1,11 @@
-; game/teleport/teleport.s: part teleport of milestone 10 (docs/GAME.md 2.4,
-; wave 4): the teleporters. A GPL-2 derivative of upstream's p_telept65.s
+; game/teleport/teleport.s: part teleport of the game's tic code
+; (docs/GAME.md): the teleporters. A GPL-2 derivative of upstream's p_telept65.s
 ; (EV_Teleport with its helpers fogSound, times20, destination; thingArg
 ; and destArg done in place), p_map65.s (P_TeleportMove, stompThing =
 ; PIT_StompThing, farFrom; tpThing done in place) and p_switch65.s (lnTele:
 ; LSTAB's teleporter entry).
 ;
-; The native interfaces (docs/game-parts/teleport.md, "Interfaces"):
+; The native interfaces:
 ;
 ;   EV_Teleport      GA_0-1 = the line, GA_4-5 = the thing (a mobj handle),
 ;                    GA_6 = the side (0 front, 1 back): upstream's _Dp[0-3],
@@ -586,7 +586,7 @@ clean:  pha
         ; x, y, p_map65.s:2524-2531: when the damage sets a thing in the
         ; level, a dropped item at the victim's x, y, the later stomps of
         ; this move measure from there; the core's gp_secnodes does the
-        ; same, request R4 as integrated)
+        ; same)
 @on:    sec
         rts
 

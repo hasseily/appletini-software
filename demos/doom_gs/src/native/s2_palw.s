@@ -1,12 +1,12 @@
-; s2_palw.s: the image PALW (docs/SCREENS.md 1.3, 4.1; part s2pal,
-; docs/m11-parts/s2pal.md): a level's tints and nibble tables, built into
-; bank S2PAL when a level starts and when the gamma changes in a level
-; (I_ReloadPalette), then the frame's P2DW. Written from upstream's
-; src/iigs/i_viigs65.s: buildTints, tintRecords, tintColors,
-; levelPalettes, enterLevelMode and I_SetLevelPalette's palette part [R
-; i_viigs65.s:611-704, :788-875, :1015-1200]. The rest of
-; I_SetLevelPalette (the colormaps A and B, the flats' colours, FUZZDARK)
-; is milestone 9's level converter's; GRAYMAP is the menu's (s2menu1).
+; s2_palw.s: the image PALW (docs/SCREENS.md, the palettes; part s2pal): a
+; level's tints and nibble tables, built into bank S2PAL when a level starts
+; and when the gamma changes in a level (I_ReloadPalette), then the frame's
+; P2DW. Written from upstream's src/iigs/i_viigs65.s: buildTints,
+; tintRecords, tintColors, levelPalettes, enterLevelMode and
+; I_SetLevelPalette's palette part [R i_viigs65.s:611-704, :788-875,
+; :1015-1200]. The rest of I_SetLevelPalette (the colormaps A and B, the
+; flats' colours, FUZZDARK) is the level converter's
+; (tools/native/wadconv.py); GRAYMAP is the menu's (s2menu1).
 ;
 ;   palw_level  TINTPAL (14 tints x the level's 12 palettes, with gamma)
 ;               from the level's GSVIEWn (bank LVC), GSSTAT's 8 records
@@ -16,8 +16,8 @@
 ;   palw_gamma  the tints again with the new gamma, the colours due (a
 ;               level's I_ReloadPalette: s2_reload answered C = 1)
 ;
-; Both fetch PALST from S2STATE and put it back (palw_getst, palw_putst
-; alone: around s2_picpal in part s2pal's test). W: PALST at $BC00 (as
+; Both fetch PALST from S2STATE and put it back (palw_getst, palw_putst,
+; also exported alone). W: PALST at $BC00 (as
 ; P2DW, WIW, FINW), the TINTPAL being built at $8000, a record's 448
 ; colour bytes at $9600, s2_nbuf at $9800 (a table, then its pairs).
 

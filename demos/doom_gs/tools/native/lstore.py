@@ -1,33 +1,18 @@
-"""The native level store (milestone 9, docs/LEVELS.md 1.3-1.7, 2.2): its
-format, its builder from wadconv.py's conversions, its reader.
+"""The native level store (docs/LEVELS.md): its format and its builder
+from wadconv.py's conversions.
 
     python3 tools/native/wadconv.py --store
 
 builds, in build/native/levels/store/:
 
     TEXELS.1, PATCHES.1, MAPS.1, TABLES.1
-                 bank files (demos/doom/src/kernel/loader.s's format: "A2DM",
-                 version 1, a segment count, 5 bytes a segment: bank,
-                 address, length; zero padding to 256 bytes; the bytes)
+                 bank files ("A2DM", version 1, a segment count, 5 bytes a
+                 segment: bank, address, length; zero padding to 256 bytes; the bytes)
     store.json   every block (bank, address, length, codec), the shared
                  stores, each map's level part and load program, the
                  apply and undo variant lists, the bank tally
-    e1mN/window.img, e1mN/mask.img
-                 the expected state after the load of map N
-                 (docs/LEVELS.md 6.1): A2VMIMG1 records of every byte the
-                 loader leaves in the level window (LVSEG, LVMAP, LVG0-2,
-                 LVC, SPRT's PHDR and SPRFR, the W tables in CODE banks
-                 112 and 113, main's colormaps, aux 0's FUZZDARK,
-                 LV_VARMAP) and of every byte of the shared stores the
-                 variants change; the stores' other bytes are the bank
-                 files'. mask.img: $FF on each byte stage C writes (the
-                 spawn, the specials, the sector nodes' stamps)
-    e1mN/texmap.json, e1mN/patchmap.json
-                 each harness slot (levelconv.py's "t:c", "sky:c") and
-                 each stored lump with its game-layout bank and address
-                 and its upstream address, for stage B's read-back
 
-The shared stores (docs/LEVELS.md 1.3, 1.4):
+The shared stores (docs/LEVELS.md):
 
   texel store   one block a texture any map can show (made at a load, or
                 in play: made on a copy of the model after the load, as
@@ -46,9 +31,10 @@ Each map's level part (STORE banks, after the texel banks' slack): the
 blocks of BLOCK_KINDS, its header (the counts, the blocks, the LVG1
 bases), the apply and undo lists (128-byte columns and tails: the bytes
 where the map differs from the canonical stores, and the canonical bytes
-of the same places), and its load program: the steps of docs/LEVELS.md
-2.2 and the memory-API requests (llayout.py: COPY and FILL descriptors,
-PRIVATE for main and aux 0, at most 16 a request and 45 KB of data).
+of the same places), and its load program: the steps of
+docs/LEVELS.md's load and the memory-API requests (llayout.py: COPY and
+FILL descriptors, PRIVATE for main and aux 0, at most 16 a request and
+45 KB of data).
 """
 
 import hashlib
@@ -63,7 +49,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from native import levelconv as LC, lderive as LD, llayout as LL, \
-    maplumps as ML, rlayout as R, umodel as U, wadconv as WC  # noqa: E402
+    rlayout as R, umodel as U, wadconv as WC  # noqa: E402
 
 ROOT = HERE.parent.parent
 STORE = ROOT / 'build' / 'native' / 'levels' / 'store'
@@ -374,17 +360,13 @@ HEADER_SIZE = 4 + 2 * 11 + 6 * len(BLOCK_KINDS) + 8 + 2 + 8 + 3 + 4
 
 
 class Part:
-    """A map's level part: its blocks, its expected window."""
+    """A map's level part: its blocks, its header, its load program."""
 
     def __init__(self, gamemap: int):
         self.gamemap = gamemap
         self.blocks: Dict[str, bytes] = {}
         self.where: Dict[str, Tuple[int, int]] = {}
         self.header: Dict[str, Any] = {}
-        self.window = Banks()               # RamWorks banks
-        self.main: Dict[int, bytes] = {}    # main memory
-        self.aux0: Dict[int, bytes] = {}    # aux bank 0
-        self.mask = Banks()
         self.requests: List[List[bytes]] = []
         self.steps: List[Tuple[str, int]] = []
 
@@ -409,7 +391,7 @@ def build_part(gd: U.GameData, mc: MapConv, sh: Shared) -> Part:
     game = mc.ld.game
     hb = level.banks
     c = level.info['counts']
-    # -- LVSEG, LVMAP: the harness images (the same records)
+    # -- LVSEG, LVMAP: the renderer's level images (the same records)
     segs = hb.get(R.LVSEG, R.SEGS.base, R.SEG_SIZE * c['segs'])
     nodes = hb.get(R.LVMAP, R.NODES.base, R.NODE_SIZE * c['nodes'])
     subs = bytearray(hb.get(R.LVMAP, R.SUBS.base, R.SUB_SIZE * c['subsectors']))
@@ -491,41 +473,10 @@ def build_part(gd: U.GameData, mc: MapConv, sh: Shared) -> Part:
         'WTAB': wtab, 'TXMP': bytes(txmp_lo) + bytes(txmp_hi),
         'SPRFR': bytes(sprfr), 'GSVIEW': gsview, 'FUZZ': level.fuzzdark,
         'APPLY': apply, 'UNDO': undo}
-    # -- the expected window
-    W = part.window
-    W.put(R.LVSEG, R.SEGS.base, segs)
-    if nodes:
-        W.put(R.LVMAP, R.NODES.base, nodes)
-    W.put(R.LVMAP, R.SUBS.base, bytes(subs))
-    for plane in (R.VAL, R.VAH, R.VAS):
-        W.put(R.LVMAP, plane, bytes(c['vertices']))
-    W.put(R.LVMAP, R.SECTORS.base, sectors)
-    W.put(R.LVMAP, R.SIDES.base, sides)
-    W.put(R.LVMAP, R.TXFLAT, txflat)
+    # -- the game part's tables (LVG0-2)
     group = LD.Group(game)
     flood = LD.Flood(game, group)
-    lvg0 = b''.join(LD.line_record(LD.line_fields(ln)) for ln in game.lines)
-    W.put(LL.LVG0, LL.LINES.base, lvg0)
-    secg = bytearray()
-    for s, (fh, ch, fp, cp, light, special, tag) in enumerate(
-            game.sector_list()):
-        rec = bytearray(LL.SECG_SIZE)
-        S = LL.SECG
-        rec[S['SOUNDX']:S['SOUNDX'] + 4] = struct.pack(
-            '<i', group.soundorg[s][0])
-        rec[S['SOUNDY']:S['SOUNDY'] + 4] = struct.pack(
-            '<i', group.soundorg[s][1])
-        rec[S['TARGET']:S['TARGET'] + 2] = pack16(LL.NO_HANDLE)
-        rec[S['LCOUNT']:S['LCOUNT'] + 2] = pack16(len(group.tables[s]))
-        rec[S['LFIRST']:S['LFIRST'] + 2] = pack16(group.first[s])
-        for k in ('FLOORD', 'CEILD', 'TOUCH'):
-            rec[S[k]:S[k] + 2] = pack16(LL.NO_HANDLE)
-        rec[S['SPECIAL']] = special & 0xFF
-        rec[S['OLDSPECIAL']] = special & 0xFF
-        rec[S['TAG']:S['TAG'] + 2] = pack16(tag)
-        secg += rec
-    W.put(LL.LVG1, LL.SECGS.base, bytes(secg))
-    at = LL.SECGS.base + len(secg)
+    at = LL.SECGS.base + LL.SECG_SIZE * len(game.sector_list())
     ltab = b''.join(pack16(i) for t in group.tables for i in t)
     flidx, flent = flood.layout()
     bm = game.lumps['BLOCKMAP']
@@ -535,53 +486,12 @@ def build_part(gd: U.GameData, mc: MapConv, sh: Shared) -> Part:
     for name, data in (('LTAB', ltab), ('FLIDX', flidx), ('FLENT', flent),
                        ('BLINKS', b'\xff\xff' * nblocks)):
         bases[name] = at
-        if data:
-            W.put(LL.LVG1, at, data)
         at += len(data)
     if at > LL.ROOM[1]:
         raise StoreError('LVG1 needs $%04X' % at)
-    W.put(LL.LVG2, LL.BLOCKMAP, bm)
     reject_at = LL.BLOCKMAP + len(bm)
-    if game.lumps['REJECT']:
-        W.put(LL.LVG2, reject_at, game.lumps['REJECT'])
     if reject_at + len(game.lumps['REJECT']) > LL.ROOM[1]:
         raise StoreError('LVG2: the blockmap and reject pass $BFFF')
-    cmapa, cmapb = mc.facts['colormaps']
-    W.put(LL.LVC, LL.LVC_CMAPA, cmapa)
-    W.put(LL.LVC, LL.LVC_CMAPB, cmapb)
-    W.put(LL.LVC, LL.LVC_GSVIEW, gsview)
-    W.put(LL.LVC, LL.LVC_FUZZ, level.fuzzdark)
-    W.put(R.SPRT, R.SPRFRS.base, bytes(sprfr))
-    W.put(R.WCODE_BANK, R.FLATCM, level.wtables[R.FLATCM])
-    W.put(R.WCODE_BANK, R.TXBANK, wtab[len(level.wtables[R.FLATCM]):])
-    W.put(R.MCODE_BANK, R.TXMP, bytes(txmp_lo) + bytes(txmp_hi))
-    for v in var:
-        W.put(v['bank'], v['address'], v['data'])
-    part.main = {R.LVCOUNT: pack16(c['sectors']) + pack16(c['sides']),
-                 LL.LVCOUNT2: pack16(c['lines']) + pack16(c['subsectors']) +
-                 pack16(c['segs']) + pack16(c['nodes']),
-                 LL.MAIN_CMAPA: cmapa[:LL.CMAP_LOW],
-                 LL.MAIN_CMAPB: cmapb[:LL.CMAP_LOW],
-                 LL.MAIN_CMAPA_HI: cmapa[LL.CMAP_LOW:],
-                 LL.MAIN_CMAPB_HI: cmapb[LL.CMAP_LOW:],
-                 LL.LV_VARMAP: bytes([m])}
-    part.aux0 = {LL.AUX0_FUZZ: level.fuzzdark}
-    # what stage C writes: the sectors' thing heads, the sectors' game
-    # part's dynamic fields, the blocklinks, the lines' stamps
-    M = part.mask
-    for s in range(c['sectors']):
-        a = R.SECTORS.address(s) + R.SEC['THINGS']
-        M.put(R.LVMAP, a, b'\xff\xff')
-        base = LL.SECGS.address(s)
-        for k, n in (('TARGET', 2), ('FLOORD', 2), ('CEILD', 2),
-                     ('TOUCH', 2), ('SPECIAL', 1), ('TRAVERSED', 1)):
-            M.put(LL.LVG1, base + LL.SECG[k], b'\xff' * n)
-    if nblocks:
-        M.put(LL.LVG1, bases['BLINKS'], b'\xff' * (2 * nblocks))
-    for i in range(c['lines']):
-        a = LL.LINES.address(i)
-        M.put(LL.LVG0, a + LL.LINE['VALID'], b'\xff\xff')
-        M.put(LL.LVG0, a + LL.LINE['RVALID'], b'\xff\xff')
     orgx, orgy = struct.unpack_from('<hh', bm, 0)
     part.header = {
         'map': m, 'counts': dict(c, things=len(things) // LL.MTHING_SIZE,
@@ -598,7 +508,7 @@ def build_part(gd: U.GameData, mc: MapConv, sh: Shared) -> Part:
 
 
 # ---------------------------------------------------------------------------
-# The load program (docs/LEVELS.md 2.2)
+# The load program (docs/LEVELS.md)
 # ---------------------------------------------------------------------------
 
 def descriptor(op: int, src: Optional[Tuple[int, int, int]],
@@ -664,24 +574,11 @@ def requests_bytes(reqs: Sequence[Sequence[bytes]]) -> bytes:
     return bytes(out)
 
 
-def parse_requests(data: bytes) -> List[List[bytes]]:
-    n, at, out = data[0], 1, []
-    for _ in range(n):
-        k = data[at]
-        at += 1
-        out.append([data[at + 16 * i:at + 16 * i + 16] for i in range(k)])
-        at += 16 * k
-    if at != len(data):
-        raise StoreError('a request list of %d bytes, %d read'
-                         % (len(data), at))
-    return out
-
-
 def variant_requests(part: Part, kind: str) -> bytes:
     """The memory-API COPY requests of a variant list (APPLY or UNDO, as
     placed: 3 bytes of bank and address, then 128 bytes, a variant): one
     descriptor a variant, from the list's bytes to its place in the
-    shared stores (docs/LEVELS.md 1.4)."""
+    shared stores (docs/LEVELS.md)."""
     bank, at = part.where.get(kind, (0, 0))
     data = part.blocks[kind]
     copies = []
@@ -742,7 +639,7 @@ def program(part: Part) -> None:
     steps += [('COPYREQ', k) for k in range(len(reqs))]
     steps += [('LINES', 0), ('GROUP', 0), ('FLOOD', 0), ('CMAPS', 0)]
     steps += [('PRIVREQ', len(reqs) + k) for k in range(len(priv))]
-    # milestone 10: GTABS (LVS's tables) before the spawn, which reads them
+    # GTABS (LVS's tables) before the spawn, which reads them
     steps += [('GTABS', 0), ('SPAWN', 0), ('SPECIALS', 0), ('END', 0)]
     part.steps = steps
 
@@ -763,7 +660,7 @@ def program_bytes(part: Part) -> bytes:
 def header_bytes(part: Part) -> bytes:
     """The map's header: its counts and every block's bank, address and
     length (BLOCK_KINDS' order), the LVG1 bases, REJECT's address, the
-    blockmap's origin and size, the sky block (bank, address); stage C:
+    blockmap's origin and size, the sky block (bank, address), and
     the BLOCKMAP and REJECT lumps' numbers in the release's directory."""
     h = part.header
     c = h['counts']
@@ -840,13 +737,6 @@ def read_bank_file(data: bytes) -> List[Tuple[int, int, bytes]]:
     return out
 
 
-def image(records: Sequence[Tuple[int, int, int, bytes]]) -> bytes:
-    img = LC.Image()
-    for kind, bank, address, data in records:
-        img.add(kind, bank, address, data)
-    return img.bytes()
-
-
 def build(gd: U.GameData, maps: Sequence[int] = MAPS) -> Dict[str, Any]:
     convs = {m: convert_map(gd, m) for m in maps}
     sh = build_shared(gd, convs)
@@ -857,7 +747,7 @@ def build(gd: U.GameData, maps: Sequence[int] = MAPS) -> Dict[str, Any]:
         [[b, LL.ROOM[0], LL.ROOM[1]] for b in LL.STORE_BANKS]
     store = Banks()                     # the level parts, GTAB
     # the directory: STORE0's first bytes, the fixed place the loader
-    # reads (llayout.STORE_DIR; stage B: it was the first free place)
+    # reads (llayout.STORE_DIR)
     if len(maps) > LL.STORE_DIR_MAPS:
         raise StoreError('%d maps: the directory holds %d'
                          % (len(maps), LL.STORE_DIR_MAPS))
@@ -935,31 +825,6 @@ def write(result: Dict[str, Any], out: Path = STORE) -> Dict[str, Any]:
                                   'sha256': hashlib.sha256(data).hexdigest()}
     maps_json = {}
     for m, part in sorted(parts.items()):
-        d = out / ('e1m%d' % m)
-        d.mkdir(exist_ok=True)
-        recs = [(1, b, a, data) for b, a, data in part.window.runs()]
-        recs += [(0, 0, a, data) for a, data in sorted(part.main.items())]
-        recs += [(1, 0, a, data) for a, data in sorted(part.aux0.items())]
-        (d / 'window.img').write_bytes(image(recs))
-        (d / 'mask.img').write_bytes(image(
-            [(1, b, a, data) for b, a, data in part.mask.runs()]))
-        level = result['convs'][m].level
-        slots = {}
-        for key, upstream_address in level.texmap['slots'].items():
-            t, c = key.split(':')
-            bank, base, _ = sh.tex_blocks[t]
-            slots[key] = [bank, base + SLOT * int(c), upstream_address]
-        (d / 'texmap.json').write_text(json.dumps(
-            {'format': 'game-texmap 1', 'map': 'E1M%d' % m,
-             'slots': slots}) + '\n')
-        entries = []
-        for e in level.info['sprites']['store']:
-            g = sh.lumps[e['lump']]
-            entries.append([g['bank'], g['at'], e['size'] + TAIL,
-                            e['address'], e['lump'], g['index']])
-        (d / 'patchmap.json').write_text(json.dumps(
-            {'format': 'game-patchmap 1', 'map': 'E1M%d' % m,
-             'entries': entries}) + '\n')
         maps_json['E1M%d' % m] = {
             'header': part.header,
             'blocks': {k: {'bank': part.where[k][0],
@@ -1033,438 +898,3 @@ def main_store(gd: U.GameData) -> int:
         print('  %s: %d bytes, %d segments' % (name, f['bytes'],
                                                f['segments']))
     return 0
-
-
-# ---------------------------------------------------------------------------
-# The reader: a host model of the load (the store's semantics for stage B)
-# ---------------------------------------------------------------------------
-
-HEADER_COUNTS = ('sectors', 'sides', 'lines', 'subsectors', 'segs', 'nodes',
-                 'vertices', 'things', 'blocks', 'linetable', 'flood')
-
-
-def parse_header(data: bytes) -> Dict[str, Any]:
-    if data[:2] != b'LH':
-        raise StoreError('not a level header')
-    out: Dict[str, Any] = {'map': data[2], 'counts': {}, 'blocks': {}}
-    at = 4
-    for k in HEADER_COUNTS:
-        out['counts'][k] = struct.unpack_from('<H', data, at)[0]
-        at += 2
-    for kind in BLOCK_KINDS:
-        bank, codec, address, length = struct.unpack_from('<BBHH', data, at)
-        if codec != LL.CODEC_RAW:
-            raise StoreError('block %s: codec %d' % (kind, codec))
-        out['blocks'][kind] = (bank, address, length)
-        at += 6
-    out['lvg1'] = dict(zip(('LTAB', 'FLIDX', 'FLENT', 'BLINKS'),
-                           struct.unpack_from('<4H', data, at)))
-    at += 8
-    out['reject'] = struct.unpack_from('<H', data, at)[0]
-    at += 2
-    out['blockmap'] = dict(zip(('orgx', 'orgy', 'columns', 'rows'),
-                               struct.unpack_from('<hhhh', data, at)))
-    at += 8
-    out['sky'] = (data[at], struct.unpack_from('<H', data, at + 1)[0])
-    at += 3
-    out['lumps'] = dict(zip(('BLOCKMAP', 'REJECT'),
-                            struct.unpack_from('<HH', data, at)))
-    out['size'] = at + 4
-    return out
-
-
-def parse_program(data: bytes) -> Tuple[List[Tuple[int, int]],
-                                        List[List[bytes]]]:
-    if data[:2] != b'LP':
-        raise StoreError('not a load program')
-    nsteps, nreqs = data[3], data[4]
-    at = 6
-    steps = []
-    for _ in range(nsteps):
-        steps.append((data[at], struct.unpack_from('<H', data, at + 1)[0]))
-        at += 3
-    reqs = []
-    for _ in range(nreqs):
-        n = data[at]
-        at += 1
-        reqs.append([data[at + 16 * k:at + 16 * k + 16] for k in range(n)])
-        at += 16 * n
-    if at != len(data):
-        raise StoreError('the program has %d bytes past its requests'
-                         % (len(data) - at))
-    return steps, reqs
-
-
-class HostMachine:
-    """Main memory and RamWorks banks 0-126 after the boot load of the
-    bank files, and the load of a map as stage B's loader must make it:
-    the variants, the memory-API requests (COPY, FILL, PRIVATE, every
-    validation a2vm makes), and the static steps from the store's bytes
-    (lderive.py's rules)."""
-
-    def __init__(self, files: Sequence[Path], directory: Tuple[int, int],
-                 poison: int = 0xA5):
-        self.main = bytearray([poison]) * 0x10000
-        self.aux = {b: bytearray([poison]) * 0x10000 for b in range(127)}
-        for path in files:
-            for bank, address, data in read_bank_file(path.read_bytes()):
-                self.aux[bank][address:address + len(data)] = data
-        self.main[LL.LV_VARMAP] = 0
-        self.directory = directory
-        self.requests_done = 0
-
-    def read(self, bank: int, address: int, n: int) -> bytes:
-        return bytes(self.aux[bank][address:address + n])
-
-    def write(self, bank: int, address: int, data: bytes) -> None:
-        self.aux[bank][address:address + len(data)] = data
-
-    def header(self, gamemap: int) -> Dict[str, Any]:
-        bank, at = self.directory
-        d = self.read(bank, at, LL.STORE_DIR_SIZE)
-        if d[:4] != LL.STORE_MAGIC or d[5] > LL.STORE_DIR_MAPS:
-            raise StoreError('no store directory')
-        for k in range(d[5]):
-            m, hb, ha = struct.unpack_from('<BBH', d, 16 + 4 * k)
-            if m == gamemap:
-                return parse_header(self.read(hb, ha, 256))
-        raise StoreError('E1M%d is not in the store' % gamemap)
-
-    def block(self, h: Dict[str, Any], kind: str) -> bytes:
-        bank, address, length = h['blocks'][kind]
-        return self.read(bank, address, length)
-
-    def request(self, descriptors: Sequence[bytes]) -> None:
-        """A CONTROL request: every descriptor checked, then run (a2vm's
-        rules)."""
-        if not 1 <= len(descriptors) <= LL.AMEM_MAX:
-            raise StoreError('a request of %d descriptors' % len(descriptors))
-        todo = []
-        for d in descriptors:
-            op, flags = d[0], d[1]
-            size = d[10] | d[11] << 8
-            if op not in (1, 2) or flags & ~1 or any(d[13:16]) or \
-                    (op == 1 and d[12]) or (op == 2 and any(d[2:6])):
-                raise StoreError('a malformed descriptor')
-            ends = []
-            for e in ((2,) if op == 1 else ()) + (6,):
-                space, bank = d[e], d[e + 1]
-                address = d[e + 2] | d[e + 3] << 8
-                if space > 1 or (space == 0 and bank) or bank > 126 or \
-                        not size or address < 0x200 or address + size > \
-                        0xC000:
-                    raise StoreError('a descriptor out of range')
-                ends.append((space, bank, address))
-            if op == 1 and ends[0][:2] == ends[1][:2] and \
-                    ends[0][2] < ends[1][2] + size and \
-                    ends[1][2] < ends[0][2] + size:
-                raise StoreError('an overlapping copy')
-            dst = ends[-1]
-            if not flags & 1 and (dst[0] == 0 or dst[1] == 0):
-                raise StoreError('PRIVATE required')
-            todo.append((op, ends[0] if op == 1 else None, dst, size, d[12]))
-        for op, src, dst, size, fill in todo:
-            target = self.main if dst[0] == 0 else self.aux[dst[1]]
-            if op == 1:
-                source = self.main if src[0] == 0 else self.aux[src[1]]
-                target[dst[2]:dst[2] + size] = source[src[2]:src[2] + size]
-            else:
-                target[dst[2]:dst[2] + size] = bytes([fill]) * size
-        self.requests_done += 1
-
-    def variants(self, gamemap: int) -> None:
-        """VARIANTS: the undo requests of the map LV_VARMAP names (none
-        for 0), then this map's apply requests, then LV_VARMAP."""
-        old = self.main[LL.LV_VARMAP]
-        if old:
-            for req in parse_requests(self.block(self.header(old),
-                                                 'UNDOREQ')):
-                self.request(req)
-        for req in parse_requests(self.block(self.header(gamemap),
-                                             'APPLYREQ')):
-            self.request(req)
-        self.main[LL.LV_VARMAP] = gamemap
-
-    def load(self, gamemap: int) -> None:
-        h = self.header(gamemap)
-        steps, reqs = parse_program(self.block(h, 'PROGRAM'))
-        names = {v: k for k, v in LL.STEPS.items()}
-        for op, arg in steps:
-            name = names[op]
-            if name == 'VARIANTS':
-                self.variants(arg)
-            elif name in ('COPYREQ', 'PRIVREQ'):
-                self.request(reqs[arg])
-            elif name == 'LINES':
-                self.lines(h)
-            elif name == 'GROUP':
-                self.group(h)
-            elif name == 'FLOOD':
-                self.flood(h)
-            elif name == 'CMAPS':
-                self.cmaps(h)
-            elif name == 'END':
-                break
-            # SPAWN, SPECIALS: stage C; GTABS: milestone 10 (game steps:
-            # nl_setup's only)
-
-    # -- the static steps, from the store's and the window's bytes
-    def game_lines(self, h) -> List[List[int]]:
-        d = self.block(h, 'LINES')
-        return [list(struct.unpack_from('<hhhhHHbbb', d, 15 * i))
-                for i in range(h['counts']['lines'])]
-
-    def side_sectors(self, h) -> List[int]:
-        return [self.aux[R.LVMAP][R.SIDES.address(i) + R.SIDE['SECTOR']]
-                for i in range(h['counts']['sides'])]
-
-    def lines(self, h) -> None:
-        recs = b''.join(LD.line_record(LD.line_fields(ln))
-                        for ln in self.game_lines(h))
-        self.write(LL.LVG0, LL.LINES.base, recs)
-
-    def tables(self, h):
-        lines = self.game_lines(h)
-        ssec = self.side_sectors(h)
-        tables: List[List[int]] = [[] for _ in range(h['counts']['sectors'])]
-        for i, ln in enumerate(lines):
-            front = ssec[ln[4]]
-            back = ssec[ln[5]] if ln[5] != 0xFFFF else None
-            tables[front].append(i)
-            if back is not None and back != front:
-                tables[back].append(i)
-        return lines, ssec, tables
-
-    def group(self, h) -> None:
-        c = h['counts']
-        segs = self.read(R.LVSEG, R.SEGS.base, R.SEG_SIZE * c['segs'])
-        ssec = self.side_sectors(h)
-        for i in range(c['subsectors']):
-            a = R.SUBS.address(i)
-            count, first = self.aux[R.LVMAP][a + 1], \
-                struct.unpack_from('<H', self.aux[R.LVMAP], a + 2)[0]
-            sector = None
-            for k in range(first, first + count):
-                side = struct.unpack_from('<H', segs, R.SEG_SIZE * k +
-                                          R.SEG['SIDE'])[0]
-                if side != 0xFFFF:
-                    sector = ssec[side]
-                    break
-            if sector is None:
-                raise StoreError('subsector %d: no side' % i)
-            self.aux[R.LVMAP][a] = sector
-        lines, ssec, tables = self.tables(h)
-        first = 0
-        ltab = bytearray()
-        secc = self.block(h, 'SECC')
-        for s, t in enumerate(tables):
-            top = right = LD.INT32_MIN
-            bottom = left = LD.INT32_MAX
-            for i in t:
-                ln = lines[i]
-                for x, y in ((ln[0], ln[1]), (ln[2], ln[3])):
-                    vx, vy = x << 16, y << 16
-                    if vx < left:
-                        left = vx
-                    elif vx > right:
-                        right = vx
-                    if vy < bottom:
-                        bottom = vy
-                    elif vy > top:
-                        top = vy
-            special, tag = struct.unpack_from('<bh', secc, 3 * s)
-            rec = bytearray(LL.SECG_SIZE)
-            S = LL.SECG
-            rec[S['SOUNDX']:S['SOUNDX'] + 4] = struct.pack(
-                '<i', LD.s32(LD.half(right) + LD.half(left)))
-            rec[S['SOUNDY']:S['SOUNDY'] + 4] = struct.pack(
-                '<i', LD.s32(LD.half(top) + LD.half(bottom)))
-            for k in ('TARGET', 'FLOORD', 'CEILD', 'TOUCH'):
-                rec[S[k]:S[k] + 2] = pack16(LL.NO_HANDLE)
-            rec[S['LCOUNT']:S['LCOUNT'] + 2] = pack16(len(t))
-            rec[S['LFIRST']:S['LFIRST'] + 2] = pack16(first)
-            rec[S['SPECIAL']] = rec[S['OLDSPECIAL']] = special & 0xFF
-            rec[S['TAG']:S['TAG'] + 2] = pack16(tag)
-            self.write(LL.LVG1, LL.SECGS.address(s), bytes(rec))
-            ltab += b''.join(pack16(i) for i in t)
-            first += len(t)
-        if ltab:
-            self.write(LL.LVG1, h['lvg1']['LTAB'], bytes(ltab))
-
-    def flood(self, h) -> None:
-        lines, ssec, tables = self.tables(h)
-        n = len(tables)
-        free: List[List[int]] = [[] for _ in range(n)]
-        block: List[List[int]] = [[] for _ in range(n)]
-        for i in range(len(lines) - 1, -1, -1):
-            ln = lines[i]
-            if ln[5] == 0xFFFF:
-                continue
-            front, back = ssec[ln[4]], ssec[ln[5]]
-            if front == back or not ln[6] & LD.ML_TWOSIDED:
-                continue
-            target = block if ln[6] & LD.ML_SOUNDBLOCK else free
-            target[front].append(back)
-            target[back].append(front)
-        idx, ent = bytearray(), bytearray()
-        for s in range(n):
-            room = len(tables[s])
-            region = bytearray(room)
-            region[:len(free[s])] = bytes(free[s])
-            for k, other in enumerate(block[s]):
-                region[room - 1 - k] = other
-            f0 = len(ent)
-            ent += region
-            idx += struct.pack('<HHHH', f0, f0 + len(free[s]),
-                               f0 + room - len(block[s]), f0 + room)
-        self.write(LL.LVG1, h['lvg1']['FLIDX'], bytes(idx))
-        if ent:
-            self.write(LL.LVG1, h['lvg1']['FLENT'], bytes(ent))
-
-    def cmaps(self, h) -> None:
-        cm = self.read(LL.GTAB, LL.GT['COLORMAP'][0], LL.CMAP_SIZE)
-        rec = self.read(LL.LVC, LL.LVC_GSVIEW, LL.GSVIEW_SIZE)
-        a = rec[WC.PALREC_A:WC.PALREC_A + 256]
-        b = rec[WC.PALREC_A + 256:WC.PALREC_A + 512]
-        self.write(LL.LVC, LL.LVC_CMAPA, bytes(a[x] for x in cm))
-        self.write(LL.LVC, LL.LVC_CMAPB, bytes(b[x] for x in cm))
-
-
-def compare_window(hm: HostMachine, d: Path) -> int:
-    """The machine against the map's window.img outside mask.img: the
-    bytes compared; raises on the first difference."""
-    mask: Dict[Tuple[int, int], bytes] = {}
-    for kind, bank, address, data in LC.Image.parse(
-            (d / 'mask.img').read_bytes()):
-        mask[(bank, address)] = data
-    masked: Dict[int, set] = {}
-    for (bank, address), data in mask.items():
-        masked.setdefault(bank, set()).update(
-            range(address, address + len(data)))
-    n = 0
-    for kind, bank, address, data in LC.Image.parse(
-            (d / 'window.img').read_bytes()):
-        got = hm.main[address:address + len(data)] if kind == 0 else \
-            hm.aux[bank][address:address + len(data)]
-        skip = masked.get(bank, set()) if kind == 1 else set()
-        for i in range(len(data)):
-            if got[i] != data[i] and address + i not in skip:
-                raise StoreError('%s $%04X differs from window.img' % (
-                    'main' if kind == 0 else 'bank %d' % bank, address + i))
-        n += len(data) - sum(1 for i in range(len(data))
-                             if address + i in skip)
-    return n
-
-
-def readback(hm: HostMachine, gamemap: int, d: Path, ref_dir: Path
-             ) -> Dict[str, int]:
-    """The loaded machine read back into harness form through the map's
-    game texmap.json and patchmap.json, against levelconv.py's level of
-    the same map (ref_dir): every slot, every stored lump and tail, the
-    W tables' textures, TXMP and SPRFR (by lump), PHDR (by lump); the
-    counts compared."""
-    info = json.loads((ref_dir / 'level.json').read_text())
-    recs = LC.Image.parse((ref_dir / 'level.img').read_bytes())
-    ref = LC.Banks()
-    for kind, bank, address, data in recs:
-        ref.put(bank, address, data)
-    texmap = json.loads((d / 'texmap.json').read_text())['slots']
-    ref_texmap = json.loads((ref_dir / 'texmap.json').read_text())['slots']
-    out = {'slots': 0, 'lumps': 0, 'sprfr': 0, 'txmp': 0, 'tx': 0}
-    if set(ref_texmap) != set(texmap):
-        raise StoreError('the slots differ: %s' % sorted(
-            set(ref_texmap) ^ set(texmap))[:5])
-    for key, upstream_address in ref_texmap.items():
-        bank, address, up = texmap[key]
-        if up != upstream_address:
-            raise StoreError('slot %s: upstream $%06X, levelconv\'s $%06X'
-                             % (key, up, upstream_address))
-        t, c = key.split(':')
-        if t == 'sky':
-            e = info['sky']
-            rbank, rbase = e['bank'], e['base']
-        else:
-            e = info['textures'][t]
-            rbank, rbase = e['bank'], e['base']
-        want = ref.get(rbank, rbase + SLOT * int(c), SLOT)
-        if hm.read(bank, address, SLOT) != want:
-            raise StoreError('E1M%d slot %s differs from levelconv\'s'
-                             % (gamemap, key))
-        out['slots'] += 1
-    patchmap = json.loads((d / 'patchmap.json').read_text())['entries']
-    store = info['sprites']['store']
-    if len(patchmap) != len(store):
-        raise StoreError('%d stored lumps, levelconv %d' % (len(patchmap),
-                                                           len(store)))
-    glob_of = {}
-    for (bank, at, n, up, lump, g), e in zip(patchmap, store):
-        if (lump, up, n) != (e['lump'], e['address'], e['size'] + TAIL):
-            raise StoreError('lump %d: the patch map differs' % lump)
-        if hm.read(bank, at, n) != ref.get(e['bank'], e['at'], n):
-            raise StoreError('E1M%d lump %s or its tail differs'
-                             % (gamemap, e['name']))
-        ph = hm.read(R.SPRT, R.PHDRS.address(g), R.PHDR_SIZE)
-        rph = ref.get(R.SPRT, R.PHDRS.address(e['index']), R.PHDR_SIZE)
-        if ph[0:6] != rph[0:6] or ph[R.PHDR['LUMP']:R.PHDR['LUMP'] + 2] != \
-                rph[R.PHDR['LUMP']:R.PHDR['LUMP'] + 2] or \
-                ph[R.PHDR['BANK']] != bank or \
-                ph[R.PHDR['ADDR']] | ph[R.PHDR['ADDR'] + 1] << 8 != at:
-            raise StoreError('PHDR of lump %d differs' % lump)
-        glob_of[e['index']] = g
-        out['lumps'] += 1
-    glob_of[0] = 0
-    nfr = sum(info['sprites']['frames_per_sprite'])
-    bad = set()
-    k = 0
-    for s, n in enumerate(info['sprites']['frames_per_sprite']):
-        for f in range(n):
-            if [s, f] in info['sprites']['not_frames']:
-                bad.add(k)
-            k += 1
-    for k in range(nfr):
-        a = R.SPRFRS.address(k)
-        got = hm.read(R.SPRT, a, R.SPRFR_SIZE)
-        want = bytearray(ref.get(R.SPRT, a, R.SPRFR_SIZE))
-        for r in range(8):
-            at = R.SPRFR['LUMPS'] + 2 * r
-            v = want[at] | want[at + 1] << 8
-            want[at:at + 2] = pack16(glob_of[v])
-        if k in bad:
-            want[R.SPRFR['ROT']] = got[R.SPRFR['ROT']]
-            want[R.SPRFR['FLIP']] = got[R.SPRFR['FLIP']]
-        if got != bytes(want):
-            raise StoreError('E1M%d SPRFR %d differs' % (gamemap, k))
-        out['sprfr'] += 1
-    rm = {}
-    for kind, bank, address, data in LC.Image.parse(
-            (ref_dir / 'mtables.img').read_bytes()):
-        rm[address] = data
-    txmp = hm.read(R.MCODE_BANK, R.TXMP, 512)
-    for t in range(256):
-        v = rm[R.TXMP][t] | rm[R.TXMP][256 + t] << 8
-        g = txmp[t] | txmp[256 + t] << 8
-        if (v == 0xFFFF) != (g == 0xFFFF) or (v != 0xFFFF and
-                                              glob_of[v] != g):
-            raise StoreError('E1M%d TXMP[%d] differs' % (gamemap, t))
-        out['txmp'] += 1
-    rw = {}
-    for kind, bank, address, data in LC.Image.parse(
-            (ref_dir / 'wtables.img').read_bytes()):
-        rw[address] = data
-    for t_text, e in info['textures'].items():
-        t = int(t_text)
-        bank = hm.aux[R.WCODE_BANK][R.TXBANK + t]
-        lo = hm.aux[R.WCODE_BANK][R.TXLO + t]
-        hi = hm.aux[R.WCODE_BANK][R.TXHI + t]
-        if (bank & 0x80) != (rw[R.TXBANK][t] & 0x80) or \
-                hm.aux[R.WCODE_BANK][R.TXWM + t] != rw[R.TXWM][t]:
-            raise StoreError('E1M%d texture %d: TXBANK or TXWM' % (gamemap,
-                                                                    t))
-        base = lo | hi << 8
-        for c in range(e['widthmask'] + 1):
-            want = ref.get(e['bank'], e['base'] + SLOT * c, SLOT)
-            if hm.read(bank & 0x7F, base + SLOT * c, SLOT) != want:
-                raise StoreError('E1M%d texture %d column %d through '
-                                 'TXBANK' % (gamemap, t, c))
-        out['tx'] += 1
-    return out

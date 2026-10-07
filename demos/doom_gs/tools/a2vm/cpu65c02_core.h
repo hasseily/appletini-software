@@ -103,8 +103,8 @@ static inline uint16_t C02_F(absolute_)(cpu65c02 *cpu)
    every time (table 4-1 note 1, table 7-1). The cycle reads the last
    instruction byte, except that STA on the same page reads its own
    target, as the NMOS chip does: `sta` selects that. That false read is
-   the core's ST_INDEX_DUMMY, not data_ea (zpbank-review.md, finding 8):
-   a plain DUMMY. */
+   the core's ST_INDEX_DUMMY, not data_ea: a plain
+   DUMMY. */
 static inline uint16_t C02_F(abs_indexed_)(cpu65c02 *cpu, uint8_t index,
                                            int always, int sta)
 {
@@ -627,7 +627,7 @@ static inline void C02_F(execute_)(cpu65c02 *cpu)
            after a read of the address the NMOS chip would use (the
            pointer's page with the low byte incremented): one more cycle
            than the 6502 (table 7-1). The pointer reads are code space
-           for the zero-page pair (zpbank-spec.md D1): DATA, not EA. */
+           for the zero-page pair: DATA, not EA. */
         uint16_t pointer = ABS(), low;
         low = RD(pointer, DATA);
         DUMMY((pointer & 0xff00) | ((pointer + 1) & 0x00ff));

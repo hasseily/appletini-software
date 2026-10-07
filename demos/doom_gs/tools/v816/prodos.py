@@ -6,7 +6,7 @@ is never modified.
 """
 
 import struct
-from typing import Dict, List, NamedTuple
+from typing import List, NamedTuple
 
 BLOCK = 512
 VOLUME_DIR_BLOCK = 2

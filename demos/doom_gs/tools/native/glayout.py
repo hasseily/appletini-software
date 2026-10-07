@@ -1,39 +1,31 @@
 #!/usr/bin/env python3
-"""The layouts of milestone 10, the game logic (docs/GAME.md 1, 3.2, 4), in
+"""The layouts of the game logic (docs/GAME.md), in
 tools/native/llayout.py's and rlayout.py's family: one source of every
-address, as milestone 9's llayout.py is.
+address, as llayout.py is for the levels.
 
 llayout.py holds the game state's final layouts (the mobj groups and the
-planes bank MOBJP, the specials and their free lists, the globals of 1.5,
+planes bank MOBJP, the specials and their free lists, the globals,
 LVS, the object API's places, which the load image and the tic images
-share); this module adds the tic phase: W's map (4.1), the main ranges and
-the zero page of 4.4, the runtime's state, the parts' scratch blocks, the
-part table of 2.4 as data (keyed file:label), the dispatch tables (2.2),
+share); this module adds the tic phase: W's map, the main ranges and
+the zero page, the runtime's state, the parts' scratch blocks, the
+part table as data (keyed file:label), the dispatch tables,
 the stop codes, the GTEST bank's layout, and writes:
 
     gen/ggame.inc       the tic phase's places, the zero page (GA_*, GT_*,
                         the API's pointers), the scratch blocks, the stop
                         codes, upstream's constants (UC_*, UO_*: offsets.inc
                         and info.inc through the bridge's incfile.py)
-    gen/gplace.inc      each routine's image and group (gplace.py's
+    gen/gplace.inc      each routine's image and group (the
                         placement), the FCALL and ROUTINE macros
     gen/gdisp.inc       the five dispatch tables: each entry the target's
                         group and address when its part is built, else the
                         unbuilt stop and the entry's number
-    native-game-1.json  the bridge manifest's index; manifests/ one a map
     game.cfg            ld65's map of the tic images
 
-into build/native/game/shared/ (the integrator's; parts read them) or,
-with --out and --built, a part's own GEN (make -f game.mk part).
-
-Usage:  python3 tools/native/glayout.py [--out DIR] [--built PART,...]
-                                         [--test-place]
-        python3 tools/native/glayout.py --check
-        python3 tools/native/glayout.py --report
-
-check(): no region used twice; every tic range dead between the replay's
-end and the next frame's front end in rlayout.py's region list; every
-canonical field placed or excluded by name (with build/).
+into --out DIR (play.mk: the tic images' build); --ggame FILE writes
+gen/ggame.inc alone (level.mk). check(): no region used twice; every tic
+range dead between the replay's end and the next frame's front end in
+rlayout.py's region list.
 """
 
 import argparse
@@ -57,10 +49,9 @@ SRC = ROOT / 'src' / 'native'
 INTEGRATED = SRC / 'game' / 'integrated.txt'
 
 # ---------------------------------------------------------------------------
-# W in the tic phase, F1.2.1 (docs/GAME.md 4.1, as revised by review 11;
-# wave 2 as integrated: the core takes 512 B of slot 1, whose groups the
-# placement cuts at slot 2's 2,048 B, to hold the game's math, damage.md
-# R1)
+# W in the tic phase (docs/GAME.md; wave 2 as integrated: the core takes
+# 512 B of slot 1, whose groups the placement cuts at slot 2's 2,048 B, to
+# hold the game's math)
 # ---------------------------------------------------------------------------
 W_MAP = [
     ('MATHW', 0x6000, 0x6600, 'MATHW, AUXW: the render images\' bytes'),
@@ -75,14 +66,14 @@ W_MAP = [
 ]
 WR = {name: (lo, hi) for name, lo, hi, _ in W_MAP}
 SLOTS = {1: WR['SLOT1'], 2: WR['SLOT2']}
-# The frame slots (docs/GAME.md 4.1, 4.3; docs/SPEED.md 9): main
+# The frame slots (docs/GAME.md; docs/SPEED.md): main
 # $2000-$5FFF holds the replay's colormaps A and B, light levels 0-31
-# (MEMORY_MAP.md 3.4), which only the replay reads. During the tic phase
+# (docs/MEMORY_MAP.md), which only the replay reads. During the tic phase
 # the placement's pinned groups (slots FRAME_FIRST and up, one group a
 # slot) run there, each in a place of its own: gcall.s's gr_load copies a
 # pinned group in by one memory-API PRIVATE request at its first call in
-# a frame (a CPU store there would be a video write: MEMORY_MAP.md rule
-# 3), and fs_restore copies the colormap bytes it covered back from the
+# a frame (a CPU store there would be a video write: docs/MEMORY_MAP.md's
+# rules), and fs_restore copies the colormap bytes it covered back from the
 # level's copy in LVC (lg_cmaps's) before the tic phase ends. A slot
 # never crosses $4000, so its restore is one copy from one of LVC's two
 # colormaps: (main range, its source in LVC)
@@ -96,8 +87,6 @@ AM_MAX = 15                     # descriptors a memory-API request (gcall.s
 #                                 byte): fs_restore's one request takes a
 #                                 descriptor a loaded frame slot
 FRAME_MARGIN = 96               # a frame slot's room past its group's bytes
-#                                 (gplace.py's GROUP_MARGIN: the planted
-#                                 bugs' copies link the same placement)
 
 
 def frame_pages(group: Dict[str, Any]) -> int:
@@ -157,7 +146,7 @@ def slot_range(groups: Sequence[Dict[str, Any]], slot: int
     if slot in SLOTS:
         return SLOTS[slot]
     return frame_slots(groups)[slot]
-# main, the tic phase (4.1): in rows MEMORY_MAP.md 3.3 marks not
+# main, the tic phase: in rows docs/MEMORY_MAP.md marks not
 # persistent across frames, dead between the replay's end and the next
 # front end
 MAIN_TIC = [
@@ -167,7 +156,7 @@ MAIN_TIC = [
     ('BL_BUF', LL.BL_BUF, LL.BL_BUF + 0x100, 'bl_get\'s block list'),
     ('RT', LL.RT_STATE, LL.RT_END, 'the runtime\'s state'),
 ]
-# the renderer's regions that live across frames (MEMORY_MAP.md 3.3:
+# the renderer's regions that live across frames (docs/MEMORY_MAP.md:
 # FS_*, the covered ranges, the weapon skip and its state, FRVIS;
 # rlayout.py's region names), which no tic range may overlay
 PERSISTENT = ('fill spans', 'covered ranges', 'weapon skip', 'WPREV',
@@ -176,7 +165,7 @@ PERSISTENT = ('fill spans', 'covered ranges', 'weapon skip', 'WPREV',
 GLOBALS = (LL.GBLOCK, LL.GLOBALS_END)
 
 # ---------------------------------------------------------------------------
-# The zero page of the tic phase (4.4)
+# The zero page of the tic phase
 # ---------------------------------------------------------------------------
 ZP_API = [('GC_MP', 2), ('GC_SP', 2), ('GC_LP', 2), ('GC_XP', 2)]
 ZP_API_RANGE = (0x38, 0x40)
@@ -200,8 +189,8 @@ ZAT = R.allocate(API_GT, API_GT_AT, GT_RANGE[1])
 # P_SpawnMobj's arguments (gs_spawnmobj): x, y, z, the type; the result's
 # slot comes back in A:X and GC_MO; P_CreateSecNodeList's mode
 GA_NAMES = {'GA_X': 0, 'GA_Y': 4, 'GA_Z': 8, 'GA_TYPE': 12,
-            # the object of a dispatched call (wave 1, docs/game-parts/
-            # mobjstate.md R4): a mobj's ACTTAB action and a THTAB thinker
+            # the object of a dispatched call (wave 1): a mobj's ACTTAB
+            # action and a THTAB thinker
             # function take their mobj or thinker handle in GA_0-1, an
             # ITTAB callback its line or mobj, an LSTAB handler its line
             # (upstream's _Dp)
@@ -210,11 +199,10 @@ GA_NAMES = {'GA_X': 0, 'GA_Y': 4, 'GA_Z': 8, 'GA_TYPE': 12,
 # ---------------------------------------------------------------------------
 # The tic phase's own places in GW (wave 1 as integrated, docs/GAME.md):
 # after llayout's GW_FIELDS, never in the load image. p_map65.s's near
-# scratch that several parts read after a call (docs/game-parts/geom.md
-# R3: opentop, openbottom, openrange; tmfloorz, tmceilingz, tmdropoffz;
-# MV_SS, MV_SEC; numspechit; blockRange's bounds), never overlaid; the
-# object API's side buffer and its address (secfind.md request 1), its
-# sector node buffer (mobjstate.md R2) and its word (API_W: the value of
+# scratch that several parts read after a call (opentop, openbottom,
+# openrange; tmfloorz, tmceilingz, tmdropoffz; MV_SS, MV_SEC; numspechit;
+# blockRange's bounds), never overlaid; the object API's side buffer and
+# its address, its sector node buffer and its word (API_W: the value of
 # bk_put, sn_putw, hn_put, the result of bk_get, mi_get)
 # ---------------------------------------------------------------------------
 TIC_GW_FIELDS = [('GM_OPENTOP', 4), ('GM_OPENBOT', 4), ('GM_OPENRANGE', 4),
@@ -223,26 +211,25 @@ TIC_GW_FIELDS = [('GM_OPENTOP', 4), ('GM_OPENBOT', 4), ('GM_OPENRANGE', 4),
                  ('GM_BXL', 1), ('GM_BXH', 1), ('GM_BYL', 1), ('GM_BYH', 1),
                  ('SD_BUF', R.SIDE_SIZE), ('SD_AT', 2),
                  ('SN_BUF', LL.SN_SIZE), ('API_W', 2),
-                 # the trace's state (wave 2: docs/game-parts/tracel.md
-                 # R1): _g_trace, TR_LONG, the intercepts' count and the
+                 # the trace's state (wave 2): _g_trace, TR_LONG, the
+                 # intercepts' count and the
                  # last one in, IV_ON, IV_ML/IV_MH, VT_INVB's bit 15
                  ('GM_TRACE', 16), ('GM_TRLONG', 1), ('GM_ICN', 1),
                  ('GM_ICLAST', 1), ('GM_IVON', 1), ('GM_IVM', 8),
                  ('GM_INVB', 1),
                  # attackrange (p_attack65.s AT_RANGE: part attack writes
-                 # it, part spawn reads it; docs/game-parts/spawn.md
-                 # request 1)
+                 # it, part spawn reads it)
                  ('GM_ATRANGE', 4),
-                 # SIDE1's constants of the trace (wave 3: docs/game-parts/
-                 # tracet.md R4): VT_RR (not 0: the fast vertex sides),
+                 # SIDE1's constants of the trace (wave 3): VT_RR (not 0:
+                 # the fast vertex sides),
                  # then the axis, VT_P1, VT_P2, VT_CV, VT_CT, VT_OXC,
                  # VT_OYC, VT_SGN's and VT_DYF's high bytes; they live
                  # from sideSetup to a trace's last block step, across the
                  # traverser's calls, and part path reads VT_RR
                  ('GM_RR', 1), ('GM_SIDE1', 15),
                  # p_map65.s's near scratch that checkpos writes and
-                 # trymove, teleport and chasemove read (wave 3:
-                 # checkpos.md R1): tmthing, tmx, tmy (cpCopy's), the box
+                 # trymove, teleport and chasemove read (wave 3):
+                 # tmthing, tmx, tmy (cpCopy's), the box
                  # _g_tmbbox (top, bottom, left, right: UC_BOX* order,
                  # fixed_t each), _g_spechit (4 line numbers; their count
                  # GM_NSPEC), MP_TRY (1 when P_TryMove calls checkPos)
@@ -250,31 +237,30 @@ TIC_GW_FIELDS = [('GM_OPENTOP', 4), ('GM_OPENBOT', 4), ('GM_OPENRANGE', 4),
                  ('GM_TMBBOX', 16), ('GM_SPECHIT', 8), ('GM_MPTRY', 1),
                  # linetarget (p_map.c's _g_linetarget: P_AimLineAttack
                  # writes it, parts wfire and chase read it after the
-                 # call; a mobj handle, $FFFF none; wave 5:
-                 # docs/game-parts/attack.md R1; last, so that the fields
+                 # call; a mobj handle, $FFFF none; wave 5; last, so
+                 # that the fields
                  # before it keep their places)
                  ('GM_LINETARGET', 2)]
 TGW = R.allocate(TIC_GW_FIELDS, LL.GW_USED, LL.GW_END)
 TIC_GW_USED = max(TGW[n] + k for n, k in TIC_GW_FIELDS)
 # The tic phase's own persistent globals (main, after llayout's globals
-# block, so that milestone 9's pre-state records keep their size): the
+# block, so that the level load's pre-state records keep their size): the
 # map the level window holds (upstream's W_SET, w_level65.s LV_SET: the
 # map of the last load, 0 none; bmLoad runs W_LevelDone only for another
 # map, m_menu65.s:1780-1789), which g_resume needs for the textures the
 # load made (wave 1 as integrated); idrate's frame rate flag (upstream's
 # d_main65.s _g_fps_show, its low byte: no canonical state, but it lives
-# across tics and loads; the harnesses write the reference's at a run's
-# start, as G_WSET: docs/game-parts/pickup.md P4); the player's onground
+# across tics and loads); the player's onground
 # (upstream's p_user65.s PU_ONGROUND, its low byte: movePlayer and the
 # death think write it, calcHeight reads the last tic's while the
-# reaction time counts; wave 5: docs/game-parts/player.md R1)
+# reaction time counts; wave 5)
 TIC_MAIN_FIELDS = [('G_WSET', 1), ('G_FPSSHOW', 1), ('G_ONGROUND', 1)]
 TGM = R.allocate(TIC_MAIN_FIELDS, LL.GLOBALS_END, LL.GBLOCK_END)
 TIC_MAIN_END = max(TGM[n] + k for n, k in TIC_MAIN_FIELDS)
 
 # ---------------------------------------------------------------------------
-# The demo bank DEMOB (docs/GAME.md 1.10; docs/game-parts/flow.md request
-# 1): a directory at DM_DIR: a count byte, then DM_ESIZE bytes an entry:
+# The demo bank DEMOB (docs/GAME.md): a directory at DM_DIR: a count
+# byte, then DM_ESIZE bytes an entry:
 # the name (the manifest's symbol number and the offset of the reference
 # defdemoname holds, 2 + 2), the lump's number in the WAD directory (2),
 # its length (2), its address in DEMOB (2); the lumps from DM_LUMPS
@@ -284,10 +270,9 @@ DEMOB_LAYOUT = [('DM_DIR', 0x0200), ('DM_ESIZE', 10), ('DME_NAME', 0),
                 ('DM_LUMPS', 0x0300)]
 
 # ---------------------------------------------------------------------------
-# The runtime's state, main $1980-$1A7F (4.1): the object API's tags,
+# The runtime's state, main $1980-$1A7F: the object API's tags,
 # dirty bits and recency orders, gcall.s's slots, the thinker walk's
-# state, P_CreateSecNodeList's mode, the API's counters (the tests read
-# them)
+# state, P_CreateSecNodeList's mode, the API's counters
 # ---------------------------------------------------------------------------
 RT_FIELDS = [
     ('MOC_TL', LL.MOC_LINES), ('MOC_TH', LL.MOC_LINES),
@@ -309,8 +294,7 @@ RT_FIELDS = [
     ('FS_DIRTY', 1),            # bit 7 clear: a frame slot was loaded in
                                 #   this tic phase (fs_restore has work);
                                 #   K_TIC sets SLOT_GRP .. FS_DIRTY to $FF
-                                #   (SLOT_CLR bytes), as the test drivers'
-                                #   core_in
+                                #   (SLOT_CLR bytes)
     ('RT_TH', 2), ('RT_NEXT', 2),   # the walk's thinker and its next
     ('MP_MODE', 1),             # P_CreateSecNodeList's walk mode (1)
     ('GO_HITS', 2), ('GO_MISS', 2), ('GO_WBACK', 2), ('FC_LOADS', 2),
@@ -322,7 +306,7 @@ RT_USED = max(RT[n] + k for n, k in RT_FIELDS) - LL.RT_STATE
 SLOT_CLR = RT['FS_DIRTY'] + 1 - RT['SLOT_GRP']   # K_TIC's $FF bytes
 
 # ---------------------------------------------------------------------------
-# The stops (3.4): GS_STATUS (main, after the level's LV_STATUS and
+# The stops: GS_STATUS (main, after the level's LV_STATUS and
 # LV_AMEM), its argument (a routine's or an entry's number), then BRK
 # ---------------------------------------------------------------------------
 GS_STATUS, GS_ARG = 0x03B0, 0x03B1
@@ -331,91 +315,45 @@ GS = {'OK': 0, 'UNBUILT': 1, 'PLANES': 2, 'SPECIALS': 3, 'FINALE': 4,
       'SAVEGAME': 10, 'GROUP': 11, 'STREAM': 12, 'UNBUILTD': 13,
       'ACTION': 14, 'DEMOEND': 15,
       # recursiveSound's flood deeper than its work stack (512 levels),
-      # GS_ARG the sector (wave 3: docs/game-parts/pspr.md R4)
+      # GS_ARG the sector (wave 3)
       'FLOOD': 16,
       # the memory API refused a frame slot's PRIVATE copy (gcall.s
       # fs_send), GS_ARG its result
       'AMEM': 17}
 # far_gcopy, the play kernel's one-window copy of a group (dl_kern.s, at
-# this address): gr_load's copy until the copy engine took it (docs/
-# SPEED.md 10); kept for CALIB.hdv's GC lines (calibdisk.py), no game
-# code calls it
+# this address): gr_load's copy until the copy engine took it
+# (docs/SPEED.md); no game code calls it
 KERN_GCOPY = 0xFFD5
 # the memory API's transport (gcall.s AMEMLC: am_req, am_begin, am_push,
-# am_fin, am_runs; docs/SPEED.md 10) in the main card's bank 1, after the
+# am_fin, am_runs; docs/SPEED.md) in the main card's bank 1, after the
 # products (MATHLC, $D800-$DB5B in every image) to the bank's $DC00: the
 # kernel's loads replace W and the core, and the request's wait must
 # survive them. The play disk's card takes it from the tic image
-# (playdisk.card_main), the test images' from their own (lrun.card_records)
+# (playdisk.card_main)
 AMEM_LC = (0xDB5C, 0xDC00)
 # its first bytes, am_req (the request's head and descriptor, which the
 # callers patch: the transport's working memory), and the main card's bank
-# 1 for a write log without them (gparts' stray checks)
+# 1 for a write log without them
 AM_REQ = (AMEM_LC[0], AMEM_LC[0] + 36)
-LC1_LOG = 'lc1:D000-%04X,lc1:%04X-DFFF' % (AM_REQ[0] - 1, AM_REQ[1])
 # the transport's CPU version (gcall.s AMEMCPU over AMEMLC, AMEMCPUD,
-# AMEMCPUF; docs/PLAY.md 19): DOOM.SYSTEM writes it over the card when it
+# AMEMCPUF; docs/PLAY.md): DOOM.SYSTEM writes it over the card when it
 # finds no memory API (tools/native/amcpu.py), into two ranges no card a
 # tic image runs with uses (after MFAR in bank 1, between the replay's
 # BKNEAR and the kernel's bytes: playdisk.py checks the play card)
 AMEM_CPU = {'AMEMCPU': AMEM_LC, 'AMEMCPUD': (0xDFE6, 0xE000),
             'AMEMCPUF': (0xFE45, 0xFE7B)}
-# the tic phase's stack (4.5), the IRQ's, an FCALL across images' cost
+# the tic phase's stack, the IRQ's, an FCALL across images' cost
 TIC_STACK, IRQ_STACK, FCALL_STACK = 160, R.IRQ_STACK, 5
-# page 1 below the stack (speed wave 2, part objapi, docs/speed-parts/
-# objapi.md): the object API's window code and its descriptors (gobj.s
+# page 1 below the stack (speed wave 2, part objapi): the object API's
+# window code and its descriptors (gobj.s
 # pw_go), copied there by go_reset in the tic images and the load image;
 # the tic stack (TIC_STACK, the IRQ's included, as gcallgraph.py counts
-# it) from the drivers' S ($01EF; the play kernel's is higher) stays above
+# it) from S $01EF (DRIVER_S; the play kernel's is higher) stays above
 TIC_PAGE1 = (0x0100, 0x0150)
 DRIVER_S = 0xEF
-# the bytes a built routine keeps on the stack across its calls, beyond
-# their returns (gcallgraph.py --stack; wave 1 as integrated): P_CheckSight's
-# waiting children, 2 a level over a 2-byte marker, E1's trees 19 deep at
-# most (sight.md R6); the mobj P_SetMobjState and explode keep across an
-# action (mobjstate.md); a block iterator's walk across its callback (geom:
-# giter.s, 3 bytes)
-OWN_STACK = {'p_sight65.s:P_CheckSight': 40, 'p_tick65.s:P_SetMobjState': 2,
-             'p_mobj65.s:explode': 2, 'p_map65.s:P_BlockLinesIterator': 3,
-             'p_map65.s:P_BlockThingsIterator': 3,
-             # wave 3: the things' walk's state and PIT_CheckThing's
-             # result across checkThing (checkpos.md R3); the radius
-             # attack's block loop across P_BlockThingsIterator, A_Look's
-             # type across mi_get and the sound (look.md request 4)
-             'p_map65.s:checkPos': 12, 'p_attack65.s:P_RadiusAttack': 10,
-             'p_enemy65.s:A_Look': 1,
-             # wave 4: the return address of a local jsr (mvNodes, spec,
-             # the fogs) under the callees they FCALL (trymove.md R2); the
-             # teleport's block loop across P_BlockThingsIterator
-             # (teleport.md R3)
-             'p_map65.s:P_TryMove': 2,
-             'p_spawn65.s:P_NightmareRespawn': 2,
-             'p_map65.s:P_TeleportMove': 5,
-             # wave 5: the return address of a local jsr under the callees
-             # it reaches (player.md R4: pm_thrust, @hurt, pu_run,
-             # pu_line, pn_line, pt_mo, ch_mo; xymove.md R4: sm_try;
-             # chasemove.md R3: cm_try); a byte pushed across an FCALL
-             # (xymove.md R4); the missile kept across checkMissile and
-             # P_TryMove (missile.md R3)
-             'p_user65.s:P_PlayerThink': 2, 'p_user65.s:movePlayer': 2,
-             'p_user65.s:calcHeight': 2, 'p_user65.s:specialSector': 2,
-             'p_use65.s:P_UseLines': 2, 'p_use65.s:PTR_UseTraverse': 2,
-             'p_use65.s:PTR_NoWayTraverse': 2,
-             'p_mobj65.s:slideMove': 2, 'p_mobj65.s:frictionAP': 1,
-             'p_mobj65.s:frictionNear': 1, 'p_mobj65.s:bobClip': 1,
-             'p_mobj65.s:hitSlideLine': 1,
-             'p_spawn65.s:P_SpawnMissile': 2,
-             'p_spawn65.s:checkMissile': 2,
-             'p_enemy65.s:doNewChaseDir': 2,
-             # wave 6: the return address of a local jsr (dr_move, pl_move)
-             # under the plane movers and partLight (movers.md request 3);
-             # mt_still's return under pl_get (tic.md R3); A_Chase's byte
-             # pushed over a call of the object API (chase.md R3)
-             'p_doors65.s:T_VerticalDoor': 2, 'p_plats65.s:T_PlatRaise': 2,
-             'p_tick65.s:P_MobjThinker': 2, 'p_enemy65.s:A_Chase': 1}
-
 # ---------------------------------------------------------------------------
-# The test bank GTEST (test builds, 3.4, 3.6): the schedule (the gametic
+# The test bank GTEST of the former test builds (no current build uses
+# it; its places are still written to ggame.inc): the schedule (the gametic
 # of each frame and its kind: FRONT or FULL), the stream (each tic's
 # command and events), the I_GetTime values, the re-key records (one a
 # setup), the sound event log and the same-pair hit log (emptied after
@@ -424,8 +362,7 @@ OWN_STACK = {'p_sight65.s:P_CheckSight': 40, 'p_tick65.s:P_SetMobjState': 2,
 # (the final integration: the schedule 0x1000, 1,365 frames, DEMO1's 1,257
 # the most; the re-key records 0x2C00, 10 setups, the tour's 9 the most
 # (0x1800 held 5); GT_LEVELS the frame block's level fields by map, which
-# the driver copies after each load in runs with frames: docs/GAME.md
-# "Acceptance")
+# the driver copies after each load in runs with frames)
 GT_LAYOUT = [('GT_ARGS', 0x0100), ('GT_SCHEDULE', 0x1000),
              ('GT_STREAMB', 0x5800), ('GT_TIMES', 0x0800),
              ('GT_REKEYS', 0x2C00), ('GT_SOUNDS', 0x0C00),
@@ -437,7 +374,7 @@ SOUND_EVENT, HIT_EVENT = 6, 6       # (tic 2, kind 1, sound 1, origin 2);
                                     #   (tic 2, t1 2, t2 2)
 REKEY_RECORD = 6 + 2 * LL.POOL_MAX  # map, CS_PREV1, CS_PREV2, 1 pad, then
                                     #   the hint by pool slot
-# the driver's modes (gdriver.s DM_*)
+# the former test driver's modes (DM_*)
 MODES = {'LOCKSTEP': 1, 'ROUTINE': 2, 'ROUTINE_LOAD': 3, 'LOADTEST': 4,
          'SELFTEST': 5}
 # the frame kinds of the schedule (FRAME_FULL + 1: a full frame with the
@@ -446,17 +383,13 @@ MODES = {'LOCKSTEP': 1, 'ROUTINE': 2, 'ROUTINE_LOAD': 3, 'LOADTEST': 4,
 # ($FF: upstream's -1; d_main65.s dmLevel78): the final integration
 FRAME_NONE, FRAME_FRONT, FRAME_FULL = 0, 1, 2
 FRAME_KIND, FRAME_STRIP, VIEW_STRIPTOP = 0x03, 0x80, 9
-# gameaction values (g_game65.s's ga_*: CONST_GA_*), the ones the load
-# protocol continues
-LOAD_ACTIONS = ('GA_LOADLEVEL', 'GA_NEWGAME', 'GA_PLAYDEMO',
-                'GA_WORLDDONE')
 GT_LOAD = 2                         # G_Ticker's "a load" return (gt_tick)
 
 # ---------------------------------------------------------------------------
-# The part table (docs/GAME.md 2.4), keyed file:label: each part's wave,
+# The part table (docs/GAME.md), keyed file:label: each part's wave,
 # upstream's bytes and its native budget, its routines (the entries and
 # the labels of the table's rows) and helpers. gcallgraph.py --check
-# holds it to the rule of 2.2.
+# holds it to the dispatch rule (docs/GAME.md).
 # ---------------------------------------------------------------------------
 PARTS: List[Dict[str, Any]] = [
     {'name': 'geom', 'wave': 1, 'up': 1707, 'native': 2200,
@@ -743,9 +676,8 @@ PARTS: List[Dict[str, Any]] = [
          'p_enemy65.s:spreadAngle', 'p_enemy65.s:damageTarget',
          'p_enemy65.s:spawnMissile']},
 ]
-PART_NAMES = [p['name'] for p in PARTS]
 # the line special handlers of p_switch65.s (LSTAB's entries): each one
-# the owner of the routine it calls (2.2)
+# the owner of the routine it calls
 LSTAB_OWNERS = {'p_switch65.s:lnDoor': 'evworld',
                 'p_switch65.s:lnPlat': 'evworld',
                 'p_switch65.s:lnVDoor': 'evworld',
@@ -779,14 +711,14 @@ EXTRA_LABELS = dict(LSTAB_OWNERS, **{
     'p_trace65.s:thP': 'tracet', 'p_trace65.s:gtP1': 'tracet',
     'p_trace65.s:gtP2': 'tracet',
     # P_UpdateAnimatedFlat (r_data65.s, a unit the graph does not read):
-    # secfind's (GAME.md 0.1: NUKAGE)
+    # secfind's (NUKAGE)
     '?:P_UpdateAnimatedFlat': 'secfind'})
 for _k, _o in EXTRA_LABELS.items():
     _p = next(p for p in PARTS if p['name'] == _o)
     if _k not in _p['routines'] + _p['helpers']:
         _p['helpers'].append(_k)
 
-# Milestone 9's game core (docs/GAME.md 0.1), with the skeleton's
+# The game core (docs/GAME.md), with the skeleton's
 # extensions: the upstream routines it implements (their helpers inside
 # it), the labels each one's native code takes in (core_inlines) and the
 # routines of parts it calls (CORE_CALLS, through FCALL)
@@ -806,98 +738,11 @@ CORE = ['p_spawn65.s:P_SpawnMapThing', 'p_spawn65.s:P_SpawnMobj',
         # the zone's sector-node pools freed at a load (lsetup.s gt_init)
         'p_map65.s:P_SetSecnodeFirstpoolToNull', 'p_map65.s:nodeAt',
         'p_map65.s:nodeAtY',
-        # upstream's dispatch helpers: natively gcall.s's DCALL (2.2)
+        # upstream's dispatch helpers: natively gcall.s's DCALL
         'p_tick65.s:callFn', 'p_pspr65.s:callAction']
 CORE_CALLS = ['p_map65.s:P_DelSecnode']
-CORE_INLINES = {
-    # P_CreateSecNodeList's walk is gpos.s's own (LEVELS.md 2.4): the box,
-    # lineBlocks' PIT_GetSectors mode and its LR_USE path, walkRange
-    'p_map65.s:P_CreateSecNodeList': ('p_map65.s:setBoxL',
-                                      'p_map65.s:lineBlocks',
-                                      'p_map65.s:setBox',
-                                      'p_map65.s:walkRange'),
-    'p_map65.s:P_SetThingPosition': ('p_map65.s:link',),
-    'p_map65.s:newSecnode': ('p_map65.s:nodeAt', 'p_map65.s:nodeAtY'),
-    # upstream's argument and table helpers, which the core's own code
-    # does in place
-    'p_spawn65.s:P_SpawnMapThing': ('p_spawn65.s:thArg',),
-    'p_spawn65.s:P_SpawnMobj': ('p_spawn65.s:moArg',),
-    'p_spec65.s:P_SpawnSpecials': ('p_spec65.s:secArg',),
-    'p_pspr65.s:bringUpWeapon': ('p_pspr65.s:startSound',
-                                 'p_pspr65.s:wInfoOf'),
-    'p_pspr65.s:A_Raise': ('p_pspr65.s:wInfo',),
-}
-
-
-def core_inlines(core: str, callee: str) -> bool:
-    return callee in CORE_INLINES.get(core, ())
-
-
-# milestone 6's math: by unit and by name (cal_integer.s is never read:
-# its routines are math by their names at the call sites)
-MATH_UNITS = ('m_fixed65.s', 'm_random65.s', 'm_recip65.s')
-MATH_NAMES = ('FixedMul', 'FixedDiv', 'FixedMul3216', 'FixedApproxDiv',
-              'FixedMulAngle', 'IIGS_MulLo16', 'umul16', 'umul16lo',
-              '_Mul16', '_Mul32', '_UDivMod16', '_UDivMod32', '_Div16',
-              '_Div32', '_Mod16', 'P_Random', 'M_Random', 'M_ClearRandom',
-              'P_AproxDistance', 'R_PointToAngle3', 'R_PointToAngle2',
-              'FixedReciprocal', 'FixedReciprocalSmall',
-              'R_PointInSubsector', 'finesine', 'finecosine', 'memset')
-# the hooks of ghook.s (3.4), by name: the sound events, the 2D screens'
-# starts and tickers, the zone's allocators (the native pools), I_Error and
-# I_GetTime; W_StartInter's pictures and music (then flow's WI_Start),
-# W_StartFinale and F_Ticker (stops); P_UpdateAnimatedFlat is part
-# secfind's (P_UpdateSpecials writes NUKAGE)
-HOOK_NAMES = ('S_StartSound', 'S_StartSound2', 'S_StopSound', 'AM_Stop',
-              'ST_Start', 'HU_Start', 'AM_Ticker', 'F_LoadScreen',
-              'Z_CheckHeap', 'D_AdvanceDemo', 'D_PageTicker',
-              'W_StartInter', 'W_StartFinale', 'F_Ticker', 'I_Error',
-              'I_GetTime', 'Z_MallocLevel', 'Z_CallocLevel',
-              'Z_CallocLevSpec', 'Z_Free', 'Z_MallocStatic')
-HOOKS: List[str] = []
-# named out (GAME.md 0.1), by file:label or by name, with the reason
-OUT_NAMES = {
-    # the dead path guard: `early` branches over its only call (p_path65.s
-    # :612-614)
-    'guardL': 'the dead path guard', 'gRun': 'the dead path guard',
-    'gBlk': 'the dead path guard', 'gBlockL': 'the dead path guard',
-    'gBlockW': 'the dead path guard', 'gCheck': 'the dead path guard',
-    'gNewId': 'the dead path guard', 'gwMiss': 'the dead path guard',
-    'gwList': 'the dead path guard', 'gBlockT': 'the dead path guard',
-    # the saves: milestone 11
-    'doLoadGame': 'milestone 11 (saves)', 'doSaveGame':
-    'milestone 11 (saves)', 'G_UpdateSaveGameStrings':
-    'milestone 11 (saves)', 'slotOffset': 'milestone 11 (saves)',
-    'slotSave': 'milestone 11 (saves)',
-    # the level load (doLoadLevel's bmLoad): milestone 9's native load,
-    # which the driver runs (the load protocol, 3.4)
-    'bmLoad': 'milestone 9 (the load: the load protocol)',
-    'bmDone': 'milestone 9', 'bmDiskAsk': 'milestone 9',
-    'bmDiskOff': 'milestone 9', 'bmDiskOn': 'milestone 9',
-    'bmSignLoading': 'milestone 9', 'bmSignOff': 'milestone 9',
-    'bmSignSaving': 'milestone 11 (saves)',
-    'P_SetupLevel': 'milestone 9 (nl_setup)',
-    'W_LoadSet': 'milestone 9', 'W_ZeroBank': 'milestone 9',
-    'musLoad': 'milestone S4 (music)',
-    # the status bar's face and the 2D screens (ST_Ticker's game effect is
-    # flow's st_tick: M_Random)
-    'updateFace': 'milestone 11 (the status bar)',
-    'ouch': 'milestone 11 (the status bar)',
-    'muchPain': 'milestone 11 (the status bar)',
-    'turnHead': 'milestone 11 (the status bar)',
-    'painOffset': 'milestone 11 (the status bar)',
-    'tallNum': 'milestone 11 (the status bar)',
-    'readyNum': 'milestone 11 (the status bar)',
-    'mulXY': 'milestone 11 (the status bar)',
-    'printf': 'milestone 11', 'IIGS_CopyHuge': 'milestone 11',
-    'I_SetPalette': 'milestone 11', 'W_GetLumpByNum': 'milestone 11',
-    'W_GetNumForName': 'milestone 11', 'W_LumpLength': 'milestone 11',
-    'R_GetTexture': 'every texture is resident (LEVELS.md 1.2)',
-    'R_CheckTextureNumForName': 'every texture is resident',
-    'G_BuildTiccmd': 'milestone 11 (input)',
-}
 OUT: Dict[str, str] = {}
-# the dispatch tables (2.2): name -> the dispatchers and the targets
+# the dispatch tables: name -> the dispatchers and the targets
 # (file:label); ACTTAB's targets are the states' actions (info65.s, in
 # order) and A_CyberAttack (the rocket cheat)
 DISPATCH = {
@@ -923,8 +768,6 @@ DISPATCH = {
                               'p_switch65.s:P_UseSpecialLine'],
               'targets': list(LSTAB_OWNERS)},
 }
-# the harness's own entries (3.5): the recording callback and traverser
-HARNESS_ENTRIES = {'ITTAB': 'gt_record_it', 'TRVTAB': 'gt_record_trv'}
 
 
 def dispatch_entries(graph=None) -> Dict[str, List[str]]:
@@ -980,190 +823,25 @@ def integrated_waves() -> int:
         return 0
 
 
-def built_set(waves: Optional[int] = None, extra: Sequence[str] = ()
-              ) -> List[str]:
-    """The parts built: those of the integrated waves, and extra (a part's
-    own test image: the earlier waves and itself)."""
-    w = integrated_waves() if waves is None else waves
-    out = [p['name'] for p in PARTS if p['wave'] <= w]
-    for e in extra:
-        if e not in PART_NAMES:
-            raise ValueError('no part %s' % e)
-        if e not in out:
-            out.append(e)
-    return out
+def built_set() -> List[str]:
+    """The parts built: those of the integrated waves."""
+    return [p['name'] for p in PARTS if p['wave'] <= integrated_waves()]
 
 
 # ---------------------------------------------------------------------------
-# The parts' scratch blocks (4.4): SCRATCH_DEFAULT bytes each, in W
+# The parts' scratch blocks: SCRATCH_DEFAULT bytes each, in W
 # $9A00-$9DFF; two parts share bytes only if no routine of one can be
 # active while one of the other is (gcallgraph.py's reachability, the
 # dispatch tables included). With every part's default the blocks fit
 # without sharing (29 x 32 = 928 of 1,024).
 # ---------------------------------------------------------------------------
 SCRATCH_DEFAULT = 32
-SCRATCH_REQUESTS: Dict[str, int] = {        # part -> bytes (requests, 3.8)
-    # P_CheckSight's state across its calls (docs/game-parts/sight.md R1)
+SCRATCH_REQUESTS: Dict[str, int] = {        # part -> bytes (requests)
+    # P_CheckSight's state across its calls
     'sight': 106,
     # P_PathTraverse's walk across the block steps and the traverser's
-    # calls (docs/game-parts/path.md R1; wave 4 as integrated)
+    # calls (wave 4 as integrated)
     'path': 44}
-
-# The helpers that have no native code of their own: each part does their
-# work in place, in the routine that calls them (each part's record says
-# where), so the placement gives them no bytes (wave 1 as integrated:
-# mobjstate.md R10, secfind.md request 4, sight.md "the helpers", geom's)
-INLINED = {
-    'geom': ('p_map65.s:argLine4', 'p_map65.s:box1', 'p_map65.s:box2',
-             'p_map65.s:posPub', 'p_map65.s:walk1', 'p_map65.s:walk2',
-             'p_map65.s:callLN', 'p_map65.s:callLN2'),
-    'mobjstate': ('p_map65.s:snLink', 'p_spawn65.s:rmArg'),
-    'secfind': ('p_spec65.s:sideSector', 'p_spec65.s:secArg',
-                'p_spec65.s:lineOf', 'p_lights65.s:secArg',
-                'p_lights65.s:ltSector', 'p_floor65.s:nextOther',
-                'p_floor65.s:aboveCurrent'),
-    'sight': ('p_sight65.s:hintOf', 'p_sight65.s:half', 'p_sight65.s:qbd',
-              'p_sight65.s:nodeDone', 'p_sight65.s:lineDone',
-              'p_sight65.s:pick', 'p_sight65.s:sameHeight',
-              'p_sight65.s:st32', 'p_sight65.s:shr8V', 'p_sight65.s:bitTab',
-              'p_sight65.s:straceDone'),
-    # wave 2 as integrated (docs/GAME.md): upstream's long-call wrappers,
-    # whose callers FCALL the routine itself (vtxSlow, lineCross, icInsert:
-    # tracel.md R3); argument loaders done in place and tables assembled in
-    # their reader's bytes (damage.md R3, pickup.md P2, lines.md request 4,
-    # spawn.md request 3)
-    'tracel': ('p_trace65.s:vtxSlowL', 'p_trace65.s:lineCrossL',
-               'p_trace65.s:icInsertL'),
-    'damage': ('p_inter65.s:targetArg', 'p_inter65.s:setTarget',
-               'p_inter65.s:addThrust'),
-    'pickup': ('p_inter65.s:specialArg', 'p_inter65.s:playerMo',
-               'p_inter65.s:pickTab', 'p_inter65.s:pickTab_end',
-               'm_cheat65.s:cheats'),
-    'lines': ('p_switch65.s:swLine', 'p_switch65.s:swSide',
-              'p_switch65.s:isPlayer', 'p_switch65.s:usetab',
-              'p_switch65.s:crosstab', 'p_switch65.s:spectab',
-              'p_switch65.s:usetab_end', 'p_switch65.s:crosstab_end'),
-    'spawn': ('p_spawn65.s:moArg', 'p_spawn65.s:saveXYZ',
-              'p_spawn65.s:thArg'),
-    # wave 3 as integrated (docs/GAME.md): upstream's patched templates
-    # and their patchers are data natively (TT_AX; part path tests its
-    # flags itself), thFastL a long-call wrapper of the dead guard's
-    # (tracet.md R1); a JSL wrapper, geom's inline above, lineBlocks' own
-    # code, a load done in place (checkpos.md R4); argMo read in place
-    # (pspr.md R1); argument loaders and field stores done in place
-    # (evworld.md request 1: movers does sectorArg in place too);
-    # behindFast's jump table's cases and the radius attack's local
-    # helpers (look.md request 1)
-    'tracet': ('p_trace65.s:ptT1', 'p_trace65.s:ptT2',
-               'p_trace65.s:vsPatch', 'p_trace65.s:ptPatch',
-               'p_trace65.s:thFastL', 'p_trace65.s:tlP1',
-               'p_trace65.s:tlP2', 'p_trace65.s:thP', 'p_trace65.s:gtP1',
-               'p_trace65.s:gtP2'),
-    'checkpos': ('p_map65.s:setBoxL', 'p_map65.s:above',
-                 'p_map65.s:lCross', 'p_map65.s:ps32',
-                 'p_map65.s:loadRad'),
-    'pspr': ('p_pspr65.s:argMo',),
-    'evworld': ('p_plats65.s:platArg', 'p_plats65.s:sectorArg',
-                'p_plats65.s:platSound', 'p_plats65.s:setHigh',
-                'p_plats65.s:setLow', 'p_plats65.s:plSec',
-                'p_doors65.s:doorArg', 'p_doors65.s:setDir',
-                'p_doors65.s:topLowest', 'p_doors65.s:setTop',
-                'p_doors65.s:edLine', 'p_doors65.s:edSec',
-                'p_doors65.s:edSound', 'p_doors65.s:sectorArg'),
-    'look': ('p_enemy65.s:bfD0', 'p_enemy65.s:bfD1', 'p_enemy65.s:bfD2',
-             'p_enemy65.s:bfD3', 'p_enemy65.s:bfD4', 'p_enemy65.s:bfD5',
-             'p_enemy65.s:bfD6', 'p_enemy65.s:bfD7',
-             'p_attack65.s:blockPair', 'p_attack65.s:absDelta'),
-    # wave 4 as integrated (docs/GAME.md): upstream's jml [PT_JMP] is
-    # traverseTo's DCALL TRVTAB (path.md R3); P_TryMove's tests, mvNodes,
-    # spec and specLine and P_NightmareRespawn's loaders, subFloor and fog
-    # are local code of the routine that calls them (trymove.md R1); the
-    # movers' direct-page loaders and plane copies (planes.md request 1);
-    # the floors' argument loaders, field stores and compares, floorDown
-    # being floorUp with A = $FF (evfloor.md request 1); the teleport's
-    # argument loaders, handles of its scratch block (teleport.md R1)
-    'path': ('p_path65.s:callTrav',),
-    'trymove': ('p_map65.s:overStep', 'p_map65.s:lessHeight',
-                'p_map65.s:mvNodes', 'p_map65.s:spec',
-                'p_map65.s:specLine', 'p_spawn65.s:nmArg',
-                'p_spawn65.s:nmXY', 'p_spawn65.s:subFloor',
-                'p_spawn65.s:fog'),
-    'planes': ('p_floor65.s:restore', 'p_floor65.s:planeArgs',
-               'p_floor65.s:minusSpeed', 'p_floor65.s:plusSpeed',
-               'p_floor65.s:saveLast', 'p_floor65.s:setPlaneT',
-               'p_floor65.s:secArg', 'p_floor65.s:loadNode',
-               'p_floor65.s:nodeArg', 'p_floor65.s:thingArg',
-               'p_floor65.s:floorArg', 'p_floor65.s:floorSector',
-               'p_floor65.s:floorSpeed', 'p_floor65.s:sectorSound'),
-    'evfloor': ('p_floor65.s:lineStart', 'p_floor65.s:nextTagged',
-                'p_floor65.s:secOf', 'p_floor65.s:secArg2',
-                'p_floor65.s:floorField', 'p_floor65.s:floorDown',
-                'p_floor65.s:floorArgFL', 'p_floor65.s:sameAsFloor',
-                'p_floor65.s:underCeiling', 'p_floor65.s:lineSector',
-                'p_floor65.s:sectorNum', 'p_floor65.s:s2Arg',
-                'p_floor65.s:s3Arg', 'p_floor65.s:s3Floor'),
-    'teleport': ('p_telept65.s:thingArg', 'p_telept65.s:destArg',
-                 'p_map65.s:tpThing'),
-    # wave 5 as integrated (docs/GAME.md): the shot's and the aim's setup,
-    # end point and run, the traversers' tests, slopes and the puff's
-    # arguments are local code of the routine that calls them, some under
-    # the helper's name (attack.md R3); the player's argument loaders and
-    # local subroutines (player.md R2); the move's big-move test, whole
-    # and half steps, the slide's corners and coordinate sum (xymove.md
-    # R2); P_SpawnMissile's argument loader, its delta and angleMom's
-    # speed (missile.md R1); pMove's speed steps and products, the chase
-    # direction's and the drop-off's local helpers (chasemove.md R1)
-    'attack': ('p_attack65.s:traceSetup', 'p_attack65.s:endPoint',
-               'p_attack65.s:traceRun', 'p_attack65.s:loadIntercept',
-               'p_attack65.s:opening', 'p_attack65.s:rangeDist',
-               'p_attack65.s:lineSectors', 'p_attack65.s:sideAddr',
-               'p_attack65.s:sideSectors', 'p_attack65.s:sectorsDiffer',
-               'p_attack65.s:shootable', 'p_attack65.s:rawSlope',
-               'p_attack65.s:thingHead', 'p_attack65.s:thingFoot',
-               'p_attack65.s:thingPtr', 'p_attack65.s:thingTop',
-               'p_attack65.s:thingTopRaw', 'p_attack65.s:ceilBelowZ',
-               'p_attack65.s:thingBottom', 'p_attack65.s:thingBottomRaw',
-               'p_attack65.s:slopeTo', 'p_attack65.s:slopeOf',
-               'p_attack65.s:traceAt', 'p_attack65.s:puffArgs',
-               'p_attack65.s:spawnPuff'),
-    'player': ('p_user65.s:argMo', 'p_user65.s:moSector',
-               'p_user65.s:countDown', 'p_user65.s:blink',
-               'p_user65.s:bobAndThrust', 'p_user65.s:addMom',
-               'p_use65.s:useRun', 'p_use65.s:useArg', 'p_use65.s:lineArg'),
-    'xymove': ('p_mobj65.s:isBig', 'p_mobj65.s:wholeMove',
-               'p_mobj65.s:halfMove', 'p_mobj65.s:corners',
-               'p_mobj65.s:addCoord'),
-    'missile': ('p_spawn65.s:srcArg', 'p_spawn65.s:destDelta',
-                'p_spawn65.s:speedMom'),
-    'chasemove': ('p_enemy65.s:speedStep', 'p_enemy65.s:mulSpeed',
-                  'p_enemy65.s:umul16x', 'p_enemy65.s:speedTab',
-                  'p_enemy65.s:speeds', 'p_enemy65.s:SPD47',
-                  'p_enemy65.s:setDir', 'p_enemy65.s:absGreater',
-                  'p_enemy65.s:absD', 'p_enemy65.s:boxPlus',
-                  'p_enemy65.s:boxMinus', 'p_enemy65.s:blockOf',
-                  'p_enemy65.s:boxAbove', 'p_enemy65.s:boxBelow',
-                  'p_enemy65.s:sideFloor', 'p_enemy65.s:signed',
-                  'p_enemy65.s:times32'),
-    # wave 6 as integrated (docs/GAME.md): the movers' plane-move loaders,
-    # status stores and sector sounds are local code of the thinker that
-    # calls them (movers.md request 1); the aims of bulletSlope and
-    # P_SpawnPlayerMissile are a loop in their routine, !refire two loads
-    # and a branch (wfire.md R1); P_MobjThinker's local subroutines and
-    # G_Ticker's chain of compares in place of upstream's action table
-    # (tic.md R1)
-    'movers': ('p_plats65.s:movePlat', 'p_plats65.s:stopWait',
-               'p_plats65.s:waitStatus', 'p_plats65.s:setStatus',
-               'p_doors65.s:doorSound', 'p_doors65.s:moveCeiling',
-               'p_doors65.s:dlSec'),
-    'wfire': ('p_pspr65.s:aimAt', 'p_pspr65.s:notRefire',
-              'p_spawn65.s:aim'),
-    'tic': ('p_tick65.s:mobjArg', 'p_tick65.s:stillMobjThinker',
-            'g_game65.s:actions'),
-}
-
-
-def inlined(key: str) -> bool:
-    return any(key in v for v in INLINED.values())
 
 
 def scratch_blocks(conflicts: Optional[Set[Tuple[str, str]]] = None
@@ -1309,112 +987,9 @@ def check() -> None:
         raise ValueError('GTEST')
 
 
-def check_manifest(header: Dict[str, Any], numtextures: int = 125
-                   ) -> List[str]:
-    """Every canonical field of the tic mode placed or excluded by name
-    (needs build/): the manifest's leaves against the bridge's fields of
-    each kind and the globals; the names it leaves out."""
-    from bridge import layout as BL, schema, upstream
-    sch = upstream.Schema()
-    mf = BL.Manifest(manifest(header, numtextures=numtextures))
-    out: List[str] = []
-    excluded = set(LL.NOT_KEPT) | {'kind:%s' % k for k in ('removed',)}
-    for kind in schema.KINDS:
-        if kind in ('state', 'lump', 'symbol', 'table', 'removed'):
-            continue
-        want = {lf.path for lf in BL.kind_leaves(kind, sch.structs)
-                if not lf.path[0].startswith('@')}
-        have = {lf.path for lf in mf.kinds.get(kind, {}).get('leaves', [])}
-        for path in sorted(want - have, key=str):
-            name = '%s.%s' % (kind, '.'.join(map(str, path)))
-            if name not in LL.NOT_KEPT_FIELDS and \
-                    path[0] not in ('free', 'gstamp'):
-                out.append('%s: no leaf' % name)
-    gnames = {lf.path[0] for lf in mf.globals}
-    for unit, labels in list(schema.GLOBALS.items()) + list(
-            schema.EXTERNAL_GLOBALS.items()) + list(
-                schema.TIC_GLOBALS.items()):
-        for label, text in labels.items():
-            name = '%s:%s' % (unit, label)
-            if text.startswith('object:') or name in excluded:
-                continue
-            if name not in gnames:
-                out.append('%s: no leaf' % name)
-    if schema.TIC_TEXTURES not in gnames:
-        out.append('%s: no leaf' % schema.TIC_TEXTURES)
-    del excluded
-    return out
-
-
 # ---------------------------------------------------------------------------
-# The manifest native-game-1 (1.11): native-level-1 and the tic mode's
-# globals and the derived kind "sighthint"
-# ---------------------------------------------------------------------------
-TIC_PLACE = {
-    'wi_stuff65.s:_g_acceleratestage': ('WI_ACCEL', 2),
-    'wi_stuff65.s:state': ('WI_STATE', 2), 'wi_stuff65.s:cnt': ('WI_CNT', 2),
-    'wi_stuff65.s:bcnt': ('WI_BCNT', 2),
-    'wi_stuff65.s:cnt_time': ('WI_CNTTIME', 4),
-    'wi_stuff65.s:cnt_total_time': ('WI_CNTTOTAL', 4),
-    'wi_stuff65.s:cnt_par': ('WI_CNTPAR', 2),
-    'wi_stuff65.s:cnt_pause': ('WI_CNTPAUSE', 2),
-    'wi_stuff65.s:sp_state': ('WI_SPSTATE', 2),
-    'wi_stuff65.s:cnt_kills': ('WI_CNTKILLS', 2),
-    'wi_stuff65.s:cnt_items': ('WI_CNTITEMS', 2),
-    'wi_stuff65.s:cnt_secret': ('WI_CNTSECRET', 2),
-    'wi_stuff65.s:snl_pointeron': ('WI_SNLPTR', 2),
-    'hu_stuff65.s:_g_message_dontfuckwithme': ('G_MSGKEEP', 2),
-    'm_menu65.s:showMessages': ('G_SHOWMSG', 2),
-}
-
-
-def manifest(header: Dict[str, Any], symbols: Sequence[str] = (),
-             numtextures: int = 125) -> Dict[str, Any]:
-    """native-game-1 for a map (its store header): llayout.manifest's
-    level and game state, the tic mode's globals (WI_*, showMessages,
-    _g_message_dontfuckwithme in the globals block; nukage in the frame
-    block, a byte; texturetranslation's entries in TEXTRANS, a byte each)
-    and the kind "sighthint" (HINTL, HINTH by pool slot)."""
-    from bridge import schema
-    m = LL.manifest(header, symbols)
-    m['name'] = 'native-game-1'
-    m['note'] = ('the native game state of E1M%d (tools/native/glayout.py, '
-                 'milestone 10\'s skeleton; native-level-1 and the tic '
-                 'mode\'s globals and sight hints)' % header['map'])
-    gl = m['globals']['leaves']
-
-    def main(at: int, n: int) -> List[str]:
-        return ['main:%04X' % (at + k) for k in range(n)]
-    for name, (field, size) in TIC_PLACE.items():
-        unit, label = name.split(':')
-        text = schema.TIC_GLOBALS[unit][label]
-        signed = text.startswith('i')
-        gl.append({'path': [name], 'enc': {'enc': 'int', 'bytes': size,
-                                           'signed': signed},
-                   'planes': main(LL.G[field], size)})
-    gl.append({'path': ['r_data65.s:nukage'],
-               'enc': {'enc': 'int', 'bytes': 1, 'signed': False},
-               'planes': main(R.FRAME['NUKAGE'], 1)})
-    for t in range(numtextures + 1):
-        gl.append({'path': [schema.TIC_TEXTURES, t],
-                   'enc': {'enc': 'int', 'bytes': 1, 'signed': False},
-                   'planes': main(R.TEXTRANS + t, 1)})
-    pool = header['counts']['things']
-    m['kinds']['sighthint'] = {
-        'capacity': LL.POOL_MAX, 'count': ['main:%04X' % LL.G['G_POOLN'],
-                                           'main:%04X' % (LL.G['G_POOLN'] +
-                                                          1)],
-        'leaves': [{'path': ['line'], 'enc': {'enc': 'int', 'bytes': 2,
-                                              'signed': False},
-                    'planes': ['aux:%02X:%04X' % (LL.MOBJP, LL.PL_HINTL),
-                               'aux:%02X:%04X' % (LL.MOBJP, LL.PL_HINTH)]}]}
-    del pool
-    return m
-
-
-# ---------------------------------------------------------------------------
-# The textures a load makes (wave 1 as integrated; docs/game-parts/flow.md
-# request 6): upstream's R_GetTexture sets texturetranslation[n] = n for each
+# The textures a load makes (wave 1 as integrated): upstream's
+# R_GetTexture sets texturetranslation[n] = n for each
 # texture it makes (r_data65.s:458): at every P_SetupLevel each side's
 # textures and a switch texture's partner (P_LoadTexture, p_setup65.s:684-
 # 688: the PU_LEVEL textures were freed by its Z_FreeTags, :122), and for
@@ -1507,7 +1082,7 @@ def upstream_constants() -> List[Tuple[str, int]]:
                                         'GA_SAVEGAME', 'GA_PLAYDEMO',
                                         'GA_COMPLETED', 'GA_VICTORY',
                                         'GA_WORLDDONE')),
-                        # the lights' steps (secfind.md request 5)
+                        # the lights' steps
                         ('p_lights65.s', ('GLOWSPEED', 'STROBEBRIGHT'))):
         for name in names:
             out['U' + name] = c.local(unit, name)
@@ -1543,19 +1118,19 @@ def constants() -> List[Tuple[str, int]]:
     out += sorted(TGW.items(), key=lambda kv: kv[1])
     out += sorted(TGM.items(), key=lambda kv: kv[1])
     out += DEMOB_LAYOUT
-    # GTAB's animated_texture_basepic (secfind.md request 3)
+    # GTAB's animated_texture_basepic
     out.append(('GT_BASEPIC', LL.GT['BASEPIC'][0]))
-    # GTAB's switchlist and SW_IDX (lines.md request 1)
+    # GTAB's switchlist and SW_IDX
     out.append(('GT_SWLIST', LL.GT['SWITCHLIST'][0]))
     out.append(('GT_SWIDX', LL.GT['SW_IDX'][0]))
     # the sky's ceiling pic: upstream's skyflatnum ($FFFE) as the native
     # byte pic (levelconv.pic_byte); parts attack and xymove compare a
-    # sector's SEC_CPIC with it (wave 5: attack.md R2, xymove.md R3)
+    # sector's SEC_CPIC with it (wave 5)
     from native import levelconv
     out.append(('SKY_PIC', levelconv.SKY_PIC))
     # the entry numbers of the dispatch tables whose targets are labels:
-    # <TABLE>_<label> (lines.md request 2: spectab names its handlers by
-    # LSTAB number; ITTAB's and TRVTAB's for their callers alike)
+    # <TABLE>_<label> (spectab names its handlers by LSTAB number;
+    # ITTAB's and TRVTAB's for their callers alike)
     for table in ('ITTAB', 'TRVTAB', 'LSTAB'):
         for i, key in enumerate(DISPATCH[table]['targets'], 1):
             out.append(('%s_%s' % (table, key.split(':', 1)[1]), i))
@@ -1571,8 +1146,7 @@ def symbol_name(key: str) -> str:
 def symbol_constants() -> List[Tuple[str, int]]:
     """Each symbol's number in the game manifest's "symbols"
     (llayout.symbol_list()): what a player's message holds natively (the
-    bridge's "ref" encoding: tag 1, the number, the offset; pickup.md
-    P1)."""
+    bridge's "ref" encoding: tag 1, the number, the offset)."""
     return [(symbol_name(k), i) for i, k in enumerate(LL.symbol_list())]
 
 
@@ -1585,7 +1159,7 @@ def zeropage() -> List[Tuple[str, int]]:
 
 def ggame_text(with_upstream: bool = True) -> str:
     check()
-    lines = ['; Generated by tools/native/glayout.py (docs/GAME.md 3.2). '
+    lines = ['; Generated by tools/native/glayout.py (docs/GAME.md). '
              'Do not edit.', '']
     for name, value in constants():
         lines.append('%-20s= $%04X' % (name, value))
@@ -1610,7 +1184,7 @@ def ggame_text(with_upstream: bool = True) -> str:
 # ---------------------------------------------------------------------------
 
 def placement_of(place: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """The placement (gplace.py's JSON: groups and each routine's group),
+    """The placement (placement.json: groups and each routine's group),
     or the default: everything in the core."""
     if place is None:
         path = SHARED / 'placement.json'
@@ -1621,8 +1195,8 @@ def placement_of(place: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     return place
 
 
-def gplace_text(built: Sequence[str], place: Optional[Dict[str, Any]] = None,
-                test_place: bool = False) -> str:
+def gplace_text(built: Sequence[str], place: Optional[Dict[str, Any]] = None
+                ) -> str:
     """gplace.inc: GP_<native>_G (its group, 0 the core), _B (built), _N
     (its number, for the unbuilt stop) for every routine of the table and
     of the core; the groups' slots, banks and image places; the FCALL and
@@ -1630,9 +1204,7 @@ def gplace_text(built: Sequence[str], place: Optional[Dict[str, Any]] = None,
     place = placement_of(place)
     names = native_names()
     groups = list(place['groups'])
-    if test_place:
-        groups = groups + TEST_GROUPS
-    lines = ['; Generated by tools/native/glayout.py (docs/GAME.md 4.3). '
+    lines = ['; Generated by tools/native/glayout.py (docs/GAME.md). '
              'Do not edit.', '; built parts: %s' % (
                  ', '.join(built) or 'none'), '']
     lines.append('GROUPS = %d' % len(groups))
@@ -1658,14 +1230,6 @@ def gplace_text(built: Sequence[str], place: Optional[Dict[str, Any]] = None,
         lines.append('GP_%s_G = %d' % (n, grp))
         lines.append('GP_%s_B = %d' % (n, b))
         lines.append('GP_%s_N = %d' % (n, number))
-    if test_place:
-        for i, g in enumerate(TEST_GROUPS, len(place['groups']) + 1):
-            for n in g['routines']:
-                lines += ['GP_%s_G = %d' % (n, i), 'GP_%s_B = 1' % n,
-                          'GP_%s_N = %d' % (n, 0)]
-        for n in TEST_CORE:
-            lines += ['GP_%s_G = 0' % n, 'GP_%s_B = 1' % n,
-                      'GP_%s_N = 0' % n]
     lines += ['', MACROS.replace('@SEGMENTS@', segment_chain(len(groups)))]
     return '\n'.join(lines) + '\n'
 
@@ -1693,8 +1257,7 @@ name:
 ; group and address inline (gcall.s: 5 bytes of stack, the target slot's
 ; group saved and restored); a target whose part is not built: the
 ; unbuilt stop with its number (GS_UNBUILT). A built target is .global:
-; imported, or exported where it is defined (wave 1 as integrated:
-; mobjstate.md R1, flow.md request 2)
+; imported, or exported where it is defined (wave 1 as integrated)
 .macro FCALL target
   .if .ident(.concat("GP_", .string(target), "_B")) = 0
         jsr fc_unbuilt
@@ -1722,24 +1285,17 @@ FC_HERE .set 0
         jsr dc_call
 .endmacro
 '''
-# the test groups of the skeleton's checks (S5: FCALL across slots), in the
-# test image only (gtest.s): A and D in slot 1, C in slot 2
-TEST_GROUPS = [{'slot': 1, 'routines': ['gt_fa', 'gt_fa2']},
-               {'slot': 2, 'routines': ['gt_fc']},
-               {'slot': 1, 'routines': ['gt_fd']}]
-TEST_CORE = ['gt_fcore', 'gt_fb']
 
 
 def gdisp_text(built: Sequence[str], graph=None,
-               place: Optional[Dict[str, Any]] = None,
-               test_place: bool = False) -> str:
+               place: Optional[Dict[str, Any]] = None) -> str:
     """gdisp.inc: each table's entries (3 bytes: the group, the address;
     an unbuilt entry the group $FE and its number); the actions' upstream
     addresses (ACT_ADDR, 3 bytes each, ACTTAB's order) for act_num."""
     place = placement_of(place)
     names = native_names()
     entries = dispatch_entries(graph)
-    lines = ['; Generated by tools/native/glayout.py (docs/GAME.md 2.2). '
+    lines = ['; Generated by tools/native/glayout.py (docs/GAME.md). '
              'Do not edit.', '; built parts: %s' % (
                  ', '.join(built) or 'none'), '',
              '        .segment "GCORE"']
@@ -1758,12 +1314,6 @@ def gdisp_text(built: Sequence[str], graph=None,
             else:
                 lines.append('        .byte $FE, %d, %d   ; %d %s '
                              '(unbuilt)' % (i, t_index, i, key))
-        if test_place and table in HARNESS_ENTRIES:
-            n = HARNESS_ENTRIES[table]
-            lines.append('        .byte 0, <%s, >%s   ; the harness\'s'
-                         % (n, n))
-            imports.append(n)
-            lines.append('%s_HARNESS = %d' % (table, len(keys) + 1))
     # the actions' upstream addresses (the states' action field)
     act = entries['ACTTAB']
     lines.append('ACT_ADDR:')
@@ -1788,17 +1338,16 @@ def gdisp_text(built: Sequence[str], graph=None,
 # game.cfg
 # ---------------------------------------------------------------------------
 
-def game_cfg(place: Optional[Dict[str, Any]] = None,
-             test_place: bool = False) -> str:
+def game_cfg(place: Optional[Dict[str, Any]] = None) -> str:
     """ld65's map of the tic images: W's MATHW and AUXW, the core
     ($6600-$97FF: GCORE), each group at its slot's address with its own
     output file, the card's segments as the render images have them, the
-    test driver's $E000 part; the memory API's transport AMEMLC in LC1
+    $E000 part (LCE: DRIVER, DESC); the memory API's transport AMEMLC in LC1
     at AMEM_LC."""
     place = placement_of(place)
-    groups = list(place['groups']) + (TEST_GROUPS if test_place else [])
-    lines = ['# Generated by tools/native/glayout.py (docs/GAME.md 3.2, '
-             '4.1). Do not edit.', 'MEMORY {',
+    groups = list(place['groups'])
+    lines = ['# Generated by tools/native/glayout.py (docs/GAME.md). '
+             'Do not edit.', 'MEMORY {',
              '    W:    start = $6000, size = $0600, file = "%O.w";',
              '    CORE: start = $%04X, size = $%04X, file = "%%O.core";' % (
                  WR['CORE'][0], WR['CORE'][1] - WR['CORE'][0])]
@@ -1832,7 +1381,7 @@ def game_cfg(place: Optional[Dict[str, Any]] = None,
         lines.append('    GGRP%d:   load = G%d, type = rw, define = yes, '
                      'optional = yes;' % (i, i))
     lines += ['    DRIVER:  load = LCE, type = rw;',
-              # (aligned: gdriver.s's page lists may not cross a page)
+              # (aligned: a page list there may not cross a page)
               '    DESC:    load = LCE, type = bss, align = $20, '
               'define = yes;',
               '    VECTORS: load = VEC, type = ro, optional = yes;', '}',
@@ -1847,117 +1396,32 @@ def game_cfg(place: Optional[Dict[str, Any]] = None,
 # The command line
 # ---------------------------------------------------------------------------
 
-def write_all(out: Path, built: Sequence[str], test_place: bool = False,
-              manifests: bool = True) -> List[Path]:
+def write_all(out: Path, built: Sequence[str]) -> List[Path]:
     from native import gcallgraph as CG
     gen = out / 'gen'
     gen.mkdir(parents=True, exist_ok=True)
-    graph = CG.load(write=out.resolve() == SHARED.resolve())
+    graph = CG.load()
     files = []
     for name, text in (('ggame.inc', ggame_text()),
-                       ('gplace.inc', gplace_text(built,
-                                                  test_place=test_place)),
-                       ('gdisp.inc', gdisp_text(built, graph,
-                                                test_place=test_place))):
+                       ('gplace.inc', gplace_text(built)),
+                       ('gdisp.inc', gdisp_text(built, graph))):
         p = gen / name
         if not p.exists() or p.read_text() != text:
             p.write_text(text)
         files.append(p)
     p = out / 'game.cfg'
-    text = game_cfg(test_place=test_place)
+    text = game_cfg()
     if not p.exists() or p.read_text() != text:
         p.write_text(text)
     files.append(p)
-    if manifests:
-        files += write_manifests(out)
-    if out.resolve() == SHARED.resolve():
-        # the shared outputs are made now, whether or not their text
-        # changed: the part tests' freshness checks compare their times
-        # with the layouts' (a part's own GEN keeps its times: make's)
-        for f in files:
-            os.utime(str(f), None)
     return files
-
-
-def write_manifests(out: Path) -> List[Path]:
-    from native import lstore
-    meta_path = lstore.STORE / 'store.json'
-    if not meta_path.exists():
-        return []
-    meta = json.loads(meta_path.read_text())
-    syms = LL.symbol_list()
-    index = {'format': 'native-game-manifests 1', 'maps': {}}
-    d = out / 'manifests'
-    d.mkdir(parents=True, exist_ok=True)
-    files = []
-    for m in range(1, 10):
-        key = 'E1M%d' % m
-        if key not in meta['maps']:
-            continue
-        h = dict(meta['maps'][key]['header'], map=m)
-        p = d / ('native-game-1-e1m%d.json' % m)
-        text = json.dumps(manifest(h, syms), indent=0) + '\n'
-        if not p.exists() or p.read_text() != text:
-            p.write_text(text)
-        index['maps'][key] = str(p.relative_to(out))
-        files.append(p)
-    p = out / 'native-game-1.json'
-    p.write_text(json.dumps(index, indent=1) + '\n')
-    return files + [p]
-
-
-def report() -> List[str]:
-    out = ['W in the tic phase (docs/GAME.md 4.1):']
-    for name, lo, hi, what in W_MAP:
-        out.append('  %-8s $%04X-$%04X %6d B  %s' % (name, lo, hi - 1,
-                                                    hi - lo, what))
-    out.append('  the API\'s W: %d of %d B used' % (LL.GW_USED - LL.GW,
-                                                  LL.GW_END - LL.GW))
-    groups = placement_of()['groups']
-    fs = frame_slots(groups)
-    out.append('main $%04X-$%04X, the frame slots (the colormaps\' place '
-               'in the tic phase): %d of %d pages' % (
-                   FRAME_REGION[0], FRAME_REGION[1] - 1,
-                   sum(hi - lo for lo, hi in fs.values()) >> 8,
-                   (FRAME_REGION[1] - FRAME_REGION[0]) >> 8))
-    for s, (lo, hi) in sorted(fs.items()):
-        g = next(i for i, x in enumerate(groups, 1) if x['slot'] == s)
-        out.append('  slot %-3d $%04X-$%04X  group %d (%s B)' % (
-            s, lo, hi - 1, g, groups[g - 1].get('bytes', '?')))
-    out.append('main:')
-    for name, lo, hi, what in MAIN_TIC:
-        out.append('  %-8s $%04X-$%04X %6d B  %s' % (name, lo, hi - 1,
-                                                    hi - lo, what))
-    out.append('  globals $%04X-$%04X (%d B of $%04X-$1FFF)' % (
-        LL.GBLOCK, LL.GLOBALS_END - 1, LL.GLOBALS_END - LL.GBLOCK,
-        LL.GBLOCK))
-    out.append('  runtime state %d of %d B' % (RT_USED,
-                                               LL.RT_END - LL.RT_STATE))
-    uses = dict(LL.bank_map())
-    out.append('banks: %d of %d used (test builds), spare %s' % (
-        len(uses), LL.BANKS_TOTAL, ', '.join(str(b) for b in LL.SPARE)))
-    sb = scratch_blocks()
-    out.append('scratch blocks: %d parts, $%04X-$%04X' % (
-        len(sb), min(a for a, _ in sb.values()),
-        max(a + n for a, n in sb.values()) - 1))
-    return out
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--out', type=Path, default=SHARED)
-    parser.add_argument('--built', default=None,
-                        help='the built parts, separated by "+" ("none": '
-                             'none; default: the integrated waves\', '
-                             'src/native/game/integrated.txt)')
+    # (accepted for play.mk's command line: there are no manifests)
     parser.add_argument('--no-manifests', action='store_true')
-    parser.add_argument('--part', default=None,
-                        help='a part\'s own GEN: the earlier waves, the '
-                             'integrated waves and the part counted as '
-                             'built')
-    parser.add_argument('--test-place', action='store_true')
-    parser.add_argument('--check', action='store_true')
-    parser.add_argument('--report', action='store_true')
     parser.add_argument('--ggame', type=Path,
                         help='write gen/ggame.inc alone (level.mk: the '
                              'load image\'s game core)')
@@ -1968,32 +1432,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if not args.ggame.exists() or args.ggame.read_text() != text:
             args.ggame.write_text(text)
         return 0
-    if args.check:
-        check()
-        print('glayout check: ok')
-        return 0
-    if args.report:
-        check()
-        print('\n'.join(report()))
-        return 0
-    if args.part:
-        p = next((q for q in PARTS if q['name'] == args.part), None)
-        if p is None:
-            print('no part %s' % args.part, file=sys.stderr)
-            return 2
-        # the earlier waves, the integrated waves (a part of an integrated
-        # wave is rerun with its wave's other parts and every later wave
-        # integrated: wave 1 as integrated) and the part
-        built = built_set(max(p['wave'] - 1, integrated_waves()),
-                          [args.part])
-    elif args.built is not None:
-        built = [b for b in args.built.replace(',', '+').split('+')
-                 if b and b != 'none']
-    else:
-        built = built_set()
-    for f in write_all(args.out, built, args.test_place,
-                       manifests=args.part is None and
-                       not args.no_manifests):
+    for f in write_all(args.out, built_set()):
         print(f)
     return 0
 

@@ -1,9 +1,9 @@
 ; math.inc: the native math's zero page, tables and soft switches
-; (src/native/MATH.md). Included by math.s and its a2vm test driver.
+; (src/native/MATH.md). Included by math.s and the renderer's sources.
 
 ; ---------------------------------------------------------------------------
 ; Zero page: the math block, main $B0-$D7 (40 bytes of overlay 2 of
-; docs/MEMORY_MAP.md section 2). Every phase that calls the math keeps it
+; docs/MEMORY_MAP.md). Every phase that calls the math keeps it
 ; for the math; the replay ($48-$6F) and the IRQ ($D8-$FF) never touch it.
 ; mt_init sets the table pointers' high bytes once; nothing else writes
 ; them.
@@ -40,7 +40,7 @@ NSL     = $D400             ; f(n - 255) low bytes
 NSH     = $D600             ; f(n - 255) high bytes
 
 ; ---------------------------------------------------------------------------
-; Tables in RamWorks (the tables banks of MEMORY_MAP section 7), read by
+; Tables in RamWorks (the tables banks of MEMORY_MAP.md), read by
 ; mt_far through RAMRD windows. Every plane is a byte plane.
 ; ---------------------------------------------------------------------------
 MT_TBANK = 120              ; sine, tangent to angle, quarter sine
@@ -56,7 +56,7 @@ QUARTHI = $8C00             ;   high bytes
 RECIPT  = $2000             ; RECIP_TABLE entry i at RECIPT + i, i < 32768
 
 ; ---------------------------------------------------------------------------
-; Persistent state (main $0300-$03EF, MEMORY_MAP section 3.1)
+; Persistent state (main $0300-$03EF, MEMORY_MAP.md)
 ; ---------------------------------------------------------------------------
 MT_PRND = $03EE             ; P_Random's index
 MT_MRND = $03EF             ; M_Random's index

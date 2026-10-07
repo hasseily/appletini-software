@@ -1,5 +1,5 @@
-; game/pickup/pk.inc: part pickup's places and conventions (milestone 10,
-; docs/GAME.md 2.4, 4.4; docs/game-parts/pickup.md). GPL-2, the port's own.
+; game/pickup/pk.inc: part pickup's places and conventions (docs/GAME.md).
+; GPL-2, the port's own.
 ;
 ; The part has no zero page of its own: it keeps what it needs across a
 ; call in its scratch block SB_PICKUP (32 bytes), and uses GT_0-GT_6 only
@@ -9,14 +9,14 @@
 ; hooks; none of them reaches back into the part, so the block's bytes
 ; are the part's for the whole of each entry's call.
 ;
-; The entries (args.json; docs/game-parts/pickup.md "The native calls"):
+; The entries:
 ;   P_TouchSpecialThing  GA_0-1 = the special thing (a mobj slot), GA_2-3
 ;                the toucher (the player's mobj); nothing back
 ;   P_GivePower  A = a power: A = 1 (C set) given, 0 (C clear) not
 ;   C_Responder  A = a cheat's event number (m_cheat65.s's table order:
-;                ticcap.CHEATS): its effect; A = 1, or 0 for a number past
+;                see cheat.s): its effect; A = 1, or 0 for a number past
 ;                the table. Matching typed keys to the sequences is
-;                milestone 11's input
+;                dl_brain.s's
 ;   power        A = a power: P_GivePower's, the result dropped
 ;   m_cheat_giveAmmo  idfa's and idkfa's backpack, armour, weapons, ammo
 ; and the helpers, each with its arguments in registers or the block:
@@ -59,7 +59,7 @@ D_A     = 2
 D_B     = 4
 
 ; the S_StartSound hook's sound byte with upstream's PICKUP_SOUND (bit 15
-; of its word) as bit 7 (docs/game-parts/pickup.md request P5)
+; of its word) as bit 7
 PICKUP_SOUND = $80
 
 PLR     = G_PLAYER
