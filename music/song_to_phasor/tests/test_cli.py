@@ -61,11 +61,12 @@ class SelectionIntegrationTests(unittest.TestCase):
                       patch("phasor.compare.compare_audio", side_effect=[metrics(candidate_distance), metrics(6.73)]),
                       contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO())):
                     self.assertEqual(main(["convert", "song.wav", "--vocals", "vocals.wav", "--fit", "--listen",
-                                           "--out", str(out), "--firmware-root", temporary]), 0)
+                                           "--out", str(out), "--firmware-root", temporary,
+                                           "--profile", "appletini-f1.2.4"]), 0)
                 expected = candidate if selected == "candidate" else original
                 self.assertEqual(json.loads((out / "score.json").read_text()), expected)
                 self.assertEqual(json.loads((out / "candidate.score.json").read_text()), candidate)
-                self.assertEqual(decode((out / "song.phs").read_bytes())[0], compile_score(expected)[0])
+                self.assertEqual(decode((out / "song.phs").read_bytes())[0], compile_score(expected, profile="appletini-f1.2.4")[0])
                 self.assertEqual((out / "vocals.rtl.wav").read_bytes(), selected.encode())
                 report = json.loads((out / "report.json").read_text())
                 self.assertEqual(report["fit_selection"]["selected"], selected)

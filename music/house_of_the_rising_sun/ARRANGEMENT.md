@@ -1,7 +1,7 @@
 # House of the Rising Sun — Phasor No. 1
 
-An original blues-rock arrangement of the traditional song for Appletini One
-F1.2.4: one singing SSI-263 voice, mirrored to both speech sockets, eight AY
+An original blues-rock arrangement of the traditional song for the Phasor in
+Appletini One F1.2.5 or later, or a real Phasor: one singing SSI-263 voice, mirrored to both speech sockets, eight AY
 melodic channels, and three synthesized drum channels. “No. 1” identifies this
 project's first complete arrangement; it is not a researched claim that no
 earlier Phasor performance exists.
@@ -89,7 +89,7 @@ Run from the repository root:
 python3 music/house_of_the_rising_sun/arrangement.py
 PYTHONPATH=music/song_to_phasor python3 -m phasor compile \
   music/house_of_the_rising_sun/score.json \
-  --out music/house_of_the_rising_sun/build/ntsc
+  --out music/house_of_the_rising_sun/build/pal --clock pal
 ```
 
 The musical source uses only Python's standard library and the sibling

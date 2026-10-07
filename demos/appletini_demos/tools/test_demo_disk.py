@@ -99,7 +99,7 @@ def static_checks() -> None:
     require("ITEMS      = 12" in launcher and
             'item9: !text "0  AD8088 MS-DOS HGR Cube"' in launcher and
             'item10: !text "T  Linear Text Overlay"' in launcher and
-            'item11: !text "M: MUSIC - HOUSE OF THE RISING SUN"' in launcher and
+            'item11: !text "M  Music: House of the Rising Sun"' in launcher and
             "select_ad8088:" in launcher and
             "select_text_overlay:" in launcher and
             "select_music:" in launcher,

@@ -1,7 +1,9 @@
 # Native PHS1 player
 
 This ca65 module plays the framework's compiled register stream on the slot 4
-Phasor in Appletini One firmware **F1.2.4**. It drives all four AY chips and both
+Phasor in Appletini One (firmware **F1.2.5** or later) or on a real Phasor card.
+The player only replays register writes; the compiler profile decides what the
+speech registers mean. It drives all four AY chips and both
 SSI-263s, preserving the order of every write, including repeated SSI writes and
 CONTROL transitions. Song analysis and phoneme fitting happen on the host;
 the 65C02 only reads timestamped register commands.

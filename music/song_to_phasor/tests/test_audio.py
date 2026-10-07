@@ -103,7 +103,7 @@ class AudioTests(unittest.TestCase):
         frames = score["voices"][0]["frames"]
         triggers = [frame["tick"] for frame in frames if frame.get("retrigger")]
         self.assertEqual(triggers, [50])
-        events, _ = compile_score(score)
+        events, _ = compile_score(score, profile="appletini-f1.2.4")
         starts = [tick for tick, target, register, value in events
                   if target == 4 and register == 0 and (value & 63) == 0x28]
         self.assertEqual(starts, [20, 50])

@@ -1,10 +1,11 @@
 # Song to Phasor
 
-A vocal-first conversion framework for Appletini One **F1.2.4**. It takes a song
-or aligned stems, estimates singing and accompaniment, compiles a native Phasor
-register stream, renders the SSI-263 voices through the actual firmware RTL,
-and compares that result with the source vocal. A cached bank of RTL sounds
-lets the fitter choose closer phonemes and filter-frequency settings.
+A vocal-first conversion framework for the native Phasor in Appletini One and
+for a real Phasor card. It takes a song or aligned stems, estimates singing and
+accompaniment, and compiles a native Phasor register stream. Optional tools
+render the SSI-263 voices through firmware RTL, compare that result with the
+source vocal, and fit phonemes and filter settings against a cached bank of
+RTL sounds.
 
 This is an experimental framework. Automatic phoneme selection matches acoustic
 shape; it does not recognize lyrics. Supply timed phonemes for intelligible
@@ -14,33 +15,73 @@ is claimed.
 
 ## Target
 
-- Firmware source: [`codex/turbo-paging-dma`, `96fd466`](https://github.com/hasseily/appletini-one/commit/96fd466076abfbac52d62d47446f67946913e58f).
-- Native Phasor in slot 4, Mockingboard-only disabled, enhanced Apple //e.
+- Appletini One **F1.2.5** or later, or a real Phasor with SSI-263 chips.
+  Native Phasor in slot 4, Mockingboard-only disabled, enhanced Apple //e.
 - Four AY chips / twelve tone voices and two SSI-263 sockets. A single vocal
   is copied to both hard-panned SSI sockets by default, for a centered voice.
   Two explicit vocal tracks use the sockets independently.
 - Both PAL and NTSC clock profiles. A shared **100 Hz** song clock is the
   default; it is independent of the video frame rate.
 
-The target is pinned by hashes of the speech RTL, bus wrapper, ROM, AY, card,
-and version header. `check-firmware`, fitting and rendering reject a changed
-contract even if it still calls itself F1.2.4. Compilation can run from the
-frozen profile without a firmware checkout and records that distinction.
+## Compiler profiles
 
-F1.2.4's register 4 is a provisional digital tract-frequency control. `128` is
-neutral, `0` is 0.5 times the tract rate, and `255` is about 1.496 times. It
-changes the vowel's spectral shape without changing the source pitch. This is
-not a calibrated analog SSI-263 model; see the firmware's
-[`SSI263_FILTER_FREQUENCY.md`](https://github.com/hasseily/appletini-one/blob/96fd466076abfbac52d62d47446f67946913e58f/docs/SSI263_FILTER_FREQUENCY.md).
+F1.2.5 replaced Appletini's SC-01-derived speech with a native SSI-263 model
+that follows the chip's datasheet (appletini-one `docs/SSI263_NATIVE.md`).
+Appletini and a real card now read the speech registers the same way, so one
+profile serves both:
+
+- **`physical-ssi263`** (default): the datasheet equations. Use it for
+  F1.2.5 and later and for a real Phasor.
+- **`appletini-f1.2.4`**: the obsolete F1.2.4 speech model. Its register 4 is
+  a linear tract-rate control (`128` neutral) and its pitch follows a 20 kHz
+  glottal counter. Streams made with it sound wrong on F1.2.5 and on a real
+  chip. It remains only because the RTL tools below (`render`, `fit`,
+  `--listen`) simulate the pinned F1.2.4 firmware sources and can only check
+  streams in that model.
+
+The physical profile uses the pitch equation `XCK / (8 * (4096 - I))` and the
+filter clock equation `XCK / (2 * (256 - FF))`. Effective XCK defaults to the
+regional AY clock divided by two, as the Phasor and F1.2.5 do: 1,015,625 Hz
+PAL or 1,020,484 Hz NTSC. A measured clock after any divider can be supplied
+with `--ssi-effective-clock-hz`. AY tuning still follows `--clock`.
+
+The score's `filter` field is a **normalized authoring value**, not a raw
+register byte. Its default 128 requests a nominal 20 kHz filter clock; other
+values request `20000 * (128 + filter) / 256` Hz. The compiler chooses the
+nearest realizable FF. For PAL, neutral becomes FF 231, and House of the
+Rising Sun's darker settings become FF 229–230. Writing the authored bytes
+directly (the old F1.2.4 behavior) would put the vocal resonances far too
+low. This mapping keeps the relative brightness the score asks for; it is not
+a calibrated spectral match.
+
+`compile` and `convert` default to the physical profile. RTL `fit`,
+`convert --fit` and `--listen` reject it and ask for
+`--profile appletini-f1.2.4`. The CLI `render` command rejects streams whose
+adjacent `report.json` names the physical profile. **PHS1 itself contains no
+profile or clock identifier**; keep the report with the stream. To hear a
+physical-profile stream with the F1.2.5 speech model, use appletini-one's
+`scripts/render_ssi263_song.py` (see its `docs/SSI263_SONG_PREVIEW.md`).
+
+The legacy F1.2.4 target is pinned to firmware source
+[`codex/turbo-paging-dma`, `96fd466`](https://github.com/hasseily/appletini-one/commit/96fd466076abfbac52d62d47446f67946913e58f)
+by hashes of the speech RTL, bus wrapper, ROM, AY, card and version header.
+`check-firmware`, fitting and rendering reject a changed contract.
+
+See the [House of the Rising Sun speech-register notes](../house_of_the_rising_sun/SSI263_MAPPING.md)
+for the hardware recording that exposed the old mapping.
 
 ## Install and try
 
 From this folder, Python 3.10+ can compile a score with only the standard library:
 
 ```sh
-python3 -m phasor compile examples/phrase.json --out build/phrase
+python3 -m phasor compile examples/phrase.json --out build/phrase --clock pal
 python3 -m phasor inspect build/phrase/song.phs
 ```
+
+The rest of this section uses the F1.2.4 RTL tools, so its commands pass
+`--profile appletini-f1.2.4`. Their audio is the old firmware's sound, not
+F1.2.5's.
 
 Audio analysis and comparison need NumPy and SciPy. Compressed audio also needs
 `ffmpeg` on PATH. Actual speech rendering needs Verilator and a C++ build
@@ -58,7 +99,9 @@ The editable-score example includes a pitch slide, vibrato and three vowel
 shapes. Render its SSI vocal independently of the backing:
 
 ```sh
-python3 -m phasor render build/phrase/song.phs build/phrase/vocals.wav \
+python3 -m phasor compile examples/phrase.json --out build/phrase-f124 \
+  --profile appletini-f1.2.4
+python3 -m phasor render build/phrase-f124/song.phs build/phrase-f124/vocals.wav \
   --firmware-root ../../../appletini-one
 ```
 
@@ -70,14 +113,14 @@ fabric cycles per sample. Its PCM and model statistics are checked against the
 original timed SV driver, which remains available for speech fitting.
 
 ```sh
-python3 -m phasor render build/phrase/song.phs build/phrase/mix.wav --full \
-  --vocal-output build/phrase/vocals.wav --backing-output build/phrase/backing.wav \
+python3 -m phasor render build/phrase-f124/song.phs build/phrase-f124/mix.wav --full \
+  --vocal-output build/phrase-f124/vocals.wav --backing-output build/phrase-f124/backing.wav \
   --firmware-root ../../../appletini-one
 ```
 
 The first complete arranged song is
 [`House of the Rising Sun`](../house_of_the_rising_sun/README.md), with an
-editable score, timed SSI lyrics, audio preview instructions and a ProDOS demo.
+editable score, timed SSI lyrics and a ProDOS demo.
 
 For a full reproducible smoke test, create an original synthetic vowel song:
 
@@ -87,7 +130,7 @@ python3 -m phasor convert build/fixture/song.wav \
   --vocals build/fixture/vocals.wav \
   --accompaniment build/fixture/backing.wav \
   --annotations build/fixture/phonemes.json \
-  --fit --listen --out build/converted \
+  --fit --listen --out build/converted --profile appletini-f1.2.4 \
   --firmware-root ../../../appletini-one
 ```
 
@@ -121,12 +164,12 @@ fitting a duet requires separate stem work before combining the tracks.
    periodicity, loudness and broad phoneme shape. Backing analysis picks strong
    tones, suppresses harmonics and keeps stable AY voice assignments. Results
    remain editable; confidence is periodicity, not transcription certainty.
-2. **Fit.** Render reference phonemes with the pinned SSI RTL, extract broad
+2. **Fit.** Render reference phonemes with the pinned F1.2.4 SSI RTL, extract broad
    spectral envelopes, and compare each source frame against that bank. A
    transition penalty discourages frame-to-frame chatter. Keep measured vocal
    pitch and timing separate from phoneme/tract fitting. Expand held controls
    during the search so the whole vowel is examined, then store changes only.
-3. **Compile.** Quantize pitch against the actual firmware counter, emit
+3. **Compile.** Quantize pitch against the selected profile's equation, emit
    phoneme starts and live pitch/amplitude/filter changes, interleave backing,
    and remove unchanged register writes. No FFT, transcription or search runs
    on the Apple II.
@@ -150,8 +193,9 @@ Separate commands support iteration:
 ```sh
 python3 -m phasor analyze song.flac --vocals vocals.wav --out build/draft
 python3 -m phasor fit build/draft/analysis.score.json vocals.wav \
-  --out build/fitted --filters 96 128 160
-python3 -m phasor compile build/fitted/score.json --out build/final --clock pal
+  --out build/fitted --filters 96 128 160 --profile appletini-f1.2.4
+python3 -m phasor compile build/fitted/score.json --out build/final --clock pal \
+  --profile appletini-f1.2.4
 python3 -m phasor render build/final/song.phs build/final/vocals.wav --clock pal
 python3 -m phasor compare vocals.wav build/final/vocals.wav \
   --output build/final/comparison.json
@@ -185,7 +229,7 @@ floating-point durations. See [`examples/phrase.json`](examples/phrase.json).
 | `voices[].frames[].tick` | Strictly increasing time; values hold until replaced |
 | `phoneme` | SSI code 0..63, **not** an SC-01 phone number |
 | `pitch_hz`, `amplitude` | Positive finite fundamental frequency; linear SSI amplitude 0..15 |
-| `filter`, `articulation` | Optional tract code 0..255 (default 128), articulation 0..7 (default 5) |
+| `filter`, `articulation` | Normalized tract code 0..255 (default 128; translated to FF by the physical profile, written directly by the F1.2.4 profile), articulation 0..7 (default 5) |
 | `rate`, `duration` | Optional SSI RATE 0..15 (default 8), DR 0..3 (default 0) |
 | `retrigger` | Explicitly restart a repeated phoneme for a new syllable; default false |
 | `notes[]` | `start_tick`, `end_tick`, fractional MIDI `midi`, `velocity` 0..15, `voice` 0..11 |
@@ -234,7 +278,7 @@ The PHS1 format is independent of the older Doom `.AY` format:
 - Same-tick records preserve order. At most 255 writes and 64 records may occur
   at one timestamp. The final timestamp equals the declared duration.
 
-The regional clock is in `report.json`, not in the PHS1 header. Keep the report
+The compiler profile and regional clock are in `report.json`, not in the PHS1 header. Keep the report
 with the stream and pass the same `--clock` when rendering; the playback caller
 must provide the header's tick rate using the regional VIA clock.
 
@@ -245,10 +289,11 @@ The generated report gives peak writes per tick; measure that burst on the
 target board, including the configured slot-access slowdown. There is no
 hardware realtime-performance claim from host conversion timings.
 
-SSI pitch is quantized by the firmware's `20,000 / floor((4096-I)*5/32)` counter
-(minimum period 1). The compiler searches its actual pitches, rather than the
-ideal analog equation. High singing notes have coarse pitch steps and a
-truncated glottal pulse; range representability does not imply useful timbre.
+With the default physical profile, SSI pitch is quantized by the datasheet
+equation; House of the Rising Sun's worst case is under 2 cents. The legacy F1.2.4 profile
+instead searches that firmware's `20,000 / floor((4096-I)*5/32)` counter
+(minimum period 1), where high notes have coarse steps and a truncated glottal
+pulse. Range representability does not imply useful timbre.
 Each SSI has one phoneme tract, so it cannot reproduce arbitrary singer tone,
 breath, chords or full mixed audio faithfully.
 
@@ -278,4 +323,4 @@ build outputs remain local and ignored.
 The next quality milestones need actual vocal recordings: evaluate aligned
 lyrics and sustained-vowel passages; tune consonant onset/duration and tract
 search; add automatic separation/alignment adapters; then audition and measure
-complete songs on F1.2.4 hardware.
+complete songs on F1.2.5 and on a real Phasor.

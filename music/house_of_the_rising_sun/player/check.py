@@ -16,6 +16,8 @@ from py65.devices.mpu65c02 import MPU
 HERE = Path(__file__).resolve().parent
 SHOWCASE = "--showcase" in sys.argv
 BUILD = HERE / ("build/showcase" if SHOWCASE else "build")
+STREAMS = HERE / "build"
+DEFAULT_REGION = "pal"
 SONG_PREFIX = "/MSDOS/MUSIC" if SHOWCASE else "/RISING.SUN"
 sys.path.insert(0, str(HERE / "../../song_to_phasor"))
 from phasor.stream import decode, encode
@@ -175,12 +177,13 @@ def exercise_song(data, region):
     demo = Demo(data)
     demo.boot()
     assert demo.get("loaded") and demo.get("phs_playing") and not demo.get("error")
-    assert demo.paths == [SONG_PREFIX + "/SUN.NTSC"]
+    assert demo.paths == [SONG_PREFIX + "/SUN." + DEFAULT_REGION.upper()]
+    assert demo.get("region") == int(DEFAULT_REGION == "pal")
     assert demo.memory.native_reads[:2] == [0xC0C8, 0xC0C5]
     assert demo.memory.events[-len(by_tick[0]):] == by_tick[0]
-    if region == "pal":
-        demo.key("P")
-        assert demo.paths[-1] == SONG_PREFIX + "/SUN.PAL"
+    if region != DEFAULT_REGION:
+        demo.key("P" if region == "pal" else "N")
+        assert demo.paths[-1] == SONG_PREFIX + "/SUN." + region.upper()
     assert demo.memory.timer_latch == (10203 if region == "ntsc" else 10154)
     assert demo.memory[0xC48E] == 0x7F  # timer IRQ intentionally disabled
     demo.memory.events.clear()
@@ -302,16 +305,16 @@ def main():
     disk = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(disk)
     if not SHOWCASE:
-        image = (HERE / "build/RISING.SUN.hdv").read_bytes()
+        image = (BUILD / "RISING.SUN.hdv").read_bytes()
         volume, _, entries = disk.list_volume(image)
         assert volume == "RISING.SUN" and entries[0]["name"] == "SUN.SYSTEM"
         assert entries[0]["type"] == 0xFF and entries[0]["aux"] == 0x2000
         boot, prodos = disk.extract_prodos(HERE / "../../doom/assets/ProDOS_2_4_3.po")
         assert image[:1024] == boot
         for entry in entries:
-            expected = prodos if entry["name"] == "PRODOS" else (HERE / "build" / entry["name"]).read_bytes()
+            expected = prodos if entry["name"] == "PRODOS" else (BUILD / entry["name"]).read_bytes()
             assert disk.read_file(image, entry) == expected
-    report = {region: exercise_song((HERE / f"build/SUN.{region.upper()}").read_bytes(), region)
+    report = {region: exercise_song((STREAMS / f"SUN.{region.upper()}").read_bytes(), region)
               for region in ("ntsc", "pal")}
     if SHOWCASE:
         report["menu_return"] = exercise_return(tiny)

@@ -420,9 +420,10 @@ def package_disk(image: Path = OUTPUT, output: Path = ZIP_OUTPUT) -> None:
     readme = (
         "APPLETINI DEMOS\n\n"
         "Extract Appletini_Demos.po and boot it from an Appletini SmartPort drive.\n"
-        "Select M: MUSIC - HOUSE OF THE RISING SUN, then press Return.\n"
-        "Music requires a 65C02, Appletini One F1.2.4 and native Phasor in slot 4.\n"
-        "P=PAL, N=NTSC, R=replay, Space=stop, Q/Escape=return to the menu.\n"
+        "Select M  Music: House of the Rising Sun, then press Return.\n"
+        "Music requires a 65C02, Appletini One F1.2.5 or later and native Phasor\n"
+        "in slot 4. PAL starts; P=PAL, N=NTSC, R=replay, Space=stop,\n"
+        "Q/Escape=return to the menu.\n"
         "Both regional songs preload into RAM; playback has no disk reads.\n\n"
         "The image passed software checks; physical Appletini playback and\n"
         "a complete ROM/BASIC boot have not been tested.\n"

@@ -34,11 +34,11 @@ class FirmwareFitTests(unittest.TestCase):
             reference = directory / "reference.wav"
             baseline = directory / "baseline.wav"
             candidate = directory / "candidate.wav"
-            render(compile_score(source)[0], 100, 80, root, reference, cache)
-            render(compile_score(draft)[0], 100, 80, root, baseline, cache)
+            render(compile_score(source, profile="appletini-f1.2.4")[0], 100, 80, root, reference, cache)
+            render(compile_score(draft, profile="appletini-f1.2.4")[0], 100, 80, root, baseline, cache)
             fitted, report = fit_score(draft, reference, root, cache,
                                       locked_phonemes=True, bank_pitch_hz=200.0)
-            render(compile_score(fitted)[0], 100, 80, root, candidate, cache)
+            render(compile_score(fitted, profile="appletini-f1.2.4")[0], 100, 80, root, candidate, cache)
             before = compare_audio(reference, baseline)
             after = compare_audio(reference, candidate)
             self.assertGreater(report["changed_frames"], 0)

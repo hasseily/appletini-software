@@ -1,4 +1,5 @@
-; Bounded, callback-fed PHS1 register player for Appletini One F1.2.4.
+; Bounded, callback-fed PHS1 register player for the slot 4 Phasor
+; (Appletini One F1.2.5+ native Phasor, or a real card).
 ; This module owns both VIAs' sound ports, four AYs, and both SSI-263s.
 ; Caller supplies a stream reader and a clock; see README.md for the ABI.
 

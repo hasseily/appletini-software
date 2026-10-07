@@ -36,7 +36,7 @@ def drum(start, end, kind="snare", velocity=12):
 
 class CompilerTests(unittest.TestCase):
     def test_initialization_preserves_every_ctl_edge(self):
-        events, _ = compile_score(score([frame(0)]))
+        events, _ = compile_score(score([frame(0)]), profile="appletini-f1.2.4")
         for target in (4, 5):
             writes = [(chip, register, value) for _, chip, register, value in events
                       if chip == target]
@@ -48,7 +48,7 @@ class CompilerTests(unittest.TestCase):
             frame(0), frame(10, pitch_hz=233.082),
             frame(20, pitch_hz=246.942, filter=160),
             frame(30, pitch_hz=220, amplitude=10),
-        ]))
+        ]), profile="appletini-f1.2.4")
         for target in (4, 5):
             live = [event for event in events if event[1] == target and 0 < event[0] < 100]
             self.assertFalse(any(event[2] == 0 for event in live))
@@ -106,7 +106,8 @@ class CompilerTests(unittest.TestCase):
             out = Path(directory) / "result"
             with patch("phasor.cli.checked_firmware", side_effect=ValueError("mismatch")):
                 with self.assertRaisesRegex(ValueError, "mismatch"):
-                    compile_files(score([frame(0)]), out, "ntsc", firmware=Path("unused"))
+                    compile_files(score([frame(0)]), out, "ntsc", firmware=Path("unused"),
+                                  profile="appletini-f1.2.4")
             self.assertFalse(out.exists())
 
     def test_percussion_uses_shared_fixed_noise_and_separate_volume_gates(self):

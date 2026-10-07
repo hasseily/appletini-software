@@ -4,22 +4,24 @@
 SmartPort hard-disk drive. It contains ProDOS 2.4.3 (from the existing
 `music/doom/assets/ProDOS_2_4_3.po` master), `SUN.SYSTEM`, and separately
 compiled NTSC/PAL versions of the complete House of the Rising Sun score.
-It targets the native Phasor in **slot 4, firmware F1.2.4**, with four AY
-chips and both SSI-263s. A 65C02 is required.
+It targets the native Phasor in **slot 4, firmware F1.2.5 or later**, with
+four AY chips and both SSI-263s, and a real Phasor card in slot 4. A 65C02 is
+required; an unenhanced //e with its original 6502 cannot run this build.
 
-An unenhanced //e with its original 6502 cannot run this build. An original
-physical Phasor has not been validated: timing and vocal pitch have been
-checked against Appletini's F1.2.4 model. The same vocal is sent to both SSI-263s
-without waiting for speech-chip replies, so one fitted SSI-263 should provide
-the complete vocal through its output; that configuration still needs a
-hardware audition. Two chips center the voice across both speech outputs.
+Both streams are compiled with the framework's `physical-ssi263` profile,
+which follows the SSI-263 datasheet like F1.2.5's native speech model (see
+[the register notes](../SSI263_MAPPING.md)). Builds made before F1.2.5
+targeted F1.2.4's speech model and sound wrong on F1.2.5. The same vocal is
+sent to both SSI-263s without waiting for speech-chip replies, so one fitted
+SSI-263 should provide the complete vocal through its output; that
+configuration still needs a hardware audition. Two chips center the voice
+across both speech outputs.
 
-Mount the image in a bootable SmartPort drive and boot it. NTSC playback
+Mount the image in a bootable SmartPort drive and boot it. PAL playback
 starts automatically. Press **P** for PAL, **N** for NTSC, **R** to replay,
 **Space** to stop, or **Q/Escape** to quit through ProDOS. Changing region
-reloads the corresponding stream and starts from the beginning. Set the
-firmware's warmth control to **0** for comparison with the neutral preview;
-the default warmth value of +8 produces a different sound.
+reloads the corresponding stream and starts from the beginning. Assemble
+`demo.s` with `-D DEFAULT_REGION=0` to start in NTSC instead.
 
 ## Build and verify
 
@@ -32,9 +34,13 @@ make check
 ```
 
 The score defaults to `../score.json`; override it with `make SCORE=...`.
-The preparation step compiles both regional streams through the shared
-framework and refuses any score whose rate is not 100 Hz or whose encoded
-size exceeds the demo's 34,816-byte buffer. `check.py` verifies the assembled
+The preparation step (`prepare.py`) compiles both regional streams through
+the shared framework with the `physical-ssi263` profile and refuses any score
+whose rate is not 100 Hz or whose encoded size exceeds the demo's 34,816-byte
+buffer. Its `--ssi-effective-clock-hz HZ` option replaces both regional SSI
+clocks (default 1,015,625 Hz PAL / 1,020,484 Hz NTSC) with a measured one.
+`build/compile.json` records the profile, clocks, filter range and pitch
+quantization of both streams. `check.py` verifies the assembled
 SYS program, not a Python reimplementation of the player. Results are written
 to `build/validation.json`.
 
@@ -58,7 +64,7 @@ updated to a differently sized BASIC.SYSTEM, update `BASIC_SIZE` in `demo.s`.
 The return routine and all of its MLI parameter blocks relocate to
 `$1400..$14A0` before loading BASIC at `$2000..$47FF`, so the load cannot
 overwrite code it is still executing. The showcase SYS file initially
-occupies `$2000..$28A8`; its song buffer and ProDOS I/O buffer match the
+occupies `$2000..$28AB`; its song buffer and ProDOS I/O buffer match the
 standalone version below. The linker reserves `$1400..$17FF` for return
 code and limits player state to `$1000..$13FF` to prevent overlap.
 
@@ -66,14 +72,15 @@ Run `make check-showcase` with `py65` available to verify both complete
 regional streams plus Q/Escape menu returns, short/failed reads, each MLI
 failure, invalid BASIC lengths, and safe fallback after the SYS program has
 been overwritten. Its report is `build/showcase/validation.json`. The
-showcase peak is 5,192 nominal cycles at tick 9,933; the different code
-placement changes instruction page crossings. As with the standalone
+showcase peak is 5,268 nominal cycles (NTSC) at tick 9,933; the different
+code placement changes instruction page crossings. As with the standalone
 check, ROM boot, BASIC execution, physical disk I/O and slot wait states
 are not emulated.
 
 ## Loading and timing
 
-The SYS program preloads the complete 28,333-byte regional stream using
+The SYS program preloads the complete regional stream (27,956 bytes PAL,
+28,159 bytes NTSC) using
 ProDOS OPEN, GET_EOF, READ and CLOSE. SmartPort disk speed affects startup
 only. Playback and replay read RAM; there is no disk access in a timer
 callback and no refill deadline. Oversized, undersized, truncated or
@@ -93,10 +100,10 @@ tick stops playback with error `$F2` instead of silently dropping time.
 | `$0400..$07FF` | Text page 1 |
 | `$1000..$122A` | Player state and one complete staged PHS1 record |
 | `$1C00..$1FFF` | ProDOS file buffer |
-| `$2000..$27DD` | SYS code and initialized data |
-| `$3000..$B7FF` | Bounded song buffer; current song ends at `$9EAD` exclusive |
+| `$2000..$27E0` | SYS code and initialized data |
+| `$3000..$B7FF` | Bounded song buffer; current songs end at `$9D34` (PAL) and `$9DFF` (NTSC) exclusive |
 
-The end address of the current song is `$3000 + 28333 = $9EAD`. ProDOS's
+The end address of the NTSC song is `$3000 + 28159 = $9DFF`. ProDOS's
 global page at `$BF00` is never part of the song buffer. The disk paths are
 absolute (`/RISING.SUN/SUN.NTSC` and `/RISING.SUN/SUN.PAL`), so keep the
 volume name when copying or recreating this image.
@@ -104,23 +111,23 @@ volume name when copying or recreating this image.
 ## Validation and limits
 
 Both full 102.32-second regional streams passed the 65C02 emulator check:
-**9,654 expected register writes each**, in exact order and at their scheduled
+**9,392 (PAL) and 9,492 (NTSC) expected register writes**, in exact order and at their scheduled
 ticks, with the expected final silence. The check also covers loader length
 bounds, MLI open/short-read errors, invalid headers/rates, timer latch selection,
 no disk I/O during playback, replay, stop, quit, and forced overrun muting.
 The image's directory, boot blocks, embedded ProDOS and all files were read
 back and compared byte for byte.
 
-The worst complete polling iteration is **5,275 nominal 65C02 cycles**,
-including the bounded reader and following-record prefetch, at tick 9,933.
-That uses 51.9% of the shorter PAL period (10,156 cycles), leaving 4,881
-cycles of nominal headroom. It is below either regional 100 Hz period even
+The worst complete polling iteration is **5,309 nominal 65C02 cycles**
+(NTSC; PAL 4,879), including the bounded reader and following-record
+prefetch, at tick 9,933. That uses 52.0% of the NTSC period (10,205 cycles),
+leaving 4,896 cycles of nominal headroom. It is below either regional 100 Hz period even
 at nominal 1 MHz. The check fails if a polling iteration reaches or exceeds
 its regional timer period. This uses emulator instruction counts; Appletini
 slot wait states are not modeled.
 The emulator stubs ProDOS calls and timer flags; it does not boot an Apple II
-ROM or model VIA electrical timing. **The image has not been tested on a
-physical Appletini.**
+ROM or model VIA electrical timing. **This build has not been tested on
+F1.2.5 hardware or a real Phasor.**
 
 Error codes `$01..$06` come from the shared PHS1 player; other ProDOS errors
 retain their MLI code. Demo-specific codes are `$F0` invalid file length or

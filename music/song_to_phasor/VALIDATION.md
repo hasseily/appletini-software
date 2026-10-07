@@ -1,4 +1,23 @@
-# Initial validation
+# Validation
+
+## F1.2.5 default profile, 2026-10-07
+
+Appletini F1.2.5 replaced the F1.2.4 speech model with a native SSI-263 model
+that follows the datasheet, so `physical-ssi263` is now the default profile
+for `compile_score`, `compile` and `convert`. The F1.2.4 profile stays for the
+RTL tools, which still simulate the pinned F1.2.4 sources.
+
+`python3 -m unittest discover -s tests` ran 114 tests: 105 passed and 9 were
+skipped (the opt-in RTL and fitting tests need an F1.2.4 firmware checkout and
+Verilator). The profile tests check the datasheet pitch and filter arithmetic,
+that the default is the physical profile, that F1.2.4 stream bytes are
+unchanged from the pre-profile release, and that the RTL tools refuse
+physical-profile streams with or without an explicit `--profile`.
+
+Nothing here measures F1.2.5 or real-chip audio. The rest of this file is the
+F1.2.4 record; its RTL results apply to the legacy profile only.
+
+## F1.2.4 initial validation
 
 Checked on 2026-10-05 against F1.2.4 source profile `96fd466076abfbac52d62d47446f67946913e58f`.
 The firmware checkout then advanced to `24f13df`, which only corrected a filter
