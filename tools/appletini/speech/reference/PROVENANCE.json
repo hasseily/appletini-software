@@ -1,0 +1,46 @@
+{
+  "repository": "https://github.com/hasseily/appletini-one.git",
+  "source_commit": "1a3e8d38c57814471640c748879af28dbf16b266",
+  "license": "GPL-3.0 (repository LICENSE; original files retain their notices)",
+  "files": {
+    "shared.h": {
+      "path": "scripts/ssi263_host/shared.h",
+      "sha256": "e2d59059596e58d54d7e40918b7852a28a7330df385e681c29794c7a9f918337"
+    },
+    "native_control.h": {
+      "path": "scripts/ssi263_host/native_control.h",
+      "sha256": "774f0f6212f180e08b993bf5546f6aec827662411525b60b01478762966a250b"
+    },
+    "native_control.cpp": {
+      "path": "scripts/ssi263_host/native_control.cpp",
+      "sha256": "e116b179671f5c8aad6f1277d2ceef68b7e1af6fd7418282450172c02576d82e"
+    },
+    "native_source.h": {
+      "path": "scripts/ssi263_host/native_source.h",
+      "sha256": "ab540b34a0912c143a670b3c00289c4264c05145defa8525682b7377ec580c88"
+    },
+    "native_source.cpp": {
+      "path": "scripts/ssi263_host/native_source.cpp",
+      "sha256": "a1b9d7eb71e8fa82f58f5820ec53b6ccfb4999b7920720de97d2bbc028e9a0eb"
+    },
+    "prototype_tract.h": {
+      "path": "scripts/ssi263_host/prototype_tract.h",
+      "sha256": "032fc62c642d79c97318061d1291c7c11f1cf0f3980ce6170d467a88a916bea8"
+    },
+    "prototype_tract.cpp": {
+      "path": "scripts/ssi263_host/prototype_tract.cpp",
+      "sha256": "720f0407c50f4010841676d39805e7e9334bf058b63f8ffa2e8d7958eddaf1f0"
+    },
+    "ssi263_sc02_rom.mem": {
+      "path": "hdl/apple/ssi263_sc02_rom.mem",
+      "sha256": "e853e4b19425ab6b719b71a97f952bf900dc15eca5c2dc184663db752665c8a0"
+    }
+  },
+  "generated": {
+    "rom.inc": "Comma-separated hexadecimal bytes of ssi263_sc02_rom.mem; no synthesis or coefficient generation."
+  },
+  "modifications": {
+    "native_control.h": "Added warm_reset declaration.",
+    "native_control.cpp": "Added AP warm_reset adapter matching current native controller register retention."
+  }
+}

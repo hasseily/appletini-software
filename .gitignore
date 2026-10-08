@@ -4,3 +4,4 @@ __pycache__/
 demos/*/build/
 demos/*/dist/
 releases/
+tools/appletini/build/

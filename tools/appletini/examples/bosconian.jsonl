@@ -1,0 +1,11 @@
+{"id":"title","cmd":"run","frames":60}
+{"id":"title-check","cmd":"assert","space":"main","address":"0x300","data":"4131334201"}
+{"id":"start","cmd":"input","kind":"key","x":13}
+{"id":"start-frame","cmd":"run","frames":5}
+{"id":"play-check","cmd":"assert","space":"main","address":"0x304","data":"02"}
+{"id":"move-fire","cmd":"keyboard-state","codes":["KeyD","Space"]}
+{"id":"play","cmd":"run","frames":30}
+{"id":"release","cmd":"keyboard-state","codes":[]}
+{"id":"screen","cmd":"screenshot","path":"tools/appletini/build/bosconian-play.png"}
+{"id":"mailbox","cmd":"read","space":"main","address":"0x300","length":41}
+{"id":"end","cmd":"quit"}

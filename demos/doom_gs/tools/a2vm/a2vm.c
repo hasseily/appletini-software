@@ -592,6 +592,7 @@ static void phasor_init(a2vm_phasor *f)
 {
     memset(f, 0, sizeof *f);
     f->ssi_dur = 0xc0;
+    memset(f->latched, 0xff, sizeof f->latched);
     for (unsigned i = 0; i < 2; i++) {
         f->t1[i].latch_lo = f->t1[i].latch_hi = 0xff;  /* power_reset */
         f->t1[i].load = 0xffff;
@@ -794,16 +795,21 @@ static int t1_read(a2vm *m, unsigned i, unsigned reg)
     }
 }
 
-static void phasor_mode_switch(a2vm_phasor *f, unsigned address)
+static void phasor_mode_switch(a2vm *m, unsigned address)
 {
+    a2vm_phasor *f = &m->phasor;
+    unsigned before = f->mode;
     if (address & 8)
         f->mode = MOCKINGBOARD;
     f->mode |= address & 7;
+    if (m->sound_event && before != f->mode)
+        m->sound_event(m, 2, 0, 0, f->mode);
 }
 
 /* _vias_for: a mask of the VIAs the address selects. */
 static unsigned phasor_vias(const a2vm_phasor *f, unsigned address)
 {
+    if (f->mode == 7) return 2;
     if (f->mode == NATIVE)
         return (address & 0x10 ? 1u : 0u) | (address & 0x80 ? 2u : 0u);
     return address & 0x80 ? 2u : 1u;
@@ -818,7 +824,7 @@ static void phasor_chip_selects(const a2vm_phasor *f, unsigned index,
                                 int *cs0, int *cs1)
 {
     unsigned bus = f->via[index].orb & f->via[index].ddrb;
-    if (f->mode == NATIVE) {
+    if (f->mode == NATIVE || f->mode == 7) {
         *cs0 = !(bus & 0x10);
         *cs1 = !(bus & 0x08);
     } else {
@@ -846,11 +852,16 @@ static void phasor_port_b(a2vm *m, unsigned index)
     int cs0, cs1;
     phasor_chip_selects(f, index, &cs0, &cs1);
     unsigned function = bus & 7;
-    int native = f->mode == NATIVE;
+    int native = f->mode == NATIVE || f->mode == 7;
     if (!(bus & 4)) {
         memset(f->ay[index * 2], 0, 16);
         memset(f->ay[index * 2 + 1], 0, 16);
+        f->latched[index * 2] = f->latched[index * 2 + 1] = 0xff;
         f->selected[index][0] = f->selected[index][1] = 0;
+        if (m->sound_event) {
+            m->sound_event(m, 1, index * 2, 0, 0);
+            m->sound_event(m, 1, index * 2 + 1, 0, 0);
+        }
         if (m->ay_log)
             for (unsigned chip = index * 2; chip < index * 2 + 2; chip++) {
                 fputs("reset", m->ay_log);
@@ -875,7 +886,11 @@ static void phasor_port_b(a2vm *m, unsigned index)
         unsigned targets[2], count = 0;
         if (!native)
             targets[count++] = index * 2;
-        else {
+        else if (f->mode == 7) {
+            if (cs0) targets[count++] = index * 2;
+            if (cs1 || (cs0 && f->selected[index][1]))
+                targets[count++] = index * 2 + 1;
+        } else {
             if (cs0 && f->selected[index][0])
                 targets[count++] = index * 2;
             if ((cs0 || cs1) && f->selected[index][1])
@@ -883,6 +898,9 @@ static void phasor_port_b(a2vm *m, unsigned index)
         }
         for (unsigned i = 0; i < count; i++) {
             unsigned chip = targets[i];
+            if (f->latched[chip] > 15) continue;
+            if (m->sound_event)
+                m->sound_event(m, 0, chip, f->latched[chip], f->via[index].ora);
             f->ay[chip][f->latched[chip] & 15] = f->via[index].ora;
             f->ay_writes++;
             if (m->ay_log) {
@@ -898,7 +916,9 @@ static void phasor_port_b(a2vm *m, unsigned index)
 static void phasor_write(a2vm *m, unsigned address, uint8_t value)
 {
     a2vm_phasor *f = &m->phasor;
-    if (phasor_ssi_hit(f, address)) {
+    if (m->speech_write)
+        m->speech_write(m, address, value);
+    if (!m->speech_write && phasor_ssi_hit(f, address)) {
         unsigned reg = address & 7;
         if (reg == 0) {
             f->ssi_dur = value;
@@ -936,7 +956,11 @@ static void phasor_write(a2vm *m, unsigned address, uint8_t value)
 static uint8_t phasor_read(a2vm *m, unsigned address)
 {
     a2vm_phasor *f = &m->phasor;
-    if (phasor_ssi_hit(f, address)) {
+    if (m->speech_read) {
+        int data = m->speech_read(m, address);
+        if (data >= 0) return (uint8_t)data;
+    }
+    if (!m->speech_read && phasor_ssi_hit(f, address)) {
         if (!f->ssi_running)
             return 0;
         int64_t ticks = (int64_t)(4 - (f->ssi_dur >> 6)) *
@@ -962,8 +986,22 @@ static uint8_t phasor_read(a2vm *m, unsigned address)
             if (f->via[index].ddra == 0 && (bus & 7) == 5) {
                 int cs0, cs1;
                 phasor_chip_selects(f, index, &cs0, &cs1);
-                unsigned chip = index * 2 + (cs0 ? 0 : 1);
-                return f->ay[chip][f->latched[chip] & 15];
+                static const uint8_t masks[16] = {
+                    255,15,255,15,255,15,31,255,31,31,31,255,255,15,255,255
+                };
+                unsigned primary = f->mode == NATIVE ?
+                    cs0 && f->selected[index][0] : cs0;
+                unsigned secondary = f->mode == NATIVE ?
+                    (cs0 || cs1) && f->selected[index][1] :
+                    f->mode == 7 && (cs1 || (cs0 && f->selected[index][1]));
+                unsigned value = 0;
+                if (!primary && !secondary) return 0xff;
+                for (unsigned j = 0; j < 2; j++) {
+                    if (!(j ? secondary : primary)) continue;
+                    unsigned chip = index * 2 + j, reg = f->latched[chip];
+                    value |= reg < 16 ? f->ay[chip][reg] & masks[reg] : 0xff;
+                }
+                return (uint8_t)value;
             }
             return f->via[index].ora;
         }
@@ -1569,6 +1607,64 @@ static inline void vidhd_step_check(a2vm *m, uint16_t pc)
         a2vm_vidhd_check(m, pc);
 }
 
+/* README_SLOT2_GAMEPADS.md and hdl/apple/slot2_gamepad_card.sv: the
+   four direct ports alias on A0/A1; SNES writes decode only A0. */
+static uint8_t slot2_pad_read(const a2vm *m, unsigned address)
+{
+    if (m->slot2_mode == A2VM_SLOT2_FOUR_PLAY) {
+        unsigned player = address & 3;
+        unsigned b = (m->pad_present & (1u << player)) ?
+                     m->pad_buttons[player] : 0;
+        return (uint8_t)(0x20 | ((b >> 4) & 15) | ((b & A2VM_PAD_Y) << 3) |
+                         ((b & A2VM_PAD_A) >> 2) | ((b & A2VM_PAD_B) << 7));
+    }
+    unsigned result = 0;
+    for (unsigned player = 0; player < 2; player++) {
+        unsigned bit = 1;
+        if (m->snes_present & (1u << player)) {
+            if (m->snes_bit < 12)
+                bit = !(m->snes_buttons[player] & (1u << m->snes_bit));
+            else if (m->snes_bit == 16)
+                bit = 0;
+        }
+        result |= bit << (7 - player);
+    }
+    return (uint8_t)result;
+}
+
+static void slot2_pad_write(a2vm *m, unsigned address)
+{
+    if (m->slot2_mode != A2VM_SLOT2_SNES_MAX)
+        return;
+    if (!(address & 1)) {
+        m->snes_buttons[0] = m->pad_buttons[0];
+        m->snes_buttons[1] = m->pad_buttons[1];
+        m->snes_present = m->pad_present & 3;
+        m->snes_bit = 0;
+    } else if (m->snes_bit < 16)
+        m->snes_bit++;
+}
+
+static void paddle_trigger(a2vm *m)
+{
+    m->paddle_trigger = (int64_t)a2vm_bus_clock(m);
+    for (unsigned i = 0; i < 4; i++)
+        m->paddles[i] = 4 + 11 * m->paddle_values[i];
+}
+
+static uint8_t game_button(const a2vm *m, unsigned index)
+{
+    static const unsigned masks[3] = {A2VM_PAD_B, A2VM_PAD_A, A2VM_PAD_Y};
+    uint8_t value = m->buttons[index];
+    for (unsigned player = 0; player < 4; player++)
+        if (m->pad_present & (1u << player)) {
+            if (m->pad_buttons[player] & masks[index])
+                value |= 0x80;
+            break;
+        }
+    return value;
+}
+
 static uint8_t io_read(a2vm *m, uint16_t address)
 {
     unsigned low = address & 0xff;
@@ -1591,23 +1687,28 @@ static uint8_t io_read(a2vm *m, uint16_t address)
                          (m->key_latch & 0x7f));
     if (low == 0x29)
         return m->newvideo;
-    if (low == 0x30)
+    if (low >= 0x30 && low <= 0x3f) {
         m->speaker_toggles++;
+        if (m->sound_event) m->sound_event(m, 3, 0, 0, m->speaker_toggles & 1);
+    }
     else if (low >= 0x50 && low <= 0x57)
         video_switch(m, low);
-    else if (low >= 0x61 && low <= 0x63)
-        return m->buttons[low - 0x61];
-    else if (low >= 0x64 && low <= 0x67) {
+    else if (low == 0x5e || low == 0x5f) m->dhires = !(low & 1);
+    else if ((low >= 0x61 && low <= 0x63) || (low >= 0x69 && low <= 0x6b))
+        return game_button(m, (low & 7) - 1);
+    else if ((low >= 0x64 && low <= 0x67) || (low >= 0x6c && low <= 0x6f)) {
         int64_t elapsed = (int64_t)a2vm_bus_clock(m) - m->paddle_trigger;
-        return elapsed < m->paddles[low - 0x64] ? 0x80 : 0x00;
-    } else if (low == 0x70)
-        m->paddle_trigger = (int64_t)a2vm_bus_clock(m);
+        return elapsed < m->paddles[low & 3] ? 0x80 : 0x00;
+    } else if (low >= 0x70 && low <= 0x7f)
+        paddle_trigger(m);
     else if (low >= 0x80 && low <= 0x8f)
         lc_switch(m, low, 1);
     else if (m->phasor_slot > 0 && (int)(low >> 4) == 8 + m->phasor_slot) {
         if (!m->phasor_mb_only)
-            phasor_mode_switch(&m->phasor, low);
-    } else if (m->mouse_on && (int)(low >> 4) == 8 + m->mouse_slot)
+            phasor_mode_switch(m, low);
+    } else if ((low & 0xf0) == 0xa0 && m->slot2_mode >= A2VM_SLOT2_FOUR_PLAY)
+        return slot2_pad_read(m, low);
+    else if (m->mouse_on && (int)(low >> 4) == 8 + m->mouse_slot)
         return mouse_read(&m->mouse, low & 0x0f);
     else if (m->mouse_rom && (int)(low >> 4) == 8 + m->mouse_slot)
         return rm_pia_read(&m->romouse, low & 0x0f);
@@ -1619,6 +1720,8 @@ static void io_write(a2vm *m, uint16_t address, uint8_t value)
     unsigned low = address & 0xff;
     m->io_accesses++;
     *m->clock += m->io_cycles;
+    if (low >= 0x70 && low <= 0x7f)
+        paddle_trigger(m);
     if (m->vidhd.slot && (low & 0xf0) == 0x30) {
         vidhd_speaker(m, address);
         if (low == 0x35) {
@@ -1636,12 +1739,13 @@ static void io_write(a2vm *m, uint16_t address, uint8_t value)
         m->key_latch &= 0x7f;
     else if (low == 0x29)
         m->newvideo = value;
-    else if (low == 0x30)
+    else if (low >= 0x30 && low <= 0x3f) {
         m->speaker_toggles++;
+        if (m->sound_event) m->sound_event(m, 3, 0, 0, m->speaker_toggles & 1);
+    }
     else if (low >= 0x50 && low <= 0x57)
         video_switch(m, low);
-    else if (low == 0x70)
-        m->paddle_trigger = (int64_t)a2vm_bus_clock(m);
+    else if (low == 0x5e || low == 0x5f) m->dhires = !(low & 1);
     else if (low == 0x71 || low == 0x73)
         a2vm_select_bank(m, value);
     else if (low == 0x69 && m->zpb.armed)
@@ -1650,8 +1754,10 @@ static void io_write(a2vm *m, uint16_t address, uint8_t value)
         lc_switch(m, low, 0);
     else if (m->phasor_slot > 0 && (int)(low >> 4) == 8 + m->phasor_slot) {
         if (!m->phasor_mb_only)
-            phasor_mode_switch(&m->phasor, low);
-    } else if (m->mouse_on && (int)(low >> 4) == 8 + m->mouse_slot)
+            phasor_mode_switch(m, low);
+    } else if ((low & 0xf0) == 0xa0 && m->slot2_mode >= A2VM_SLOT2_FOUR_PLAY)
+        slot2_pad_write(m, low);
+    else if (m->mouse_on && (int)(low >> 4) == 8 + m->mouse_slot)
         mouse_write(&m->mouse, low & 0x0f, value);
     else if (m->mouse_rom && (int)(low >> 4) == 8 + m->mouse_slot)
         rm_pia_write(&m->romouse, low & 0x0f, value);
@@ -1760,6 +1866,15 @@ static int blockdev_call(a2vm *m)
 
 static uint8_t slow_read(a2vm *m, uint16_t address)
 {
+    if (m->device_read) {
+        int value = m->device_read(m, address);
+        if (value >= 0) {
+            *m->clock += m->io_cycles;
+            if (address < 0xc100)
+                m->io_accesses++;
+            return (uint8_t)value;
+        }
+    }
     if (address < 0xc100)
         return io_read(m, address);
     /* $C100-$CFFF (the pages at and above $D000 are always mapped) */
@@ -1798,6 +1913,12 @@ static void slow_write(a2vm *m, uint16_t address, uint8_t value)
 {
     if (address >= 0xd000)
         return;                     /* the language card, write-protected */
+    if (m->device_write && m->device_write(m, address, value)) {
+        *m->clock += m->io_cycles;
+        if (address < 0xc100)
+            m->io_accesses++;
+        return;
+    }
     if (address < 0xc100) {
         io_write(m, address, value);
         return;
@@ -2154,7 +2275,8 @@ static void skip_idle(a2vm *m, uint16_t pc)
             m->idle_cycles += target - now;
             if (m->cost)
                 a2vm_cost_skip(m, target - now);
-            *m->clock = target;
+            if (m->clock_advance) m->clock_advance(m, target);
+            else *m->clock = target;
             if (target >= m->next_vbl)
                 vbl_event(m);
         }
@@ -2336,12 +2458,25 @@ static void ay_log_rti(a2vm *m)
     fputc('\n', m->ay_log);
 }
 
-void a2vm_step(a2vm *m)
+void a2vm_service_events(a2vm *m)
 {
-    if (a2vm_now(m) >= m->next_vbl)
+    if (m->service_hook) m->service_hook(m);
+    /* Drain overdue frame events as well: two callers at this same
+       instruction boundary must not deliver different pending events. */
+    while (a2vm_now(m) >= m->next_vbl)
         vbl_event(m);
     if (m->via_timers && a2vm_now(m) >= m->phasor.t1_clock)
         a2vm_via_timers_update(m);
+    if (m->core == A2VM_CORE_W65C02S) {
+        int irq = ((m->mouse_on || m->mouse_apple) && m->mouse.irq) ||
+                  (m->mouse_rom && m->romouse.irq) || via_irq(m);
+        cpu65c02_set_irq(&m->cpu, 1, irq);
+    }
+}
+
+void a2vm_step(a2vm *m)
+{
+    a2vm_service_events(m);
     m->instructions++;
     if (m->core == A2VM_CORE_PY65) {
         m->instruction_pc = m->r.pc;
@@ -2383,10 +2518,7 @@ void a2vm_step(a2vm *m)
         }
         return;
     }
-    int irq = ((m->mouse_on || m->mouse_apple) && m->mouse.irq) ||
-              (m->mouse_rom && m->romouse.irq) || via_irq(m);
-    cpu65c02_set_irq(&m->cpu, 1, irq);
-    int taken = irq && !(m->cpu.p & CPU65C02_I) &&
+    int taken = m->cpu.irq_sources && !(m->cpu.p & CPU65C02_I) &&
                 m->cpu.state != CPU65C02_STOPPED;
     if (taken) {
         m->irqs++;
@@ -2395,7 +2527,7 @@ void a2vm_step(a2vm *m)
     }
     uint16_t pc = m->cpu.pc;
     m->instruction_pc = pc;     /* an interrupt entry's too */
-    if (m->idle_map[pc >> 3] & (1u << (pc & 7)))
+    if (!taken && (m->idle_map[pc >> 3] & (1u << (pc & 7))))
         skip_idle(m, pc);
     if (m->pc_hook && !taken && m->cpu.state == CPU65C02_RUNNING &&
         (m->pc_hook_map[pc >> 3] & (1u << (pc & 7))))
@@ -2403,13 +2535,13 @@ void a2vm_step(a2vm *m)
     if (!taken && m->cpu.state == CPU65C02_RUNNING)
         vidhd_step_check(m, pc);
     if (m->prodos && m->cpu.state == CPU65C02_RUNNING &&
-        !(irq && !(m->cpu.p & CPU65C02_I)) && native_mli(m))
+        !taken && native_mli(m))
         return;
     if (m->mouse_apple && m->cpu.state == CPU65C02_RUNNING &&
-        !(irq && !(m->cpu.p & CPU65C02_I)) && apple_mouse_call(m))
+        !taken && apple_mouse_call(m))
         return;
     if (m->blockdev.slot && m->cpu.state == CPU65C02_RUNNING &&
-        !(irq && !(m->cpu.p & CPU65C02_I)) && blockdev_call(m))
+        !taken && blockdev_call(m))
         return;
     int rti = (m->ay_log || m->irq_bound_count) && !taken &&
               m->cpu.state == CPU65C02_RUNNING && at_rti(m, m->cpu.pc);
@@ -2443,6 +2575,70 @@ int a2vm_add_idle(a2vm *m, const a2vm_idle *idle)
 }
 
 /* ---- input (a2sim.Machine.press, hold, release, mouse_*) ---- */
+
+int a2vm_set_slot2(a2vm *m, int mode)
+{
+    if (!m || mode < A2VM_SLOT2_OFF || mode > A2VM_SLOT2_SNES_MAX)
+        return 0;
+    if (mode != A2VM_SLOT2_OFF &&
+        (m->phasor_slot == 2 || m->vidhd.slot == 2 || m->blockdev.slot == 2))
+        return 0;
+    if (mode == m->slot2_mode)
+        return 1;
+    if (m->mouse_slot == 2) {
+        unsigned kind = (m->mouse_on ? 1u : 0u) |
+                        (m->mouse_plain ? 2u : 0u) |
+                        (m->mouse_apple ? 4u : 0u) |
+                        (m->mouse_rom ? 8u : 0u);
+        if (kind)
+            m->slot2_mouse_kind = (uint8_t)kind;
+        m->mouse_on = m->mouse_plain = m->mouse_apple = m->mouse_rom = 0;
+        mouse_init(&m->mouse);
+        rm_reset(&m->romouse);
+    }
+    m->slot2_mode = mode;
+    m->snes_bit = 16;
+    m->snes_present = 0;
+    m->snes_buttons[0] = m->snes_buttons[1] = 0;
+    if (mode == A2VM_SLOT2_MOUSE) {
+        unsigned kind = m->slot2_mouse_kind ? m->slot2_mouse_kind : 1;
+        m->mouse_slot = 2;
+        m->mouse_on = (kind & 1) != 0;
+        m->mouse_plain = (kind & 2) != 0;
+        m->mouse_apple = (kind & 4) != 0;
+        m->mouse_rom = (kind & 8) != 0;
+        mouse_init(&m->mouse);
+        rm_reset(&m->romouse);
+    }
+    /* The CPU's shared device IRQ bit must not retain a removed mouse
+       assertion. Preserve the VIA and a mouse in another slot. */
+    int irq = ((m->mouse_on || m->mouse_apple) && m->mouse.irq) ||
+              (m->mouse_rom && m->romouse.irq) || via_irq(m);
+    cpu65c02_set_irq(&m->cpu, 1, irq);
+    return 1;
+}
+
+int a2vm_set_pad(a2vm *m, unsigned index, int buttons)
+{
+    if (!m || index >= 4 || buttons < -1 || buttons > 0xfff)
+        return 0;
+    if (buttons < 0) {
+        m->pad_buttons[index] = 0;
+        m->pad_present &= (uint8_t)~(1u << index);
+    } else {
+        m->pad_buttons[index] = (uint16_t)buttons;
+        m->pad_present |= (uint8_t)(1u << index);
+    }
+    return 1;
+}
+
+int a2vm_set_paddle(a2vm *m, unsigned index, unsigned value)
+{
+    if (!m || index >= 4 || value > 255)
+        return 0;
+    m->paddle_values[index] = (uint8_t)value;
+    return 1;
+}
 
 void a2vm_press(a2vm *m, uint8_t key, uint64_t at_cycle)
 {
@@ -2732,6 +2928,13 @@ a2vm *a2vm_new(const a2vm_config *config, char *error, size_t error_size)
     }
     m->phasor_slot = config->phasor_slot;
     m->mouse_slot = config->mouse_slot;
+    m->slot2_mode = m->mouse_slot == 2 &&
+        (m->mouse_on || m->mouse_plain || m->mouse_apple || m->mouse_rom) ?
+        A2VM_SLOT2_MOUSE : A2VM_SLOT2_OFF;
+    m->slot2_mouse_kind = (uint8_t)((m->mouse_on ? 1 : 0) |
+        (m->mouse_plain ? 2 : 0) | (m->mouse_apple ? 4 : 0) |
+        (m->mouse_rom ? 8 : 0));
+    m->snes_bit = 16;
     if (config->vidhd_slot) {
         if (config->vidhd_slot < 1 || config->vidhd_slot > 7) {
             snprintf(error, error_size, "the VidHD's slot must be 1..7");
@@ -2777,8 +2980,10 @@ a2vm *a2vm_new(const a2vm_config *config, char *error, size_t error_size)
     phasor_init(&m->phasor);
     m->sw[SW_TEXT] = 1;
     m->lc_bank2 = 1;
-    for (int i = 0; i < 4; i++)
-        m->paddles[i] = 1400;
+    for (int i = 0; i < 4; i++) {
+        m->paddle_values[i] = 128;
+        m->paddles[i] = 4 + 11 * 128;
+    }
     m->paddle_trigger = -100000;
     m->next_vbl = m->vbl_start;
 

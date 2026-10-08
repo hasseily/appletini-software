@@ -2,6 +2,27 @@
 
 Apple II software and hardware demonstrations built to exercise Appletini.
 
+## Development emulator
+
+[`appletini`](tools/appletini/README.md) runs the native W65C02S model without
+a GUI, with bounded execution, JSON results, memory assertions and a persistent
+debug protocol. It defaults to the nominal 13 MHz UltraWarp preset and 8 MB
+RamWorks. A local browser viewer provides Apple/SHR/SuperSprite previews,
+laptop controls, stereo Phasor audio and SSI-263 speech. `--wav` captures sound
+for automated tests; `--boot` executes supplied Apple and SmartPort ROMs.
+
+```sh
+./emulator/appletini run --disk demos/appletini_bosconian/Appletini-Bosconian.hdv \
+  --system BOSCO.SYSTEM --frames 60 --expect 'main:0x300=4131334201'
+./emulator/appletini play --disk demos/appletini_bosconian/Appletini-Bosconian.hdv \
+  --system BOSCO.SYSTEM
+```
+
+Python 3, `make` and a C11 compiler build the native library on first use;
+speech playback also requires a C++17 compiler. Fixed-speed timing counts CPU cycles without
+hardware wait states. Use it for functional tests; board frame-rate estimates
+still need hardware validation. See the tool's README for device coverage.
+
 ## Demos
 
 - [Appletini Demos](demos/appletini_demos/README.md): the bootable 32 MB

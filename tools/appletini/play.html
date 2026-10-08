@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Appletini • Play</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#111713;color:#e5ede6}body{max-width:1060px;margin:36px auto;padding:0 24px}header{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}header>div:first-child{min-width:0}#machine{display:block;overflow-wrap:anywhere}h1{font-size:22px;margin:0}small{color:#a2b7a6}button,select{font:inherit;border:1px solid #47604c;border-radius:6px;background:#1e2b21;padding:9px 13px;color:inherit;cursor:pointer}button:hover{background:#304c35}.screen{--display-ratio:1.3333333333;position:relative;background:#000;width:100%;max-width:min(calc(650px * var(--display-ratio)),calc(65vh * var(--display-ratio)));aspect-ratio:var(--display-ratio);margin:24px auto 16px;border:1px solid #344338;border-radius:8px;overflow:hidden;box-sizing:border-box}canvas{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}[hidden]{display:none!important}#finished{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center;background:#111713}#finished h2,#finished p{margin:0}#finished p{max-width:32em;color:#a2b7a6}button:disabled{opacity:.5;cursor:default}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.details{display:grid;grid-template-columns:180px 1fr;gap:26px;margin-top:24px}.pad{display:grid;grid-template-columns:repeat(3,44px);gap:5px}.pad span{background:#1e2b21;border:1px solid #47604c;border-radius:5px;padding:8px;text-align:center}.pad span.active{background:#92dd6f;color:#0e200b}p{line-height:1.5}#status{font-family:ui-monospace,monospace;font-size:12px;color:#a2b7a6}#notice{color:#d2ca8f}footer{margin-top:24px;font-size:12px;color:#849b89}@media(max-width:600px){.details{grid-template-columns:1fr}}
+</style>
+<header><div><h1>Appletini</h1><small id="machine">Starting machine…</small></div><div class="row"><button id="pause">Pause</button><button id="step">Step frame</button><button id="stop">Stop session</button></div></header>
+<div class="screen" id="display"><canvas id="screen" width="320" height="200" tabindex="0" aria-label="Emulated Appletini display"></canvas><div id="finished" hidden role="status"><h2 id="finishedTitle">Program exited</h2><p id="finishedMessage"></p><button id="restart">Restart program</button></div></div>
+<div class="row"><label>Input <select id="mode"><option value="joystick">Laptop joystick</option><option value="keyboard">Apple keyboard</option><option value="mouse">Mouse + Apple keyboard</option></select></label><label>Aspect <select id="aspect"><option value="4:3">4:3</option><option value="native">Appletini native</option></select></label><button id="return">Apple Return</button><button id="sound">Enable sound</button><label>Volume <input id="volume" aria-label="Sound volume" type="range" min="0" max="1" step="0.05" value="0.7"></label><span id="audioStatus">Sound off</span><span id="status">Loading…</span></div>
+<p class="row"><label>Acceleration <select id="acceleration" disabled><option value="mhz1">1 MHz</option><option value="ultrawarp">13 MHz · UltraWarp</option><option value="vtw26">26 MHz</option><option value="vtw33">33 MHz</option><option value="turbo-f122">TURBO · F1.2.2 model</option></select></label><button id="applyAcceleration" hidden>Restart with this acceleration</button><small id="accelerationHint">Fixed speeds can change while the program runs.</small></p>
+<div class="details"><div class="pad" id="pad"></div><div><strong>Q W E / A S D / Z X C</strong><p>Eight directions. S centers the stick.<br>Space: B / fire 1 · J: A / fire 2 · K: Y / fire 3<br>Enter: Start · Tab: Select · U: X · I / O: L / R</p><small>Click the display to focus. Switching tabs releases all controls. In Apple keyboard mode, keys go directly to the guest. Left / right Option send Open / Solid Apple. Mouse mode sends motion and left/right buttons over the display.</small></div></div>
+<p id="notice"></p><footer>Apple / SHR / SuperSprite memory preview. Stereo Phasor, SSI-263 speech, SuperSprite AY and Apple speaker audio. Guest time uses the selected model; fixed-speed hardware wait states are not yet calibrated.</footer>
+<script>
+const token=new URLSearchParams(location.search).get('token');
+const $=id=>document.getElementById(id), canvas=$('screen'), ctx=canvas.getContext('2d');
+const keyCodes=['KeyQ','KeyW','KeyE','KeyA','KeyS','KeyD','KeyZ','KeyX','KeyC','Space','KeyJ','KeyK','Enter','Tab','KeyU','KeyI','KeyO'];
+const held=new Set(),guestKeys=new Set();let inputs=[],running=true,busy=false,stopped=false,stopRequested=false,stepRequested=false,terminal=null,session=null,videoInfo={display_width:640,display_height:400},last=performance.now(),debt=0,frameMs=1000/60,buttons=0;
+let currentProfile=null,desiredProfile=null,accelerationRequested=null;
+for(const k of keyCodes.slice(0,9)){let el=document.createElement('span');el.id=k;el.textContent=k.slice(3);$('pad').append(el);}
+function paintKeys(){for(const k of keyCodes.slice(0,9))$(k).classList.toggle('active',held.has(k));}
+function release(){guestKeys.clear();inputs.push({kind:'oa',x:0},{kind:'ca',x:0});held.clear();paintKeys();buttons=0;inputs.push({kind:'release'},{kind:'buttons',x:0,y:0});}
+function appleKey(e){const keys={Enter:13,Escape:27,Backspace:127,ArrowLeft:8,ArrowRight:21,ArrowUp:11,ArrowDown:10,Tab:9};if(keys[e.key]!==undefined)return keys[e.key];if(e.key.length===1&&e.key.charCodeAt(0)<128){let n=e.key.toUpperCase().charCodeAt(0);return e.ctrlKey?n&31:n;}return null;}
+document.addEventListener('keydown',e=>{if(terminal)return;if(e.code==='AltLeft'||e.code==='AltRight'){e.preventDefault();inputs.push({kind:e.code==='AltLeft'?'oa':'ca',x:1});return;}if(['SELECT','INPUT','BUTTON'].includes(e.target.tagName)||e.metaKey)return;if($('mode').value==='joystick'&&keyCodes.includes(e.code)){e.preventDefault();held.add(e.code);paintKeys();return;}const key=appleKey(e);if(key!==null){e.preventDefault();guestKeys.add(e.code);inputs.push({kind:'hold',x:key});}});
+document.addEventListener('keyup',e=>{if(terminal)return;if(e.code==='AltLeft'||e.code==='AltRight')inputs.push({kind:e.code==='AltLeft'?'oa':'ca',x:0});guestKeys.delete(e.code);held.delete(e.code);paintKeys();if(guestKeys.size===0&&($('mode').value!=='joystick'||!keyCodes.includes(e.code)))inputs.push({kind:'release'});});
+window.addEventListener('blur',()=>{release();clearAudio();});document.addEventListener('visibilitychange',()=>{if(document.hidden){release();clearAudio();}last=performance.now();debt=0;});$('mode').onchange=release;
+canvas.oncontextmenu=e=>e.preventDefault();canvas.onmousedown=e=>{canvas.focus();if($('mode').value!=='mouse')return;e.preventDefault();buttons=e.buttons;inputs.push({kind:'buttons',x:buttons&1?1:0,y:buttons&2?1:0});};window.addEventListener('mouseup',e=>{if($('mode').value==='mouse'){buttons=e.buttons;inputs.push({kind:'buttons',x:buttons&1?1:0,y:buttons&2?1:0});}});canvas.onmousemove=e=>{if($('mode').value==='mouse')inputs.push({kind:'mouse',x:Math.round(e.movementX),y:Math.round(e.movementY)});};
+function setAspect(){
+  const ratio=$('aspect').value==='4:3'?4/3:videoInfo.display_width/videoInfo.display_height;
+  $('display').style.setProperty('--display-ratio',ratio);
+}
+$('aspect').onchange=setAspect;
+function showAcceleration(profile){
+  currentProfile=profile;if(desiredProfile===null)desiredProfile=profile;
+  $('acceleration').disabled=stopped;$('acceleration').value=desiredProfile;
+  const restart=desiredProfile!==currentProfile&&[desiredProfile,currentProfile].includes('turbo-f122');
+  $('applyAcceleration').hidden=!restart;
+  $('accelerationHint').textContent=restart?'Changing the timing model restarts the program.':currentProfile==='turbo-f122'?'Historical TURBO timing model. Select a fixed speed to restart with that model.':'Fixed speeds change immediately; audio and video keep their normal timing.';
+}
+function applyAcceleration(){
+  if(busy||stopped||!accelerationRequested)return;
+  const change=accelerationRequested;accelerationRequested=null;
+  clearAudio();last=performance.now();debt=0;
+  request(0,'/acceleration',change);
+}
+$('acceleration').onchange=()=>{
+  desiredProfile=$('acceleration').value;accelerationRequested=null;release();
+  showAcceleration(currentProfile);
+  if(desiredProfile!==currentProfile&&!$('applyAcceleration').hidden)return;
+  // Queue even a return to the current value: another change may be in flight.
+  accelerationRequested={profile:desiredProfile,restart:false};applyAcceleration();
+};
+$('applyAcceleration').onclick=()=>{
+  accelerationRequested={profile:desiredProfile,restart:true};applyAcceleration();
+};
+function showTerminal(value){
+  terminal=value;$('finished').hidden=!terminal;canvas.hidden=!!terminal;
+  $('pause').disabled=$('step').disabled=$('return').disabled=$('mode').disabled=!!terminal;
+  if(terminal){
+    running=false;stepRequested=false;clearAudio();release();inputs=[];
+    $('pause').textContent='Finished';
+    $('finishedTitle').textContent=terminal.title;
+    $('finishedMessage').textContent=terminal.message;
+  }
+}
+async function request(frames,path='/frame',payload=null){
+  if(busy||stopped)return;
+  busy=true;$('restart').disabled=true;
+  $('applyAcceleration').disabled=!!(payload&&payload.restart);
+  if(payload&&payload.restart)$('acceleration').disabled=true;
+  const epoch=audioEpoch,body=payload||{frames,keys:[...held],inputs:inputs.splice(0,128)};
+  try{
+    const response=await fetch(path+'?token='+encodeURIComponent(token),{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+    const data=await response.json();if(!data.ok)throw Error(data.error);
+    if(path==='/stop'){
+      stopped=true;clearAudio();$('acceleration').disabled=true;$('status').textContent='Session stopped';return;
+    }
+    if(session!==null&&data.session!==session){clearAudio();release();inputs=[];}
+    session=data.session;
+    showTerminal(data.terminal||null);
+    if(path==='/restart'||data.acceleration_restarted){
+      running=true;$('pause').textContent='Pause';last=performance.now();debt=0;canvas.focus();
+    }
+    if(data.audio){if(!terminal)queueAudio(data.audio,epoch);}
+    else{$('sound').disabled=true;$('audioStatus').textContent='Audio disabled by launcher';}
+    frameMs=data.state.frame_ticks/data.machine.clock_hz*1000;
+    showAcceleration(data.machine.profile);
+    $('machine').textContent=(data.machine.program.name||'Machine')+' · '+data.machine.profile+' · '+data.machine.video.toUpperCase();
+    $('status').textContent='PC $'+data.state.registers.pc.toString(16).padStart(4,'0').toUpperCase()+' · '+data.state.modeled_seconds.toFixed(2)+' s · '+data.reason;
+    $('notice').textContent=terminal?'':data.state.halt||data.video_error||'';
+    if(data.reason==='timeout'){running=false;clearAudio();$('pause').textContent='Resume';}
+    if(!terminal&&data.image){
+      const img=new Image();img.src='data:image/png;base64,'+data.image;await img.decode();
+      videoInfo=data.video;setAspect();
+      canvas.width=img.width;canvas.height=img.height;ctx.drawImage(img,0,0);
+    }
+  }catch(err){
+    clearAudio();$('notice').textContent=err.message;running=false;
+    if(path==='/acceleration'&&!accelerationRequested&&desiredProfile===payload.profile){desiredProfile=currentProfile;showAcceleration(currentProfile);}
+    if(!terminal)$('pause').textContent='Resume';
+  }finally{
+    busy=false;$('restart').disabled=$('applyAcceleration').disabled=stopped;
+    if(stopRequested&&!stopped)request(0,'/stop');
+    else if(accelerationRequested&&!stopped)applyAcceleration();
+    else if(stepRequested&&!stopped&&!terminal){stepRequested=false;request(1);}
+    else{$('step').disabled=!!terminal;}
+  }
+}
+$('restart').onclick=()=>{
+  clearAudio();release();inputs=[];stepRequested=false;request(0,'/restart');
+};
+$('pause').onclick=()=>{clearAudio();running=!running;$('pause').textContent=running?'Pause':'Resume';last=performance.now();debt=0;canvas.focus();};$('step').onclick=()=>{clearAudio();running=false;$('pause').textContent='Resume';$('step').disabled=true;if(busy)stepRequested=true;else request(1);canvas.focus();};$('return').onclick=()=>{inputs.push({kind:'key',x:13});canvas.focus();};$('stop').onclick=()=>{clearAudio();release();stopRequested=true;request(0,'/stop');};
+// Browser audio starts only after a user gesture. PCM is timed by guest cycles.
+let audioContext=null,audioGain=null,audioOn=false,audioNext=0,audioEpoch=0;
+const audioSources=new Set();
+function clearAudio(){
+  audioEpoch++;audioNext=0;
+  for(const source of audioSources){try{source.stop();}catch{}}
+  audioSources.clear();
+}
+$('sound').onclick=async()=>{
+  try{
+    if(!audioContext){
+      audioContext=new AudioContext({sampleRate:48000,latencyHint:'interactive'});
+      audioGain=audioContext.createGain();audioGain.connect(audioContext.destination);
+    }
+    await audioContext.resume();clearAudio();audioOn=!audioOn;
+    audioGain.gain.value=Number($('volume').value);
+    $('sound').textContent=audioOn?'Mute sound':'Enable sound';
+    $('audioStatus').textContent=audioOn?'Sound on':'Sound muted';
+    canvas.focus();
+  }catch(err){$('notice').textContent='Audio: '+err.message;}
+};
+$('volume').oninput=()=>{if(audioGain)audioGain.gain.value=Number($('volume').value);};
+function queueAudio(packet,epoch){
+  if(!audioOn||!audioContext||audioContext.state!=='running'||!running||
+     document.hidden||!document.hasFocus()||epoch!==audioEpoch||!packet.frames)return;
+  if(packet.format!=='s16le'||packet.channels!==2)throw Error('Unsupported audio packet');
+  const raw=atob(packet.pcm),bytes=new Uint8Array(raw.length);
+  for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
+  if(bytes.length!==packet.frames*4)throw Error('Invalid audio packet length');
+  const view=new DataView(bytes.buffer),buffer=audioContext.createBuffer(2,packet.frames,packet.sample_rate);
+  for(let channel=0;channel<2;channel++){
+    const samples=buffer.getChannelData(channel);
+    for(let i=0;i<packet.frames;i++)samples[i]=view.getInt16(i*4+channel*2,true)/32768;
+  }
+  const now=audioContext.currentTime;
+  if(audioNext<now||audioNext>now+0.25){clearAudio();audioNext=now+0.045;}
+  const source=audioContext.createBufferSource();source.buffer=buffer;source.connect(audioGain);
+  audioSources.add(source);source.onended=()=>{audioSources.delete(source);source.disconnect();};
+  source.start(audioNext);audioNext+=buffer.duration;
+}
+function tick(now){if(!document.hidden&&!busy&&!stopped){const elapsed=Math.min(now-last,100);last=now;if(running&&!terminal){debt=Math.min(debt+elapsed,frameMs*6);const n=Math.min(6,Math.floor(debt/frameMs));if(n){debt-=n*frameMs;request(n);}}else if(inputs.length&&!terminal)request(0);}requestAnimationFrame(tick);}request(0);requestAnimationFrame(tick);
+</script></html>

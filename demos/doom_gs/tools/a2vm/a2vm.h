@@ -60,6 +60,21 @@ enum {
 
 typedef enum { A2VM_CORE_PY65, A2VM_CORE_W65C02S } a2vm_core;
 
+/* Appletini slot-2 selection (README_SLOT2_GAMEPADS.md). Gamepad masks
+   are active high, in SNES serial order, independent of host labels. */
+enum {
+    A2VM_SLOT2_OFF = 0, A2VM_SLOT2_MOUSE = 1,
+    A2VM_SLOT2_FOUR_PLAY = 2, A2VM_SLOT2_SNES_MAX = 3
+};
+enum {
+    A2VM_PAD_B = 1 << 0, A2VM_PAD_Y = 1 << 1,
+    A2VM_PAD_SELECT = 1 << 2, A2VM_PAD_START = 1 << 3,
+    A2VM_PAD_UP = 1 << 4, A2VM_PAD_DOWN = 1 << 5,
+    A2VM_PAD_LEFT = 1 << 6, A2VM_PAD_RIGHT = 1 << 7,
+    A2VM_PAD_A = 1 << 8, A2VM_PAD_X = 1 << 9,
+    A2VM_PAD_L = 1 << 10, A2VM_PAD_R = 1 << 11
+};
+
 /* The switches of a2sim.Machine.sw, in the order of its SWITCH_PAIRS
    ($C000-$C00F writes set the pair low >> 1) then the video switches. */
 typedef enum {
@@ -288,7 +303,12 @@ typedef struct a2vm {
     a2vm_py65_regs r;               /* A2VM_CORE_PY65 */
     cpu65c02 cpu;                   /* A2VM_CORE_W65C02S */
     uint64_t py65_cycles;           /* the clock of the compatibility core */
-    uint64_t *clock;                /* the clock of the core in use */
+    uint64_t *clock;                /* raw clock of the core in use */
+    /* Optional stable guest timeline (live CPU speed changes). Existing
+       users leave these NULL. Devices use a2vm_now, not raw CPU cycles. */
+    uint64_t (*clock_read)(const struct a2vm *m);
+    void (*clock_advance)(struct a2vm *m, uint64_t target);
+    void *clock_context;
 
     /* time */
     uint64_t frame_cycles, vbl_start, io_cycles, next_vbl;
@@ -323,6 +343,12 @@ typedef struct a2vm {
     uint8_t key_latch, key_held;
     uint8_t buttons[3];
     int64_t paddles[4], paddle_trigger;
+    uint8_t paddle_values[4];       /* live axes; paddles[] is the last
+                                       trigger's 4 + 11 * value snapshot */
+    uint16_t pad_buttons[4], snes_buttons[2];
+    uint8_t pad_present, snes_present, snes_bit;
+    int slot2_mode;
+    uint8_t slot2_mouse_kind;       /* saved legacy mouse variant flags */
 
     /* slots */
     int mouse_on, phasor_slot, mouse_slot;
@@ -345,6 +371,28 @@ typedef struct a2vm {
     a2vm_phasor phasor;
     int amem_on;
     a2vm_amem amem;
+
+    /* Optional external C000-CFFF device interception. Read: -1 means
+       unhandled, 0..255 is data. Write: 0 means unhandled, 1 handled.
+       Handled accesses receive normal io_cycles/io_accesses accounting;
+       unhandled accesses follow the built-in devices. Hooks must not
+       recursively access the same address through a2vm_read/write. */
+    int (*device_read)(struct a2vm *m, uint16_t address);
+    int (*device_write)(struct a2vm *m, uint16_t address, uint8_t value);
+    void *device_context;
+
+    /* Timestamped sound changes; NULL observers incur no synthesis work.
+       AY chips 0/1 are VIA0 primary/secondary, 2/3 VIA1, 4 SuperSprite.
+       Event kinds: 0 write, 1 reset, 2 Phasor mode, 3 speaker level.
+       Speech callbacks supply an optional complete external controller. */
+    void (*sound_event)(struct a2vm *, unsigned kind, unsigned chip,
+                        unsigned reg, unsigned value);
+    int (*speech_read)(struct a2vm *, unsigned address);
+    void (*speech_write)(struct a2vm *, unsigned address, uint8_t value);
+    void (*service_hook)(struct a2vm *);
+    void *sound_context;
+    uint8_t dhires;
+
 
     /* the MLI trap */
     a2vm_prodos *prodos;
@@ -484,14 +532,21 @@ void a2vm_blockdev_global_page(a2vm *m);
 void a2vm_amem_options(a2vm *m, int supported, int available,
                        int private_port);
 
-/* One step of a2sim.Machine.step: the VBL event, interrupt delivery and
-   the idle skip, then one instruction. */
+/* Deliver all VBL/VIA events due at the current machine clock and refresh
+   the exact core's built-in-device IRQ source (mask 1). Does not advance
+   time, retire an instruction or take an interrupt. Safe to call again
+   before a2vm_step, so external entry traps see pending built-in IRQs. */
+void a2vm_service_events(a2vm *m);
+
+/* One step of a2sim.Machine.step: service due events, interrupt delivery
+   and the idle skip, then one instruction. */
 void a2vm_step(a2vm *m);
 /* --via-timers: the timer flags due by now (a2vm_step does it) */
 void a2vm_via_timers_update(a2vm *m);
 
-/* The clock, in the cycles of the core in use. */
-static inline uint64_t a2vm_now(const a2vm *m) { return *m->clock; }
+/* The active device timeline, or raw core/cost ticks without a mapper. */
+static inline uint64_t a2vm_now(const a2vm *m)
+{ return m->clock_read ? m->clock_read(m) : *m->clock; }
 
 uint16_t a2vm_pc(const a2vm *m);
 void a2vm_set_register(a2vm *m, char name, unsigned value);  /* p a x y s */
@@ -525,6 +580,19 @@ void a2vm_release(a2vm *m);
 void a2vm_mouse_move(a2vm *m, int64_t x, int64_t y);
 void a2vm_mouse_delta(a2vm *m, int64_t dx, int64_t dy);
 void a2vm_mouse_buttons(a2vm *m, int left, int right);
+
+/* Validated input setters: 1 success, 0 invalid argument/slot conflict.
+   Selecting slot 2 clears the previous card's pending state; reselecting
+   the current card preserves it. Mouse restores the configured mouse
+   variant, or selects the native Appletini mouse if none was configured.
+   Pads: index 0..3, buttons 0..$FFF connects; -1 disconnects. SNES MAX
+   uses indices 0/1 and captures presence/buttons together on latch.
+   Paddles: index 0..3, value 0..255, sampled on the next $C070-$C07F
+   access; initial axes are centered (128). The lowest connected pad's
+   B/A/Y also supplies PB0/PB1/PB2, ORed with m->buttons (Apple keys). */
+int a2vm_set_slot2(a2vm *m, int mode);
+int a2vm_set_pad(a2vm *m, unsigned index, int buttons);
+int a2vm_set_paddle(a2vm *m, unsigned index, unsigned value);
 
 int a2vm_in_vbl(const a2vm *m);
 uint64_t a2vm_bus_clock(const a2vm *m);
