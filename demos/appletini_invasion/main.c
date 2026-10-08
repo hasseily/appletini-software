@@ -776,6 +776,9 @@ static void speech_tick(void)
     }
     phoneme = speech_phrase[speech_index++];
     if (phoneme == 0xFF) {
+        /* The SSI-263 repeats its current phoneme until replaced, including
+         * Appletini F1.2.5's native model. Leave it repeating a silent pause. */
+        REG8(SSI_DUR) = 0x00;
         speech_active = 0;
         MAILBOX->speech_phoneme = 0xFF;
         return;

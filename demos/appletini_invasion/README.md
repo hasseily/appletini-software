@@ -46,7 +46,8 @@ Other showcase features include:
 - a continuously looping two-voice Mockingboard AY-3-8910 score, with fire and
   explosion effects on the third channel;
 - SSI-263 phoneme speech behind a scheduler that can later be replaced by a
-  Phasor-native transport;
+  Phasor-native transport; each phrase ends with a silent pause so the chip
+  does not repeat its last phoneme, including on Appletini firmware F1.2.5;
 - all 128 RamWorks banks discovered at startup: bank 0 remains DHGR auxiliary
   memory, banks 1-5 hold the compiled parallax rows, bank 6 holds all exact
   ship frames/color phases, and banks 7-127 rotate through gameplay/replay
@@ -83,6 +84,10 @@ Appletini checkout, expected at `../../../appletini-one`. Set
 `APPLETINI_ROOT=/path/to/appletini-one` when it is elsewhere, and set
 `APPLECOMMANDER_JAR=/path/to/AppleCommander.jar` if AppleCommander is not at
 the build script's local fallback path.
+
+`make test` uses cc65's `sim65` to run the compiled speech scheduler without
+booting the game. It checks phrase completion through both CA1 and the timeout,
+the final silent pause, idle behavior, and restarting after a pause completion.
 
 ## Run in GSSquared
 

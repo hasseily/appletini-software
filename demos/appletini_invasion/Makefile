@@ -26,7 +26,7 @@ SHIP_SOURCES := \
 	assets/ship_f6.png \
 	assets/ship_f7.png
 
-.PHONY: all clean disk smoke
+.PHONY: all clean disk test smoke
 
 all: $(SYSTEM) $(PARALLAX)
 
@@ -60,6 +60,9 @@ disk: $(DISK)
 
 $(DISK): $(SYSTEM) $(PARALLAX) tools/build_disk.py | $(DIST)
 	$(PYTHON) tools/build_disk.py --system $(SYSTEM) --parallax $(PARALLAX) --output $@
+
+test:
+	CC65_PREFIX="$(CC65_PREFIX)" $(PYTHON) tests/test_speech.py
 
 smoke: $(DISK)
 	$(PYTHON) tools/smoke_test.py --disk $(DISK)
