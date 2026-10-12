@@ -50,25 +50,20 @@ This refresh used WSL for assembly and native Windows Python for
 `player/check.py`. Copy the verified outputs to the download paths above,
 then update `SHA256SUMS` whenever publishing a replacement.
 
-## DOOM GS build dependency
+## DOOM GS v1.5 rebuild
 
-No new `DOOM.hdv` is included. The source pin
-`8ea2eac8b650daf2cf66127c4be6d3f8654dd335` remains fetchable explicitly, but
-the original v1.0 `doom-hd.hdv` download returns HTTP 404. Its required SHA-256
-is `2716166dda1d87faf3bdec572ddcf652379a54da78f1dcccdd0897e00b23bd0d`.
-The builder uses that exact reference image to recover layouts, compare its
-assembled upstream code byte for byte and capture renderer data. A newer
-upstream release cannot simply be substituted. See the
-[local-input option](demos/doom_gs/README.md#building).
+The converter now uses the [v1.5 reference image](https://github.com/Webifi/iigs-doom/releases/download/v1.5/doom-hd.hdv)
+with SHA-256 `917212c62acf08d4ff27752e44a97543b8e142a1587e26dc0ee3f22e0053a9e5`
+and source commit `e645893f3d1ac6826e560e0ed3b28e0062c33995`.
+The original reference disk stays in ignored `build/release/` as a build input.
 
-The supplied [v1.5 image](https://github.com/Webifi/iigs-doom/releases/download/v1.5/doom-hd.hdv)
-was downloaded and checked. Its SHA-256 is
-`917212c62acf08d4ff27752e44a97543b8e142a1587e26dc0ee3f22e0053a9e5`,
-so the builder correctly rejects it. Upstream v1.5 changes 82 source files
-relative to the pinned revision. Adopting it requires updating and validating
-the conversion, rather than changing only the URL or expected hash. None of
-the currently listed v1.1 through v1.5 release-image hashes match the reference.
+The downloadable [DOOM.hdv](demos/doom_gs/DOOM.hdv) is copied from
+`demos/doom_gs/build/native/DOOM.hdv`. Rebuild with `./build.sh` in that
+project, then run `make -C tools/ref816 test` and
+`python3 tools/native/check_release.py`. The source-to-image comparison,
+renderer captures, table checks, native memory budgets and model play checks
+are described in [DOOM validation](demos/doom_gs/VALIDATION.md).
 
-The original reference image is only a build input and stays in ignored
-`build/`; it is not a download to publish here. A final converted game disk
-can be published after the original build dependency is available again.
+This updates the reference inputs and conversion pipeline for the existing
+65C02 port. It does not import all new IIgs hardware features or establish
+physical-board validation of this new disk.

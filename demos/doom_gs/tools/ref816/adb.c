@@ -63,6 +63,12 @@ static void answer_talk(adb *a)
 {
     a->talk_due = 0;
     a->srq_out = 0;
+    if (a->talk_register == 3) {
+        send(a, ANSWER | 1);
+        send(a, 0x60 | KEYBOARD); /* service requests enabled, address 2 */
+        send(a, 0x02);           /* standard extended keyboard handler */
+        return;
+    }
     if (!a->key_count) {
         send(a, ANSWER);
         return;
@@ -157,10 +163,11 @@ static void execute(adb *a, uint64_t now)
         a->srq_enabled |= (uint8_t)(1u << (command & 0x0f));
     else if ((command & 0xf0) == CMD_SRQ_OFF)
         a->srq_enabled &= (uint8_t)~(1u << (command & 0x0f));
-    else if (command == (CMD_TALK | KEYBOARD)) {
+    else if (command == (CMD_TALK | KEYBOARD) || command == 0xf2) {
         /* In the controller's command set $Cx is Talk register 0 of
            address x. */
         a->talk_due = 1;
+        a->talk_register = command == 0xf2 ? 3 : 0;
         a->talk_time = now + ADB_TALK;
     } else {
         a->unknown_commands++;

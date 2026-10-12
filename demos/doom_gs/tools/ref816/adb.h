@@ -19,8 +19,9 @@
  *
  * Time is in master clocks of the IIgs, as in doc.h. Key bytes that
  * arrive while the controller still polls the keyboard itself wait: the
- * model has no path to the $C000 keyboard register, which the game does
- * not read.
+ * model has no path to the $C000 keyboard register. v1.5's startup reads
+ * that compatibility latch as empty and uses raw ADB after its $F2 Talk
+ * register-3 identity probe; that reply does not consume queued key events.
  */
 #ifndef ADB_H
 #define ADB_H
@@ -52,6 +53,7 @@ typedef struct {
     unsigned key_head, key_count;
     int srq_out;                /* a service request not yet answered */
     int talk_due;               /* a Talk to the keyboard is on the bus */
+    uint8_t talk_register;      /* 0: key events; 3: device identity */
     uint64_t talk_time;         /* when its answer comes */
 
     int mouse_dx, mouse_dy;     /* motion not yet reported */

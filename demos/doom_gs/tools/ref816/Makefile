@@ -19,9 +19,15 @@ MACHINE_OBJECTS := $(OUT)/iigs.o $(OUT)/doc.o $(OUT)/adb.o $(OUT)/cpu816.o
 
 MACHINE := $(OUT)/ref816
 
-.PHONY: all clean
+.PHONY: all clean test
 
 all: $(MACHINE)
+
+test: $(OUT)/test_adb
+	$(OUT)/test_adb
+
+$(OUT)/test_adb: $(HERE)test_adb.c $(HERE)adb.c $(HERE)adb.h | $(OUT)
+	$(CC) $(CFLAGS) -o $@ $(HERE)test_adb.c $(HERE)adb.c
 
 $(OUT)/%.o: $(HERE)%.c $(HEADERS) | $(OUT)
 	$(CC) $(CFLAGS) -c -o $@ $<

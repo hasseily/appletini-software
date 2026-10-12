@@ -3,8 +3,9 @@
 Reads the fetched clone in build/upstream (tools/fetch_upstream.py) and
 does what upstream's Makefile does before it links:
 
-  game     the files of IIGS_S and the generated build/gen/drawcol.s,
-           with -D TICSTEP=1, and -D MUSIC_MENU=1 for m_menu65.s
+  game     the files of IIGS_S and generated drawcol.s/endtext.s,
+           with -D TICSTEP=1, -D MUSIC_MENU=1 for m_menu65.s and
+           generated sfxvol.inc on the include path
   boot     src/iigs/boot.s, without flags
   loader   src/iigs/loader.s with -I build/gen, where the generated
            loadfont.s is
@@ -66,13 +67,16 @@ def makefile_settings(makefile_text):
 
 
 def generate(upstream=UPSTREAM, gen=GEN):
-    """Make drawcol.s and loadfont.s with upstream's tools, with the
-    arguments of the Makefile. -B keeps Python from writing into the
-    clone."""
+    """Generate renderer, font, exit-screen and sound tables using the
+    upstream Makefile's arguments. -B keeps Python from writing into the clone.
+    """
     gen.mkdir(parents=True, exist_ok=True)
     commands = (
         ['tools/gendraw.py', str(gen / 'drawcol.s'), '0', '0', '84'],
         ['tools/loadfont.py', 'data/DOOM1.WAD', str(gen / 'loadfont.s')],
+        ['tools/endtext.py', 'data/DOOM1.WAD', str(gen / 'endtext.s')],
+        ['tools/sndbank.py', 'data/DOOM1.WAD', 'src/iigs/offsets.inc',
+         '-', '--law', str(gen / 'sfxvol.inc')],
     )
     for command in commands:
         result = subprocess.run(
@@ -96,11 +100,12 @@ def sources(upstream=UPSTREAM, gen=GEN):
         defines = dict(flags)
         if name.endswith('/m_menu65.s'):
             defines['MUSIC_MENU'] = settings['MUSIC_MENU']
-        game.append(Source(upstream / name, 'game', (STAND_IN_INCLUDE,),
+        game.append(Source(upstream / name, 'game', (STAND_IN_INCLUDE, gen),
                            defines))
     source_directory = upstream / 'src' / 'iigs'
     game.append(Source(gen / 'drawcol.s', 'game',
                        (STAND_IN_INCLUDE, source_directory), dict(flags)))
+    game.append(Source(gen / 'endtext.s', 'game', (), dict(flags)))
     return game + [
         Source(source_directory / 'boot.s', 'boot', (), {}),
         Source(source_directory / 'loader.s', 'loader', (gen,), {}),

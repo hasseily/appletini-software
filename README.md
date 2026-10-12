@@ -51,8 +51,10 @@ See the tool's README for device coverage.
 - [DOOM GS](demos/doom_gs/README.md): Webifi's Apple IIgs DOOM rewritten
   in native 65C02 for an enhanced Apple //e with the Appletini in TURBO,
   8 MB RamWorks and the Phasor: Super Hi-Res, episode 1, the menus, the
-  automap, music and effects. Tested on hardware. The build fetches upstream
-  and converts it; the upstream source is not in this repository.
+  automap, music and effects. The earlier port was tested on hardware; the
+  v1.5-based rebuild has model validation and awaits a hardware retest.
+  The build fetches upstream and converts it; the upstream source is not in
+  this repository.
 - [Pinball Construction Set](demos/pinball_construction_set/README.md):
   Bill Budge's editor and game ported to SHR, mouse input and Phasor sound.
   The downloadable build passes model tests, but a reported hardware sprite
@@ -65,8 +67,7 @@ ZIP downloads first. Mount large ProDOS volumes as SmartPort hard disks
 (in GSSquared, `-ds7d1=<image>`). Use Disk II for 140 KB floppy images
 (GSSquared slot 6); `.po` describes sector order, not necessarily a hard disk.
 See each project's README for the required machine, card configuration and controls.
-DOOM GS currently requires a local build and its original upstream release image;
-see its README for the unavailable download dependency.
+DOOM GS uses the pinned upstream v1.5 reference image for its build.
 
 | Project | Image | Size | Boots |
 |---|---|---|---|
@@ -75,6 +76,7 @@ see its README for the unavailable download dependency.
 | Appletini Invasion | [Appletini-Invasion.hdv](demos/appletini_invasion/Appletini-Invasion.hdv) | 800 KB | INVASION.SYSTEM |
 | The Bilestoad, SHR port | [Bilestoad.po](demos/bilestoad/Bilestoad.po) | 800 KB | TOAD.SYSTEM |
 | Appletini Bosconian | [Appletini-Bosconian.hdv](demos/appletini_bosconian/Appletini-Bosconian.hdv) | 800 KB | BOSCO.SYSTEM |
+| DOOM GS | [DOOM.hdv](demos/doom_gs/DOOM.hdv) | 3.85 MB | DOOM.SYSTEM |
 | Pinball Construction Set | [Appletini-PCS.hdv](demos/pinball_construction_set/dist/Appletini-PCS.hdv) | 800 KB | PCS.SYSTEM |
 | DOOM music | [MUSIC.hdv](music/doom/MUSIC.hdv) | 215.5 KB | MUSIC.SYSTEM |
 | House of the Rising Sun | [RISING.SUN.hdv](music/house_of_the_rising_sun/RISING.SUN.hdv) | 140 KB | SUN.SYSTEM |

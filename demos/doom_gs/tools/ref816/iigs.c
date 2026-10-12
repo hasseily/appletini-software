@@ -120,6 +120,8 @@ static uint8_t io_read(iigs *m, uint8_t reg)
     uint8_t value;
 
     switch (reg) {
+    case 0x00: case 0x10:
+        return 0; /* no compatibility-latch characters; input is raw ADB */
     case IO_VBL:
         return iigs_vbl(m) ? 0x80 : 0x00;
     case IO_MOUSE: case IO_ADB_DATA: case IO_ADB_STATUS:
@@ -262,6 +264,9 @@ static uint8_t memory_read(iigs *m, uint32_t address)
 {
     unsigned bank = address >> 16;
     uint16_t offset = (uint16_t)address;
+
+    if (address == 0xfffb59)
+        return 3; /* ROM 03 identity: use the modelled ADB keyboard path */
 
     if (bank < IIGS_RAM_BANKS) {
         if (bank < 2 && offset >= 0xc000) {

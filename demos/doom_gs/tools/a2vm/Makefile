@@ -27,7 +27,7 @@ $(OUT)/%.o: $(HERE)%.c $(HEADERS) | $(OUT)
 
 $(MACHINE): $(OUT)/main.o $(OUT)/a2vm.o $(OUT)/cost.o $(OUT)/prodos.o \
 	    $(OUT)/cpu65c02.o
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ -lm
 
 $(OUT):
 	mkdir -p $@

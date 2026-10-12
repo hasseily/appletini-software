@@ -7,11 +7,12 @@ W65C02S, so the game is rewritten in native 65C02 code. It keeps upstream's
 Super Hi-Res renderer techniques and game logic, and plays the WAD's MUS
 music on the Phasor.
 
-`build/native/DOOM.hdv` is the whole game on one 4 MB ProDOS volume: the
+Download [DOOM.hdv](DOOM.hdv), the whole game on a 3.85 MB ProDOS volume: the
 title loop with its music and demo, the menus, episode 1 from E1M1 with the
 keyboard and the mouse, the status bar, the HUD, the automap, the
-intermission, the music and the sound effects. It has been played on the
-card.
+intermission, the music and the sound effects. The earlier port was played
+on the card; this v1.5-based rebuild has model validation and needs a
+hardware retest. See [validation results](VALIDATION.md).
 
 ## The machine
 
@@ -64,27 +65,29 @@ loading games say "not in this version". QUIT GAME ends on a text screen.
 
 ## Building
 
-The original v1.0 release download returned HTTP 404 on 2026-10-12. A new
-download image could not be built from this checkout without that input.
-If you retained it, import it with
-`python3 tools/fetch_upstream.py --from-local-image /path/to/doom-hd.hdv`.
-The required SHA-256 is
-`2716166dda1d87faf3bdec572ddcf652379a54da78f1dcccdd0897e00b23bd0d`.
-The pinned source commit remains fetchable by its explicit hash, although it
-is no longer included by an ordinary clone. The fetcher handles that case.
-The available v1.5 image was checked and has a different hash; it cannot
-replace this reference input. See the [download build notes](../../DISK_DOWNLOADS.md#doom-gs-build-dependency).
+The build uses upstream **v1.5**, pinned to commit
+`e645893f3d1ac6826e560e0ed3b28e0062c33995` and release-image SHA-256
+`917212c62acf08d4ff27752e44a97543b8e142a1587e26dc0ee3f22e0053a9e5`.
+Both source and image are verified. The original upstream disk stays in
+ignored `build/release/`; only the converted Appletini disk is published.
 
+When upgrading an existing v1.0 build, move the old `build/` directory aside
+before rebuilding, so cached sources, layouts and captures cannot mix releases.
+To use a downloaded v1.5 input, run
+`python3 tools/fetch_upstream.py --from-local-image /path/to/doom-hd.hdv`.
 
     ./build.sh
 
-writes `build/native/DOOM.hdv` from nothing in about a minute. It needs
+writes `build/native/DOOM.hdv`. Capture processing can take several minutes,
+especially on a Windows filesystem under WSL. It needs
 `python3` (standard library only), `cc`, `make`, cc65 (`ca65`, `ld65`), the
 network once (to fetch upstream), and appletini-one's
 `software/ProDOS_2_4_3.po` beside this repository (or set `APPLETINI_ROOT`
-to the appletini-one checkout). The steps:
+to the appletini-one checkout). Python 3.12, GCC and cc65 under WSL Ubuntu
+were used for this rebuild. Run `make -C tools/ref816 test` and
+`python3 tools/native/check_release.py` after the build. The steps:
 
-1. `tools/fetch_upstream.py` puts a pinned clone of upstream and its v1.0
+1. `tools/fetch_upstream.py` puts a pinned clone of upstream and its v1.5
    release image in `build/` and checks them. The WAD is the shareware
    `DOOM1.WAD` in that clone.
 2. `tools/v816/imgmatch.py` assembles upstream's sources and links them to
@@ -103,8 +106,8 @@ to the appletini-one checkout). The steps:
    (`play.mk`, the parts in `src/native/game`, placed by
    `tools/native/gplace-f122.json`) and writes the disk.
 
-The original build was tested on the card. No new disk or hardware
-validation was produced during the 2026-10-12 download refresh.
+The earlier port was tested on the card. The v1.5 rebuild needs a new
+physical-hardware test; model checks do not establish that result.
 
 `python3 tools/native/playdisk.py --run SCRIPT` plays the disk on `a2vm`
 (`tools/a2vm`), the model of the //e with the Appletini, under scripted
@@ -140,8 +143,9 @@ which the header reproduces.
 
 The build fetches upstream and its release image into `build/`, which git
 ignores, and converts them there. Upstream's own files, the release image,
-the shareware `DOOM1.WAD` (id Software's licence) and ROM images are never
-committed.
+the original shareware `DOOM1.WAD` (id Software's licence) and ROM images
+are not committed as source inputs. The published `DOOM.hdv` contains the
+converted game and shareware data; those data retain their original rights.
 
 - `src/iigs/cal_integer.s` in upstream is a copy of the Calypsi vendor
   runtime. Its licence restricts it to that toolchain, so the port uses its

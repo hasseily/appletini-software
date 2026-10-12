@@ -10,6 +10,19 @@ The build uses it to take tables from upstream's own renderer:
 `tools/native/rendercap.py` runs the release on it and captures the
 frames that `tools/native/rtables.py` and the level tools read.
 
+For the v1.5 reference, the model supplies ROM 03's version byte at
+`$FFFB59` and answers the keyboard's ADB Talk-register-3 probe (`$F2`).
+The response uses the same delayed bus completion as key-event talks and
+preserves queued press/release events. The compatibility keyboard latch is
+empty; scripted input goes through raw ADB. This does not model ROM execution
+or the J13 keyboard adapter. `make -C tools/ref816 test` checks the probe,
+queued events and an empty register-0 reply.
+
+Renderer captures run the reference at 12 MHz. V1.5's boot speed test then
+selects the full view through its own initialization code, as required by
+the native renderer's capture checks. This rate describes the reference
+IIgs model, not Appletini's TURBO performance.
+
 | File | What it is |
 | --- | --- |
 | `cpu816.c`, `cpu816.h` | The 65816 core, cycle by cycle on the bus |

@@ -259,7 +259,10 @@ def machine_command(prog_path: Path, work: Path, symbols: script.Symbols,
     the main loop's marks), with the shots in `work`."""
     shots = work / 'shots'
     shots.mkdir(parents=True, exist_ok=True)
-    options = ['--input', str(prog_path), '--shot-dir', str(shots),
+    # v1.5 selects its initial view by a boot-time speed test. At 12 MHz
+    # it installs the full-view path through its own initialization code.
+    options = ['--cpu-hz', '12000000', '--input', str(prog_path),
+               '--shot-dir', str(shots),
                '--stop-on-fault', '--marks', str(work / 'marks.txt'),
                '--state', str(work / 'state.json'),
                '--frames', str(script.frames(seconds))]
@@ -495,7 +498,7 @@ def choose(spec: RunSpec, log: Sequence[marks.Entry],
                 f = by_dl.get(h.hit)
                 if f is None or not usable(f):
                     raise RuntimeError('%s: the frame of R_DrawLists call %d '
-                                       'is not usable' % (name, h.hit))
+                                       'is not usable: %r' % (name, h.hit, f))
                 picked.append(f)
             out[name] = picked
         elif name == 'newgame':
@@ -901,7 +904,10 @@ def run_one(spec: RunSpec, symbols: script.Symbols, out: Path,
                 'full_dumps': sorted(full_got),
                 'frames_in_run': len(frames)}
     finally:
-        shutil.rmtree(str(tmp), ignore_errors=True)
+        if sys.exc_info()[0] is None:
+            shutil.rmtree(str(tmp), ignore_errors=True)
+        else:
+            say('failed run retained at %s' % tmp)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

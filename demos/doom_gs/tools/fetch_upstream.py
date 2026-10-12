@@ -8,7 +8,7 @@ Upstream (Webifi's Apple IIgs DOOM, GPL-2) is not part of this repository
 and must never be committed to it. This script puts
 
   build/upstream/               a clone at the pinned commit
-  build/release/doom-hd.hdv     the hard disk image of release v1.0
+  build/release/doom-hd.hdv     the hard disk image of release v1.5
 
 and checks the commit hash and the SHA-256 of the image. It is the only
 tool that uses the network. Running it again does nothing when both are
@@ -33,10 +33,10 @@ UPSTREAM_DIR = BUILD / 'upstream'
 RELEASE_IMAGE = BUILD / 'release' / 'doom-hd.hdv'
 
 UPSTREAM_URL = 'https://github.com/Webifi/iigs-doom'
-UPSTREAM_COMMIT = '8ea2eac8b650daf2cf66127c4be6d3f8654dd335'
-RELEASE_URL = UPSTREAM_URL + '/releases/download/v1.0/doom-hd.hdv'
+UPSTREAM_COMMIT = 'e645893f3d1ac6826e560e0ed3b28e0062c33995'
+RELEASE_URL = UPSTREAM_URL + '/releases/download/v1.5/doom-hd.hdv'
 RELEASE_SHA256 = \
-    '2716166dda1d87faf3bdec572ddcf652379a54da78f1dcccdd0897e00b23bd0d'
+    '917212c62acf08d4ff27752e44a97543b8e142a1587e26dc0ee3f22e0053a9e5'
 
 
 class FetchError(Exception):
