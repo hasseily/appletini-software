@@ -65,5 +65,6 @@ renderer captures, table checks, native memory budgets and model play checks
 are described in [DOOM validation](demos/doom_gs/VALIDATION.md).
 
 This updates the reference inputs and conversion pipeline for the existing
-65C02 port. It does not import all new IIgs hardware features or establish
-physical-board validation of this new disk.
+65C02 port. It does not import all new IIgs hardware features. The user
+subsequently confirmed successful hardware testing of the published disk;
+see the [hardware validation record](demos/doom_gs/VALIDATION.md#hardware-validation).

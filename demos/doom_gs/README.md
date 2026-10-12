@@ -10,9 +10,9 @@ music on the Phasor.
 Download [DOOM.hdv](DOOM.hdv), the whole game on a 3.85 MB ProDOS volume: the
 title loop with its music and demo, the menus, episode 1 from E1M1 with the
 keyboard and the mouse, the status bar, the HUD, the automap, the
-intermission, the music and the sound effects. The earlier port was played
-on the card; this v1.5-based rebuild has model validation and needs a
-hardware retest. See [validation results](VALIDATION.md).
+intermission, the music and the sound effects. This v1.5-based rebuild passed
+model checks and was successfully tested on hardware by the user.
+See [validation results](VALIDATION.md).
 
 ## The machine
 
@@ -106,8 +106,9 @@ were used for this rebuild. Run `make -C tools/ref816 test` and
    (`play.mk`, the parts in `src/native/game`, placed by
    `tools/native/gplace-f122.json`) and writes the disk.
 
-The earlier port was tested on the card. The v1.5 rebuild needs a new
-physical-hardware test; model checks do not establish that result.
+The user confirmed successful hardware testing of the v1.5 rebuild.
+The [validation record](VALIDATION.md#hardware-validation) distinguishes that
+report from the automated model checks.
 
 `python3 tools/native/playdisk.py --run SCRIPT` plays the disk on `a2vm`
 (`tools/a2vm`), the model of the //e with the Appletini, under scripted

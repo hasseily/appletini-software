@@ -43,8 +43,16 @@ IIgs disk and fetched upstream source remain in ignored build directories.
 
 Both runs reached their scripted stop with no crash/halt, the expected level,
 closed menus and the expected demo/play mode. Title and gameplay screenshots
-were also inspected. No new physical-board or ROM-level ProDOS boot test was
-performed. The earlier port's hardware validation does not qualify this disk.
+were also inspected. These automated checks used ProDOS MLI emulation rather
+than a ROM-level ProDOS boot.
+
+## Hardware validation
+
+Following delivery of commit `7e321e2`, the user reported: "hardware tested
+successfully". This confirms successful hardware testing of the v1.5-based
+`DOOM.hdv` identified above, in addition to the model checks. The report did
+not specify the machine, firmware configuration or individual test scenarios.
+The disk was not rebuilt or changed after this confirmation.
 
 ## Reproduce
 

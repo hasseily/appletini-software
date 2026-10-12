@@ -51,8 +51,8 @@ See the tool's README for device coverage.
 - [DOOM GS](demos/doom_gs/README.md): Webifi's Apple IIgs DOOM rewritten
   in native 65C02 for an enhanced Apple //e with the Appletini in TURBO,
   8 MB RamWorks and the Phasor: Super Hi-Res, episode 1, the menus, the
-  automap, music and effects. The earlier port was tested on hardware; the
-  v1.5-based rebuild has model validation and awaits a hardware retest.
+  automap, music and effects. The v1.5-based rebuild passed model checks
+  and was successfully tested on hardware by the user.
   The build fetches upstream and converts it; the upstream source is not in
   this repository.
 - [Pinball Construction Set](demos/pinball_construction_set/README.md):
