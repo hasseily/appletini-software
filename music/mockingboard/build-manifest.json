@@ -1,0 +1,171 @@
+{
+  "source_sha256": "5745a87e1c6dfb9948ce9fa759d27504a22883c2ff0349e195c9370bbd6e238c",
+  "master_sha256": "398d333cb2ab92df9f8bb2cf64b946f2567116910eb8359cf4bdee5d4194f0fa",
+  "output": "Mockingboard_IIplus_IIe.po",
+  "output_sha256": "18f6197b90cf3d9bfbde322ea374a869f93177c93453e89cd587433c1c85547a",
+  "blocks_used": 113,
+  "files": [
+    {
+      "original": "DEMO",
+      "prodos": "DEMO",
+      "source_sha256": "121b844cb80990d540e6b1b541d018aa54f6f93ced6acc014091281cd5a5e1f1",
+      "sha256": "07649da545d32cdbe0961bfbb3854fdf340d61cc42908081d16bf88324b8e1c7",
+      "type": 252,
+      "aux": 2049,
+      "length": 494
+    },
+    {
+      "original": "PRIMARY ROUTINES",
+      "prodos": "PRIMARY",
+      "source_sha256": "57f14ce6bd7c07c717ff037ac1cd3add57cb397a61e6c8a9f8ff3f0df3c08a7b",
+      "sha256": "46872c02e1d37fcdf219c2b9636cf6bf88485ca2e67b8b7a6eb2bdc80e0b4377",
+      "type": 6,
+      "aux": 36864,
+      "length": 1046
+    },
+    {
+      "original": "DEMO1.OBJ",
+      "prodos": "DEMO1.OBJ",
+      "source_sha256": "a9a6bde8e96dcf99950888a9e5ac0f32a50cbdbb45d07d36829d52fd2b8603bb",
+      "sha256": "4aca6fc1b833e050eb5c3d5e8bc3450bcf0a03509305710628cbc1e9e8a6b48d",
+      "type": 6,
+      "aux": 32768,
+      "length": 48
+    },
+    {
+      "original": "SPTABLE.OBJ",
+      "prodos": "SPTABLE.OBJ",
+      "source_sha256": "8db0eb56c163d889cf90b3d68784db3efd5163295be723de4d12cb3d60580faa",
+      "sha256": "8db0eb56c163d889cf90b3d68784db3efd5163295be723de4d12cb3d60580faa",
+      "type": 6,
+      "aux": 33024,
+      "length": 127
+    },
+    {
+      "original": "PSGTABLE.OBJ",
+      "prodos": "PSGTABLE.OBJ",
+      "source_sha256": "0e29b6d7584d2ae7fdcc7e1f361376ecc893d4132fd96a37f3ed60460bdeebbd",
+      "sha256": "0e29b6d7584d2ae7fdcc7e1f361376ecc893d4132fd96a37f3ed60460bdeebbd",
+      "type": 6,
+      "aux": 35072,
+      "length": 176
+    },
+    {
+      "original": "PROCLOOP.OBJ",
+      "prodos": "PROCLOOP.OBJ",
+      "source_sha256": "4b84dea3d370de018fe724ec7c135742c54df38219d9906cd10c307202860e0f",
+      "sha256": "4b84dea3d370de018fe724ec7c135742c54df38219d9906cd10c307202860e0f",
+      "type": 6,
+      "aux": 36608,
+      "length": 75
+    },
+    {
+      "original": "SHPTABLE1.OBJ",
+      "prodos": "SHPTABLE1.OBJ",
+      "source_sha256": "199d599756450e85cb044cfe748708de18f8453418bf640c8bffc301ca069bb2",
+      "sha256": "199d599756450e85cb044cfe748708de18f8453418bf640c8bffc301ca069bb2",
+      "type": 6,
+      "aux": 24576,
+      "length": 243
+    },
+    {
+      "original": "SHPTABLE2.OBJ",
+      "prodos": "SHPTABLE2.OBJ",
+      "source_sha256": "57d0d2f2ec6f141465392bc801320f48edd4404b2d79f599e5c926d32a3cbb32",
+      "sha256": "57d0d2f2ec6f141465392bc801320f48edd4404b2d79f599e5c926d32a3cbb32",
+      "type": 6,
+      "aux": 24832,
+      "length": 57
+    },
+    {
+      "original": "DEMO1",
+      "prodos": "DEMO1",
+      "source_sha256": "ac1161ad16b2764f922a09c5d8ef00e8cff5984a121b759859259740e6db9bf0",
+      "sha256": "691a84e1c77162d6610582d3980586bc0b3282917c59a582550b29709e70607b",
+      "type": 252,
+      "aux": 2049,
+      "length": 1045
+    },
+    {
+      "original": "DEMO2",
+      "prodos": "DEMO2",
+      "source_sha256": "5f39a7616e92589de24e5628bc852cc7e074ff2c9edb79b86d2aa7261b6f100c",
+      "sha256": "04817765886e102acf857a1da0c8cf9e029baeaa0ad6f25ef30af27fdc60db1a",
+      "type": 252,
+      "aux": 2049,
+      "length": 1527
+    },
+    {
+      "original": "DEMO3",
+      "prodos": "DEMO3",
+      "source_sha256": "c8607298dc9ce750cdde35b502046e8ef2defa83923ca8f88b0925fffc7c04a3",
+      "sha256": "7f4b9d5623609500ee94a3dafd3687c0a7d44d09369e51c077d99495a52c1808",
+      "type": 252,
+      "aux": 2049,
+      "length": 934
+    },
+    {
+      "original": "THE WORM",
+      "prodos": "THE.WORM",
+      "source_sha256": "c0e6e9b49420568d8f0b468f327f454f8f321f0463afcd7151156238a08e3515",
+      "sha256": "34f99fd0e383dd8fdffef919c9cde71f22cb6fcb3fbf7104784d819f613700cf",
+      "type": 252,
+      "aux": 2049,
+      "length": 435
+    },
+    {
+      "original": "THE LASER",
+      "prodos": "THE.LASER",
+      "source_sha256": "af456d904a3d1ce438a2e0a6d936ff11f8b35c03d3d1f2c0d03fb5837c0225cb",
+      "sha256": "9b04be85961ba14891e14deb9844bb2667566b275f4ae33b101e5de19000819a",
+      "type": 252,
+      "aux": 2049,
+      "length": 341
+    },
+    {
+      "original": "MULTIPLE TONES",
+      "prodos": "MULTIPLE.TONES",
+      "source_sha256": "7a2b752eb97336bf0d57deb09bad100714be7cd6d609bbfbcc6bd3b8a42d821f",
+      "sha256": "187215369697155cc61a552ebb2721f03259a92a0075aff30c3c3bbc589b44bc",
+      "type": 252,
+      "aux": 2049,
+      "length": 303
+    },
+    {
+      "original": "MULTIPLE NOISE1",
+      "prodos": "MULTIPLE.NOISE1",
+      "source_sha256": "6930a4f9129f74ef3dcad7a325704626cb61b636c416eaa3e9eca2a94eb4eb46",
+      "sha256": "847b06eaaa84b0dc83343a65348f20ea88e4a0dcb37afcc124dabcf200921bf3",
+      "type": 252,
+      "aux": 2049,
+      "length": 546
+    },
+    {
+      "original": "MULTIPLE NOISE2",
+      "prodos": "MULTIPLE.NOISE2",
+      "source_sha256": "c45deb57f57c6d1827f5c241c9ed7a215672c1c6b041a53d0e6b2112500b5d3c",
+      "sha256": "c02692949a0a78acfc499af5ecd5b7acdcaa36b858669699fe4482a51a732d8c",
+      "type": 252,
+      "aux": 2049,
+      "length": 776
+    },
+    {
+      "original": "DEMO4",
+      "prodos": "DEMO4",
+      "source_sha256": "645d0c7dccf0ae803c863c23463eec2c2033846aeb5d01e27c87bc70ec238b50",
+      "sha256": "554235f7532234c29ccf2e67a47cd40dd09017675e6d05dc39c877338652d590",
+      "type": 252,
+      "aux": 2049,
+      "length": 490
+    },
+    {
+      "original": "TITLE PAGE",
+      "prodos": "TITLE.PAGE",
+      "source_sha256": "62d1e51af802fe4c3a48574108ccb3b5736b2819c065d9a2ba804cfb0bf64570",
+      "sha256": "62d1e51af802fe4c3a48574108ccb3b5736b2819c065d9a2ba804cfb0bf64570",
+      "type": 6,
+      "aux": 16384,
+      "length": 8192
+    }
+  ]
+}

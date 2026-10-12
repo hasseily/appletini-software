@@ -1,0 +1,400 @@
+; Sound & Speech I compatibility driver for 6502 Apple II+/IIe, slot 4.
+; ACME: acme -f plain -o speech.bin -l speech.labels speech.a
+;
+; $9100 INIT: detect SC-01 first, then primary SSI-263; initialise AY.
+; $9103 PLAY: zero-page $06/$07 points to a $3F-terminated SC-01 phrase.
+; X/Y, processor flags and $06/$07 survive either entry. A is scratch.
+; $90F0 = 0 no speech, 1 SC-01, 2 SSI-263.
+; $90F1 = 0 success, 1 Escape, 2 watchdog expiry, 3 unavailable.
+; $90F2 = sticky Escape latch; caller clears it for a new user command.
+; Escape stops speech and the original AY. Timeouts also stop both voices.
+; Successful speech leaves the original VIA-B AY playing (Train needs it).
+;
+; Watchdog uses VIA-B T2, in timed rather than pulse-count mode, for eight
+; 65536-tick periods. A finite 24-bit poll limit also covers a broken VIA.
+; It is deliberately large so CPU acceleration does not replace bus time.
+; Only owned T2, SC-01 CB1 and SSI CA1 IRQ enables are changed/restored.
+; No monitor ROM IRQ assumptions, illegal opcodes or IIe-only switches.
+
+!cpu 6502
+* = $9100
+    jmp init
+    jmp play
+
+mode = $90f0
+status = $90f1
+aborted = $90f2
+phrase = $06
+ay_init = $9023
+ay_stop = $9044
+kbd = $c000
+kbd_clear = $c010
+via_a = $c400
+via_b = $c480
+ssi = $c440
+
+init:
+    php
+    pha
+    txa
+    pha
+    tya
+    pha
+    lda #0
+    sta mode
+    sta status
+    sta aborted
+    jsr save_vias
+    ; Two independent DDR readbacks reject an empty/floating slot. Restore
+    ; each DDR immediately; the saved value is also restored at final exit.
+    lda #$55
+    sta via_a+3
+    cmp via_a+3
+    bne init_absent
+    lda #$aa
+    sta via_a+3
+    cmp via_a+3
+    bne init_absent
+    lda saved_ddra
+    sta via_a+3
+    lda via_b+3
+    sta saved_b_ddra
+    lda #$55
+    sta via_b+3
+    cmp via_b+3
+    bne init_bad_b
+    lda #$aa
+    sta via_b+3
+    cmp via_b+3
+    bne init_bad_b
+    lda saved_b_ddra
+    sta via_b+3
+    jsr ay_init
+    jsr own_vias
+    lda #1
+    sta mode
+    jsr start_sc01
+    jsr wait_ready
+    bcc init_found
+    lda aborted
+    beq +
+    jmp failed
++
+    jsr stop_sc01
+    lda #0
+    sta status
+    lda #2
+    sta mode
+    jsr start_ssi
+    jsr wait_ready
+    bcc init_found
+    lda aborted
+    beq +
+    jmp failed
++
+    jsr stop_ssi
+    jmp init_absent
+init_bad_b:
+    lda saved_b_ddra
+    sta via_b+3
+init_absent:
+    lda #0
+    sta mode
+    lda #3
+    sta status
+    jmp failed
+init_found:
+    jsr stop_speech
+    jmp finish
+
+play:
+    php
+    pha
+    txa
+    pha
+    tya
+    pha
+    jsr save_vias
+    lda aborted
+    beq play_not_aborted
+    lda #1
+    sta status
+    jmp failed
+play_not_aborted:
+    lda #0
+    sta status
+    lda mode
+    bne play_available
+    lda #3
+    sta status
+    jmp failed
+play_available:
+    jsr own_vias
+    lda mode
+    cmp #1
+    bne play_ssi
+    jsr start_sc01
+    jmp play_kicked
+play_ssi:
+    jsr start_ssi
+play_kicked:
+    jsr wait_ready
+    bcs failed
+    lda #0
+    sta phrase_index
+play_next:
+    ldy phrase_index
+    lda (phrase),y
+    sta raw_phone
+    and #$3f
+    cmp #$3f
+    beq play_done
+    tax
+    lda mode
+    cmp #1
+    bne play_ssi_phone
+    lda raw_phone                 ; SC-01 retains all four pitch settings.
+    sta via_a
+    jmp play_wait
+play_ssi_phone:
+    ; Original disk phrases all use SC-01 pitch zero. Retain distinct
+    ; inflection levels for caller-supplied phrases, without misusing DUR.
+    lda raw_phone
+    and #$c0
+    ora #$20
+    sta ssi+1
+    lda sc01_to_ssi,x
+    sta ssi
+play_wait:
+    jsr wait_ready
+    bcs failed
+    inc phrase_index
+    bne play_next
+    ; A corrupt/missing terminator must not wrap the original 8-bit index.
+    lda #2
+    sta status
+    jmp failed
+play_done:
+    jsr stop_speech
+    jmp finish
+
+failed:
+    jsr stop_speech
+    jsr ay_stop
+    ; A missing/failed device is not retried by each of Train's four CALLs.
+    lda status
+    cmp #1
+    beq finish
+    lda #0
+    sta mode
+finish:
+    jsr restore_vias
+    pla
+    tay
+    pla
+    tax
+    pla
+    plp
+    rts
+
+save_vias:
+    lda via_a+2
+    sta saved_ddrb
+    lda via_a+3
+    sta saved_ddra
+    lda via_a+12
+    sta saved_pcr_a
+    lda via_b+12
+    sta saved_pcr_b
+    lda via_b+11
+    sta saved_acr_b
+    lda via_a+14
+    and #$10
+    sta saved_ier_a
+    lda via_b+14
+    and #$22
+    sta saved_ier_b
+    lda #0
+    sta owns_vias
+    rts
+own_vias:
+    lda #1
+    sta owns_vias
+    lda #$10
+    sta via_a+14                  ; disable SC-01 CB1 interrupt only
+    lda #$22
+    sta via_b+14                  ; disable T2 and SSI CA1 interrupt only
+    lda saved_acr_b
+    and #$df
+    sta via_b+11                  ; T2 counts bus clocks, not PB6 pulses
+    rts
+restore_vias:
+    lda saved_ddrb
+    sta via_a+2
+    lda saved_ddra
+    sta via_a+3
+    lda owns_vias
+    beq restore_done
+    lda via_b+8                   ; acknowledge watchdog T2
+    lda #$10
+    sta via_a+13
+    lda #$02
+    sta via_b+13
+    lda saved_pcr_a
+    sta via_a+12
+    lda saved_pcr_b
+    sta via_b+12
+    lda saved_acr_b
+    sta via_b+11
+    lda saved_ier_a
+    ora #$80
+    sta via_a+14
+    lda saved_ier_b
+    ora #$80
+    sta via_b+14
+restore_done:
+    rts
+
+start_sc01:
+    lda #$ff
+    sta via_a+2
+    lda saved_pcr_a
+    and #$0f
+    ora #$b0                     ; CB1 rising, CB2 pulse output
+    sta via_a+12
+    lda #$10
+    sta via_a+13
+    lda #$3f
+    sta via_a                    ; STOP primes the first completion
+    rts
+stop_sc01:
+    lda #$3f
+    sta via_a
+    lda saved_pcr_a
+    and #$0f                     ; no CB2 pulse = no accidental SC-01 writes
+    sta via_a+12
+    rts
+start_ssi:
+    ; Primary SSI -> VIA-B CA1. C440 aliases VIA-A, leaving the original
+    ; VIA-B AY control/data registers and Train sound untouched.
+    lda saved_pcr_b
+    and #$f0
+    ora #$0c                     ; CA2 low (PD/RST), CA1 falling edge
+    sta via_b+12
+    lda #$02
+    sta via_b+13
+    lda #$e9
+    sta ssi+4
+    lda #$dc                     ; CTL high, ART5, amplitude12
+    sta ssi+3
+    lda #$a8                     ; rate10; DUR0 phones last about 96ms
+    sta ssi+2
+    lda #$20
+    sta ssi+1
+    lda #$c0                     ; mode3 at CTL falling edge; short PA
+    sta ssi
+    lda #$5c
+    sta ssi+3
+    rts
+stop_ssi:
+    lda #$80                     ; CTL high
+    sta ssi+3
+    lda #0                       ; PA, mode0, amplitude0
+    sta ssi
+    sta ssi+3
+    rts
+stop_speech:
+    lda mode
+    cmp #1
+    beq stop_sc01
+    cmp #2
+    beq stop_ssi
+    rts
+
+wait_ready:
+    lda #8
+    sta timer_periods
+    lda #$ff
+    sta poll_low
+    sta poll_mid
+    sta poll_high
+    jsr reload_timer
+wait_loop:
+    lda kbd
+    cmp #$9b
+    bne wait_keyboard_ok
+    bit kbd_clear
+    lda #1
+    sta aborted
+    sta status
+    sec
+    rts
+wait_keyboard_ok:
+    lda mode
+    cmp #1
+    bne wait_ssi
+    lda via_a+13
+    and #$10
+    beq wait_timeout
+    sta via_a+13
+    clc
+    rts
+wait_ssi:
+    lda via_b+13
+    and #$02
+    beq wait_timeout
+    sta via_b+13
+    clc
+    rts
+wait_timeout:
+    lda via_b+13
+    and #$20
+    beq wait_soft_limit
+    lda via_b+8
+    dec timer_periods
+    beq wait_expired
+    jsr reload_timer
+wait_soft_limit:
+    dec poll_low
+    bne wait_loop
+    dec poll_mid
+    bne wait_loop
+    dec poll_high
+    bne wait_loop
+wait_expired:
+    lda #2
+    sta status
+    sec
+    rts
+reload_timer:
+    lda #$ff
+    sta via_b+8
+    sta via_b+9
+    rts
+
+saved_ddrb:    !byte 0
+saved_ddra:    !byte 0
+saved_b_ddra:  !byte 0
+saved_pcr_a:   !byte 0
+saved_pcr_b:   !byte 0
+saved_acr_b:   !byte 0
+saved_ier_a:   !byte 0
+saved_ier_b:   !byte 0
+owns_vias:     !byte 0
+phrase_index: !byte 0
+raw_phone:    !byte 0
+timer_periods:!byte 0
+poll_low:     !byte 0
+poll_mid:     !byte 0
+poll_high:    !byte 0
+
+; Phoneme conversion from Tom Charlesworth's play-sc01-using-ssi263,
+; chip-ssi263.a (2021), MIT license. See ../THIRD_PARTY_NOTICES.txt.
+; Mapping approximates SC-01 sounds; SSI timing/inflection is not identical.
+sc01_to_ssi:
+    !byte $02,$0a,$0b,$00,$28,$08,$08,$2f,$0e,$07,$07,$07,$37,$38,$24,$33
+    !byte $32,$32,$2f,$10,$39,$0f,$13,$13,$20,$29,$25,$2c,$26,$34,$25,$30
+    !byte $08,$09,$03,$1b,$0e,$27,$11,$07,$16,$05,$28,$1d,$01,$23,$0c,$0d
+    !byte $10,$1a,$19,$18,$11,$11,$14,$14,$35,$36,$1c,$0a,$01,$10,$00,$00
+
+!if * > $9600 { !error "speech driver exceeds $9100-$95FF reservation" }
