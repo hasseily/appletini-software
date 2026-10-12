@@ -48,8 +48,11 @@ cannot tear.
 
 The engine writes only the rectangles that change. A typical frame writes
 less than 1,000 bytes. The draw path makes no `$Cxxx` access between two VBL
-waits; this matters in TURBO mode, where such an access waits for the 1 MHz
-mirror of video memory.
+waits, reducing synchronization with the motherboard mirror. TURBO captures
+renderer writes directly; AUX SHR retains conservative immediate mirroring,
+while other ranges have mode-dependent deferral. The fixed-speed measurements
+below are not a general TURBO limit. See the
+[versioned timing reference](../../README.md#development-layout).
 
 The sound clock is timer 1 of the Phasor's first VIA, which counts 1 MHz bus
 cycles. The tempo does not change with the frame rate or the CPU speed.

@@ -19,6 +19,9 @@ editor with its tools, the parts kit, the wiring kit, the world settings,
 test play, the magnifier, the disk menu (load, save, catalog) under a
 modelled ProDOS, and the game shell. The current image awaits a hardware
 retest and has not run under ProDOS in an emulator (see "Not done" below).
+The reported hardware sprite smear remains unresolved; see the
+[investigation record](docs/SPRITE_SMEAR_AUDIT.md). Download the existing
+[Appletini-PCS.hdv](dist/Appletini-PCS.hdv) with that limitation in mind.
 
 ## What the port keeps and what it replaces
 
@@ -149,10 +152,12 @@ toggles the sound, `1`-`4` choose the players in the game shell.
 - The panel is drawn in immediate mode with the same primitives (sprite,
   7-row text, rectangle fill, frame); nothing there is erased except by
   drawing the panel colour over it.
-- Under the vTW every write to AUX `$2000-$9FFF` (and to main
-  `$0400-$0BFF`, `$2000-$5FFF`) is posted to the 1 MHz bus, about 16,000
-  per frame; a soft-switch access drains the queue first. So the variables
-  live in `$0C00-$1FFF`, the database at `$A000`, the code is never
+- The original fixed 33 MHz model budgets roughly 16,000 posted video
+  bytes per frame. That is not a general TURBO ceiling: renderer capture,
+  physical mirroring and synchronization are separate, mode-dependent paths.
+  AUX SHR retains conservative immediate mirroring. See the
+  [versioned timing reference](../../README.md#development-layout).
+  Variables live in `$0C00-$1FFF`, the database at `$A000`, code is never
   written, and RAMWRT is switched once per copy.
 
 ## Sound

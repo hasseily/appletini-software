@@ -27,16 +27,18 @@ mouse card in slot 2, the Phasor in slot 4, RamWorks memory. Booted from an
    `$9E00 + 32*p`, entries little-endian `$0RGB`; AUX `$9DF8-$9DFF` must be 0.
    Enable with `STA $C000` (80STORE off) then `$C1 -> $C029`; disable with
    `$01`. RAMWRT (`$C005`) routes writes to AUX; reads stay in main.
-2. Every write to AUX `$2000-$9FFF` and to main `$0400-$0BFF`, `$2000-$5FFF`
-   is posted to the 1 MHz bus (512-deep queue, back-pressure). About 16,000
-   posted bytes fit in one frame. A write to `$C000-$C007` or an access to
-   `$C054-$C057` drains the queue first: RAMRD/RAMWRT/80STORE toggles are
-   expensive, ALTZP (`$C008/9`) and the language card switches are not.
+2. The original fixed 33 MHz model uses a posted motherboard video queue
+   and roughly 16,000 bytes per frame. This is not a general TURBO ceiling.
+   TURBO captures ordered renderer writes directly with backpressure and
+   maintains a separate latest-byte mirror. AUX SHR retains conservative
+   immediate mirroring; other ranges and synchronization points depend on
+   display mode and firmware. See the
+   [versioned timing reference](../../../README.md#development-layout).
 3. `$C019` bit 7 = 1 during display, 0 in blank, synthesized without a bus
    cycle. The Appletini publishes the SHR shadow at line 0. The frame's
    writes must finish before the next line 0.
-4. Any slot 4 access slows the vTW to 1 MHz for 512 cycles: sound traffic
-   happens in one burst per frame.
+4. Slot 4 accesses use the configured slowdown window (512 cycles in the
+   original model); sound traffic happens in one burst per frame.
 5. Mouse card in slot 2: `$C0AE` mode (bit 0 enable), `$C0A1-$C0A4` X/Y,
    `$C0A5` buttons (bit 0 left, bit 1 right), `$C0A7-$C0AC` clamps, `$C0AF`
    ACK. Five reads per frame. Slot ROM ID at `$C205=$38 $C207=$18 $C20B=$01

@@ -4,7 +4,7 @@ PCPI CP/M boot media, compatibility disks, and Z80 validation programs for
 the Appletini Appli-Card. Enable the virtual Appli-Card in slot 5 and boot
 `DEMOBOOT.DO` through Disk II in slot 6. `DEMOGAME.DO` is its companion
 game-data disk. The firmware controls and slot protocol are documented in
-[appletini-one](../../../appletini-one/README_APPLICARD.md).
+[appletini-one](https://github.com/hasseily/appletini-one/blob/main/README_APPLICARD.md).
 
 `pcpiboot.do` and `pcpiutil.do` retain the source boot/utility media.
 `extras/` contains the PCPI ProDOS, StarCard, graphics, driver, and file

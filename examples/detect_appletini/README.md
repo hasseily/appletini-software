@@ -8,12 +8,13 @@ it is running on a machine that contains an **Appletini** card.
 
 From the appletini-software root, run:
 
-`powershell
+```powershell
 python examples/detect_appletini/tools/build.py
-`
+```
 
-The build uses ACME (ACME_EXE overrides its location) and writes
-uild/detect_appletini.bin, loaded at . It needs no firmware checkout.
+The build uses ACME (`ACME_EXE` overrides its location) and writes
+`examples/detect_appletini/build/detect_appletini.bin`, loaded at `$0800`.
+It needs no firmware checkout.
 The binary keeps the original example behavior; it calls SmartPort GETDIB
 and is distinct from the demo launcher's read-only ROM fingerprint probe.
 [Migration provenance](migration.json) records the source paths and hashes.
@@ -117,7 +118,7 @@ text `"Appletini HD"` at offset 5.)
 
 ## Complete sample (ACME syntax)
 
-A ready-to-assemble copy lives at [`software/detect_appletini.a65`](software/detect_appletini.a65).
+A ready-to-assemble copy lives at [`detect_appletini.a65`](detect_appletini.a65).
 
 ```asm
 ; detect_appletini.a65 — detect an Appletini from 6502 assembly.

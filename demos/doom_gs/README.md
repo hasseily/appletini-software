@@ -64,6 +64,18 @@ loading games say "not in this version". QUIT GAME ends on a text screen.
 
 ## Building
 
+The original v1.0 release download returned HTTP 404 on 2026-10-12. A new
+download image could not be built from this checkout without that input.
+If you retained it, import it with
+`python3 tools/fetch_upstream.py --from-local-image /path/to/doom-hd.hdv`.
+The required SHA-256 is
+`2716166dda1d87faf3bdec572ddcf652379a54da78f1dcccdd0897e00b23bd0d`.
+The pinned source commit remains fetchable by its explicit hash, although it
+is no longer included by an ordinary clone. The fetcher handles that case.
+The available v1.5 image was checked and has a different hash; it cannot
+replace this reference input. See the [download build notes](../../DISK_DOWNLOADS.md#doom-gs-build-dependency).
+
+
     ./build.sh
 
 writes `build/native/DOOM.hdv` from nothing in about a minute. It needs
@@ -91,7 +103,8 @@ to the appletini-one checkout). The steps:
    (`play.mk`, the parts in `src/native/game`, placed by
    `tools/native/gplace-f122.json`) and writes the disk.
 
-A clean build gives the disk that was tested on the card, byte for byte.
+The original build was tested on the card. No new disk or hardware
+validation was produced during the 2026-10-12 download refresh.
 
 `python3 tools/native/playdisk.py --run SCRIPT` plays the disk on `a2vm`
 (`tools/a2vm`), the model of the //e with the Appletini, under scripted

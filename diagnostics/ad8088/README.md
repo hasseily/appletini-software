@@ -14,7 +14,7 @@ text page through the shared-memory window.
 Select the virtual ALF AD8088 Plus for slot 5 in the Appletini configuration.
 Virtual TransWarp and AD8088 cannot run together because both own the Apple
 bus. See the firmware repository's
-[AD8088 documentation](../../../appletini-one/README_AD8088.md) for the
+[AD8088 documentation](https://github.com/hasseily/appletini-one/blob/main/README_AD8088.md) for the
 configuration and supported monitor commands.
 
 ## Build

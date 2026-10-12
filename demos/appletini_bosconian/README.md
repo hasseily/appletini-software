@@ -61,14 +61,13 @@ the panel, the sound I/O) runs before the next line 0, so a published frame
 is always complete. This is the timing of the Bilestoad SHR port
 (`demos/bilestoad`, branch `bilestoad-shr-port`).
 
-Under the vTW, every write to AUX `$2000-$9FFF` (and to main `$0400-$0BFF`
-and `$2000-$5FFF`) is also copied to the motherboard at 1 MHz; one frame
-holds about 16,000 such copies. At the 33 MHz preset the copy is a posted
-bus write behind a 512-deep queue that stalls the CPU when it is full and
-that a RAMWRT or PAGE2 switch drains first. In TURBO the CPU is not slowed
-by the write at all: the byte reaches the Appletini's display at once and a
-mirror copies it to the motherboard in the background, but the next
-soft-switch access waits until that mirror is empty. So the game keeps its
+The original 33 MHz model budgets about 16,000 posted video bytes per
+frame. This is not a universal TURBO limit. TURBO captures ordered renderer
+writes directly with lossless backpressure and maintains a separate
+latest-byte motherboard mirror. Synchronization depends on display mode,
+address range and I/O; AUX SHR retains conservative immediate mirroring.
+See the [firmware timing reference](../../README.md#development-layout)
+and verify the target firmware before estimating frame time. So the game keeps its
 variables out of those main ranges (`DATA` and `BSS` run at `$0C00-$1FFF`),
 its framebuffer traffic small, and its soft-switch accesses few: the render
 switches RAMWRT and ALTZP once per frame and selects a card bank at most

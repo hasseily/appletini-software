@@ -1,4 +1,5 @@
 # Apple II media and packed images must keep their exact bytes on Windows.
+*.sh text eol=lf
 *.po binary
 *.dsk binary
 *.do binary

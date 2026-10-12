@@ -43,22 +43,17 @@ test against GSSquared). Read that project first for conventions.
    once for the whole frame (its scratch and the blit inputs then live in
    the auxiliary zero page) and off once at the end; the panel routines
    switch RAMWRT around their own few writes.
-4. **vTW bus budget**: every write to AUX `$2000-$9FFF` (and main
-   `$0400-$0BFF`, `$2000-$5FFF`) is also copied to the motherboard at 1 MHz.
-   At the 33 MHz preset it is a *posted* bus write: the CPU goes on, the
-   queue (512 deep) drains one byte per idle bus cycle and back-pressures
-   the CPU when full, and a write to `$C000-$C007` or an access to
-   `$C054-$C057` waits for the queue to drain first. In TURBO the write
-   enters the renderer at once and a latest-value mirror drains to the
-   motherboard in the background; the CPU is not slowed by the write, but
-   its next `$Cxxx` access waits until the mirror is empty. Either way the
-   1 MHz copy is the floor: one NTSC frame has about 17,000 bus cycles.
-   **Hard budget: at most 10,000 AUX framebuffer bytes written per frame,
-   typical under 6,000.** Full-frame redraws are impossible; TURBO shortens
-   the CPU side only. Consequence: erase/redraw of small sprites only, no
-   clears during play, and as few soft-switch accesses as possible between
-   the video writes, so the copy overlaps the CPU work instead of
-   serialising with it.
+4. **vTW bus budget**: the original fixed 33 MHz model budgets posted
+   motherboard video writes at roughly 16,000 bytes per frame. The project
+   targets at most 10,000 AUX framebuffer bytes per frame, typically under
+   6,000, using dirty rectangles and batched soft-switch accesses.
+   This design target is not a universal TURBO bandwidth ceiling or proof
+   that full-frame redraws are impossible. TURBO captures renderer writes
+   directly, with lossless backpressure, and separately coalesces physical
+   mirror writes. AUX SHR retains conservative immediate mirroring;
+   inactive MAIN video pages can defer synchronization on newer //e firmware.
+   See the [versioned timing reference](../../../README.md#development-layout).
+   Evaluate the target's batching, synchronization and I/O behaviour.
 5. Because of (4), also keep **all writable game data out of main
    `$0400-$0BFF` and `$2000-$5FFF`**. The linker config below places DATA/BSS
    at `$0C00-$1FFF`. Code and read-only tables may live in `$2000-$5FFF`

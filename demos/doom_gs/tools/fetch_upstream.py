@@ -86,6 +86,11 @@ def fetch_clone(target, source=UPSTREAM_URL, commit=UPSTREAM_COMMIT,
     target.parent.mkdir(parents=True, exist_ok=True)
     git(target.parent, 'clone', '--quiet', '--no-hardlinks',
         '--no-checkout', str(source), str(target))
+    # Historical pins may no longer be reachable from advertised branches.
+    try:
+        git(target, 'cat-file', '-e', commit + '^{commit}')
+    except FetchError:
+        git(target, 'fetch', '--quiet', 'origin', commit)
     git(target, '-c', 'advice.detachedHead=false',
         'checkout', '--quiet', '--detach', commit)
     git(target, 'remote', 'set-url', 'origin', origin)

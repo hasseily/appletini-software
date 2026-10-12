@@ -11,8 +11,9 @@ varied endings, small scoops, delayed vibrato and shaped dynamics.
 
 ## Play on Appletini
 
-Mount `player/build/RISING.SUN.hdv` as a bootable **SmartPort hard disk** and
-boot it. It targets native Phasor in slot 4 on an enhanced Apple II with a
+Download [RISING.SUN.hdv](RISING.SUN.hdv) and boot it. It is a 140 KB
+ProDOS-order image; mount it in Disk II when your emulator classifies disks
+by size, or as a SmartPort volume on Appletini. It targets native Phasor in slot 4 on an enhanced Apple II with a
 65C02, running firmware F1.2.5 or later; it also plays on a real Phasor in
 slot 4. PAL starts automatically; press **P** for PAL, **N** for NTSC, **R** to
 replay, **Space** to stop, or **Q/Escape** to quit. The same player is on the
@@ -53,7 +54,8 @@ make check
 
 `CA65` and `LD65` may select cc65 binaries outside PATH. Rebuilding the
 score, register streams and disk takes seconds; no firmware checkout or
-Verilator is needed.
+Verilator is needed. The build writes `player/build/RISING.SUN.hdv`; the
+linked download is a copy of that output.
 
 Edit `arrangement.py` for the singer, `backing.py` for instrumental parts, or
 `percussion.py` for the native AY kick, snare and hi-hat, then run `make`.
