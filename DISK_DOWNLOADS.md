@@ -68,3 +68,29 @@ This updates the reference inputs and conversion pipeline for the existing
 65C02 port. It does not import all new IIgs hardware features. The user
 subsequently confirmed successful hardware testing of the published disk;
 see the [hardware validation record](demos/doom_gs/VALIDATION.md#hardware-validation).
+
+## Glyph Lab
+
+The [Glyph Lab demo](demos/glyph_lab/README.md) includes a bootable
+[Glyph-Lab.hdv](demos/glyph_lab/Glyph-Lab.hdv): an 800 KiB ProDOS volume that
+starts `GLYPH.SYSTEM`. Its three animated 40-column text scenes upload original
+4 KiB fonts through SmartPort. Running it requires Appletini firmware with the
+AGLY v1 character-ROM API and an active ARM video renderer.
+
+The [manifest](demos/glyph_lab/manifest.json) records build inputs and output
+hashes; [SHA256SUMS](SHA256SUMS) covers the downloadable disk.
+
+Rebuild and run the host tests with Python 3, ACME, Pillow and py65:
+
+```sh
+cd demos/glyph_lab
+python tools/build.py
+python tests/test_glyph_lab.py -v
+```
+
+Both commands default to the sibling `appletini-one` checkout. Pass
+`--appletini-root /path/to/appletini-one` to either command to use another path.
+The tests execute the assembled demo and SmartPort ROM against a modeled ARM
+backend, checking font upload, commit and restore, controls, error paths and
+disk contents. The included previews are model output. The user confirmed
+successful hardware validation of the demo.

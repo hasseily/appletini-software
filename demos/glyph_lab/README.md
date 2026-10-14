@@ -74,8 +74,8 @@ upload, old firmware, bad status/slot signatures, unavailable or busy APIs,
 write failures, apply timeout and restore failures. Disk tests compare the
 boot blocks, ProDOS kernel, SYS payload and manifest hashes.
 
-These are host tests and model previews. Physical card, real HDMI and
-motherboard boot validation remain to be done. The previews decode the same
+These are host tests and model previews. The demo has also been successfully
+validated on hardware by the user. The previews decode the same
 font bytes and text cells as the demo; they do not reproduce HDMI scaling,
 composite colour or phosphor settings.
 

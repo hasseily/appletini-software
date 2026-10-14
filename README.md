@@ -35,6 +35,11 @@ See the tool's README for device coverage.
   ProDOS gallery with an HGR folder menu and 32 images converted by FATDOG
   in Standard HGR and 20 in Brooks SHR-3200, plus the Appletini demo image formats. Use phosphor blur
   and glow, combined with composite or TV output, for best results.
+- [Glyph Lab](demos/glyph_lab/README.md): a bootable 800 KiB ProDOS demo that
+  animates three scenes in 40-column text mode with custom 4 KiB fonts uploaded
+  through SmartPort. Requires Appletini firmware with the AGLY v1 character-ROM
+  API and an active ARM video renderer. Includes model previews and host tests;
+  the demo was also successfully validated on hardware by the user.
 - [Appletini Invasion](demos/appletini_invasion/README.md) — an enhanced
   Apple //e fixed shooter using 33.3 MHz acceleration, DHGRi, Video-7 MIX,
   SmartPort, Mockingboard music and speech, and 8 MB RamWorks.
@@ -73,6 +78,7 @@ DOOM GS uses the pinned upstream v1.5 reference image for its build.
 |---|---|---|---|
 | Appletini Demos | [Appletini_Demos.zip](demos/appletini_demos/Appletini_Demos.zip) | 32 MB extracted | BASIC.SYSTEM, STARTUP launcher |
 | FATDOG MAGIC | [FATDOG_MAGIC.po](demos/fatdog_magic/FATDOG_MAGIC.po) | 32 MB | MAGIC.SYSTEM |
+| Glyph Lab | [Glyph-Lab.hdv](demos/glyph_lab/Glyph-Lab.hdv) | 800 KiB | GLYPH.SYSTEM |
 | Appletini Invasion | [Appletini-Invasion.hdv](demos/appletini_invasion/Appletini-Invasion.hdv) | 800 KB | INVASION.SYSTEM |
 | The Bilestoad, SHR port | [Bilestoad.po](demos/bilestoad/Bilestoad.po) | 800 KB | TOAD.SYSTEM |
 | Appletini Bosconian | [Appletini-Bosconian.hdv](demos/appletini_bosconian/Appletini-Bosconian.hdv) | 800 KB | BOSCO.SYSTEM |
