@@ -1,0 +1,663 @@
+; Glyph Lab: a 6502 ProDOS SYS for the Appletini AGLY SmartPort extension.
+; Pixels below the title are text characters, not HGR or an overlay.
+!cpu 6502
+* = $2000
+
+SP_ENTRY = $C70D
+STATUS = $1000
+PACKET = $1100
+HEADER = PACKET+2
+PAYLOAD = HEADER+16
+SRC = $FA
+DST = $FC
+KBD = $C000
+KBDSTRB = $C010
+RDVBL = $C019
+
+start:
+    ldx #$FF
+    txs
+    sta $C004                 ; main RAM writes
+    sta $C002                 ; main RAM reads
+    sta $C000                 ; 80STORE off
+    sta $C006                 ; slot ROM selected
+    sta $C00C                 ; 40 columns
+    sta $C00E                 ; primary character set
+    bit $C051                 ; text
+    bit $C054                 ; page 1
+    jsr clear_screen
+    ldx #6
+probe:
+    ldy signature_offsets,x
+    lda $C700,y
+    cmp signature_values,x
+    beq +
+    jmp no_card
++
+    dex
+    bpl probe
+    jsr get_status
+    bcc +
+    jmp old_firmware
++
+    lda STATUS+8
+    and #1                    ; ARM renderer available
+    bne +
+    jmp unavailable
++
+    lda STATUS+8
+    and #12                   ; do not take another program's upload
+    beq +
+    jmp already_busy
++
+    lda #0
+    sta scene
+    sta phase
+    sta paused
+    lda #1
+    sta auto_mode
+    jsr load_scene
+    bcc +
+    jmp failed
++
+
+main_loop:
+    jsr wait_tick
+    lda KBD
+    bpl animate
+    sta KBDSTRB
+    and #$7F
+    cmp #$1B
+    bne +
+    jmp quit
++
+    cmp #'Q'
+    bne +
+    jmp quit
++
+    cmp #'q'
+    bne +
+    jmp quit
++
+    cmp #' '
+    beq toggle_pause
+    cmp #'A'
+    beq enable_auto
+    cmp #'a'
+    beq enable_auto
+    cmp #'1'
+    bcc animate
+    cmp #'4'
+    bcs animate
+    sec
+    sbc #'1'
+    sta scene
+    lda #0
+    sta auto_mode
+    sta paused
+    jsr load_scene
+    bcc +
+    jmp failed
++
+    jmp main_loop
+toggle_pause:
+    lda paused
+    eor #1
+    sta paused
+    jsr draw_state
+    jmp main_loop
+enable_auto:
+    lda #1
+    sta auto_mode
+    lda #0
+    sta dwell
+    sta paused
+    jsr draw_state
+    jmp main_loop
+animate:
+    lda paused
+    bne main_loop
+    inc phase
+    lda phase
+    and #7
+    sta phase
+    jsr draw_frame
+    lda auto_mode
+    bne +
+    jmp main_loop
++
+    inc dwell
+    lda dwell
+    cmp #180                  ; about twelve seconds at 15 tile frames/s
+    bcs +
+    jmp main_loop
++
+    inc scene
+    lda scene
+    cmp #3
+    bcc next_scene
+    lda #0
+    sta scene
+next_scene:
+    jsr load_scene
+    bcc +
+    jmp failed
++
+    jmp main_loop
+
+quit:
+    jsr restore_rom
+    bcs restore_failed
+    jsr clear_screen
+    lda #<msg_restored
+    ldx #>msg_restored
+    jsr show_message
+    jmp prodos_quit
+
+no_card:
+    lda #<msg_no_card
+    ldx #>msg_no_card
+    jmp error_message
+old_firmware:
+    lda #<msg_old
+    ldx #>msg_old
+    jmp error_message
+unavailable:
+    lda #<msg_unavailable
+    ldx #>msg_unavailable
+    jmp error_message
+already_busy:
+    lda #<msg_busy
+    ldx #>msg_busy
+    jmp error_message
+failed:
+    sta last_error
+    ; Cancel only the transaction this program began, then restore if needed.
+    lda uploading
+    beq cleanup_restore
+    lda #4
+    jsr command_header
+    jsr control
+cleanup_restore:
+    lda installed
+    beq report_failure
+    jsr restore_rom
+    bcs restore_failed
+report_failure:
+    jsr clear_screen
+    lda #<msg_failure
+    ldx #>msg_failure
+    jsr show_message
+    lda last_error
+    jsr show_hex
+    jmp wait_exit
+restore_failed:
+    sta last_error
+    jsr clear_screen
+    lda #<msg_restore_failure
+    ldx #>msg_restore_failure
+    jsr show_message
+    lda last_error
+    jsr show_hex
+    jmp wait_exit
+error_message:
+    jsr show_message
+wait_exit:
+    lda KBD
+    bpl wait_exit
+    sta KBDSTRB
+prodos_quit:
+    sta $C00E
+    sta $C00C
+    bit $C051
+    bit $C054
+    jsr $BF00
+    !byte $65
+    !word quit_params
+    rts
+
+; STATUS requires the exact v1 envelope, not just a successful call.
+get_status:
+    ldx #31
+    lda #0
+-   sta STATUS,x
+    dex
+    bpl -
+    jsr SP_ENTRY
+    !byte $00
+    !word status_params
+    bcs status_done
+    cpx #32
+    bne status_bad
+    cpy #0
+    bne status_bad
+    ldx #3
+-   lda STATUS,x
+    cmp magic,x
+    bne status_bad
+    dex
+    bpl -
+    lda STATUS+4
+    cmp #1
+    bne status_bad
+    lda STATUS+6
+    cmp #16
+    bne status_bad
+    lda STATUS+10
+    ora STATUS+12
+    bne status_bad
+    lda STATUS+11
+    cmp #16
+    bne status_bad
+    lda STATUS+13
+    cmp #2
+    bne status_bad
+    clc
+status_done:
+    rts
+status_bad:
+    lda #$61
+    sec
+    rts
+
+save_generation:
+    ldx #3
+-   lda STATUS+24,x
+    sta prior_generation,x
+    dex
+    bpl -
+    rts
+
+; Poll until the renderer has applied the queued font, with a finite timeout.
+wait_applied:
+    lda #0
+    sta poll_count
+    lda #$10
+    sta poll_count+1
+poll_apply:
+    jsr get_status
+    bcs apply_done
+    lda STATUS+8
+    and #4
+    bne still_pending
+    ldx #3
+compare_generation:
+    lda STATUS+24,x
+    cmp prior_generation,x
+    bne generation_changed
+    dex
+    bpl compare_generation
+still_pending:
+    dec poll_count
+    bne poll_apply
+    dec poll_count+1
+    bne poll_apply
+    lda #$66
+    sec
+apply_done:
+    rts
+generation_changed:
+    clc
+    rts
+
+; Build the 16-byte control header. A = operation. All fields are LE.
+command_header:
+    pha
+    ldx #15
+    lda #0
+-   sta HEADER,x
+    dex
+    bpl -
+    ldx #3
+-   lda magic,x
+    sta HEADER,x
+    lda transaction,x
+    sta HEADER+8,x
+    dex
+    bpl -
+    lda #1
+    sta HEADER+4
+    pla
+    sta HEADER+5
+    lda #16
+    sta PACKET
+    lda #0
+    sta PACKET+1
+    rts
+control:
+    jsr SP_ENTRY
+    !byte $04
+    !word control_params
+    rts
+
+load_scene:
+    lda #0
+    sta phase
+    sta dwell
+    jsr clear_screen
+    lda #<msg_upload
+    ldx #>msg_upload
+    jsr show_message
+    jsr get_status
+    bcc +
+    rts
++
+    jsr save_generation
+    inc transaction
+    bne transaction_ready
+    inc transaction+1
+    bne transaction_ready
+    inc transaction+2
+    bne transaction_ready
+    inc transaction+3
+transaction_ready:
+    lda #1
+    jsr command_header
+    jsr control
+    bcc +
+    rts
++
+    lda #1
+    sta uploading
+    ldx scene
+    lda rom_lo,x
+    sta upload_ptr
+    lda rom_hi,x
+    sta upload_ptr+1
+    lda #0
+    sta chunk
+upload_chunk:
+    lda #2
+    jsr command_header
+    lda #$10                  ; 16 + 512 bytes
+    sta PACKET
+    lda #2
+    sta PACKET+1
+    sta HEADER+15
+    lda chunk
+    asl
+    sta HEADER+13
+    lda upload_ptr
+    sta SRC
+    lda upload_ptr+1
+    sta SRC+1
+    lda #<PAYLOAD
+    sta DST
+    lda #>PAYLOAD
+    sta DST+1
+    ldx #2
+    ldy #0
+copy_chunk:
+    lda (SRC),y
+    sta (DST),y
+    iny
+    bne copy_chunk
+    inc SRC+1
+    inc DST+1
+    dex
+    bne copy_chunk
+    jsr control
+    bcs load_done
+    inc upload_ptr+1
+    inc upload_ptr+1
+    inc chunk
+    lda chunk
+    cmp #8
+    bcc upload_chunk
+    lda #3
+    jsr command_header
+    lda #20
+    sta PACKET
+    lda scene
+    asl
+    asl
+    tax
+    ldy #0
+copy_crc:
+    lda crc_table,x
+    sta PAYLOAD,y
+    inx
+    iny
+    cpy #4
+    bne copy_crc
+    jsr control
+    bcs load_done
+    lda #0
+    sta uploading
+    lda #1
+    sta installed
+    jsr wait_applied
+    bcs load_done
+    jsr clear_screen
+    jsr draw_chrome
+    jsr draw_frame
+    clc
+load_done:
+    rts
+
+restore_rom:
+    jsr get_status
+    bcs restore_done
+    jsr save_generation
+    lda #5
+    jsr command_header
+    lda #0
+    ldx #3
+-   sta HEADER+8,x
+    dex
+    bpl -
+    jsr control
+    bcs restore_done
+    jsr wait_applied
+restore_done:
+    rts
+
+draw_frame:
+    ldx scene
+    lda frames_lo,x
+    sta SRC
+    lda frames_hi,x
+    sta SRC+1
+    ldx phase
+    beq frame_pointer_done
+add_frame:
+    clc
+    lda SRC
+    adc #<720
+    sta SRC
+    lda SRC+1
+    adc #>720
+    sta SRC+1
+    dex
+    bne add_frame
+frame_pointer_done:
+    ldx #3
+frame_row:
+    lda row_lo,x
+    sta DST
+    lda row_hi,x
+    sta DST+1
+    ldy #0
+frame_cell:
+    lda (SRC),y
+    sta (DST),y
+    iny
+    cpy #40
+    bne frame_cell
+    clc
+    lda SRC
+    adc #40
+    sta SRC
+    bcc +
+    inc SRC+1
++   inx
+    cpx #21
+    bcc frame_row
+    rts
+
+clear_screen:
+    ldx #0
+clear_row:
+    lda row_lo,x
+    sta DST
+    lda row_hi,x
+    sta DST+1
+    lda #$A0
+    ldy #39
+-   sta (DST),y
+    dey
+    bpl -
+    inx
+    cpx #24
+    bcc clear_row
+    rts
+
+draw_chrome:
+    lda #<title
+    ldx #>title
+    ldy #0
+    jsr print_row
+    ldx scene
+    lda scene_name_lo,x
+    sta SRC
+    lda scene_name_hi,x
+    tax
+    lda SRC
+    ldy #1
+    jsr print_row
+    lda #<keys
+    ldx #>keys
+    ldy #22
+    jsr print_row
+    jmp draw_state
+draw_state:
+    lda paused
+    beq running_state
+    lda #<paused_text
+    ldx #>paused_text
+    bne state_row
+running_state:
+    lda auto_mode
+    beq manual_state
+    lda #<auto_text
+    ldx #>auto_text
+    bne state_row
+manual_state:
+    lda #<manual_text
+    ldx #>manual_text
+state_row:
+    ldy #23
+    jmp print_row
+show_message:
+    ldy #11
+print_row:
+    sta SRC
+    stx SRC+1
+    lda row_lo,y
+    sta DST
+    lda row_hi,y
+    sta DST+1
+    ldy #0
+-   lda (SRC),y
+    beq +
+    ora #$80
+    sta (DST),y
+    iny
+    cpy #40
+    bcc -
++   rts
+show_hex:
+    pha
+    lsr
+    lsr
+    lsr
+    lsr
+    tax
+    lda hex_digits,x
+    ora #$80
+    sta $0628                 ; row 12, col 0
+    pla
+    and #15
+    tax
+    lda hex_digits,x
+    ora #$80
+    sta $0629
+    rts
+
+; Use four vblank edges per tile frame. Both waits have finite fallbacks.
+wait_tick:
+    lda #4
+    sta ticks
+tick_edge:
+    ldy #0
+    ldx #0
+wait_display:
+    bit RDVBL
+    bmi display_seen
+    inx
+    bne wait_display
+    iny
+    bne wait_display
+display_seen:
+    ldy #0
+    ldx #0
+wait_blank:
+    bit RDVBL
+    bpl blank_seen
+    inx
+    bne wait_blank
+    iny
+    bne wait_blank
+blank_seen:
+    dec ticks
+    bne tick_edge
+    rts
+
+status_params: !byte 3,0
+    !word STATUS
+    !byte $81,0,0,0,0
+control_params: !byte 3,0
+    !word PACKET
+    !byte $81,0,0,0,0
+quit_params: !byte 4,0,0,0,0,0,0
+magic: !text "AGLY"
+signature_offsets: !byte $01,$03,$05,$07,$0B,$0C,$FE
+signature_values: !byte $20,$00,$03,$00,$23,$C7,$D7
+transaction: !byte 0,0,0,0
+prior_generation: !byte 0,0,0,0
+poll_count: !word 0
+upload_ptr: !word 0
+scene: !byte 0
+phase: !byte 0
+paused: !byte 0
+auto_mode: !byte 0
+dwell: !byte 0
+chunk: !byte 0
+uploading: !byte 0
+installed: !byte 0
+last_error: !byte 0
+ticks: !byte 0
+hex_digits: !text "0123456789ABCDEF"
+title: !text "APPLETINI GLYPH LAB      AGLY API V1",0
+scene0_name: !text "1/3 PHASE TUNNEL - 32 NEW SHADE TILES",0
+scene1_name: !text "2/3 CHROME CITY - A CITY MADE OF TEXT",0
+scene2_name: !text "3/3 TYPE INVADERS - ORIGINAL FONT ART",0
+scene_name_lo: !byte <scene0_name,<scene1_name,<scene2_name
+scene_name_hi: !byte >scene0_name,>scene1_name,>scene2_name
+keys: !text "1-3 SCENE  SPACE PAUSE  A AUTO  Q QUIT",0
+auto_text: !text "AUTO    4096B FONT / 512B CHUNKS / CRC32  ",0
+manual_text: !text "MANUAL  4096B FONT / 512B CHUNKS / CRC32  ",0
+paused_text: !text "PAUSED  4096B FONT / 512B CHUNKS / CRC32  ",0
+msg_upload: !text "UPLOADING FONT THROUGH SMARTPORT...",0
+msg_restored: !text "MENU CHARACTER ROM RESTORED.",0
+msg_no_card: !text "GLYPH LAB NEEDS APPLETINI IN SLOT 7.",0
+msg_old: !text "FIRMWARE NEEDS THE AGLY V1 EXTENSION.",0
+msg_unavailable: !text "AGLY NEEDS THE ARM VIDEO RENDERER.",0
+msg_busy: !text "ANOTHER GLYPH UPLOAD IS ACTIVE.",0
+msg_failure: !text "GLYPH API ERROR. ROM RESTORED. CODE:",0
+msg_restore_failure: !text "ROM RESTORE FAILED. USE VIDEO MENU.",0
+row_lo: !byte $00,$80,$00,$80,$00,$80,$00,$80,$28,$A8,$28,$A8,$28,$A8,$28,$A8,$50,$D0,$50,$D0,$50,$D0,$50,$D0
+row_hi: !byte $04,$04,$05,$05,$06,$06,$07,$07,$04,$04,$05,$05,$06,$06,$07,$07,$04,$04,$05,$05,$06,$06,$07,$07
+!source "assets.a65"
+program_end:
+!if program_end > $B000 { !error "Glyph Lab overlaps ProDOS at $B000" }

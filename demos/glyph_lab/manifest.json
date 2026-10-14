@@ -1,0 +1,47 @@
+{
+  "format": "AGLY v1",
+  "rom_bytes": 4096,
+  "frame_bytes": 720,
+  "frames_per_scene": 8,
+  "scenes": [
+    {
+      "name": "PHASE TUNNEL",
+      "crc32": "8b90dfe0"
+    },
+    {
+      "name": "CHROME CITY",
+      "crc32": "9aad927e"
+    },
+    {
+      "name": "TYPE INVADERS",
+      "crc32": "a8e927f7"
+    }
+  ],
+  "inputs": {
+    "prodos_master": {
+      "path": "C:\\Users\\hasse\\source\\repos\\hasseily\\appletini-one\\software\\ProDOS_2_4_3.po",
+      "sha256": "398d333cb2ab92df9f8bb2cf64b946f2567116910eb8359cf4bdee5d4194f0fa"
+    },
+    "PRODOS": {
+      "sha256": "df45f0e82a2a96a8bddb6af408284f6d38160aaa100895e722e9f4bbe32f9e5b",
+      "bytes": 17128
+    },
+    "glyph_lab.a65": {
+      "sha256": "438dfdff26226381dbe8e143c94117608db96f961d3905aaba3c2af394e96e63"
+    },
+    "assets.py": {
+      "sha256": "b2b0ad66a232aa64306bd490b6bdca352a84d7f01b6a2860299b720dcdd8c8b8"
+    }
+  },
+  "outputs": {
+    "GLYPH.SYSTEM": {
+      "sha256": "bd8c72999dd8e26e3e6c180dea8e767d410f3b1891e32723ba119c91a42e7deb",
+      "bytes": 31475,
+      "load_address": "2000"
+    },
+    "Glyph-Lab.hdv": {
+      "sha256": "30d9023bef6847d372949206cace58ef9f41870c363f2ae8a5eb64f399a746b4",
+      "bytes": 819200
+    }
+  }
+}
