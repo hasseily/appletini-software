@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * The W65C02S core itself: see cpu65c02.h for what it models.
  *

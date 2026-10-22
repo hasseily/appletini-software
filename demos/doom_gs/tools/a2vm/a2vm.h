@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * a2vm: the model of the DOOM GS port's target, an enhanced Apple //e
  * with an Appletini card.

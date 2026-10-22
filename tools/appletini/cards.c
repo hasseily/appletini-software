@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0-only
+/* SPDX-License-Identifier: GPL-3.0-only
  * Functional slot-7 devices. Contract sources in appletini-one:
  * hdl/apple/{smartport_card,supersprite_card}.sv and
  * ps_sources/frontend/smartport_service.c (local revision 1a3e8d3).

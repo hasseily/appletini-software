@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * The cost model of a2vm: the time a
  * program takes on the Appletini, in fabric clocks of its FPGA

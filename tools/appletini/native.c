@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0-only
+/* SPDX-License-Identifier: GPL-3.0-only
  * A small ABI around the existing a2vm machine. CPU execution stays in C.
  */
 #include "native.h"

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: GPL-3.0-only
 """Persistent IPC client for the separate GPL3 Appletini speech reference.
 
 The core links no reference synthesis code. All audio is 48kHz signed little

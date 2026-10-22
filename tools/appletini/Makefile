@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: GPL-3.0-only
 # Compile the shared machine directly from the maintained a2vm sources.
 HERE := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 A2VM := $(abspath $(HERE)/../../demos/doom_gs/tools/a2vm)

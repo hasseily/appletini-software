@@ -804,3 +804,9 @@ SSI-263) and the mode switch still do. The bus script's `cost` gives
   read.
 - Refresh, PHI0 stretching and the long Apple cycle are not modelled: an
   Apple cycle is 131.28 fabric clocks (PAL, 64 us a line of 65 cycles).
+
+## Licence
+
+a2vm is licensed under GPL-3.0-only ([`LICENSE`](LICENSE)). The owner
+relicensed it from GPL-2.0 on 2026-10-22. `py65core.h` keeps py65's tables
+under their BSD-3-Clause licence, which the header reproduces.

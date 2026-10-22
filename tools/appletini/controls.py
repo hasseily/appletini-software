@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: GPL-3.0-only
 """Map a finite set of physical keyboard codes to complete controller state.
 
 This module has no machine or browser side effects. Both the JSONL debugger

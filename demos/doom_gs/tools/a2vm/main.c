@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * a2vm: run a program on the model of the Appletini target (a2vm.h).
  *

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: GPL-3.0-only
 """Loopback-only browser display and inputs for the same headless machine."""
 import base64
 import copy

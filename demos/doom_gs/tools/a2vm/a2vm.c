@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * a2vm: the machine around the cores. See a2vm.h for what it models;
  * each part names the part of a2sim.py (the earlier Appletini Doom

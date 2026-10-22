@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 # a2vm: the model of the Appletini target (its W65C02S core, the //e with
 # RamWorks, the devices, the ProDOS MLI trap and the cost model), which
 # tools/native/playdisk.py --run plays DOOM.hdv on.

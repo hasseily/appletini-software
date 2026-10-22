@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: GPL-3.0-only
 """Static SuperSprite VRAM preview matching Appletini's software renderer.
 
 The reference is appletini-one/ps_sources/frontend/supersprite_vdp.c and

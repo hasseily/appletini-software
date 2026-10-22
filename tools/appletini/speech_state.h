@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0-only
+/* SPDX-License-Identifier: GPL-3.0-only
  * Independent Apple-visible SSI-263AP protocol model. No synthesis code. */
 #ifndef APPLETINI_SPEECH_STATE_H
 #define APPLETINI_SPEECH_STATE_H

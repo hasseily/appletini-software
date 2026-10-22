@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0-only
+/* SPDX-License-Identifier: GPL-3.0-only
  * Deterministic, event-timestamped PSG and one-bit speaker synthesis.
  * Independently implemented register/timing behavior; gain tables follow
  * Appletini's permissively licensed YM2149.sv. Original table-source notice:

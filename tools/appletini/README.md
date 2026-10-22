@@ -178,7 +178,7 @@ Speech uses a separate persistent executable built from the Appletini target's
 native SSI reference engine, with timestamped register events and batched PCM
 transport. It does not use operating-system text-to-speech or prerecorded
 phrases. See [speech provenance and protocol](speech/README.md). Its GPL-3.0
-sources are built separately from the GPL-2.0-only machine library.
+sources are built as a separate program from the machine library.
 
 ## Cards and inputs
 
@@ -370,7 +370,8 @@ measurements, compare framebuffers with the production Appletini renderer,
 and extend the human-facing display and debugger on the same machine API.
 TURBO needs a separately versioned validation set.
 
-The machine library and Python front end are licensed under GPL-2.0-only and
-reuse the existing GPL-2.0 a2vm implementation. The separately built speech
-worker and its reference sources have their own GPL-3.0 license and notices. See its [license](../../demos/doom_gs/LICENSE) and
-[source notices](../../demos/doom_gs/README.md#licence).
+The machine library, Python front end and the a2vm implementation they reuse
+are licensed under GPL-3.0-only ([license](LICENSE), [a2vm license](../../demos/doom_gs/tools/a2vm/LICENSE)).
+The owner relicensed them from GPL-2.0-only on 2026-10-22. The separately
+built speech worker and its reference sources have their own GPL-3.0 license
+and notices. See the [a2vm source notices](../../demos/doom_gs/README.md#licence).

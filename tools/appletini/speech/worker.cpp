@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Separate reference executable. Never link this translation unit into a2vm.
+// The runner's separate reference executable. libtini's browser player
+// includes this file for its Voice model; see libtini/tools/web/player.cpp.
 #include "reference/native_control.h"
 #include "reference/native_source.h"
 #include "reference/prototype_tract.h"

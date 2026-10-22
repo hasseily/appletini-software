@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
 """The cost profiles of a2vm: tools/a2vm/costs/appletini.json.
 
 text(PROFILE[+VARIANT...]) gives the parameters of PROFILE (the "common"

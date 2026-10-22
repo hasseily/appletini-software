@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * The MLI stand-in of a2vm: see prodos.h. Each call follows the method of
  * the same name in a2sim.py's FakeProDOS (the earlier Appletini Doom

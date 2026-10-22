@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: GPL-3.0-only
 """Stream native sound into a WAV, deterministic digest, or browser packet."""
 from array import array
 import ctypes as C

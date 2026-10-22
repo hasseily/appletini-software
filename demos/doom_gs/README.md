@@ -132,11 +132,13 @@ input; the script format is in [`tools/a2vm/README.md`](tools/a2vm/README.md),
 
 ## Licence
 
-Everything in this directory is licensed under the GNU General Public
-License, version 2 ([`LICENSE`](LICENSE)), as upstream is. The native port is
-rewritten from upstream's source, so it is a derivative of it. The owner
-chose this licence on 2026-09-30.
+Everything in this directory except `tools/a2vm/` is licensed under the GNU
+General Public License, version 2 ([`LICENSE`](LICENSE)), as upstream is. The
+native port is rewritten from upstream's source, so it is a derivative of it.
+The owner chose this licence on 2026-09-30.
 
+`tools/a2vm/` contains no upstream code. The owner relicensed it under
+GPL-3.0-only ([`tools/a2vm/LICENSE`](tools/a2vm/LICENSE)) on 2026-10-22.
 `tools/a2vm/py65core.h` holds tables from py65 under their own BSD licence,
 which the header reproduces.
 

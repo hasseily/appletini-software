@@ -1,10 +1,11 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: GPL-3.0-only
 """Static Apple //e RGB preview, using the production Appletini RGB paths.
 
 Addressing, RGB cells and palette follow apple_cycle_renderer.c and
-appletini_ntsc.c in appletini-one at 1a3e8d38 (GPLv2, derived from AppleWin).
+appletini_ntsc.c in appletini-one at 1a3e8d38 (derived from AppleWin NTSC.cpp).
 The enhanced //e character ROM mapping follows appletini_csbits.c (AppleWin
-NTSC_CharSet.cpp, William S Simms 2010-2011, Tom Charlesworth 2016, GPLv2).
+NTSC_CharSet.cpp, William S Simms 2010-2011, Tom Charlesworth 2016). AppleWin's
+notices allow GPL version 2 or any later version.
 
 This decodes current memory, not capture records: no raster changes, analog
 composite filtering, border, A2Li weave/history, or Video-7 MIX state. It uses

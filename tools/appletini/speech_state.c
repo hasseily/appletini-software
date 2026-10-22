@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0-only
+/* SPDX-License-Identifier: GPL-3.0-only
  * Functional protocol implemented from the observable Appletini SSI contract.
  * Counts effective XCK edges; omits FPGA fabric pipeline/propagation latency.
  * Analog speech synthesis runs in a separate GPL3 reference process. */

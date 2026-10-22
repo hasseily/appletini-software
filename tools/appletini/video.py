@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: GPL-3.0-only
 """Static Apple/SHR/SuperSprite previews, not the capture-stream renderer."""
 import struct
 import zlib

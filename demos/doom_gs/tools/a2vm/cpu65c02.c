@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * The W65C02S core of cpu65c02.h connected through function pointers,
  * and the parts of the core that make no bus cycles.

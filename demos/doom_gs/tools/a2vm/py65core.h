@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * The compatibility core of a2vm: py65's 65C02 (py65 1.2.0,
  * py65/devices/mpu65c02.py and mpu6502.py), the core of a2sim.py, the

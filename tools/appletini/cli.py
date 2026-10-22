@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: GPL-3.0-only
 """Headless Appletini runner. Python handles commands; C executes whole batches."""
 from __future__ import annotations
 

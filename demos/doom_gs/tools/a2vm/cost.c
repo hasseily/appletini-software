@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * The cost model of a2vm: see cost.h for what it charges, and
  * tools/a2vm/costs/appletini.json for every parameter and its source in

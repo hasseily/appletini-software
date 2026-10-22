@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * A W65C02S core for a2vm, the model of the Appletini target of the DOOM
  * GS port.

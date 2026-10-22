@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
 /*
  * The ProDOS 8 MLI stand-in of a2vm: the calls, files and error codes of
  * a2sim.py's FakeProDOS (the earlier Appletini Doom port's Python
