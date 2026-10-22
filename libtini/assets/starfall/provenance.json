@@ -1,0 +1,135 @@
+{
+  "publisher": "Kenney",
+  "pack": "Pixel Shmup",
+  "version": "1.1",
+  "license": "CC0-1.0",
+  "source_page": "https://kenney.nl/assets/pixel-shmup",
+  "download_url": "https://kenney.nl/media/pages/assets/pixel-shmup/640246b9cc-1677495782/kenney_pixel-shmup.zip",
+  "retrieved": "2026-10-20",
+  "archive": "source/kenney_pixel-shmup.zip",
+  "archive_sha256": "e33fd626b799de343f18c81ebaa6f3bc161772fdd717acf3f223589ce74cf952",
+  "members": {
+    "License.txt": "92986cb06bedca55e10f2aad83dae5cb296778ce774d35f37612840ddccb14dd",
+    "Ships/ship_0000.png": "15bc356dca89cc1009e88e6ac2ee80db47c9f2c973f7c113f1c6cb07b2d1ddb3",
+    "Ships/ship_0001.png": "cb902990b33e493c937740f9363d90809793176105fe8a474906029df090c60b",
+    "Ships/ship_0003.png": "ca572d261c6c9aaf4a2835c6dec176897bcb6e331f2283a0f8eb5781922a80aa",
+    "Ships/ship_0007.png": "5050e7c2358313dfe21cf4629abf6356742a709fb6fc4a3f5c4ed8ea814dd305",
+    "Ships/ship_0009.png": "bf989b6560ca5823997ff835ea77a60901d2718f4750e9f62de5df9a44446385",
+    "Ships/ship_0010.png": "fba79895a033debf974740268405fcd58020757da81a0eb08f20f050115af532",
+    "Ships/ship_0012.png": "f9cd302cad20ce52b54eb9f0ea734499004b0f1daa75931b3f730b174de8d26e",
+    "Ships/ship_0018.png": "47d537798120eee94aa3d707530704faf3f00822e5ef02239fef9db40d298990",
+    "Ships/ship_0019.png": "7ce8e9ea39127d1d073f1f1681bb728efb931fb0cd96231ba29f20d7223ecebf",
+    "Ships/ship_0020.png": "39246a762d65c1c9c68037171cfee0b03ccbf3d1c3de2935a7c4dcd85d7e8908",
+    "Ships/ship_0021.png": "5f7211a7b0d165a015424e7cfdb0b7eb05e4fcdc65f273db9169d1c2a4d5ea77",
+    "Tiles/tile_0004.png": "54d2a47c28937772a5fdbe71436b2b20628b4d3f766fe78fe13c8e76e73395fa",
+    "Tiles/tile_0005.png": "22c0064220d49a2a7754571fd1f2d21df99a6679a40303e47c3222014311799a",
+    "Tiles/tile_0007.png": "dd5a9ac816d65d55b3ce22bacc08104c4158221571fa153dcf2eda07a9c4fb43",
+    "Tiles/tile_0018.png": "8cb1cff104f80659f8b7c81b5f2b5154678fa6c707d3299559758df9b7a219d3",
+    "Tiles/tile_0024.png": "95f6554b79600322734b173091b55617dffbc6b91125286c5100e4471557067f",
+    "Tiles/tile_0025.png": "64efea8c6794c7575a002bd8f7240a071d77bb98aabe356774d9d437e0111763",
+    "Tiles/tile_0026.png": "92684cba7a7806285fc1cd387d983472f4e34ad4901073d89acf8dd9b1c5d53c"
+  },
+  "frames": [
+    {
+      "id": "PLAYER",
+      "member": "Ships/ship_0000.png",
+      "content_pixels": 16,
+      "rotation_degrees": 0
+    },
+    {
+      "id": "SCOUT",
+      "member": "Ships/ship_0009.png",
+      "content_pixels": 16,
+      "rotation_degrees": 180
+    },
+    {
+      "id": "WEAVER",
+      "member": "Ships/ship_0007.png",
+      "content_pixels": 16,
+      "rotation_degrees": 180
+    },
+    {
+      "id": "DART",
+      "member": "Ships/ship_0010.png",
+      "content_pixels": 16,
+      "rotation_degrees": 180
+    },
+    {
+      "id": "HEAVY",
+      "member": "Ships/ship_0001.png",
+      "content_pixels": 16,
+      "rotation_degrees": 180
+    },
+    {
+      "id": "GUNSHIP",
+      "member": "Ships/ship_0003.png",
+      "content_pixels": 16,
+      "rotation_degrees": 180
+    },
+    {
+      "id": "POWER",
+      "member": "Tiles/tile_0025.png",
+      "content_pixels": 16,
+      "rotation_degrees": 0
+    },
+    {
+      "id": "SHIELD",
+      "member": "Tiles/tile_0026.png",
+      "content_pixels": 16,
+      "rotation_degrees": 0
+    },
+    {
+      "id": "REPAIR",
+      "member": "Tiles/tile_0024.png",
+      "content_pixels": 16,
+      "rotation_degrees": 0
+    },
+    {
+      "id": "BOMB",
+      "member": "Tiles/tile_0018.png",
+      "content_pixels": 16,
+      "rotation_degrees": 0
+    },
+    {
+      "id": "EXPLOSION0",
+      "member": "Tiles/tile_0004.png",
+      "content_pixels": 16,
+      "rotation_degrees": 0
+    },
+    {
+      "id": "EXPLOSION1",
+      "member": "Tiles/tile_0005.png",
+      "content_pixels": 16,
+      "rotation_degrees": 0
+    },
+    {
+      "id": "EXPLOSION2",
+      "member": "Tiles/tile_0007.png",
+      "content_pixels": 16,
+      "rotation_degrees": 0
+    }
+  ],
+  "backdrop": [
+    {
+      "id": "MID",
+      "members": [
+        "Ships/ship_0012.png"
+      ],
+      "content_pixels": 10,
+      "cropped": true,
+      "darkened": true
+    },
+    {
+      "id": "FAR",
+      "members": [
+        "Ships/ship_0018.png",
+        "Ships/ship_0019.png",
+        "Ships/ship_0020.png",
+        "Ships/ship_0021.png"
+      ],
+      "content_pixels": 6,
+      "cropped": true,
+      "darkened": true
+    }
+  ]
+}

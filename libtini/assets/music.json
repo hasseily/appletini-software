@@ -1,0 +1,10 @@
+{
+  "voices": 6,
+  "events": [
+    {"duration": 0, "period": 956, "voice": 0, "volume": 7},
+    {"duration": 25, "period": 1517, "voice": 1, "volume": 5},
+    {"duration": 25, "period": 851, "voice": 0, "volume": 7},
+    {"duration": 25, "period": 758, "voice": 0, "volume": 7},
+    {"duration": 25, "period": 956, "voice": 0, "volume": 7}
+  ]
+}

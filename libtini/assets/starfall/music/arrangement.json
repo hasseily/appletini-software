@@ -1,0 +1,17 @@
+{
+ "source": "stg_bs001_88pro.mid, free demo of the SHMUP MIDI Pack by doranarasi",
+ "credit": "Music arranged from stg_bs001_88pro.mid, Copyright (C) doranarasi 2024; https://doranarasi.itch.io/shmup-midi-pack",
+ "bars": [26, 49],
+ "loop_bar": 26,
+ "rows_per_beat": 8,
+ "tracks": [
+  {"name": "lead", "channel": 4, "slot": 0, "volume": 11, "decay": 4, "floor": 7},
+  {"name": "bass", "channel": 8, "slot": 0, "volume": 12, "decay": 2, "floor": 6},
+  {"name": "gtr_lo", "channel": 2, "slot": 1, "volume": 9, "decay": 1, "floor": 3},
+  {"name": "gtr_hi", "channel": 2, "slot": 0, "volume": 8, "decay": 1, "floor": 3},
+  {"name": "organ_hi", "channel": 5, "slot": 0, "volume": 9, "decay": 6, "floor": 6},
+  {"name": "organ_lo", "channel": 5, "slot": 1, "volume": 8, "decay": 6, "floor": 5},
+  {"name": "str_hi", "channel": 6, "slot": 0, "volume": 7, "decay": 0, "floor": 0},
+  {"name": "str_mid", "channel": 6, "slot": 1, "volume": 6, "decay": 0, "floor": 0}
+ ]
+}

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script>
+// Some hosts serve this page as /demo/game, without a trailing slash. Resolve
+// its files against its own directory either way.
+{
+  const path = location.pathname, base = document.createElement('base');
+  base.href = path.endsWith('/') ? path :
+    /\.html?$/.test(path) ? path.slice(0, path.lastIndexOf('/') + 1) : path + '/';
+  document.head.prepend(base);
+}
+</script>
+<title>libtini player</title>
+<style>
+:root{color-scheme:dark;--bg:#0d0f14;--panel:#171a22;--line:#2a2f3c;--text:#e6e8ee;--dim:#9aa1b2;--accent:#ffb347}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:20px 16px 32px}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{margin:0;font-size:22px;letter-spacing:.08em}
+#status{color:var(--dim);font:12px ui-monospace,monospace}
+/* The Appletini shows SHR with square pixels: 640x400, 16:10. */
+.screen{position:relative;margin:16px auto;width:100%;max-width:calc(75vh * 16 / 10);aspect-ratio:16/10;background:#000;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.screen:fullscreen{max-width:none;border:0;border-radius:0}
+canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;image-rendering:pixelated;outline:none}
+.overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:16px;text-align:center;background:rgba(13,15,20,.88)}
+.overlay[hidden]{display:none}
+.overlay p{margin:0;max-width:34em;color:var(--dim)}
+button,select,.button{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 14px;cursor:pointer;text-decoration:none}
+button:hover,select:hover,.button:hover{border-color:var(--dim)}
+.button[hidden]{display:none}
+#play,#restart{background:var(--accent);color:#1a1205;border-color:var(--accent);font-weight:600;padding:10px 28px}
+.bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+label{display:flex;align-items:center;gap:8px;color:var(--dim)}
+input[type=range]{width:110px}
+.help{margin-top:14px;color:var(--dim);font-size:14px}
+.help kbd{font:12px ui-monospace,monospace;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+footer{margin-top:20px;color:var(--dim);font-size:12px}
+footer a{color:var(--dim)}
+/* Touch controls: a stick for the joystick axes, buttons 0 and 1, and two keys,
+   sized to fit a 360-pixel-wide phone. */
+.touch{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:4px 0 14px;
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none}
+.touch[hidden]{display:none!important}
+.stick{position:relative;flex:none;width:min(136px,31vw);height:min(136px,31vw);border-radius:50%;
+  background:var(--panel);border:1px solid var(--line);touch-action:none}
+.knob{position:absolute;left:50%;top:50%;width:42%;height:42%;transform-origin:center;translate:-50% -50%;
+  border-radius:50%;background:#2a3040;border:1px solid var(--dim);pointer-events:none}
+.keys{display:flex;flex-direction:column;gap:10px}
+.key{padding:7px 10px;font-size:13px;touch-action:none}
+.fire{display:flex;align-items:center;gap:min(14px,3vw)}
+.pad{width:min(70px,16.5vw);height:min(70px,16.5vw);padding:0;border-radius:50%;font-size:20px;font-weight:700;
+  touch-action:none}
+.fire .pad:first-child{margin-top:36px}
+.pad.down,.key.down{background:var(--accent);color:#1a1205;border-color:var(--accent)}
+/* The phone's keyboard types into this field; 16px stops iOS zooming in. */
+.typing{position:fixed;left:0;bottom:0;width:1px;height:1px;padding:0;border:0;opacity:0;font-size:16px}
+/* A phone held sideways: the screen fills the height between two 150-pixel
+   columns that hold the controls. */
+@media (orientation:landscape) and (max-height:560px){
+  header,.bar,.help,footer{display:none}
+  main{max-width:none;padding:0}
+  .screen{--w:min(100vw - 300px,160vh);width:var(--w);max-width:none;margin:calc((100vh - var(--w) / 1.6) / 2) auto 0;
+    border:0;border-radius:0}
+  @supports (height:100dvh){.screen{--w:min(100vw - 300px,160dvh);margin-top:calc((100dvh - var(--w) / 1.6) / 2)}}
+  .touch{position:fixed;inset:0;margin:0;pointer-events:none}
+  .touch>*{position:absolute;pointer-events:auto}
+  .stick{left:15px;bottom:24px;width:120px;height:120px}
+  .fire{right:9px;bottom:24px;gap:12px}
+  .pad{width:60px;height:60px}
+  .keys{right:12px;top:14px;align-items:flex-end}
+}
+</style>
+</head>
+<body>
+<main>
+  <header><h1 id="title">libtini</h1><span id="status">Loading…</span></header>
+  <div class="screen" id="frame">
+    <canvas id="screen" width="640" height="400" tabindex="0" aria-label="Emulated Appletini SHR display"></canvas>
+    <div class="overlay" id="start">
+      <label>Speed <select id="profile">
+        <option value="0">33 MHz</option>
+        <option value="1">TURBO (~75MHz)</option>
+      </select></label>
+      <button id="play" disabled>Play</button>
+      <p>The keyboard goes to the Apple //e. A gamepad or the touch stick works as the joystick.</p>
+    </div>
+    <div class="overlay" id="finished" hidden>
+      <p id="message">The program exited.</p>
+      <button id="restart">Restart</button>
+    </div>
+  </div>
+  <div class="touch" id="touch" hidden>
+    <div class="stick" id="stick" aria-label="Joystick"><div class="knob" id="knob"></div></div>
+    <div class="keys">
+      <button class="key" data-key="13">Return</button>
+      <button class="key" data-key="27">Esc</button>
+      <button class="key" id="keyboard">Keyboard</button>
+    </div>
+    <div class="fire">
+      <button class="pad" data-button="1" aria-label="Button 1">B</button>
+      <button class="pad" data-button="0" aria-label="Button 0">A</button>
+    </div>
+  </div>
+  <div class="bar">
+    <label>Volume <input id="volume" type="range" min="0" max="1" step="0.05" value="0.7"></label>
+    <button id="full">Full screen</button>
+    <button id="reset" disabled>Restart</button>
+    <button id="touchToggle">Touch controls</button>
+    <a id="download" class="button" hidden></a>
+  </div>
+  <p class="help">Click the screen to give it the keyboard. Keys are sent as Apple //e keys:
+    letters, <kbd>Space</kbd>, <kbd>Return</kbd>, <kbd>Esc</kbd>, <kbd>Tab</kbd> and arrows.
+    Gamepad stick or D-pad: joystick; A, B and X: buttons 0, 1 and 2. On a touch screen,
+    the stick is the joystick, A and B are buttons 0 and 1, Return and Esc are keys, and
+    Keyboard opens the device's keyboard for typing.</p>
+  <footer>Runs the game's own 65C02 program on the Appletini development machine model,
+    with Mockingboard/Phasor sound and SSI-263 speech. This is an emulator: its timing
+    is a model, not the board. Player licensed under the <a href="COPYING.txt">GPL-3.0</a>;
+    <a href="source.zip">its source</a>. <span id="origin"></span></footer>
+</main>
+<input id="typing" class="typing" type="text" autocomplete="off" autocorrect="off" autocapitalize="off"
+  spellcheck="false" enterkeyhint="enter" aria-label="Type on the Apple //e">
+<script type="module" src="main.js"></script>
+</body>
+</html>

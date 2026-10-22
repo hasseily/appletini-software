@@ -1,0 +1,28 @@
+{
+  "name": "starfall",
+  "title": "STARFALL",
+  "sources": ["main.c", "game.c"],
+  "config": "examples/starfall/starfall.cfg",
+  "private": false,
+  "cflags": ["--static-locals"],
+  "generate": [
+    {
+      "command": ["{root}/tools/starfall_assets.py", "--header", "{build}/starfall_assets.h"],
+      "inputs": ["{root}/tools/starfall_assets.py", "{root}/assets/starfall"],
+      "outputs": ["{build}/starfall_assets.h"]
+    },
+    {
+      "command": ["{root}/tools/speech.py", "{game}/speech.json", "--output", "{build}/starfall_speech.h",
+                  "--symbol", "sf_speech", "--no-numbers"],
+      "inputs": ["{root}/tools/speech.py", "speech.json"],
+      "outputs": ["{build}/starfall_speech.h"]
+    },
+    {
+      "command": ["{root}/tools/music.py", "{root}/assets/starfall/music/song.json", "--output",
+                  "{build}/starfall_music.h", "--symbol", "sf_song", "--report", "{build}/starfall_music.json"],
+      "inputs": ["{root}/tools/music.py", "{root}/assets/starfall/music/song.json"],
+      "outputs": ["{build}/starfall_music.h", "{build}/starfall_music.json"]
+    }
+  ],
+  "disk": {"volume": "STARFALL", "system": "STARFALL.SYSTEM", "blocks": 1600}
+}

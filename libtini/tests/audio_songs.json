@@ -1,0 +1,9 @@
+{
+ "test_song": {"song": {"bpm": 375, "rows_per_beat": 8, "loop": 1, "tracks": [
+   {"name": "a", "volume": 9, "order": ["a1", "a2"]},
+   {"name": "b", "volume": 12, "decay": 1, "floor": 4, "order": ["b", "b"]},
+   {"name": "c", "volume": 7, "order": ["c", "c"]}],
+  "patterns": {"a1": "C4:2 -:2 E4:4", "a2": "D4:8", "b": "G3:6 G3:2", "c": "C5:8"}}},
+ "fast_song": {"song": {"bpm": 375, "rows_per_beat": 16, "tracks": [{"name": "f", "order": ["f"]}],
+  "patterns": {"f": "C4:1 D4:1"}}}
+}

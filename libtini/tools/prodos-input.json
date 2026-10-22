@@ -1,0 +1,8 @@
+{
+  "version": "ProDOS 8 2.4.3",
+  "url": "https://raw.githubusercontent.com/ProDOS-8/ProDOS8-Releases/master/ProDOS_2_4_3.po",
+  "sha256": "398d333cb2ab92df9f8bb2cf64b946f2567116910eb8359cf4bdee5d4194f0fa",
+  "path": "build-inputs/prodos/ProDOS_2_4_3.po",
+  "release": "https://prodos8.com/releases/prodos-243/",
+  "upstream_checksums": "https://raw.githubusercontent.com/ProDOS-8/ProDOS8-Releases/master/SHA256SUM"
+}

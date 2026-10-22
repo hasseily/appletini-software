@@ -23,7 +23,20 @@ speech playback also requires a C++17 compiler. Fixed-speed timing counts CPU cy
 hardware wait states. Use it for functional tests; board frame-rate estimates
 still need hardware validation. macOS is tested; Linux builds are supported but
 runtime validation is pending. Native Windows is unsupported; WSL is untested.
-See the tool's README for device coverage.
+See the tool's README for device coverage. libtini's
+[`native_emulator.py`](libtini/tools/native_emulator.py) builds the same
+machine as a native Windows DLL with MSYS2 GCC. The runner, its machine
+library, speech worker and a2vm are licensed GPL-3.0-only.
+
+## libtini
+
+[libtini](libtini/README.md) is an MIT-licensed C game SDK for an enhanced
+Apple //e with Appletini, built with cc65: Super Hi-Res graphics with a sprite
+renderer, banked RamWorks resources, Mockingboard/Phasor music and effects,
+SSI-263 speech, input and ProDOS files, with host tools for assets, music and
+speech. Its [browser player](libtini/docs/WEB.md) compiles this repository's
+emulator to WebAssembly and runs a game's own disk in a web page. STARFALL,
+below, is its example game.
 
 ## Demos
 
@@ -60,6 +73,12 @@ See the tool's README for device coverage.
   and was successfully tested on hardware by the user.
   The build fetches upstream and converts it; the upstream source is not in
   this repository.
+- [STARFALL](libtini/examples/starfall/README.md): libtini's example game, a
+  vertical scrolling survival shooter in Super Hi-Res with five enemy types,
+  four weapon levels, wingmen, bombs, an eight-track arrangement of a
+  doranarasi MIDI demo (all eight on a Phasor, three on a Mockingboard),
+  SSI-263 callouts and joystick or keyboard control, at 33 MHz or TURBO.
+  Written in C with cc65.
 - [Pinball Construction Set](demos/pinball_construction_set/README.md):
   Bill Budge's editor and game ported to SHR, mouse input and Phasor sound.
   The downloadable build passes model tests, but a reported hardware sprite
@@ -84,6 +103,7 @@ DOOM GS uses the pinned upstream v1.5 reference image for its build.
 | Appletini Bosconian | [Appletini-Bosconian.hdv](demos/appletini_bosconian/Appletini-Bosconian.hdv) | 800 KB | BOSCO.SYSTEM |
 | DOOM GS | [DOOM.hdv](demos/doom_gs/DOOM.hdv) | 3.85 MB | DOOM.SYSTEM |
 | Pinball Construction Set | [Appletini-PCS.hdv](demos/pinball_construction_set/dist/Appletini-PCS.hdv) | 800 KB | PCS.SYSTEM |
+| STARFALL | [STARFALL.po](libtini/examples/starfall/STARFALL.po) | 800 KB | STARFALL.SYSTEM |
 | DOOM music | [MUSIC.hdv](music/doom/MUSIC.hdv) | 215.5 KB | MUSIC.SYSTEM |
 | House of the Rising Sun | [RISING.SUN.hdv](music/house_of_the_rising_sun/RISING.SUN.hdv) | 140 KB | SUN.SYSTEM |
 | Mockingboard demos | [Mockingboard_IIplus_IIe.po](music/mockingboard/Mockingboard_IIplus_IIe.po) | 140 KB | BASIC.SYSTEM, STARTUP menu |

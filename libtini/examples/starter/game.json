@@ -1,0 +1,6 @@
+{
+  "name": "starter",
+  "title": "STARTER",
+  "sources": ["main.c"],
+  "disk": {"volume": "STARTER", "system": "STARTER.SYSTEM", "blocks": 280}
+}

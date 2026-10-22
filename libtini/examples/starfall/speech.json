@@ -1,0 +1,22 @@
+{
+  "phrases": {
+    "SAY_READY": "Ready.",
+    "SAY_POWER": "Power up!",
+    "SAY_CLEAR": "All clear!",
+    "SAY_GREAT": "Great shot!",
+    "SAY_EXCELLENT": "Excellent!",
+    "SAY_OVER": "Game over.",
+    "SAY_WARNING": "Warning!",
+    "SAY_RECORD": "New record!"
+  },
+  "pronunciations": {
+    "GAME": ["G", "AY", "M"],
+    "UP": ["UH", "P"],
+    "CLEAR": ["K", "L", "IY", "R"],
+    "GREAT": ["G", "R", "AY", "T"],
+    "SHOT": ["SH", "AA", "T"],
+    "EXCELLENT": ["EH", "K", "S", "UH", "L", "UH", "N", "T"],
+    "WARNING": ["W", "AO", "R", "N", "IH", "NG"],
+    "NEW": ["N", "UW"]
+  }
+}

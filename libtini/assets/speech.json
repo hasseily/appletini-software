@@ -1,0 +1,9 @@
+{
+  "phrases": {
+    "SAY_READY": "Ready.",
+    "SAY_WELCOME": "Welcome.",
+    "SAY_EXTRA_LIFE": "Extra life.",
+    "SAY_PUMP": "Pump first. Keep the relay alive."
+  },
+  "pronunciations": {}
+}

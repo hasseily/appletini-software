@@ -1,0 +1,14 @@
+{
+  "name": "speech_check",
+  "title": "SPEECH CHECK",
+  "sources": ["main.c"],
+  "generate": [
+    {
+      "command": ["{root}/tools/speech.py", "{root}/examples/starfall/speech.json", "--output",
+                  "{build}/speech_check_speech.h", "--symbol", "sc_speech", "--no-numbers"],
+      "inputs": ["{root}/tools/speech.py", "{root}/examples/starfall/speech.json"],
+      "outputs": ["{build}/speech_check_speech.h"]
+    }
+  ],
+  "disk": {"volume": "SPEECHCHK", "system": "SPEECH.SYSTEM", "blocks": 280}
+}

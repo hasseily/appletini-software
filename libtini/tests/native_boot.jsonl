@@ -1,0 +1,7 @@
+{"id":"diagnostic","cmd":"run","frames":600}
+{"id":"screen","cmd":"screenshot","path":"build/native/boot-diagnostic-vtw33.png"}
+{"id":"exit-key","cmd":"input","kind":"key","x":13}
+{"id":"return","cmd":"run","frames":120}
+{"id":"launcher","cmd":"screenshot","path":"build/native/boot-return-vtw33.png"}
+{"id":"state","cmd":"state"}
+{"cmd":"quit"}
