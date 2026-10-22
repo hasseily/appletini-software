@@ -34,6 +34,7 @@
 <tr><td><a href="browser.html"><code>web.py</code></a></td><td>Builds the browser player of a game</td></tr>
 <tr><td><a href="testing.html"><code>check.py</code>, <code>test.py</code></a></td><td>Run the checks. See <a href="testing.html">Checks</a>.</td></tr>
 <tr><td><a href="build.html#release"><code>release.py</code></a></td><td>Builds again in an isolated folder, compares the results and writes release archives</td></tr>
+<tr><td><a href="#publish_docs"><code>publish_docs.py</code></a></td><td>Copies this reference to a web site</td></tr>
 <tr><td><a href="#reference_guard"><code>reference_guard.py</code></a></td><td>Records a fingerprint of a read-only reference checkout</td></tr>
 </table></div>
 
@@ -136,6 +137,19 @@ python tools/native_emulator.py --cc GCC play --disk DISK.po --boot --rom ROM --
 <pre><code>python tools/benchmark.py --cc65-home D:/Repos/cc65 --cc C:/msys64/ucrt64/bin/gcc.exe [--private] [--boot-roms build-inputs/native-roms] [--repeat 2]</code></pre>
 <p>This tool builds <code>examples/benchmark.c</code> as a separate program and disk, and runs it on the emulator. It measures cross-bank resource writes, reads, fills and copies, a full publication and a dirty rectangle. For each one, it records CPU cycles, profile clock ticks, instruction and I/O counts, and the modelled time. It checks each result.</p>
 <p><code>--private</code> also builds and measures the AMEM variant. <code>--boot-roms</code> boots through the installed ROMs, and then the emulated controller supplies AMEM. Repeated runs must give identical counters. The results go to <code>build/benchmark/results.json</code>. <a href="../../design/BENCHMARKS.md">design/BENCHMARKS.md</a> gives the results.</p>
+</section>
+
+<section class="fn" id="publish_docs">
+<h2><code class="def">publish_docs.py</code></h2>
+<pre><code>python tools/publish_docs.py DESTINATION [--base /libtini] [--home /] [--branch main]</code></pre>
+<p>This tool copies <code>docs/</code> to a web site folder outside libtini. It changes the links of each page:</p>
+<ul>
+  <li>A link to a page in <code>docs/</code> becomes an absolute path under <code>--base</code>, without <code>.html</code>. For example, <code>api/graphics.html</code> becomes <code>/libtini/api/graphics</code>.</li>
+  <li>A link to another file of the repository becomes a GitHub link on <code>--branch</code>.</li>
+  <li>With <code>--home</code>, a link to the site home goes below the libtini name.</li>
+</ul>
+<p>The host must serve clean URLs: <code>/libtini/start</code> for <code>start.html</code>. The tool deletes <code>DESTINATION</code> only when it already contains a copy of the reference. The reference on appletini.org uses this command from the <code>libtini/</code> folder:</p>
+<pre><code>python tools/publish_docs.py ../../appletini-one-website/public/libtini --base /libtini --home /</code></pre>
 </section>
 
 <section class="fn" id="reference_guard">

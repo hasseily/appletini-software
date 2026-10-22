@@ -10,7 +10,8 @@
       ["index.html", "Overview"],
       ["start.html", "First steps"],
       ["concepts.html", "How libtini works"],
-      ["examples.html", "Examples"]
+      ["examples.html", "Examples"],
+      ["https://appletini.org/demo/starfall", "Play STARFALL"]
     ]],
     ["Guides", [
       ["guides/loop.html", "Game loop and timing"],
@@ -75,10 +76,18 @@
     });
   });
 
-  function url(path) { return base + path; }
-  function here() {
-    var h = location.href.split("#")[0].split("?")[0];
-    return /\/$/.test(h) ? h + "index.html" : h;
+  /* A host that serves clean URLs, as appletini.org does, shows a page
+   * path without .html and without a trailing slash. Links then use the
+   * same form. A local copy keeps the .html file names. */
+  var clean = /^https?:$/.test(location.protocol) && !/(\.html|\/)$/.test(location.pathname);
+  function url(path) {
+    if (/^[a-z]+:/i.test(path)) return path;
+    if (clean) path = path.replace(/(^|\/)index\.html/, "").replace(/\.html/, "");
+    return clean && !path ? base.replace(/\/$/, "") : base + path;
+  }
+  /* A page address without query, fragment, .html or a final index. */
+  function page(h) {
+    return h.split("#")[0].split("?")[0].replace(/(\/index)?\.html$/, "").replace(/\/$/, "");
   }
   function el(tag, attrs, text) {
     var e = document.createElement(tag);
@@ -100,7 +109,7 @@
     find.appendChild(input); find.appendChild(results);
     body.appendChild(find);
     var nav = el("nav", {"class": "site-nav", "aria-label": "Documentation"});
-    var current = here();
+    var current = page(location.href);
     NAV.forEach(function (group) {
       nav.appendChild(el("h2", {}, group[0]));
       var ul = el("ul");
@@ -113,7 +122,7 @@
           a.style.setProperty("--nav-mark", "var(--m-" + item[2] + ")");
         }
         a.appendChild(document.createTextNode(item[1]));
-        if (a.href === current) a.setAttribute("aria-current", "page");
+        if (page(a.href) === current) a.setAttribute("aria-current", "page");
         li.appendChild(a); ul.appendChild(li);
       });
       nav.appendChild(ul);
