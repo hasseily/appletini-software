@@ -16,17 +16,17 @@
 </header>
 <main id="main">
 <h1>Keyboard and joystick</h1>
-<p class="lead">Commands from key events, movement from the held key and the joystick, and buttons with press detection. All of it reads the standard //e inputs; the joystick needs the audio driver for its timer.</p>
+<p class="lead">Get commands from key events. Get movement from the held key and the joystick. Find button presses. All of these read the standard //e inputs. The joystick needs the audio driver for its timer.</p>
 
-<h2 id="keys">Two kinds of keyboard input</h2>
-<p>The //e keyboard reports characters, one at a time, and whether any key is down. It has no release events and no matrix of keys. libtini gives two views of it:</p>
+<h2 id="keys">Two types of keyboard input</h2>
+<p>The //e keyboard gives one character at a time, and it tells if a key is down. It gives no release events and no key matrix. libtini gives two types of keyboard input:</p>
 <ul>
-  <li><strong>Key events</strong> for commands and menus: <code>ti_input_poll</code> moves each new keypress into an eight-character queue, and <code>ti_input_key</code> takes them out in order.</li>
-  <li><strong>The held key</strong> for movement: <code>ti_input_held</code> returns the newest key while any key is down, or 0. Hold A, tap Space, and it returns Space until every key is up, so two held directions cannot make a diagonal; use the joystick for that.</li>
+  <li><strong>Key events</strong> for commands and menus. <code>ti_input_poll</code> puts each new key into a queue of eight characters. <code>ti_input_key</code> takes the keys from the queue in sequence.</li>
+  <li><strong>The held key</strong> for movement. <code>ti_input_held</code> returns the newest key while a key is down, or 0. If you hold A and push Space, it returns Space until all keys are up. Thus two held directions cannot give a diagonal. Use the joystick for diagonals.</li>
 </ul>
 
 <h2 id="move">Move while a key is held</h2>
-<p>A held key moves the player every update. A tap shorter than one drawn frame can come and go between two reads of the held key, so STARFALL also takes the direction from key events and keeps it for one frame. Arrow keys arrive as control codes: left 8, right 21, up 11, down 10.</p>
+<p>A held key moves the player in each update. A short push of a key can start and end between two reads of the held key. Thus STARFALL also takes the direction from key events, and keeps it for one frame. The arrow keys give these control codes: left 8, right 21, up 11, down 10.</p>
 <pre><code class="c">#define UP 1
 #define DOWN 2
 #define LEFT 4
@@ -43,7 +43,7 @@ static uint8_t direction_of(uint8_t k)
     return 0;
 }
 
-/* Once a frame, after ti_input_poll(). */
+/* One time for each frame, after ti_input_poll(). */
 static void read_keys(void)
 {
     uint8_t key, d;
@@ -53,41 +53,43 @@ static void read_keys(void)
     }
     key = ti_input_held();
     if (key) { if ((d = direction_of(key)) != 0) direction = d; }
-    else if (!tapped) direction = 0;    /* released, and no tap this frame */
+    else if (!tapped) direction = 0;    /* key released, and no short push in this frame */
     tapped = 0;
 }</code></pre>
 
 <h2 id="stick">The joystick</h2>
-<p><code>ti_stick_read</code> returns <code>TI_STICK_UP</code>, <code>DOWN</code>, <code>LEFT</code> and <code>RIGHT</code> bits, diagonals included, measured against the stick's own rest position. Real Apple joysticks rarely rest at 128 or travel the same distance each way, so the reader learns both:</p>
+<p><code>ti_stick_read</code> returns <code>TI_STICK_UP</code>, <code>DOWN</code>, <code>LEFT</code> and <code>RIGHT</code> bits, with diagonals. It measures them from the rest position of the stick. Apple joysticks rarely rest at 128, and their travel is often different in each direction. Thus the reader learns the rest position and the travel:</p>
 <ul>
-  <li>It takes the first reading within 48-207 on both axes as the rest. Call <code>ti_stick_recalibrate</code> whenever the stick should be untouched, such as when a run starts, a game resumes or the player turns the stick back on.</li>
-  <li>A direction engages beyond a third of the furthest travel seen on that side, at least 16 units, and releases at three quarters of that, so a stick held near the edge does not flicker.</li>
-  <li>With no stick, the reader returns <code>TI_STICK_ABSENT</code>; after four such reads it waits three seconds before measuring again, so an empty port costs little.</li>
+  <li>The first reading in the range 48-207 on the two axes becomes the rest position. Call <code>ti_stick_recalibrate</code> when the stick is not touched. For example, call it when a run starts, when a game continues after a pause, or when the player sets the stick on again.</li>
+  <li>A direction becomes active at more than one third of the largest travel on that side, with a minimum of 16 units. It becomes inactive at three quarters of that value. Thus a stick near the limit does not change between active and inactive.</li>
+  <li>When no stick is connected, the reader returns <code>TI_STICK_ABSENT</code>. After four such reads, it waits three seconds before it measures again. Thus an empty port costs little time.</li>
 </ul>
-<p>The starter and STARFALL combine stick and keys. A deflected stick wins; a stick at rest leaves the keys in charge, so both can stay connected:</p>
+<p>The starter and STARFALL use the stick and the keys together. A deflected stick has priority. A stick at its rest position lets the keys control the movement. Thus the stick and the keyboard can stay connected together:</p>
 <pre><code class="c">uint8_t stick = stick_enabled ? ti_stick_read(0) : TI_STICK_ABSENT;
 uint8_t input;
 read_keys();
 if (stick != TI_STICK_ABSENT &amp;&amp; stick) input = stick;   /* deflected */
 else input = direction;                                  /* keys */</code></pre>
-<p>Give players a key that turns the stick off (STARFALL uses <kbd>J</kbd>): a stick that drifts badly would otherwise keep overriding the keys.</p>
+<p>Give the players a key that sets the stick off. STARFALL uses <kbd>J</kbd>. Without this key, a stick with a bad drift always has priority over the keys.</p>
 
 <h2 id="buttons">Buttons</h2>
-<p><code>ti_input_buttons</code> returns the three button inputs as bits 0-2; the joystick's two buttons are the Open and Solid Apple inputs, bits 0 and 1. Detect a press by comparing with the last reading:</p>
+<p><code>ti_input_buttons</code> returns the three button inputs as bits 0-2. The two joystick buttons are the Open Apple and Solid Apple inputs, bits 0 and 1. To find a new push, compare the value with the last value:</p>
 <pre><code class="c">static uint8_t last_buttons;
 uint8_t now = ti_input_buttons() &amp; 3;
 uint8_t pressed = now &amp;&amp; !last_buttons;
 last_buttons = now;
 if (pressed) drop_bomb();</code></pre>
-<p>A player may still be holding a button when the game changes state, such as when the ship is lost. Ignore presses for a moment then: STARFALL accepts a retry only one second after the ship is lost.</p>
+<p>A player can hold a button when the state of the game changes, for example when the ship is lost. Ignore pushes for a short time after such a change. STARFALL accepts a retry only one second after the loss of the ship.</p>
 
 <h2 id="raw">Raw readings</h2>
-<p><code>ti_joystick_read</code> returns both paddles as 0-255 with the buttons. Use it for analog control or for a screen that shows what the stick reports; STARFALL's pause panel prints <code>JOY x y</code> so a player can check a stick. A paddle still running after 4 ms reads 255 and the call returns <code>TI_E_TIMING</code>; a read that interrupts disturbed returns <code>TI_E_BUSY</code> and leaves the old values, so try again next frame.</p>
+<p><code>ti_joystick_read</code> returns the two paddles as values 0-255, and the buttons. Use it for analog control, or for a screen that shows the stick values. The STARFALL pause panel shows <code>JOY x y</code>, so that a player can examine a stick.</p>
+<p>A paddle that has not finished after 4 ms reads 255, and the call returns <code>TI_E_TIMING</code>. If interrupts disturb a read, the call returns <code>TI_E_BUSY</code> and keeps the old values. Then try again in the next frame.</p>
 <pre><code class="c">ti_joystick j;
 if (ti_joystick_read(&amp;j) != TI_E_BUSY) show_stick(j.x, j.y);</code></pre>
 
 <h2 id="paddle-strobe">Why paddle reads wait</h2>
-<p>On the //e, any access to $C070-$C07F starts the paddle timers, including the RamWorks bank selector at $C073, and a 558 timer that is still running ignores a new start. A read started too soon after such an access would measure from the earlier start and come out short; on a stick that shows up as right and down readings jumping back. libtini avoids writing the selector for bank 0 transfers, which include all screen publication, and every read waits up to 4 ms for running timers to finish. Do not touch $C070-$C07F yourself between reads.</p>
+<p>On the //e, each access to $C070-$C07F starts the paddle timers. This includes the RamWorks bank selector at $C073. A 558 timer that has not finished ignores a new start. A read that starts too soon after such an access measures from the previous start, and its value is too short. On a stick, the right and down readings then jump back.</p>
+<p>Thus libtini does not write the selector for bank 0 transfers, which include all screen publications. Each read also waits a maximum of 4 ms for running timers to finish. Do not access $C070-$C07F in your code between reads.</p>
 
 <div class="pager"><a href="sound.html">Music, effects and speech</a><a href="assets.html">Art, fonts, maps and packs</a></div>
 <footer class="page-foot">libtini is licensed under the <a href="../../LICENSE">MIT License</a>.</footer>

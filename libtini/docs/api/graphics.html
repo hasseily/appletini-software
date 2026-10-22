@@ -17,33 +17,33 @@
 <main id="main">
 <h1>Graphics</h1>
 <p class="include">#include "libtini/graphics.h"</p>
-<p class="lead">Software surfaces in banked memory, drawing into them, and publishing them to the 320x200 Super Hi-Res screen with ordinary CPU writes. For many moving sprites over a plain background, see <a href="scene.html">sprite scenes</a>.</p>
+<p class="lead">This header gives software surfaces in banked memory and functions that draw into them. Other functions publish the surfaces to the 320x200 Super Hi-Res screen with usual CPU writes. For many sprites that move on a plain background, use <a href="scene.html">sprite scenes</a>.</p>
 
 <div class="table"><table class="compact">
 <tr><th>Function</th><th>Purpose</th></tr>
 <tr><td><code>ti_gfx_surface_create</code>, <code>ti_gfx_surface_free</code></td><td>Own a banked surface</td></tr>
-<tr><td><code>ti_gfx_clear</code>, <code>ti_gfx_rect</code>, <code>ti_gfx_line</code></td><td>Fill a surface, a rectangle, draw a line</td></tr>
+<tr><td><code>ti_gfx_clear</code>, <code>ti_gfx_rect</code>, <code>ti_gfx_line</code></td><td>Fill a surface, fill a rectangle, draw a line</td></tr>
 <tr><td><code>ti_gfx_text</code>, <code>ti_gfx_text_opaque</code>, <code>ti_digits</code></td><td>Text in the built-in 5x7 font, and fixed-width numbers</td></tr>
-<tr><td><code>ti_gfx_text_font</code></td><td>Text in a bitmap font stored in a resource</td></tr>
+<tr><td><code>ti_gfx_text_font</code></td><td>Text in a bitmap font in a resource</td></tr>
 <tr><td><code>ti_gfx_blit</code>, <code>ti_gfx_sprite</code></td><td>Copy between surfaces, with a colour key or a mask</td></tr>
-<tr><td><code>ti_gfx_map</code>, <code>ti_gfx_animation_frame</code></td><td>Draw a scrolling tile map; pick an animation frame</td></tr>
-<tr><td><code>ti_gfx_begin</code>, <code>ti_gfx_palette</code>, <code>ti_gfx_end</code></td><td>Own the screen, set its colours, give it back</td></tr>
-<tr><td><code>ti_gfx_budget</code>, <code>ti_gfx_present</code>, <code>ti_gfx_present_rows</code></td><td>Publish to the screen within a budget</td></tr>
+<tr><td><code>ti_gfx_map</code>, <code>ti_gfx_animation_frame</code></td><td>Draw a tile map that scrolls; select an animation frame</td></tr>
+<tr><td><code>ti_gfx_begin</code>, <code>ti_gfx_palette</code>, <code>ti_gfx_end</code></td><td>Get the screen, set its colours, release the screen</td></tr>
+<tr><td><code>ti_gfx_budget</code>, <code>ti_gfx_present</code>, <code>ti_gfx_present_rows</code></td><td>Publish to the screen in a budget</td></tr>
 </table></div>
 
 <h2 id="pixels">Pixels, surfaces and the screen</h2>
-<p>A pixel is a 4-bit palette index. Two pixels share a byte, the left one in the high nibble. A surface row of width <em>w</em> takes <code>(w + 1) / 2</code> bytes, its stride; an odd width leaves the last low nibble unused.</p>
-<p>The Super Hi-Res screen uses the same packing: 200 rows of 160 bytes at AUX $2000, then 200 scan-line control bytes at $9D00 and sixteen palettes at $9E00. libtini sets every line to 320-pixel mode with palette 0, so the whole screen shares one palette of sixteen 0RGB colours.</p>
-<p>Surfaces live in banked memory. Drawing changes a surface only; nothing appears until <code>ti_gfx_present</code> copies a rectangle of a 320x200 surface to the screen. Keep the surface authoritative: publication reads the bytes it writes from it, including the neighbour pixel of a partly covered byte.</p>
+<p>A pixel is a 4-bit palette index. One byte holds two pixels. The left pixel is in the high nibble. A surface row of width <em>w</em> uses <code>(w + 1) / 2</code> bytes: this is its stride. With an odd width, the last low nibble of each row is not used.</p>
+<p>The Super Hi-Res screen packs pixels in the same way. It has 200 rows of 160 bytes at AUX $2000, 200 scan-line control bytes at $9D00 and sixteen palettes at $9E00. libtini sets all lines to 320-pixel mode with palette 0. Thus the full screen uses one palette of sixteen 0RGB colours.</p>
+<p>Surfaces are in banked memory. A draw call changes only a surface. The screen changes only when <code>ti_gfx_present</code> copies a rectangle of a 320x200 surface to the screen. Keep the surface as the authority: publication reads all bytes that it writes from the surface. This includes the neighbour pixel of a byte at the edge of the rectangle.</p>
 
 <h2 id="constants">Constants</h2>
 <div class="table"><table>
 <tr><th>Name</th><th class="num">Value</th><th>Meaning</th></tr>
 <tr><td><code>TI_GFX_WIDTH</code>, <code>TI_GFX_HEIGHT</code></td><td class="num">320, 200</td><td>Screen size in pixels</td></tr>
-<tr><td><code>TI_GFX_OPAQUE</code></td><td class="num">255</td><td>A blit colour key that copies every pixel</td></tr>
-<tr><td><code>TI_GFX_CLOCK_VALID</code></td><td class="num">1</td><td>Statistics flag: <code>elapsed_ticks</code> was measured</td></tr>
-<tr><td><code>TI_GFX_OVERRUN</code></td><td class="num">2</td><td>Statistics flag: the measured time exceeded the tick budget</td></tr>
-<tr><td><code>TI_GFX_EDGE_GAP</code></td><td class="num">4</td><td>Statistics flag, always set: the work may have hidden display edges</td></tr>
+<tr><td><code>TI_GFX_OPAQUE</code></td><td class="num">255</td><td>A blit colour key that copies all pixels</td></tr>
+<tr><td><code>TI_GFX_CLOCK_VALID</code></td><td class="num">1</td><td>Statistics flag: <code>elapsed_ticks</code> contains a measurement</td></tr>
+<tr><td><code>TI_GFX_OVERRUN</code></td><td class="num">2</td><td>Statistics flag: the measured time is more than the tick budget</td></tr>
+<tr><td><code>TI_GFX_EDGE_GAP</code></td><td class="num">4</td><td>Statistics flag, always set: the work can hide display edges</td></tr>
 </table></div>
 
 <h2 id="types">Types</h2>
@@ -54,23 +54,23 @@
     uint32_t offset;   /* permits a borrowed view into one resource pack */
     uint16_t width, height, stride;
 } ti_surface;</pre>
-<p>Packed pixels in a resource, starting <code>offset</code> bytes in. Width is 1-320, height 1-200 and <code>stride</code> must equal <code>(width + 1) / 2</code>; every drawing call checks this and the resource's extent before it starts.</p>
-<p>A surface made by <code>ti_gfx_surface_create</code> owns its resource. A copy of the structure, or a surface filled in by hand to view an image inside a pack, only borrows the resource: never free a borrowed view, and stop using every view before the owner is freed.</p>
+<p>A surface is packed pixels in a resource, from <code>offset</code>. The width is 1-320 and the height is 1-200. <code>stride</code> must be equal to <code>(width + 1) / 2</code>. Each draw call checks these values and the size of the resource before it starts.</p>
+<p>A surface from <code>ti_gfx_surface_create</code> owns its resource. A copy of the structure is only a view of the resource. A surface that you fill in to show an image in a pack is also a view. Do not free a view. Stop all use of a view before you free its owner.</p>
 </section>
 <section class="fn" id="ti_rect">
 <h3><code class="def">ti_rect</code></h3>
 <pre class="sig" data-name="ti_rect">typedef struct ti_rect { int16_t x, y; uint16_t width, height; } ti_rect;</pre>
-<p>A rectangle with a signed position. Calls clip it to the surface unless their entry says otherwise.</p>
+<p>A rectangle with a signed position. Calls clip it to the surface, unless the function entry gives a different rule.</p>
 </section>
 <section class="fn" id="ti_gfx_stats">
 <h3><code class="def">ti_gfx_stats</code></h3>
 <pre class="sig" data-name="ti_gfx_stats">typedef struct ti_gfx_stats { uint32_t bytes, elapsed_ticks; uint8_t flags; } ti_gfx_stats;</pre>
-<p>Filled by a publication: the bytes written to the screen, the ticks it took when a budget clock is set, and the <code>TI_GFX_*</code> flags.</p>
+<p>A publication fills this structure. It contains the bytes written to the screen, the ticks that the publication used when a budget clock is set, and the <code>TI_GFX_*</code> flags.</p>
 </section>
 <section class="fn" id="ti_sprite">
 <h3><code class="def">ti_sprite</code></h3>
 <pre class="sig" data-name="ti_sprite">typedef struct ti_sprite { ti_surface image; ti_handle mask; uint32_t mask_offset; } ti_sprite;</pre>
-<p>An image with an optional opacity mask: one bit per pixel, high bit first, 1 for opaque, each row <code>(image.width + 7) / 8</code> bytes. With <code>mask</code> 0, colour 0 is transparent instead. Image and mask may share one resource at different offsets; both are borrowed.</p>
+<p>A sprite is an image with an optional opacity mask. The mask has one bit for each pixel, high bit first, and 1 means opaque. Each mask row has <code>(image.width + 7) / 8</code> bytes. When <code>mask</code> is 0, colour 0 is transparent. The image and the mask can be in one resource at different offsets. Both are views.</p>
 </section>
 <section class="fn" id="ti_tileset">
 <h3><code class="def">ti_tileset</code></h3>
@@ -79,7 +79,7 @@
     uint8_t tile_width, tile_height, columns;
     uint16_t count;
 } ti_tileset;</pre>
-<p>An atlas of <code>count</code> tiles (1-256), <code>columns</code> to a row, numbered left to right, top to bottom. The atlas must hold <code>columns * tile_width</code> pixels across and enough rows of tiles for <code>count</code>.</p>
+<p>A tile set is an atlas of <code>count</code> tiles (1-256), with <code>columns</code> tiles in each row. The tile numbers go left to right, then top to bottom. The atlas must be <code>columns * tile_width</code> pixels wide or more, and it must have sufficient tile rows for <code>count</code>.</p>
 </section>
 <section class="fn" id="ti_tilemap">
 <h3><code class="def">ti_tilemap</code></h3>
@@ -88,12 +88,12 @@
     uint32_t offset;
     uint16_t columns, rows;
 } ti_tilemap;</pre>
-<p>A map of 1-256 by 1-256 one-byte tile numbers in a resource.</p>
+<p>A map of 1-256 by 1-256 tile numbers in a resource. Each tile number is one byte.</p>
 </section>
 <section class="fn" id="ti_animation">
 <h3><code class="def">ti_animation</code></h3>
 <pre class="sig" data-name="ti_animation">typedef struct ti_animation { uint16_t first, count, ticks_per_frame; } ti_animation;</pre>
-<p>A run of <code>count</code> frame numbers starting at <code>first</code>, each shown for <code>ticks_per_frame</code> device ticks.</p>
+<p>A sequence of <code>count</code> frame numbers that starts at <code>first</code>. Each frame shows for <code>ticks_per_frame</code> device ticks.</p>
 </section>
 <section class="fn" id="ti_bitmap_font">
 <h3><code class="def">ti_bitmap_font</code></h3>
@@ -102,92 +102,92 @@
     uint32_t offset;
     uint8_t width, height, first, count; /* one byte per glyph row, MSB first */
 } ti_bitmap_font;</pre>
-<p>Glyphs of 1-8 by 1-16 pixels for character codes <code>first</code> to <code>first + count - 1</code>, stored in a resource as <code>height</code> bytes per glyph, the leftmost pixel in the high bit. <code>tools/assets.py font</code> produces this layout after an 8-byte header.</p>
+<p>A bitmap font has glyphs of 1-8 by 1-16 pixels for the character codes <code>first</code> to <code>first + count - 1</code>. The resource holds <code>height</code> bytes for each glyph. The leftmost pixel is in the high bit. <code>tools/assets.py font</code> writes this layout after an 8-byte header.</p>
 </section>
 
-<h2 id="surfaces">Surfaces</h2>
+<h2 id="surfaces">Surface functions</h2>
 <section class="fn" id="ti_gfx_surface_create">
 <h3><code class="def">ti_gfx_surface_create</code></h3>
 <pre class="sig" data-name="ti_gfx_surface_create">ti_error ti_gfx_surface_create(ti_surface *surface, uint16_t width, uint16_t height);</pre>
-<p>Allocates a resource of <code>stride * height</code> bytes and fills in <code>*surface</code>. The pixels are not cleared: call <code>ti_gfx_clear</code> before publishing. The structure must be zero-initialized first, as static and global structures are.</p>
+<p>This function allocates a resource of <code>stride * height</code> bytes and fills in <code>*surface</code>. It does not clear the pixels. Call <code>ti_gfx_clear</code> before you publish the surface. The structure must contain zeros before the call. Static and global structures contain zeros at startup.</p>
 <p class="returns-title">Returns</p>
 <div class="table"><table class="compact">
 <tr><td><code>TI_OK</code></td><td>The surface owns a new resource.</td></tr>
 <tr><td><code>TI_E_ARGUMENT</code></td><td><code>surface</code> is not writable near memory.</td></tr>
-<tr><td><code>TI_E_STATE</code></td><td><code>surface-&gt;pixels</code> is not zero: the structure already owns a resource, or was not initialized.</td></tr>
-<tr><td><code>TI_E_RANGE</code></td><td>Width outside 1-320 or height outside 1-200.</td></tr>
-<tr><td><code>TI_E_NOMEM</code>, <code>TI_E_STATE</code></td><td>From <code>ti_res_alloc</code>: no slot or room, or no <code>ti_init</code>. The structure's sizes are zeroed.</td></tr>
+<tr><td><code>TI_E_STATE</code></td><td><code>surface-&gt;pixels</code> is not zero: the structure already owns a resource, or it does not contain zeros.</td></tr>
+<tr><td><code>TI_E_RANGE</code></td><td>The width is not 1-320, or the height is not 1-200.</td></tr>
+<tr><td><code>TI_E_NOMEM</code>, <code>TI_E_STATE</code></td><td>From <code>ti_res_alloc</code>: no free slot or space, or no <code>ti_init</code>. The sizes in the structure are set to zero.</td></tr>
 </table></div>
 </section>
 <section class="fn" id="ti_gfx_surface_free">
 <h3><code class="def">ti_gfx_surface_free</code></h3>
 <pre class="sig" data-name="ti_gfx_surface_free">ti_error ti_gfx_surface_free(ti_surface *surface);</pre>
-<p>Frees the surface's resource and zeroes the structure, so it can be created again.</p>
+<p>This function frees the resource of the surface and sets the structure to zeros. You can then create the surface again.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_ARGUMENT</code> for an unwritable pointer; <code>TI_E_HANDLE</code> when the resource is not live, as after a second free.</p>
+<p><code>TI_OK</code>; <code>TI_E_ARGUMENT</code> for a pointer that is not writable; <code>TI_E_HANDLE</code> when the resource is not live, for example after a second free.</p>
 </section>
 
-<h2 id="drawing">Drawing</h2>
-<p>Drawing calls are synchronous, foreground-only and non-reentrant. Strings and structures need to stay valid only until the call returns. Every call first checks the surface: <code>TI_E_ARGUMENT</code> for an unreadable structure or inconsistent sizes, <code>TI_E_HANDLE</code> for a dead resource, <code>TI_E_RANGE</code> when the pixels pass the resource's end. Colours are 0-15; a larger colour returns <code>TI_E_ARGUMENT</code>.</p>
-<p>Rectangles, text, clearing and publication move whole rows between the surface's bank and a near row buffer with one assembly routine. Lines and bitmap fonts plot single pixels through a 128-byte cache, and blits, sprites and maps go through resource reads and writes, so they cost more per pixel. A program that only fills rectangles and uses the built-in font does not link the pixel cache.</p>
-<p class="note">A resource error in the middle of a draw can leave part of it done. Drawing is not transactional; stop or redraw from a known state.</p>
+<h2 id="drawing">Draw functions</h2>
+<p>Draw calls are synchronous foreground calls and are not reentrant. Strings and structures must stay valid only until the call returns. Each call examines the surface first. It returns <code>TI_E_ARGUMENT</code> for a structure that it cannot read or for sizes that do not agree. It returns <code>TI_E_HANDLE</code> for a resource that is not live, and <code>TI_E_RANGE</code> when the pixels go past the end of the resource. Colours are 0-15. A larger colour gives <code>TI_E_ARGUMENT</code>.</p>
+<p>Rectangles, text, clear and publication use one assembly routine. It moves full rows between the bank of the surface and a near row buffer. Lines and bitmap fonts plot single pixels through a 128-byte cache. Blits, sprites and maps use resource reads and writes. Thus these functions use more time for each pixel. A program that uses only rectangles and the built-in font does not link the pixel cache.</p>
+<p class="note">When a resource error occurs during a draw call, a part of the draw can be complete. A draw call is not a transaction. Stop, or draw again from a known state.</p>
 
 <section class="fn" id="ti_gfx_clear">
 <h3><code class="def">ti_gfx_clear</code></h3>
 <pre class="sig" data-name="ti_gfx_clear">ti_error ti_gfx_clear(ti_surface *surface, uint8_t color);</pre>
-<p>Fills the whole surface with <code>color</code>, the unused padding nibble of odd-width rows included.</p>
+<p>This function fills the full surface with <code>color</code>. This includes the unused nibble at the end of each row of an odd width.</p>
 </section>
 
 <section class="fn" id="ti_gfx_rect">
 <h3><code class="def">ti_gfx_rect</code></h3>
 <pre class="sig" data-name="ti_gfx_rect">ti_error ti_gfx_rect(ti_surface *surface, int16_t x, int16_t y,
                      uint16_t width, uint16_t height, uint8_t color);</pre>
-<p>Fills a rectangle, clipped to the surface. A rectangle that is entirely outside returns <code>TI_OK</code> without drawing. It builds one row of bytes and writes it to every line; when an edge falls inside a byte it reads each line first so the outside pixel keeps its colour.</p>
+<p>This function fills a rectangle and clips it to the surface. When the full rectangle is outside the surface, it returns <code>TI_OK</code> and draws nothing. The function makes one row of bytes and writes it to all lines. When an edge of the rectangle is in the middle of a byte, it reads each line first. Thus the pixel outside the rectangle keeps its colour.</p>
 </section>
 
 <section class="fn" id="ti_gfx_line">
 <h3><code class="def">ti_gfx_line</code></h3>
 <pre class="sig" data-name="ti_gfx_line">ti_error ti_gfx_line(ti_surface *surface, int16_t x0, int16_t y0,
                      int16_t x1, int16_t y1, uint8_t color);</pre>
-<p>Draws a Bresenham line, both endpoints included, clipped pixel by pixel. Endpoints must lie in -1024 to 1024 on both axes, which bounds the work; others return <code>TI_E_RANGE</code>.</p>
+<p>This function draws a Bresenham line that includes the two endpoints. It clips each pixel. The endpoints must be in the range -1024 to 1024 on the two axes, which limits the work. Other endpoints give <code>TI_E_RANGE</code>.</p>
 </section>
 
 <section class="fn" id="ti_gfx_text">
 <h3><code class="def">ti_gfx_text</code></h3>
 <pre class="sig" data-name="ti_gfx_text">ti_error ti_gfx_text(ti_surface *surface, int16_t x, int16_t y,
                      const char *text, uint8_t color);</pre>
-<p>Draws a NUL-terminated string in the built-in font. Each character is a 5x7 glyph in a 6x8 cell whose top-left corner is at the pen position; the pen then moves 6 pixels right. A newline (byte 10) returns to <code>x</code> and moves down 8 pixels. Only lit pixels are drawn: the rest of the cell keeps its colours. Text is clipped to the surface.</p>
-<p>The font has the space, <code>! " ' ( ) * + , - . /</code>, the digits, <code>: &lt; = &gt; ?</code>, the capital letters and <code>[ ] _</code>. Lower-case letters are drawn as capitals. Every other byte is drawn as <code>?</code>.</p>
-<p>A call reads at most 1024 characters, newlines included. Each pixel row of a line of text is one read and one write of the bytes it covers.</p>
+<p>This function draws a NUL-terminated string in the built-in font. Each character is a 5x7 glyph in a 6x8 cell. The top-left corner of the cell is at the pen position. After each character, the pen moves 6 pixels to the right. A newline (byte 10) moves the pen back to <code>x</code> and 8 pixels down. The function draws only the lit pixels. The other pixels of the cell keep their colours. The function clips the text to the surface.</p>
+<p>The font has the space, <code>! " ' ( ) * + , - . /</code>, the digits, <code>: &lt; = &gt; ?</code>, the capital letters and <code>[ ] _</code>. The function draws lower-case letters as capital letters. It draws all other bytes as <code>?</code>.</p>
+<p>A call reads a maximum of 1024 characters, newlines included. For each pixel row of a text line, the function reads and writes the bytes of that line one time.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_ARGUMENT</code> for a NULL string or a colour above 15; <code>TI_E_RANGE</code> when <code>x</code> or <code>y</code> is outside -1024 to 1024, or when the string runs out of readable near memory before its NUL (lines before that point are drawn).</p>
+<p><code>TI_OK</code>; <code>TI_E_ARGUMENT</code> for a NULL string or a colour above 15; <code>TI_E_RANGE</code> when <code>x</code> or <code>y</code> is outside -1024 to 1024. The function also returns <code>TI_E_RANGE</code> when the string goes out of readable near memory before its NUL. It draws the lines before that point.</p>
 </section>
 
 <section class="fn" id="ti_gfx_text_opaque">
 <h3><code class="def">ti_gfx_text_opaque</code></h3>
 <pre class="sig" data-name="ti_gfx_text_opaque">ti_error ti_gfx_text_opaque(ti_surface *surface, int16_t x, int16_t y,
                             const char *text, uint8_t color, uint8_t background);</pre>
-<p>Draws like <code>ti_gfx_text</code>, but fills every whole 6x8 cell, its gap column and eighth row included, with <code>background</code> first. A new value then covers an older one of the same length without clearing a rectangle, and the area to publish is exactly <code>6 * length</code> by 8 pixels. It writes rows without reading them unless a line's edge splits a byte.</p>
+<p>This function draws text as <code>ti_gfx_text</code> does. But first it fills each full 6x8 cell with <code>background</code>, the gap column and the eighth row included. Thus a new value covers an old value of the same length, and you do not have to clear a rectangle first. The area to publish is exactly <code>6 * length</code> by 8 pixels. The function writes rows without a read, unless an edge of the line is in the middle of a byte.</p>
 <pre><code class="c">static const ti_rect score_cells = {250, 64, 7 * 6, 8};
 char text[8];
 ti_gfx_text_opaque(&amp;canvas, 250, 64, ti_digits(text, score, 7), 9, 0);
-ti_gfx_present(&amp;canvas, &amp;score_cells, 0);   /* publish just those cells */</code></pre>
+ti_gfx_present(&amp;canvas, &amp;score_cells, 0);   /* publish only these cells */</code></pre>
 </section>
 
 <section class="fn" id="ti_digits">
 <h3><code class="def">ti_digits</code></h3>
 <pre class="sig" data-name="ti_digits">char *ti_digits(char *text, uint32_t value, uint8_t count);</pre>
-<p>Writes exactly <code>count</code> decimal digits of <code>value</code>, zero padded, and a NUL. A value with more digits keeps its last <code>count</code>: <code>ti_digits(s, 123456, 4)</code> writes <code>"3456"</code>. <code>count</code> is 1-10 and <code>text</code> needs <code>count + 1</code> writable near bytes.</p>
-<p>Returns <code>text</code>, or NULL for a bad count or buffer. The text functions reject NULL with <code>TI_E_ARGUMENT</code>, so the result can be passed straight to them. It is written in assembly and doubles a BCD number instead of dividing by ten.</p>
+<p>This function writes exactly <code>count</code> decimal digits of <code>value</code>, with leading zeros, and a NUL. When the value has more digits, the function keeps the last <code>count</code> digits. For example, <code>ti_digits(s, 123456, 4)</code> writes <code>"3456"</code>. <code>count</code> is 1-10. <code>text</code> must have <code>count + 1</code> writable near bytes.</p>
+<p>The function returns <code>text</code>, or NULL for an incorrect count or buffer. The text functions reject NULL with <code>TI_E_ARGUMENT</code>. Thus you can give the result directly to them. The function is in assembly. It doubles a BCD number for each bit and does not divide by ten.</p>
 </section>
 
 <section class="fn" id="ti_gfx_text_font">
 <h3><code class="def">ti_gfx_text_font</code></h3>
 <pre class="sig" data-name="ti_gfx_text_font">ti_error ti_gfx_text_font(ti_surface *surface, int16_t x, int16_t y,
                           const char *text, uint8_t color, const ti_bitmap_font *font);</pre>
-<p>Draws a string in a bitmap font. Each glyph's lit pixels are drawn; the pen then moves <code>width + 1</code> pixels. A character outside the font leaves a blank advance. A newline returns to <code>x</code> and moves down <code>height + 1</code> pixels. At most 1024 characters are read.</p>
+<p>This function draws a string in a bitmap font. It draws the lit pixels of each glyph. Then the pen moves <code>width + 1</code> pixels. A character that is not in the font gives an empty space of the same width. A newline moves the pen back to <code>x</code> and <code>height + 1</code> pixels down. The function reads a maximum of 1024 characters.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_ARGUMENT</code> for a NULL or unreadable font or string, a colour above 15, or font sizes outside 1-8 by 1-16 with <code>first + count</code> above 256; <code>TI_E_RANGE</code> when the glyphs pass the resource's end or the string runs out of near memory; <code>TI_E_HANDLE</code> for a dead glyph resource.</p>
+<p><code>TI_OK</code>; <code>TI_E_ARGUMENT</code> for a NULL font or string, a font or string that the function cannot read, a colour above 15, font sizes outside 1-8 by 1-16, or <code>first + count</code> above 256; <code>TI_E_RANGE</code> when the glyphs go past the end of the resource or the string goes out of near memory; <code>TI_E_HANDLE</code> for a glyph resource that is not live.</p>
 </section>
 
 <section class="fn" id="ti_gfx_blit">
@@ -195,18 +195,18 @@ ti_gfx_present(&amp;canvas, &amp;score_cells, 0);   /* publish just those cells 
 <pre class="sig" data-name="ti_gfx_blit">ti_error ti_gfx_blit(ti_surface *destination, int16_t x, int16_t y,
                      const ti_surface *source, const ti_rect *source_rectangle,
                      uint8_t transparent_color);</pre>
-<p>Copies a rectangle of <code>source</code> to <code>destination</code> with its top-left corner at <code>x</code>, <code>y</code>, clipped to the destination. <code>NULL</code> selects the whole source. Pixels of <code>transparent_color</code> (0-15) are skipped; <code>TI_GFX_OPAQUE</code> copies every pixel. Odd source and destination positions both work. The copy runs in pieces of up to 240 pixels per row through near buffers.</p>
+<p>This function copies a rectangle of <code>source</code> to <code>destination</code>. The top-left corner of the copy is at <code>x</code>, <code>y</code>. The function clips the copy to the destination. <code>NULL</code> selects the full source. The function skips pixels of <code>transparent_color</code> (0-15). <code>TI_GFX_OPAQUE</code> copies all pixels. Odd source and destination positions are correct. The copy uses pieces of a maximum of 240 pixels for each row and moves them through near buffers.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_ARGUMENT</code> when both surfaces use the same resource handle (copies within one resource are rejected before any change), for a colour key that is neither 0-15 nor 255, or an unreadable rectangle; <code>TI_E_RANGE</code> when the source rectangle is not wholly inside the source; the surface errors above.</p>
+<p><code>TI_OK</code>; <code>TI_E_ARGUMENT</code> when the two surfaces use the same resource handle (the function rejects a copy in one resource before it changes anything), for a colour key that is not 0-15 or 255, or for a rectangle that it cannot read; <code>TI_E_RANGE</code> when the source rectangle is not fully in the source; the surface errors above.</p>
 </section>
 
 <section class="fn" id="ti_gfx_sprite">
 <h3><code class="def">ti_gfx_sprite</code></h3>
 <pre class="sig" data-name="ti_gfx_sprite">ti_error ti_gfx_sprite(ti_surface *destination, int16_t x, int16_t y,
                        const ti_sprite *sprite);</pre>
-<p>Draws a whole sprite image, clipped. With a mask, a mask bit of 1 copies its pixel, colour 0 included, and 0 leaves the destination pixel. Without one, colour 0 is transparent. The mask must not use the destination's handle, and the image the same rules as a blit source.</p>
+<p>This function draws a full sprite image and clips it. With a mask, a mask bit of 1 copies its pixel, colour 0 included. A mask bit of 0 keeps the destination pixel. Without a mask, colour 0 is transparent. The mask must not use the handle of the destination. The image has the same rules as a blit source.</p>
 <p class="returns-title">Returns</p>
-<p>As <code>ti_gfx_blit</code>; also <code>TI_E_ARGUMENT</code> for an unreadable <code>sprite</code> and <code>TI_E_RANGE</code> or <code>TI_E_HANDLE</code> when the mask does not fit its resource.</p>
+<p>The same results as <code>ti_gfx_blit</code>. Also <code>TI_E_ARGUMENT</code> when the function cannot read <code>sprite</code>, and <code>TI_E_RANGE</code> or <code>TI_E_HANDLE</code> when the mask does not fit in its resource.</p>
 </section>
 
 <section class="fn" id="ti_gfx_map">
@@ -214,36 +214,37 @@ ti_gfx_present(&amp;canvas, &amp;score_cells, 0);   /* publish just those cells 
 <pre class="sig" data-name="ti_gfx_map">ti_error ti_gfx_map(ti_surface *destination, const ti_rect *viewport,
                     const ti_tileset *tiles, const ti_tilemap *map,
                     uint16_t camera_x, uint16_t camera_y);</pre>
-<p>Fills <code>viewport</code>, clipped to the destination, with the part of the map whose top-left world pixel is <code>camera_x</code>, <code>camera_y</code>. Tiles are copied opaquely. Pixels beyond the map's edge are colour 0. Scroll by changing the camera.</p>
+<p>This function fills <code>viewport</code>, clipped to the destination, with a part of the map. The top-left world pixel of that part is <code>camera_x</code>, <code>camera_y</code>. The function copies tiles opaquely. Pixels past the edge of the map are colour 0. To scroll, change the camera position.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_ARGUMENT</code> for an unreadable viewport, tile set or map; <code>TI_E_RANGE</code> for zero or oversized tile or map sizes, an atlas too small for its tiles, a camera position plus viewport past 65,535, or a map cell whose tile number is not below <code>count</code> (found while drawing, so earlier tiles are drawn); surface and handle errors from the atlas, cells or destination.</p>
+<p><code>TI_OK</code>; <code>TI_E_ARGUMENT</code> for a viewport, tile set or map that the function cannot read; <code>TI_E_RANGE</code> for zero or too large tile or map sizes, an atlas that is too small for its tiles, a camera position plus viewport past 65,535, or a map cell with a tile number of <code>count</code> or more. The function finds an incorrect tile number during the draw, thus it draws the tiles before that cell. The function also returns the surface and handle errors of the atlas, the cells and the destination.</p>
 </section>
 
 <section class="fn" id="ti_gfx_animation_frame">
 <h3><code class="def">ti_gfx_animation_frame</code></h3>
 <pre class="sig" data-name="ti_gfx_animation_frame">uint16_t ti_gfx_animation_frame(const ti_animation *animation, uint32_t elapsed_ticks);</pre>
-<p>Returns <code>first + (elapsed_ticks / ticks_per_frame) % count</code>. Pass elapsed device ticks, not a count of drawn frames, so the animation keeps its speed when drawing slows. Returns 0 for a NULL or unreadable descriptor, a zero <code>count</code> or <code>ticks_per_frame</code>, or <code>first + count</code> past 65,535.</p>
+<p>This function returns <code>first + (elapsed_ticks / ticks_per_frame) % count</code>. Give it elapsed device ticks, not a count of drawn frames. Thus the animation keeps its speed when the draw rate decreases. The function returns 0 for a NULL descriptor, a descriptor that it cannot read, a zero <code>count</code> or <code>ticks_per_frame</code>, or <code>first + count</code> past 65,535.</p>
 </section>
 
 <h2 id="session">The video session</h2>
 <section class="fn" id="ti_gfx_begin">
 <h3><code class="def">ti_gfx_begin</code></h3>
 <pre class="sig" data-name="ti_gfx_begin">ti_error ti_gfx_begin(const uint16_t *palette);</pre>
-<p>Takes the screen. It allocates a 32,768-byte resource and saves all of AUX bank 0 from $2000 to $9FFF into it, turns the Appletini's SHR display on, sets all 200 scan lines (and the padding after them) to 320-pixel mode with palette 0, and writes <code>palette</code>, sixteen 0RGB words from 0x000 to 0xFFF. It changes no slot or speed setting. The pixel area still holds whatever was there, so publish a cleared surface straight away.</p>
+<p>This function gets the screen. It allocates a 32,768-byte resource and saves all of AUX bank 0 from $2000 to $9FFF in it. It sets the Appletini SHR display on. It sets all 200 scan lines, and the padding after them, to 320-pixel mode with palette 0. Then it writes <code>palette</code>: sixteen 0RGB words from 0x000 to 0xFFF.</p>
+<p>The function does not change the slot or speed settings. The pixel area keeps its old contents. Thus publish a clear surface immediately after this call.</p>
 <p class="returns-title">Returns</p>
 <div class="table"><table class="compact">
 <tr><td><code>TI_OK</code></td><td>The session is active.</td></tr>
 <tr><td><code>TI_E_STATE</code></td><td>A session is already active, or there is no <code>ti_init</code> grant for the backup.</td></tr>
 <tr><td><code>TI_E_ARGUMENT</code></td><td><code>palette</code> is not 32 readable near bytes.</td></tr>
 <tr><td><code>TI_E_RANGE</code></td><td>An entry is above 0x0FFF.</td></tr>
-<tr><td><code>TI_E_NOMEM</code></td><td>No slot or room for the backup; the screen is unchanged.</td></tr>
+<tr><td><code>TI_E_NOMEM</code></td><td>No slot or space is available for the backup. The screen does not change.</td></tr>
 </table></div>
 </section>
 
 <section class="fn" id="ti_gfx_palette">
 <h3><code class="def">ti_gfx_palette</code></h3>
 <pre class="sig" data-name="ti_gfx_palette">ti_error ti_gfx_palette(const uint16_t *palette);</pre>
-<p>Replaces the sixteen colours during a session with one 32-byte write. It is cheap enough to call every frame: changing a few entries animates every pixel that uses them without drawing.</p>
+<p>This function replaces the sixteen colours during a session with one 32-byte write. The cost is low, thus you can call it in each frame. When you change some entries, all pixels that use these entries change colour, and no draw is necessary.</p>
 <p class="returns-title">Returns</p>
 <p><code>TI_OK</code>; <code>TI_E_STATE</code> without a session; <code>TI_E_ARGUMENT</code> or <code>TI_E_RANGE</code> as for <code>ti_gfx_begin</code>.</p>
 </section>
@@ -251,15 +252,16 @@ ti_gfx_present(&amp;canvas, &amp;score_cells, 0);   /* publish just those cells 
 <section class="fn" id="ti_gfx_end">
 <h3><code class="def">ti_gfx_end</code></h3>
 <pre class="sig" data-name="ti_gfx_end">ti_error ti_gfx_end(void);</pre>
-<p>Turns SHR off, writes every saved byte back to AUX bank 0 and frees the backup. Without a session it does nothing and returns <code>TI_OK</code>. <code>ti_shutdown</code> calls it.</p>
-<p>If a file call has lent the screen memory to ProDOS during the session, the backup holds the OS's newer bytes, so ProDOS's /RAM changes survive.</p>
+<p>This function sets SHR off, writes all saved bytes back to AUX bank 0 and frees the backup. Without a session, it does nothing and returns <code>TI_OK</code>. <code>ti_shutdown</code> calls it.</p>
+<p>A file call during the session lends the screen memory to ProDOS. The backup then holds the more recent OS bytes. Thus the changes that ProDOS makes to /RAM stay.</p>
 </section>
 
 <section class="fn" id="ti_gfx_budget">
 <h3><code class="def">ti_gfx_budget</code></h3>
 <pre class="sig" data-name="ti_gfx_budget">void ti_gfx_budget(uint16_t byte_budget, ti_tick_source clock, uint32_t tick_budget);</pre>
-<p>Sets the limits that <code>ti_gfx_present</code> and <code>ti_gfx_present_rows</code> apply. A publication of more than <code>byte_budget</code> bytes is rejected before any write; 0 means 32,000, a full screen. With a <code>clock</code>, each publication is timed; a nonzero <code>tick_budget</code> that the time exceeds sets <code>TI_GFX_OVERRUN</code>. NULL clock leaves elapsed time unmeasured. Tick differences are modulo 2<sup>32</sup>.</p>
-<pre><code class="c">/* At most 4000 bytes a publication, and report one that takes over 2 ticks. */
+<p>This function sets the limits for <code>ti_gfx_present</code> and <code>ti_gfx_present_rows</code>. These functions reject a publication of more than <code>byte_budget</code> bytes before any write. A value of 0 means 32,000, a full screen.</p>
+<p>With a <code>clock</code>, the library measures the time of each publication. When the time is more than a nonzero <code>tick_budget</code>, it sets <code>TI_GFX_OVERRUN</code>. With a NULL clock, the library does not measure the elapsed time. Tick differences are modulo 2<sup>32</sup>.</p>
+<pre><code class="c">/* A maximum of 4000 bytes for each publication; report a publication of more than 2 ticks. */
 ti_gfx_budget(4000, ti_audio_ticks, 2);</code></pre>
 </section>
 
@@ -267,15 +269,15 @@ ti_gfx_budget(4000, ti_audio_ticks, 2);</code></pre>
 <h3><code class="def">ti_gfx_present</code></h3>
 <pre class="sig" data-name="ti_gfx_present">ti_error ti_gfx_present(const ti_surface *surface, const ti_rect *rectangle,
                        ti_gfx_stats *stats);</pre>
-<p>Copies a rectangle of a 320x200 surface to the same place on the screen. <code>NULL</code> publishes the whole screen. The rectangle is clipped, and its left and right edges are widened to whole bytes. Each row goes through the near row buffer in bursts of at most 128 bytes. <code>stats</code> may be NULL.</p>
-<p>A return means the CPU writes have finished. It does not mean the Appletini has shown them: there is no page swap, so a large rectangle can appear across two frames.</p>
+<p>This function copies a rectangle of a 320x200 surface to the same position on the screen. <code>NULL</code> publishes the full screen. The function clips the rectangle and makes its left and right edges wider to full bytes. Each row goes through the near row buffer in bursts of a maximum of 128 bytes. <code>stats</code> can be NULL.</p>
+<p>When the function returns, the CPU writes are complete. This does not mean that the Appletini shows them. There is no page swap. Thus the screen can show a large rectangle during two frames.</p>
 <p class="returns-title">Returns</p>
 <div class="table"><table class="compact">
-<tr><td><code>TI_OK</code></td><td>Published. A rectangle entirely off the surface publishes nothing and reports 0 bytes.</td></tr>
-<tr><td><code>TI_E_STATE</code></td><td>No video session.</td></tr>
+<tr><td><code>TI_OK</code></td><td>The rectangle is published. When the full rectangle is outside the surface, the function publishes nothing and reports 0 bytes.</td></tr>
+<tr><td><code>TI_E_STATE</code></td><td>No video session is active.</td></tr>
 <tr><td><code>TI_E_RANGE</code></td><td>The surface is not 320x200.</td></tr>
-<tr><td><code>TI_E_ARGUMENT</code></td><td>An unreadable rectangle or unwritable <code>stats</code>.</td></tr>
-<tr><td><code>TI_E_TIMING</code></td><td>Before writing: the byte count exceeds the budget, and nothing was written. After writing: the measured time exceeded the tick budget; <code>stats</code> has <code>TI_GFX_OVERRUN</code>.</td></tr>
+<tr><td><code>TI_E_ARGUMENT</code></td><td>The function cannot read the rectangle or cannot write <code>stats</code>.</td></tr>
+<tr><td><code>TI_E_TIMING</code></td><td>Before the writes: the byte count is more than the budget, and the function writes nothing. After the writes: the measured time is more than the tick budget, and <code>stats</code> has <code>TI_GFX_OVERRUN</code>.</td></tr>
 </table></div>
 </section>
 
@@ -284,28 +286,28 @@ ti_gfx_budget(4000, ti_audio_ticks, 2);</code></pre>
 <pre class="sig" data-name="ti_gfx_present_rows">ti_error ti_gfx_present_rows(uint16_t x, uint16_t y, uint16_t width,
                             uint16_t height, const uint8_t *pixels,
                             uint16_t stride, ti_gfx_stats *stats);</pre>
-<p>Publishes packed pixels from near memory during a session, without a surface: row <em>r</em> of the rectangle comes from <code>pixels + r * stride</code>, and only <code>width / 2</code> bytes of each row are written. Use it for small areas the game composes itself. It does not clip or widen edges, and it does not update any surface.</p>
+<p>This function publishes packed pixels from near memory during a session, without a surface. Row <em>r</em> of the rectangle comes from <code>pixels + r * stride</code>. The function writes only <code>width / 2</code> bytes of each row. Use it for small areas that the game composes. The function does not clip or make edges wider, and it does not change a surface.</p>
 <dl class="params">
-  <dt>x, width</dt><dd>Even, so every row starts and ends on a byte.</dd>
-  <dt>y, height</dt><dd>The rectangle must be nonempty and lie wholly within 320x200.</dd>
-  <dt>pixels</dt><dd>The first byte supplies the two leftmost pixels. The span <code>(height - 1) * stride + width / 2</code> must be readable near memory; the buffer is borrowed until return.</dd>
-  <dt>stride</dt><dd>Bytes from one source row to the next, at least <code>width / 2</code>. Padding and odd strides are fine.</dd>
+  <dt>x, width</dt><dd>Even values. Thus each row starts and ends on a byte.</dd>
+  <dt>y, height</dt><dd>The rectangle must not be empty, and it must be fully in the 320x200 screen.</dd>
+  <dt>pixels</dt><dd>The first byte gives the two leftmost pixels. The span <code>(height - 1) * stride + width / 2</code> must be readable near memory. The function uses the buffer only until it returns.</dd>
+  <dt>stride</dt><dd>The bytes from one source row to the next, <code>width / 2</code> or more. Padding and odd strides are correct.</dd>
 </dl>
-<p>All checks, the byte budget included, finish before the first write; a rejected call leaves <code>stats</code> unchanged. One assembly routine writes every row, each in one interrupt-masked burst, or two when it exceeds 128 bytes.</p>
+<p>All checks, the byte budget included, are complete before the first write. A rejected call does not change <code>stats</code>. One assembly routine writes all rows. Each row is one burst with interrupts masked, or two bursts when the row is more than 128 bytes.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_STATE</code> without a session; <code>TI_E_ARGUMENT</code> for zero width or height, NULL pixels or unwritable <code>stats</code>; <code>TI_E_RANGE</code> for odd <code>x</code> or <code>width</code>, a rectangle off the screen, a short stride or an unreadable span; <code>TI_E_TIMING</code> as for <code>ti_gfx_present</code>.</p>
+<p><code>TI_OK</code>; <code>TI_E_STATE</code> without a session; <code>TI_E_ARGUMENT</code> for a zero width or height, NULL pixels, or <code>stats</code> that the function cannot write; <code>TI_E_RANGE</code> for an odd <code>x</code> or <code>width</code>, a rectangle outside the screen, a stride that is too short or a span that the function cannot read; <code>TI_E_TIMING</code> as for <code>ti_gfx_present</code>.</p>
 </section>
 
-<h2 id="costs">What drawing costs</h2>
-<p>These figures were measured on the development emulator's models, not on a board: <code>vtw33</code> runs at a nominal 33.33 MHz, and the TURBO figure uses historical F1.2.2 costs. Use them to compare approaches; measure on the board before setting a game's budgets.</p>
+<h2 id="costs">Costs of draw and publication</h2>
+<p>These figures are measured on the development emulator at <code>vtw33</code> (33.33 MHz) and with the <code>turbo-f122</code> cost model for TURBO.</p>
 <div class="table"><table>
-<tr><th>Operation</th><th class="num">Bytes</th><th class="num">vtw33 ms</th><th class="num">TURBO model ms</th></tr>
+<tr><th>Operation</th><th class="num">Bytes</th><th class="num">vtw33 ms</th><th class="num">turbo-f122 ms</th></tr>
 <tr><td>Publish the full screen</td><td class="num">32,000</td><td class="num">40.8</td><td class="num">85.1</td></tr>
-<tr><td>Draw a 65x17 rectangle at odd x</td><td class="num">561</td><td class="num">1.6</td><td class="num">2.6</td></tr>
+<tr><td>Draw a 65x17 rectangle at an odd x</td><td class="num">561</td><td class="num">1.6</td><td class="num">2.6</td></tr>
 <tr><td>Publish that rectangle</td><td class="num">561</td><td class="num">1.3</td><td class="num">2.1</td></tr>
-<tr><td>Replace a 2-8 character HUD value with opaque text and publish its cells</td><td class="num"></td><td class="num">1.9</td><td class="num">1.5</td></tr>
+<tr><td>Replace a HUD value of 2-8 characters with opaque text and publish its cells</td><td class="num"></td><td class="num">1.9</td><td class="num">1.5</td></tr>
 </table></div>
-<p>A full-screen publication takes more than one 60 Hz frame. Draw static parts once and publish only the rectangles that change.</p>
+<p>A full-screen publication uses more time than one 60 Hz frame. Draw the static parts one time. Then publish only the rectangles that change.</p>
 
 <footer class="page-foot">Defined in <code>include/libtini/graphics.h</code>, implemented in <code>src/graphics*.c</code>, <code>src/font.c</code> and <code>src/target/{surface,publish,rows,text,digits}.s</code>.</footer>
 </main>

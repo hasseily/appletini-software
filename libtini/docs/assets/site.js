@@ -8,13 +8,13 @@
   var NAV = [
     ["Start", [
       ["index.html", "Overview"],
-      ["start.html", "Getting started"],
+      ["start.html", "First steps"],
       ["concepts.html", "How libtini works"],
       ["examples.html", "Examples"]
     ]],
     ["Guides", [
       ["guides/loop.html", "Game loop and timing"],
-      ["guides/drawing.html", "Drawing and publishing"],
+      ["guides/drawing.html", "Draw and publish"],
       ["guides/sound.html", "Music, effects and speech"],
       ["guides/input.html", "Keyboard and joystick"],
       ["guides/assets.html", "Art, fonts, maps and packs"],
@@ -40,7 +40,7 @@
       ["reference/formats.html", "Data formats"],
       ["reference/machine.html", "Machine contract"],
       ["reference/browser.html", "Browser player"],
-      ["reference/testing.html", "Checks and status"]
+      ["reference/testing.html", "Checks"]
     ]]
   ];
 

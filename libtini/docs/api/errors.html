@@ -17,66 +17,67 @@
 <main id="main">
 <h1>Types and errors</h1>
 <p class="include">#include "libtini/types.h"</p>
-<p class="lead">Result codes, handles and a way to collect the first failure of a frame. Every other header includes this one; <code>libtini.h</code> includes them all.</p>
+<p class="lead">This header gives the result codes, the handle type and three functions that keep the first error of a frame. All other headers include this header. <code>libtini.h</code> includes all headers.</p>
 
 <h2 id="abi">Language and calling convention</h2>
-<p>The headers target cc65 2.19's C99 subset on the 65C02 with cc65's default ABI: non-variadic functions use <code>__fastcall__</code>, with the last argument in A/X/sreg and earlier ones on the C stack. Public widths come from <code>stdint.h</code>. No public enum has an ABI-sized type: codes are macros of fixed-width types.</p>
+<p>The headers use the C99 subset of cc65 2.19 on the 65C02. They use the default cc65 ABI. Functions that are not variadic use <code>__fastcall__</code>. The last argument goes in A/X/sreg, and the other arguments go on the C stack.</p>
+<p>Public types are fixed-width types from <code>stdint.h</code>. No public enum has an ABI-sized type. The codes are macros of fixed-width types.</p>
 
 <h2 id="types">Types</h2>
 <section class="fn" id="ti_error">
 <h3><code class="def">ti_error</code></h3>
 <pre class="sig" data-name="ti_error">typedef uint8_t ti_error;</pre>
-<p>The result of every call that can fail. <code>TI_OK</code> is zero, so <code>if (ti_init(1, 3))</code> tests for failure.</p>
+<p>Each call that can fail returns a <code>ti_error</code>. <code>TI_OK</code> is zero, thus <code>if (ti_init(1, 3))</code> is true when the call fails.</p>
 </section>
 <section class="fn" id="ti_handle">
 <h3><code class="def">ti_handle</code></h3>
 <pre class="sig" data-name="ti_handle">typedef uint16_t ti_handle;
 #define TI_INVALID_HANDLE ((ti_handle)0)</pre>
-<p>A banked resource. The value encodes a resource slot and a generation, never an address. <span id="TI_INVALID_HANDLE"><code>TI_INVALID_HANDLE</code></span> is never a live handle; <code>ti_res_alloc</code> stores it when allocation fails.</p>
+<p>A handle identifies a banked resource. Its value contains a resource slot and a generation. It is not an address. <span id="TI_INVALID_HANDLE"><code>TI_INVALID_HANDLE</code></span> is never a live handle. <code>ti_res_alloc</code> stores it when an allocation fails.</p>
 </section>
 
 <h2 id="codes">Result codes</h2>
 <div class="table"><table>
 <tr><th class="num">Value</th><th>Name</th><th>Meaning</th></tr>
-<tr id="TI_OK"><td class="num">0</td><td><code>TI_OK</code></td><td>The call completed.</td></tr>
-<tr id="TI_E_ARGUMENT"><td class="num">1</td><td><code>TI_E_ARGUMENT</code></td><td>An argument the call cannot use: a NULL or unreadable structure pointer, a zero size, a colour above 15, an invalid file name.</td></tr>
-<tr id="TI_E_STATE"><td class="num">2</td><td><code>TI_E_STATE</code></td><td>The wrong moment in a lifecycle: the module is not started, already started, or needs a video session or scene that is not active.</td></tr>
-<tr id="TI_E_RANGE"><td class="num">3</td><td><code>TI_E_RANGE</code></td><td>A position, offset, length or value outside its bound, including a near buffer that leaves its permitted region and a resource range past its end.</td></tr>
-<tr id="TI_E_NOMEM"><td class="num">4</td><td><code>TI_E_NOMEM</code></td><td>No free resource slot or no room in the granted banks; also a full keyboard queue.</td></tr>
-<tr id="TI_E_HANDLE"><td class="num">5</td><td><code>TI_E_HANDLE</code></td><td>A handle that was freed, belongs to an earlier <code>ti_init</code>, or was never valid.</td></tr>
-<tr id="TI_E_UNAVAILABLE"><td class="num">6</td><td><code>TI_E_UNAVAILABLE</code></td><td>A device or service that is absent or not supported, found before anything was changed. Also an empty key queue, a missing pack entry and spoken numbers without a number table.</td></tr>
-<tr id="TI_E_TIMING"><td class="num">7</td><td><code>TI_E_TIMING</code></td><td>A clock gap, a timeout, a publication over its byte budget or measured deadline, or a paddle that did not finish.</td></tr>
-<tr id="TI_E_BUSY"><td class="num">8</td><td><code>TI_E_BUSY</code></td><td>An ownership or priority conflict, a call made while another is in progress, or a measurement that interrupts disturbed.</td></tr>
-<tr id="TI_E_IO"><td class="num">9</td><td><code>TI_E_IO</code></td><td>A ProDOS or transport failure. After a submitted AMEM transfer fails, the destination may be partly changed.</td></tr>
-<tr id="TI_E_FORMAT"><td class="num">10</td><td><code>TI_E_FORMAT</code></td><td>Invalid authored data, such as a malformed resource pack.</td></tr>
-<tr id="TI_E_FULL"><td class="num">11</td><td><code>TI_E_FULL</code></td><td>A bounded queue or list is full: the speech queue or a scene's sprite list.</td></tr>
+<tr id="TI_OK"><td class="num">0</td><td><code>TI_OK</code></td><td>The call is complete.</td></tr>
+<tr id="TI_E_ARGUMENT"><td class="num">1</td><td><code>TI_E_ARGUMENT</code></td><td>The call cannot use an argument. Examples are a NULL structure pointer and a pointer to memory that the call cannot read. Other examples are a zero size, a colour above 15 and an incorrect file name.</td></tr>
+<tr id="TI_E_STATE"><td class="num">2</td><td><code>TI_E_STATE</code></td><td>The lifecycle state is incorrect. The module is not started or is already started, or the call needs a video session or scene that is not active.</td></tr>
+<tr id="TI_E_RANGE"><td class="num">3</td><td><code>TI_E_RANGE</code></td><td>A position, offset, length or value is outside its limit. This includes a near buffer outside its permitted region and a resource range past its end.</td></tr>
+<tr id="TI_E_NOMEM"><td class="num">4</td><td><code>TI_E_NOMEM</code></td><td>No resource slot is free, or the granted banks have no space. This code also shows a full keyboard queue.</td></tr>
+<tr id="TI_E_HANDLE"><td class="num">5</td><td><code>TI_E_HANDLE</code></td><td>The handle is not live. The program freed it, it comes from a previous <code>ti_init</code>, or it was never valid.</td></tr>
+<tr id="TI_E_UNAVAILABLE"><td class="num">6</td><td><code>TI_E_UNAVAILABLE</code></td><td>A device or service is absent or not supported. The call finds this before it changes anything. This code also shows an empty key queue, a missing pack entry and spoken numbers without a number table.</td></tr>
+<tr id="TI_E_TIMING"><td class="num">7</td><td><code>TI_E_TIMING</code></td><td>A clock gap or a timeout occurred, a publication is more than its byte budget or measured deadline, or a paddle did not finish.</td></tr>
+<tr id="TI_E_BUSY"><td class="num">8</td><td><code>TI_E_BUSY</code></td><td>An ownership or priority conflict occurred, a call started while another call was in progress, or interrupts disturbed a measurement.</td></tr>
+<tr id="TI_E_IO"><td class="num">9</td><td><code>TI_E_IO</code></td><td>ProDOS or the transport failed. When a submitted AMEM transfer fails, part of the destination can be changed.</td></tr>
+<tr id="TI_E_FORMAT"><td class="num">10</td><td><code>TI_E_FORMAT</code></td><td>Authored data is not valid, for example a resource pack with an incorrect directory.</td></tr>
+<tr id="TI_E_FULL"><td class="num">11</td><td><code>TI_E_FULL</code></td><td>A bounded queue or list is full: the speech queue or the sprite list of a scene.</td></tr>
 </table></div>
-<p>Each function's entry in this reference lists the codes it returns and why. The same code can mean slightly different things in different modules; the entry is the authority.</p>
+<p>The entry of each function in this reference gives the codes that it returns and the causes. One code can have a slightly different meaning in different modules. The function entry is the authority.</p>
 
-<h2 id="collecting">Collecting the first error</h2>
-<p>These three calls let a game handle failures once a frame instead of after every call. Only results passed to <code>ti_error_keep</code> are kept.</p>
+<h2 id="collecting">Keep the first error</h2>
+<p>These three functions let a game examine failures one time each frame. It does not have to examine the result of each call. The functions keep only the results that the game gives to <code>ti_error_keep</code>.</p>
 <pre><code class="c">for (;;) {
     ti_error_keep(ti_gfx_text_opaque(&amp;canvas, 250, 64, score_text, 9, 0));
     ti_error_keep(ti_gfx_present(&amp;canvas, &amp;score_box, 0));
     ti_error_keep(ti_scene_draw());
-    if (ti_error_first()) break;        /* stop on the first failure */
+    if (ti_error_first()) break;        /* stop at the first failure */
 }
 show_error_code(ti_error_first());</code></pre>
 
 <section class="fn" id="ti_error_keep">
 <h3><code class="def">ti_error_keep</code></h3>
 <pre class="sig" data-name="ti_error_keep">ti_error ti_error_keep(ti_error e);</pre>
-<p>Returns <code>e</code> unchanged. If no error is kept yet and <code>e</code> is nonzero, keeps <code>e</code>. Because it returns its argument, it can wrap a call inside a test: <code>if (ti_error_keep(ti_init(1, 3))) goto done;</code></p>
+<p>This function returns <code>e</code> without a change. When no error is kept and <code>e</code> is not zero, it keeps <code>e</code>. Because it returns its argument, it can enclose a call in a test: <code>if (ti_error_keep(ti_init(1, 3))) goto done;</code></p>
 </section>
 <section class="fn" id="ti_error_first">
 <h3><code class="def">ti_error_first</code></h3>
 <pre class="sig" data-name="ti_error_first">ti_error ti_error_first(void);</pre>
-<p>The first nonzero result passed to <code>ti_error_keep</code> since the program started or since <code>ti_error_clear</code>; <code>TI_OK</code> if there is none.</p>
+<p>This function returns the first nonzero result that <code>ti_error_keep</code> received since the program started or since <code>ti_error_clear</code>. When there is no kept error, it returns <code>TI_OK</code>.</p>
 </section>
 <section class="fn" id="ti_error_clear">
 <h3><code class="def">ti_error_clear</code></h3>
 <pre class="sig" data-name="ti_error_clear">void ti_error_clear(void);</pre>
-<p>Forgets the kept error, so the next failure passed to <code>ti_error_keep</code> is kept.</p>
+<p>This function removes the kept error. <code>ti_error_keep</code> then keeps the next failure that it receives.</p>
 </section>
 
 <footer class="page-foot">Defined in <code>include/libtini/types.h</code>, implemented in <code>src/error.c</code>.</footer>

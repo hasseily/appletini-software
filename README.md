@@ -30,13 +30,15 @@ library, speech worker and a2vm are licensed GPL-3.0-only.
 
 ## libtini
 
-[libtini](libtini/README.md) is an MIT-licensed C game SDK for an enhanced
-Apple //e with Appletini, built with cc65: Super Hi-Res graphics with a sprite
-renderer, banked RamWorks resources, Mockingboard/Phasor music and effects,
-SSI-263 speech, input and ProDOS files, with host tools for assets, music and
-speech. Its [browser player](libtini/design/WEB.md) compiles this repository's
-emulator to WebAssembly and runs a game's own disk in a web page. STARFALL,
-below, is its example game. Its developer documentation is a set of web
+[libtini](libtini/README.md) is a C game SDK for an enhanced Apple //e with
+an Appletini. It uses cc65, and the MIT License applies to it. It supplies
+Super Hi-Res graphics with a sprite renderer, banked RamWorks resources,
+Mockingboard and Phasor music and effects, SSI-263 speech, input and ProDOS
+files. Host tools convert assets, music and speech.
+
+Its [browser player](libtini/design/WEB.md) compiles the emulator of this
+repository to WebAssembly and runs the disk of a game in a web page. STARFALL,
+below, is the example game. The developer documentation is a set of web
 pages: open `libtini/docs/index.html` in a browser.
 
 ## Demos

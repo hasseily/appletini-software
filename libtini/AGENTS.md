@@ -30,7 +30,8 @@
 - Probe private services before use. Never silently retry a partly executed accelerated transfer with CPU copies.
 - Keep speech, music and effects under one audio driver with bounded queues and waits.
 - Do not promise a full keyboard matrix through the standard Apple keyboard interface.
-- Keep prose plain and exact. State targets as targets until tests establish them.
+- Write documentation in ASD-STE100 Simplified Technical English: short sentences, active voice, present tense, "can"/"must"/"do not".
+- Documentation describes what is. Do not write history, reports of who checked or verified something, or commit references unless they are essential. Treat documented behaviour as checked on hardware; name firmware by release (F1.3.2).
 
 ## Verification
 

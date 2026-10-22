@@ -1,8 +1,8 @@
 # Speech check
 
-A text-mode board check for SSI-263 speech on the slot-4 Mockingboard or
-Phasor. Boot `build/speech_check.po`. It runs for up to about 25 seconds,
-prints one line per test and waits for a key.
+The speech check is a text-mode check for SSI-263 speech on the slot-4
+Mockingboard or Phasor. Boot `build/speech_check.po`. It runs for a maximum of
+about 25 seconds, shows one line for each test and waits for a key.
 
 ```powershell
 python tools/build.py --cc65-home D:/Repos/cc65 --game speech_check
@@ -10,19 +10,17 @@ python tools/build.py --cc65-home D:/Repos/cc65 --game speech_check
 
 | Line | Meaning |
 | --- | --- |
-| `VIA-B T2` | Whether the $C480 VIA's timer 2 counts. The joystick reader uses it when it does |
-| `RAW START` | With the driver's speech code off, the SSI is started directly: which VIA set the finished-phoneme CA1 flag, and how soon. `NONE` after 1.00 s means no flag arrived |
-| `RAW PHONEMES` | The four phonemes of READY, one at a time: how many finished, how many flags each VIA showed, and the total time |
-| `MOCKINGBOARD`, `PHASOR` | The libtini driver says READY and EXCELLENT. `OK` and the time taken, or the first error and when it came. `SEEN` counts finished-phoneme signals sampled before the driver took them; in Phasor mode the interrupt handler takes them first, so it stays 0 |
-| `MB+JOYSTICK`, `PH+JOYSTICK` | The same with a joystick read every 30 ms. `J` gives reads and failed reads |
+| `VIA-B T2` | Whether timer 2 of the $C480 VIA counts. When it counts, the joystick reader uses it |
+| `RAW START` | The SSI starts directly, without the speech code of the driver. The line gives the VIA that set the CA1 flag for a finished phoneme, and the time. `NONE` after 1.00 s means that no flag came: the SSI-263 has no clock |
+| `RAW PHONEMES` | The four phonemes of READY, one at a time: the number that finished, the flags of each VIA and the total time. `0/4` means that no phoneme finished |
+| `MOCKINGBOARD`, `PHASOR` | The libtini driver says READY and EXCELLENT. The line gives `OK` and the time, or the first error and its time. `SEEN` counts the finished-phoneme signals that the check read before the driver took them. In Phasor mode the interrupt handler takes them first, thus `SEEN` stays 0 |
+| `MB+JOYSTICK`, `PH+JOYSTICK` | The same test with a joystick read each 30 ms. `J` gives the number of reads and of failed reads |
 
-In standalone ONE//e mode on Appletini F1.3.1, every line fails: RAW START
-reports `NONE`, RAW PHONEMES `0/4`, and each driver line `TIMING AT 2.00S`.
-That firmware clocks the card's SSI only from the Apple's Q3 pin, which no
-motherboard drives in that mode. Appletini F1.3.2, the board baseline, fixes
-this, and speech works in standalone ONE//e mode.
+`TIMING AT 2.00S` on a driver line means that a phoneme did not finish within
+the two-second limit of the driver. After this error, the driver refuses
+speech until it starts again. When all lines fail and RAW START shows `NONE`,
+the SSI-263 has no clock. In standalone ONE//e mode, speech needs Appletini
+firmware F1.3.2 or later.
 
-`TIMING` is the driver's two-second limit for a phoneme that never reports
-finishing; after it, further speech is refused until the driver is started
-again. In the emulator every line reports success and `VIA-B T2 DOES NOT
-COUNT`. Only a board run shows real behaviour.
+In the development emulator, all lines show success and `VIA-B T2 DOES NOT
+COUNT`.

@@ -16,30 +16,30 @@
 </header>
 <main id="main">
 <h1>Art, fonts, maps and packs</h1>
-<p class="lead">Convert art to SHR's packed format on the host, put it in a resource pack on the game disk, load it into banked memory and point surfaces, fonts and maps at it. Scene sprites take the other route: near C arrays compiled into the program.</p>
+<p class="lead">Convert art to the packed SHR format on the host. Put it in a resource pack on the game disk. Load it into banked memory, and point surfaces, fonts and maps at it. Scene sprites are different: they are near C arrays in the program.</p>
 
-<h2 id="where">Where art lives</h2>
+<h2 id="where">Where the art is</h2>
 <div class="table"><table>
-<tr><th>Used by</th><th>Lives in</th><th>Gets there by</th></tr>
+<tr><th>Used by</th><th>Location</th><th>Source</th></tr>
 <tr><td><code>ti_gfx_blit</code>, <code>ti_gfx_sprite</code>, <code>ti_gfx_map</code>, <code>ti_gfx_text_font</code></td><td>Banked resources</td><td><code>ti_pack_load</code>, or <code>ti_res_write</code> from near data</td></tr>
-<tr><td><a href="../api/scene.html">Sprite scenes</a></td><td>Near memory</td><td>C arrays in the program; in the full-game layout, constants run from $0800-$1FFF</td></tr>
+<tr><td><a href="../api/scene.html">Sprite scenes</a></td><td>Near memory</td><td>C arrays in the program. In the full-game layout, constants run from $0800-$1FFF.</td></tr>
 </table></div>
 
 <h2 id="palette">The palette</h2>
-<p>Every converted image is matched against one shared palette, a JSON list of up to sixteen colours as 0RGB integers or <code>"#RRGGBB"</code> strings. Missing entries are 0. A <code>#RRGGBB</code> colour keeps the high four bits of each channel.</p>
+<p>The tool matches each converted image to one shared palette. The palette is a JSON list of a maximum of sixteen colours. Each colour is a 0RGB integer or a <code>"#RRGGBB"</code> string. Missing entries are 0. A <code>#RRGGBB</code> colour keeps the high four bits of each channel.</p>
 <pre><code>["#000000", "#FFFFFF", "#FF0000", "#00C000", 255, 4095]</code></pre>
-<p>Plan the palette with the game: entry 0 is the transparent colour of keyed sprites and masks, and entries the art never uses are free for <a href="drawing.html#palette">palette animation</a>.</p>
+<p>Make the palette together with the game. Entry 0 is the transparent colour of keyed sprites and masks. You can use the entries that the art does not use for <a href="drawing.html#palette">palette animation</a>.</p>
 
 <h2 id="images">Images</h2>
 <pre><code>python tools/assets.py image ship.ppm ship.ti4 --palette palette.json --palette-output palette.bin --masked --report ship-layout.json
 python tools/assets.py indexed ship.json ship.ti4</code></pre>
 <ul>
-  <li><code>image</code> reads a P3 or P6 PPM with 8-bit channels, 1-320 by 1-200 pixels, and maps each pixel to the nearest palette entry. <code>--palette-output</code> also writes the sixteen palette words, ready for <code>ti_gfx_begin</code>.</li>
-  <li><code>indexed</code> reads JSON with <code>width</code>, <code>height</code>, row-major <code>pixels</code> of 0-15 and optional <code>"masked": true</code>.</li>
-  <li><code>--masked</code> appends a one-bit opacity mask in which index 0 is transparent, for <code>ti_gfx_sprite</code>.</li>
-  <li>The output is a TI4 file: an 8-byte header with the width and height, then packed rows, then the mask. <a href="../reference/formats.html#ti4">Data formats</a> has the bytes.</li>
+  <li><code>image</code> reads a P3 or P6 PPM with 8-bit channels and 1-320 by 1-200 pixels. It gives each pixel the nearest palette entry. <code>--palette-output</code> also writes the sixteen palette words for <code>ti_gfx_begin</code>.</li>
+  <li><code>indexed</code> reads JSON with <code>width</code>, <code>height</code>, <code>pixels</code> with values 0-15 in row order, and an optional <code>"masked": true</code>.</li>
+  <li><code>--masked</code> adds an opacity mask of one bit for each pixel, for <code>ti_gfx_sprite</code>. In the mask, index 0 is transparent.</li>
+  <li>The output is a TI4 file: an 8-byte header with the width and height, then the packed rows, then the mask. <a href="../reference/formats.html#ti4">Data formats</a> gives the bytes.</li>
 </ul>
-<p>The tool uses only Python's standard library and writes no timestamps, so the same input always gives the same bytes. Convert PNG art to PPM with any image editor first; STARFALL's own generator, <code>tools/starfall_assets.py</code>, shows how to read indexed PNGs directly.</p>
+<p>The tool uses only the standard library of Python and writes no timestamps. Thus the same input always gives the same bytes. Convert PNG art to PPM with an image editor first. The STARFALL generator, <code>tools/starfall_assets.py</code>, shows how to read indexed PNGs directly.</p>
 
 <h2 id="fonts">Fonts</h2>
 <pre><code>{"width": 5, "height": 7, "first": 65, "glyphs": [
@@ -47,23 +47,28 @@ python tools/assets.py indexed ship.json ship.ti4</code></pre>
   ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."]
 ]}</code></pre>
 <pre><code>python tools/assets.py font font.json font.tif</code></pre>
-<p>Glyphs are at most 8 by 16 pixels, written as <code>height</code> strings of <code>width</code> dots and hashes. <code>first</code> is the character code of the first glyph, 32 when omitted. The built-in 5x7 font needs no file.</p>
+<p>A glyph has a maximum size of 8 by 16 pixels. Each glyph is <code>height</code> strings of <code>width</code> dots and hashes. <code>first</code> is the character code of the first glyph. Its default is 32. The built-in 5x7 font needs no file.</p>
 
 <h2 id="maps">Tile maps</h2>
 <pre><code>{"rows": [[0, 1, 1, 0], [2, 3, 3, 2]], "tile_count": 4}</code></pre>
 <pre><code>python tools/assets.py map level.json level.tim</code></pre>
-<p>A map is 1-256 rows of 1-256 tile numbers, all rows the same length. With <code>tile_count</code>, larger numbers are rejected. The tile atlas is an ordinary image.</p>
+<p>A map has 1-256 rows of 1-256 tile numbers. All rows have the same length. If you give <code>tile_count</code>, the tool rejects larger numbers. The tile atlas is a usual image.</p>
 
 <h2 id="packs">Resource packs</h2>
-<p>A pack holds up to sixteen named entries in one ProDOS file, so a game opens one file for all its banked art. Its manifest names each entry and the file it comes from:</p>
+<p>A pack keeps a maximum of sixteen named entries in one ProDOS file. Thus a game opens one file for all of its banked art. The pack manifest gives the name of each entry and its source file:</p>
 <pre><code>{"entries": [
   {"name": "SHIP", "path": "ship.ti4"},
   {"name": "FONT", "path": "font.tif"},
   {"name": "LEVEL1", "path": "level.tim"}
 ]}</code></pre>
 <pre><code>python tools/assets.py pack pack.json RESOURCES.TPK --report resources-layout.json</code></pre>
-<p>Entry names are unique, 1-15 bytes: a capital letter, then capitals, digits, periods or underscores. Each entry is 1 byte to 4 MiB, and the whole pack must fit ProDOS's 24-bit file size. Entry paths are relative to the manifest and must be ordinary files inside its folder; links and paths outside it are rejected. The report gives the pack's size and the least number of 48,640-byte banks it needs. It does not count the screen backup or any other allocation.</p>
-<p>Keep the converted files and the pack manifest together in one folder of the game, and let the build make the pack and put it on the disk:</p>
+<ul>
+  <li>Entry names are unique and 1-15 bytes long. They start with a capital letter. The other characters are capitals, digits, periods or underscores.</li>
+  <li>Each entry is 1 byte to 4 MiB. All of the pack must fit the 24-bit file size of ProDOS.</li>
+  <li>Entry paths are relative to the manifest. They must be usual files in the folder of the manifest. The tool rejects links and paths outside that folder.</li>
+  <li>The report gives the size of the pack and the minimum number of 48,640-byte banks that it needs. The report does not include the screen backup or other allocations.</li>
+</ul>
+<p>Keep the converted files and the pack manifest together in one folder of the game. Let the build make the pack and put it on the disk:</p>
 <pre><code>"generate": [
   {"command": ["{root}/tools/assets.py", "pack", "{game}/art/pack.json", "{build}/RESOURCES.TPK"],
    "inputs": ["{root}/tools/assets.py", "art"],
@@ -71,10 +76,11 @@ python tools/assets.py indexed ship.json ship.ti4</code></pre>
 ],
 "disk": {"volume": "MYGAME", "system": "MYGAME.SYSTEM",
          "files": [{"name": "RESOURCES.TPK", "path": "{build}/RESOURCES.TPK"}]}</code></pre>
-<p>The disk packager stores files of up to 131,072 bytes.</p>
+<p>The disk packager writes files with a maximum size of 131,072 bytes.</p>
 
 <h2 id="views">Load an entry and make views</h2>
-<p><code>ti_pack_load</code> copies one entry into a new resource and hands you its handle. The loader does not interpret the bytes: read the 8-byte header and fill in a surface, sprite, font or map that points into the resource at offset 8. These structures are borrowed views; free the entry's handle with <code>ti_res_free</code> when every view is finished, and never call <code>ti_gfx_surface_free</code> on a view.</p>
+<p><code>ti_pack_load</code> copies one entry into a new resource and gives you its handle. The loader does not interpret the bytes. Read the 8-byte header. Then fill in a surface, sprite, font or map that points into the resource at offset 8.</p>
+<p>These structures are borrowed views. When you no longer need any view of an entry, free the handle of the entry with <code>ti_res_free</code>. Do not call <code>ti_gfx_surface_free</code> on a view.</p>
 <pre><code class="c">static uint16_t le16(const uint8_t *p) { return p[0] | (uint16_t)p[1] &lt;&lt; 8; }
 
 /* A TI4 entry as a surface. */
@@ -120,8 +126,8 @@ ti_error load_art(void)
     map.columns = le16(h + 4); map.rows = le16(h + 6);
     return TI_OK;
 }</code></pre>
-<p>Each <code>ti_pack_load</code> opens the file and checks the whole directory again; that is fine at a level change. Every entry takes one of the eight resource slots, so combine small images into one atlas and use source rectangles instead of loading many entries.</p>
-<p>A tile set is an image view plus the tile size:</p>
+<p>Each <code>ti_pack_load</code> call opens the file and examines all of the directory again. This is satisfactory when a level changes. Each entry uses one of the eight resource slots. Thus put small images together in one atlas, and use source rectangles. Do not load many entries.</p>
+<p>A tile set is an image view with the tile size:</p>
 <pre><code class="c">ti_tileset tiles;
 image_view(atlas_entry, &amp;tiles.image);
 tiles.tile_width = 16; tiles.tile_height = 16;
@@ -129,8 +135,8 @@ tiles.columns = (uint8_t)(tiles.image.width / 16);
 tiles.count = 40;</code></pre>
 
 <h2 id="scene-art">Sprites for a scene</h2>
-<p>Scene images are near memory: an array of packed bytes, two pixels each, high nibble on the left, colour 0 transparent. A small one can be written by hand:</p>
-<pre><code class="c">/* A 4x4 orb: colour 15 rim, colour 14 core. */
+<p>Scene images are in near memory. Each image is an array of packed bytes with two pixels in each byte. The high nibble is the left pixel, and colour 0 is transparent. You can write a small image by hand:</p>
+<pre><code class="c">/* A 4x4 orb: colour 15 edge, colour 14 centre. */
 static const uint8_t orb[] = {
     0x0F, 0xF0,
     0xFE, 0xEF,
@@ -140,7 +146,8 @@ static const uint8_t orb[] = {
 static const ti_image images[] = {
     {orb, 2, 4, 2},          /* row_bytes, rows, stride */
 };</code></pre>
-<p>For real art, generate a header in a manifest <code>generate</code> step. STARFALL's <code>tools/starfall_assets.py</code> reads its archive's PNGs, packs sixteen 16x16 cells and writes their bytes, the palette and a table of sub-sprites inside one cell; its scene table then names each cell as an image of 8 bytes by 16 rows, and the small images inside one cell with that cell's 8-byte stride. Constant arrays go to the <code>RODATA</code> segment, which the full-game layout runs from low memory at $0800-$1FFF, leaving main memory for code and state.</p>
+<p>For larger art, make a header in a <code>generate</code> step of the manifest. The STARFALL tool, <code>tools/starfall_assets.py</code>, reads the PNG files of its archive. It packs sixteen cells of 16x16 pixels. It writes their bytes, the palette and a table of small images in one cell. The STARFALL scene table gives each cell as an image of 8 bytes by 16 rows. It gives the small images in a cell with the 8-byte stride of that cell.</p>
+<p>Constant arrays go to the <code>RODATA</code> segment. The full-game layout runs this segment from low memory at $0800-$1FFF. Thus main memory stays available for code and state.</p>
 
 <div class="pager"><a href="input.html">Keyboard and joystick</a><a href="saves.html">Saved games</a></div>
 <footer class="page-foot">libtini is licensed under the <a href="../../LICENSE">MIT License</a>.</footer>

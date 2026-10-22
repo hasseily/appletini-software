@@ -17,36 +17,38 @@
 <main id="main">
 <h1>Audio</h1>
 <p class="include">#include "libtini/audio.h"</p>
-<p class="lead">One driver for the slot-4 Mockingboard or Phasor: the device clock, music, sound effects, AY envelopes and, on the <a href="speech.html">speech page</a>, SSI-263 phrases.</p>
+<p class="lead">One driver controls the slot-4 Mockingboard or Phasor. It gives the device clock, music, sound effects and AY envelopes. It also plays SSI-263 phrases, which the <a href="speech.html">speech page</a> describes.</p>
 
 <div class="table"><table class="compact">
 <tr><th>Function</th><th>Purpose</th></tr>
-<tr><td><code>ti_audio_init</code>, <code>ti_audio_shutdown</code></td><td>Take and release the card</td></tr>
-<tr><td><code>ti_audio_update</code></td><td>Advance music, effects and speech; call it often</td></tr>
-<tr><td><code>ti_audio_ticks</code></td><td>The device clock, nominally 100 ticks a second</td></tr>
-<tr><td><code>ti_audio_voices</code>, <code>ti_audio_clock_valid</code>, <code>ti_audio_source_hz</code>, <code>ti_audio_tick_divisor</code></td><td>What the driver found and assumes</td></tr>
-<tr><td><code>ti_audio_mark_gap</code>, <code>ti_audio_resume_clock</code></td><td>Bracket blocking work that stops interrupts</td></tr>
-<tr><td><code>ti_audio_reserve</code>, <code>ti_audio_effect_voice</code></td><td>Split voices between music and effects</td></tr>
+<tr><td><code>ti_audio_init</code>, <code>ti_audio_shutdown</code></td><td>Get and release the card</td></tr>
+<tr><td><code>ti_audio_update</code></td><td>Advance music, effects and speech; call it frequently</td></tr>
+<tr><td><code>ti_audio_ticks</code></td><td>The device clock, nominally 100 ticks each second</td></tr>
+<tr><td><code>ti_audio_voices</code>, <code>ti_audio_clock_valid</code>, <code>ti_audio_source_hz</code>, <code>ti_audio_tick_divisor</code></td><td>The hardware that the driver found, and its clock settings</td></tr>
+<tr><td><code>ti_audio_mark_gap</code>, <code>ti_audio_resume_clock</code></td><td>Enclose work that blocks and stops interrupts</td></tr>
+<tr><td><code>ti_audio_reserve</code>, <code>ti_audio_effect_voice</code></td><td>Divide the voices between music and effects</td></tr>
 <tr><td><code>ti_music_start</code>, <code>ti_song_start</code>, <code>ti_music_stop</code></td><td>Play an event score or a pattern song</td></tr>
 <tr><td><code>ti_audio_effect</code></td><td>Play a tone on an effect voice, by priority</td></tr>
 <tr><td><code>ti_audio_envelope</code>, <code>ti_audio_envelope_stop</code></td><td>Use the AY hardware envelope on music voices</td></tr>
 </table></div>
 
 <h2 id="ownership">Ownership</h2>
-<p><code>ti_audio_init</code> takes exclusive ownership of the slot-4 card: both 6522 VIAs and their timers, every AY chip and both SSI-263 sockets. Do not start it while another driver uses the card, and do not change the card's personality or slot assignment while it runs. It registers a ProDOS interrupt handler through the standard MLI <code>ALLOC_INTERRUPT</code> call; <code>ti_audio_shutdown</code> removes it with <code>DEALLOC_INTERRUPT</code> and must run before anything else takes the card. Audio does not need <code>ti_init</code>.</p>
-<p>The interrupt handler is assembly. It follows the ProDOS convention (CLD first, carry clear when it claims the interrupt), counts clock ticks, notes Phasor speech completion and acknowledges the timer. It never calls C, uses zero page, maps memory or calls ProDOS. Everything else happens in <code>ti_audio_update</code>, in the foreground.</p>
+<p><code>ti_audio_init</code> gets exclusive control of the slot-4 card: the two 6522 VIAs and their timers, all AY chips and the two SSI-263 sockets. Do not start it while a different driver uses the card. Do not change the personality or slot of the card while the driver runs.</p>
+<p>The driver installs a ProDOS interrupt handler with the standard MLI <code>ALLOC_INTERRUPT</code> call. <code>ti_audio_shutdown</code> removes it with <code>DEALLOC_INTERRUPT</code>. Call <code>ti_audio_shutdown</code> before other software uses the card. Audio does not need <code>ti_init</code>.</p>
+<p>The interrupt handler is in assembly. It obeys the ProDOS rules: CLD first, and carry clear when it accepts the interrupt. It counts clock ticks, records Phasor speech completion and acknowledges the timer. It never calls C, uses zero page, maps memory or calls ProDOS. All other work occurs in <code>ti_audio_update</code>, in the foreground.</p>
 
 <h2 id="voices">Voices and the clock</h2>
-<p>A Mockingboard has two AY chips, six voices: voices 0-2 are the first chip and 3-5 the second. A Phasor in its native mode has four chips, twelve voices; voice <em>v</em> is channel <em>v</em> mod 3 of chip <em>v</em> / 3. When a Phasor is requested but its second chip pair turns out to alias the first, the driver falls back to six Mockingboard voices; <code>ti_audio_voices</code> reports which.</p>
-<p>Tone periods are AY periods for a nominal 1 MHz base clock, 0-2047. In native Phasor mode the driver doubles them so pitch stays the same.</p>
-<p>VIA-B timer 1 runs free at the card's clock rate, independent of the CPU, and interrupts 100 times a second nominally. The handler counts these ticks in 32 bits. The actual rate is <code>ti_audio_source_hz() / ti_audio_tick_divisor()</code>: the default configuration assumes a 1,000,000 Hz source and a divisor of 10,000. Board calibration is pending; until a board's source is measured and set in <code>via_hz</code>, treat 100 Hz as nominal. On the development emulator, whose Apple bus runs at about 1.020484 MHz, the default gives about 102 ticks a model second.</p>
+<p>A Mockingboard has two AY chips with six voices. Voices 0-2 are on the first chip and voices 3-5 are on the second chip. A Phasor in native mode has four chips with twelve voices. Voice <em>v</em> is channel <em>v</em> mod 3 of chip <em>v</em> / 3.</p>
+<p>A program can request a Phasor on a card where the second chip pair is an alias of the first pair. Then the driver uses six Mockingboard voices. <code>ti_audio_voices</code> tells which mode is active.</p>
+<p>Tone periods are AY periods for a nominal 1 MHz base clock, 0-2047. In native Phasor mode, the driver doubles the periods. Thus the pitch does not change.</p>
+<p>VIA-B timer 1 runs freely at the clock rate of the card, independent of the CPU. It causes an interrupt nominally 100 times each second. The handler counts these ticks in 32 bits. The actual rate is <code>ti_audio_source_hz() / ti_audio_tick_divisor()</code>. The default configuration uses a 1,000,000 Hz source and a divisor of 10,000. To use a calibrated source, set it in <code>via_hz</code>. On the development emulator, the Apple bus runs at approximately 1.020484 MHz. There the default gives approximately 102 ticks for each emulated second.</p>
 
 <h2 id="constants">Constants and types</h2>
 <div class="table"><table>
 <tr><th>Name</th><th class="num">Value</th><th>Meaning</th></tr>
 <tr><td><code>TI_AUDIO_MOCKINGBOARD</code></td><td class="num">1</td><td>Personality: six voices</td></tr>
 <tr><td><code>TI_AUDIO_PHASOR</code></td><td class="num">2</td><td>Personality: native Phasor, twelve voices when present</td></tr>
-<tr><td><code>TI_AUDIO_TICKS_PER_SECOND</code></td><td class="num">100</td><td>Nominal device clock rate</td></tr>
+<tr><td><code>TI_AUDIO_TICKS_PER_SECOND</code></td><td class="num">100</td><td>Nominal rate of the device clock</td></tr>
 </table></div>
 
 <section class="fn" id="ti_audio_config">
@@ -58,10 +60,10 @@
 } ti_audio_config;</pre>
 <dl class="params">
   <dt>personality</dt><dd><code>TI_AUDIO_MOCKINGBOARD</code> or <code>TI_AUDIO_PHASOR</code>.</dd>
-  <dt>speech</dt><dd>Nonzero to drive the SSI-263. With 0, speech calls return <code>TI_E_UNAVAILABLE</code>.</dd>
-  <dt>ducking</dt><dd>Nonzero lowers music by three volume steps while speech plays and mutes envelope voices; effects keep their volume.</dd>
-  <dt>via_hz</dt><dd>The VIA clock in hertz, 100,000 to 4,000,000; 0 means 1,000,000.</dd>
-  <dt>voices</dt><dd>Limit the driver to this many voices, rounded up to whole chips of three. Every chip is silenced at init, but each later update compares and writes only the chips that serve these voices, which saves time per update. Voices above the limit are out of range. 0 uses all six or twelve.</dd>
+  <dt>speech</dt><dd>Nonzero to control the SSI-263. With 0, speech calls return <code>TI_E_UNAVAILABLE</code>.</dd>
+  <dt>ducking</dt><dd>Nonzero to decrease the music volume by three steps while speech plays. This also mutes envelope voices. Effects keep their volume.</dd>
+  <dt>via_hz</dt><dd>The VIA clock in hertz, 100,000 to 4,000,000. A value of 0 means 1,000,000.</dd>
+  <dt>voices</dt><dd>The number of voices that the driver serves, rounded up to full chips of three voices. Init silences all chips. After init, each update compares and writes only the chips of these voices, which decreases the time of each update. Voices above the limit are out of range. A value of 0 uses all six or twelve voices.</dd>
 </dl>
 <pre><code class="c">/* Mockingboard, speech with music ducking, nominal clock, all six voices. */
 static ti_audio_config audio = {TI_AUDIO_MOCKINGBOARD, 1, 1, 0, 0};</code></pre>
@@ -70,85 +72,93 @@ static ti_audio_config audio = {TI_AUDIO_MOCKINGBOARD, 1, 1, 0, 0};</code></pre>
 <section class="fn" id="ti_music_event">
 <h3><code class="def">ti_music_event</code></h3>
 <pre class="sig" data-name="ti_music_event">typedef struct ti_music_event { uint16_t duration, period; uint8_t voice, volume; } ti_music_event;</pre>
-<p>One step of an event score: set <code>voice</code> to tone <code>period</code> (0-2047) at <code>volume</code> (0-15), then wait <code>duration</code> device ticks before the next event. A duration of 0 lets several voices change at the same moment. <code>tools/music.py</code> compiles a JSON score into an array of these.</p>
+<p>One step of an event score. It sets <code>voice</code> to tone <code>period</code> (0-2047) at <code>volume</code> (0-15). Then the player waits <code>duration</code> device ticks before the next event. A duration of 0 lets several voices change at the same time. <code>tools/music.py</code> compiles a JSON score into an array of these events.</p>
 </section>
 
-<h2 id="lifecycle">Starting and stopping</h2>
+<h2 id="lifecycle">Start and stop</h2>
 <section class="fn" id="ti_audio_init">
 <h3><code class="def">ti_audio_init</code></h3>
 <pre class="sig" data-name="ti_audio_init">ti_error ti_audio_init(const ti_audio_config *config);</pre>
-<p>Checks that no VIA interrupt is enabled (another driver would own the card) and that a VIA answers, saves the VIA port, direction and control registers, registers the interrupt handler, selects the personality, silences every chip, sets up speech if requested and starts the clock at tick 0. Speech starts with preset 0, pitch 0x40 and rate 10, powered down until the first phoneme. The default music reservation is voices 0-2.</p>
-<p>If a video session is active, ProDOS's AUX workspace is lent back to it around the interrupt registration, which needs a free slot and 32,768 resource bytes for the duration of the call.</p>
+<p>This function first checks that no VIA interrupt is enabled, because an enabled interrupt shows that a different driver owns the card. It also checks that a VIA answers. Then it does these steps:</p>
+<ul>
+  <li>It saves the VIA port, direction and control registers.</li>
+  <li>It installs the interrupt handler and selects the personality.</li>
+  <li>It silences all chips.</li>
+  <li>When the configuration enables speech, it sets preset 0, pitch 0x40 and rate 10. The speech chip stays powered down until the first phoneme.</li>
+  <li>It starts the clock at tick 0. The default music reservation is voices 0-2.</li>
+</ul>
+<p>During a video session, the function lends the AUX workspace of ProDOS back to ProDOS while it installs the handler. For the duration of the call, this needs a free slot and 32,768 resource bytes.</p>
 <p class="returns-title">Returns</p>
 <div class="table"><table class="compact">
-<tr><td><code>TI_OK</code></td><td>Audio and the clock are running.</td></tr>
-<tr><td><code>TI_E_STATE</code></td><td>Already initialized.</td></tr>
-<tr><td><code>TI_E_ARGUMENT</code></td><td>An unreadable configuration or an unknown personality.</td></tr>
-<tr><td><code>TI_E_RANGE</code></td><td><code>via_hz</code> outside 100,000-4,000,000.</td></tr>
-<tr><td><code>TI_E_BUSY</code></td><td>A VIA interrupt is enabled: something else owns the card.</td></tr>
-<tr><td><code>TI_E_UNAVAILABLE</code></td><td>No VIA answered, or ProDOS refused the interrupt handler.</td></tr>
-<tr><td><code>TI_E_NOMEM</code></td><td>During a video session, no slot or room for the temporary loan.</td></tr>
+<tr><td><code>TI_OK</code></td><td>Audio and the clock run.</td></tr>
+<tr><td><code>TI_E_STATE</code></td><td>Audio is already initialized.</td></tr>
+<tr><td><code>TI_E_ARGUMENT</code></td><td>The function cannot read the configuration, or the personality is not known.</td></tr>
+<tr><td><code>TI_E_RANGE</code></td><td><code>via_hz</code> is outside 100,000-4,000,000.</td></tr>
+<tr><td><code>TI_E_BUSY</code></td><td>A VIA interrupt is enabled: a different driver owns the card.</td></tr>
+<tr><td><code>TI_E_UNAVAILABLE</code></td><td>No VIA answered, or ProDOS did not accept the interrupt handler.</td></tr>
+<tr><td><code>TI_E_NOMEM</code></td><td>During a video session, no slot or space is available for the temporary loan.</td></tr>
 </table></div>
 </section>
 
 <section class="fn" id="ti_audio_shutdown">
 <h3><code class="def">ti_audio_shutdown</code></h3>
 <pre class="sig" data-name="ti_audio_shutdown">ti_error ti_audio_shutdown(void);</pre>
-<p>Stops speech and music, silences every voice, powers the speech chips down, stops the clock, removes the interrupt handler, restores the Mockingboard personality and the saved VIA registers. Without active audio it returns <code>TI_OK</code>. <code>ti_shutdown</code> calls it.</p>
+<p>This function stops speech and music, silences all voices and powers down the speech chips. It stops the clock and removes the interrupt handler. Then it sets the Mockingboard personality and restores the saved VIA registers. Without active audio, it returns <code>TI_OK</code>. <code>ti_shutdown</code> calls this function.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_IO</code> when ProDOS refuses to remove the handler: the hardware is silent with its interrupts off, but the driver keeps ownership and its code, and the only allowed audio call is another <code>ti_audio_shutdown</code>; <code>TI_E_NOMEM</code> during a video session without room for the loan, with audio still owned.</p>
+<p><code>TI_OK</code>; <code>TI_E_IO</code> when ProDOS does not remove the handler; <code>TI_E_NOMEM</code> during a video session when no space is available for the loan. After <code>TI_E_IO</code>, the hardware is silent and its interrupts are off, but the driver keeps control and its code. The only permitted audio call is then a new <code>ti_audio_shutdown</code>. After <code>TI_E_NOMEM</code>, the driver keeps control of the card.</p>
 </section>
 
 <section class="fn" id="ti_audio_update">
 <h3><code class="def">ti_audio_update</code></h3>
 <pre class="sig" data-name="ti_audio_update">ti_error ti_audio_update(void);</pre>
-<p>The driver's foreground service. It ends expired effects, plays every score event or song row that has come due, sends at most one speech phoneme, and writes changed AY registers. When no device tick has passed since the last call and nothing asked for a write, it writes nothing, so calling it often is cheap. Call it at least once a tick for steady music; in a long draw, call it from a scene's <code>service</code> function or between drawing calls.</p>
+<p>This function is the foreground service of the driver. It ends expired effects and plays all score events and song rows that are due. It sends a maximum of one speech phoneme. Then it writes the AY registers that changed.</p>
+<p>When no device tick occurred since the last call and nothing requested a write, the function writes nothing. Thus frequent calls cost little time. Call it one time in each tick or more to keep the music regular. During a long draw, call it from the <code>service</code> function of a scene, or between draw calls.</p>
 <p class="returns-title">Returns</p>
 <div class="table"><table class="compact">
-<tr><td><code>TI_OK</code></td><td>Serviced.</td></tr>
+<tr><td><code>TI_OK</code></td><td>The service is complete.</td></tr>
 <tr><td><code>TI_E_STATE</code></td><td>Audio is not initialized.</td></tr>
-<tr><td><code>TI_E_TIMING</code></td><td>More than 100 ticks since the last update, or more than 32 score events or song rows due at once: the driver marks a gap and stops music and speech. Also every call while the clock is invalid, until <code>ti_audio_resume_clock</code>. Also a speech phoneme that did not report completion within two seconds; see <a href="speech.html">speech</a>.</td></tr>
+<tr><td><code>TI_E_TIMING</code></td><td>More than 100 ticks occurred since the last update, or more than 32 score events or song rows were due at the same time. The driver then marks a gap and stops music and speech. The function also returns this code for all calls while the clock is not valid, until <code>ti_audio_resume_clock</code>. It also returns this code one time when a speech phoneme did not report completion in two seconds; see <a href="speech.html">speech</a>.</td></tr>
 </table></div>
 </section>
 
 <section class="fn" id="ti_audio_ticks">
 <h3><code class="def">ti_audio_ticks</code></h3>
 <pre class="sig" data-name="ti_audio_ticks">uint32_t ti_audio_ticks(void);</pre>
-<p>The device tick count since <code>ti_audio_init</code>, read atomically. It is a <code>ti_tick_source</code>, for <code>ti_steps_begin</code> and <code>ti_gfx_budget</code>. It does not advance during a declared gap.</p>
+<p>This function returns the number of device ticks since <code>ti_audio_init</code>. It reads the count atomically. It is a <code>ti_tick_source</code> for <code>ti_steps_begin</code> and <code>ti_gfx_budget</code>. The count does not increase during a declared gap.</p>
 </section>
 
 <section class="fn" id="ti_audio_voices">
 <h3><code class="def">ti_audio_voices</code></h3>
 <pre class="sig" data-name="ti_audio_voices">uint8_t ti_audio_voices(void);</pre>
-<p>The voices the driver serves: 12 on a native Phasor, 6 on a Mockingboard or a Phasor that answered as one, or the smaller rounded <code>voices</code> limit. 0 when audio is not initialized.</p>
+<p>This function returns the number of voices that the driver serves. This is 12 on a native Phasor, and 6 on a Mockingboard or on a Phasor that answers as a Mockingboard. With a <code>voices</code> limit, it is the rounded limit. Without active audio, it is 0.</p>
 </section>
 
 <section class="fn" id="ti_audio_clock_valid">
 <h3><code class="def">ti_audio_clock_valid</code></h3>
 <pre class="sig" data-name="ti_audio_clock_valid">uint8_t ti_audio_clock_valid(void);</pre>
-<p>1 while audio runs and no gap has invalidated the clock since the last resume. A game checks it to decide when to pause.</p>
+<p>This function returns 1 while audio runs and no gap made the clock not valid since the last resume. A game uses it to find when to pause.</p>
 </section>
 
 <section class="fn" id="ti_audio_source_hz">
 <h3><code class="def">ti_audio_source_hz</code>, <code class="def">ti_audio_tick_divisor</code></h3>
 <pre class="sig" data-name="ti_audio_source_hz">uint32_t ti_audio_source_hz(void);
 uint16_t ti_audio_tick_divisor(void);</pre>
-<p id="ti_audio_tick_divisor">The VIA clock rate the driver assumes, and the number of VIA clocks in one tick (the timer latch plus 2). Calibrated seconds are <code>ticks * divisor / source_hz</code>; use 32-bit arithmetic. Both return 0 without active audio.</p>
+<p id="ti_audio_tick_divisor">The first function returns the VIA clock rate that the driver uses. The second function returns the number of VIA clocks in one tick, which is the timer latch plus 2. Calibrated seconds are <code>ticks * divisor / source_hz</code>. Use 32-bit arithmetic. Without active audio, the two functions return 0.</p>
 </section>
 
 <h2 id="gaps">Gaps</h2>
-<p>A VIA can flag one missed timer period, not several. Work that keeps interrupts masked for more than a tick, or that blocks in slot firmware, would lose ticks without anyone knowing. libtini's own file and AMEM calls bracket themselves with these two functions; a game must do the same around other blocking work.</p>
+<p>A VIA can record one missed timer period, but not more. Some work keeps interrupts masked for more than one tick, or blocks in slot firmware. During that work, the driver loses ticks and cannot know it. The file and AMEM calls of libtini enclose their work in these two functions. A game must do the same around other blocking work.</p>
 
 <section class="fn" id="ti_audio_mark_gap">
 <h3><code class="def">ti_audio_mark_gap</code></h3>
 <pre class="sig" data-name="ti_audio_mark_gap">void ti_audio_mark_gap(void);</pre>
-<p>Invalidates the clock, stops the timer interrupt, powers speech down and cancels queued phrases, cancels effects and mutes every voice. While paused, the interrupt handler declines interrupts before touching any slot I/O. Safe to call without active audio, when it only marks a display-timing gap.</p>
+<p>This function makes the clock not valid and stops the timer interrupt. It powers down speech and cancels the queued phrases. It cancels effects and mutes all voices. During the pause, the interrupt handler declines interrupts before it touches slot I/O. Without active audio, the function only marks a display-timing gap.</p>
 </section>
 
 <section class="fn" id="ti_audio_resume_clock">
 <h3><code class="def">ti_audio_resume_clock</code></h3>
 <pre class="sig" data-name="ti_audio_resume_clock">ti_error ti_audio_resume_clock(void);</pre>
-<p>Re-arms the timer for a full period without clearing the count, rebases the music and speech deadlines to now and restores music volumes. Ticks did not advance during the gap: they do not measure its length. Rebase a fixed-step loop with <code>ti_steps_reset</code> too.</p>
+<p>This function starts the timer again for a full period and does not clear the count. It moves the music and speech deadlines to the current tick and restores the music volumes. The ticks did not increase during the gap, thus they do not measure its length. Also call <code>ti_steps_reset</code> for a fixed-step loop.</p>
 <p class="returns-title">Returns</p>
 <p><code>TI_OK</code>, or <code>TI_E_STATE</code> without active audio.</p>
 </section>
@@ -157,38 +167,40 @@ uint16_t ti_audio_tick_divisor(void);</pre>
 <section class="fn" id="ti_audio_reserve">
 <h3><code class="def">ti_audio_reserve</code></h3>
 <pre class="sig" data-name="ti_audio_reserve">ti_error ti_audio_reserve(uint16_t music_voices);</pre>
-<p>Sets which voices belong to music, as a bit mask (bit <em>v</em> for voice <em>v</em>); the rest belong to effects. Scores may play only reserved voices and effects only the others. After init the mask is <code>7</code>, voices 0-2.</p>
+<p>This function sets the music voices as a bit mask, with bit <em>v</em> for voice <em>v</em>. The other voices are effect voices. Scores can play only on music voices, and effects only on effect voices. After init, the mask is <code>7</code>: voices 0-2.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_STATE</code> without audio; <code>TI_E_RANGE</code> for a bit at or above <code>ti_audio_voices()</code>; <code>TI_E_BUSY</code> when the change would remove a voice that the playing score or an envelope uses, or reserve a voice playing an effect. Stop those first.</p>
+<p><code>TI_OK</code>; <code>TI_E_STATE</code> without audio; <code>TI_E_RANGE</code> for a bit at or above <code>ti_audio_voices()</code>; <code>TI_E_BUSY</code> when the change removes a voice that the score or an envelope uses, or reserves a voice that plays an effect. Stop these users first.</p>
 </section>
 
 <section class="fn" id="ti_audio_effect_voice">
 <h3><code class="def">ti_audio_effect_voice</code></h3>
 <pre class="sig" data-name="ti_audio_effect_voice">uint8_t ti_audio_effect_voice(uint8_t n);</pre>
-<p>The voice number of the <em>n</em>th voice, counting from 0, that the reservation leaves to effects; 255 when fewer are left, which <code>ti_audio_effect</code> rejects. With music on voices 0-1 of a Mockingboard, effect voice 0 is voice 2; with music on 0-7 of a Phasor, it is voice 8. One table of effect voices then suits either card.</p>
+<p>This function returns the voice number of effect voice <em>n</em>, counted from 0. When fewer effect voices are available, it returns 255, which <code>ti_audio_effect</code> rejects.</p>
+<p>With music on voices 0-1 of a Mockingboard, effect voice 0 is voice 2. With music on voices 0-7 of a Phasor, effect voice 0 is voice 8. Thus one table of effect voices is correct for the two cards.</p>
 </section>
 
 <h2 id="music">Music</h2>
-<p>There are two kinds of score. An event score is an array of <code>ti_music_event</code>, easy to write by hand. A pattern song repeats bars, as tracker music does, and is much smaller for real music; <code>tools/music.py</code> compiles one from JSON and <code>tools/midi.py</code> arranges one from a MIDI file. The two players are separate archive modules: a program links only the one it starts. Score data is borrowed near read-only memory until the score stops, a new one starts or audio shuts down.</p>
+<p>There are two types of score. An event score is an array of <code>ti_music_event</code>. It is easy to write by hand. A pattern song repeats bars, as tracker music does. For real music it is much smaller. <code>tools/music.py</code> compiles a song from JSON, and <code>tools/midi.py</code> makes a song from a MIDI file.</p>
+<p>The two players are separate archive modules. A program links only the player that it starts. The player uses the score data in near read-only memory until the score stops, a new score starts or audio stops.</p>
 
 <section class="fn" id="ti_music_start">
 <h3><code class="def">ti_music_start</code></h3>
 <pre class="sig" data-name="ti_music_start">ti_error ti_music_start(const ti_music_event *events, uint16_t count, uint8_t loop);</pre>
-<p>Stops the current score and starts playing <code>events</code> from now, wrapping to the first event when <code>loop</code> is nonzero. Every event is checked first.</p>
+<p>This function stops the current score and starts to play <code>events</code> immediately. When <code>loop</code> is nonzero, the score starts again at the first event after the last event. The function checks all events first.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_STATE</code> without audio; <code>TI_E_ARGUMENT</code> for a count of 0 or above 512, or events that are not readable near memory; <code>TI_E_RANGE</code> for an event whose voice is out of range or not reserved, whose volume is above 15 or whose period is above 2047.</p>
+<p><code>TI_OK</code>; <code>TI_E_STATE</code> without audio; <code>TI_E_ARGUMENT</code> for a count of 0 or more than 512, or for events that are not readable near memory; <code>TI_E_RANGE</code> for an event with a voice out of range or not reserved, a volume above 15 or a period above 2047.</p>
 </section>
 
 <section class="fn" id="ti_song_start">
 <h3><code class="def">ti_song_start</code></h3>
 <pre class="sig" data-name="ti_song_start">ti_error ti_song_start(const uint8_t *song, uint16_t size, uint8_t loop);</pre>
-<p>Plays a pattern song from <code>tools/music.py</code>. Track <em>i</em> plays on the <em>i</em>th reserved voice when the song starts, counting from voice 0; tracks beyond the reserved voices are not played, so a Mockingboard can play the first tracks of a song arranged for a Phasor. With <code>loop</code> 0 the song stops after its last order position; otherwise it returns to its loop position.</p>
-<p>The whole song is validated before the playing score stops: header ranges, table bounds, every order entry and every pattern's bytes. A song that fails leaves the old score playing. <a href="../reference/formats.html#song">Data formats</a> describes the bytes.</p>
+<p>This function plays a pattern song from <code>tools/music.py</code>. Track <em>i</em> plays on reserved voice <em>i</em>, counted from voice 0 when the song starts. The function does not play tracks above the number of reserved voices. Thus a Mockingboard can play the first tracks of a song for a Phasor. When <code>loop</code> is 0, the song stops after its last order position. Otherwise it goes back to its loop position.</p>
+<p>The function checks the full song before it stops the current score. It checks the header ranges, the table limits, each order entry and the bytes of each pattern. When the song is not valid, the old score continues. <a href="../reference/formats.html#song">Data formats</a> describes the bytes.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_STATE</code> without audio; <code>TI_E_ARGUMENT</code> for a song shorter than 8 bytes or outside readable near memory; <code>TI_E_RANGE</code> when no voice is reserved or the song is invalid.</p>
+<p><code>TI_OK</code>; <code>TI_E_STATE</code> without audio; <code>TI_E_ARGUMENT</code> for a song shorter than 8 bytes or outside readable near memory; <code>TI_E_RANGE</code> when no voice is reserved or the song is not valid.</p>
 <pre><code class="c">#include "starfall_music.h"            /* sf_song[], SF_SONG_SIZE from tools/music.py */
 
-/* Eight tracks on a Phasor; the lead and bass alone on a Mockingboard. */
+/* Eight tracks on a Phasor; only the lead and bass on a Mockingboard. */
 ti_audio_reserve(ti_audio_voices() == 12 ? 0xFF : 0x03);
 ti_song_start(sf_song, SF_SONG_SIZE, 1);</code></pre>
 </section>
@@ -196,7 +208,7 @@ ti_song_start(sf_song, SF_SONG_SIZE, 1);</code></pre>
 <section class="fn" id="ti_music_stop">
 <h3><code class="def">ti_music_stop</code></h3>
 <pre class="sig" data-name="ti_music_stop">void ti_music_stop(void);</pre>
-<p>Stops either kind of score and silences its voices. The reservation is kept.</p>
+<p>This function stops the two types of score and silences their voices. It keeps the reservation.</p>
 </section>
 
 <h2 id="effects">Effects</h2>
@@ -204,26 +216,31 @@ ti_song_start(sf_song, SF_SONG_SIZE, 1);</code></pre>
 <h3><code class="def">ti_audio_effect</code></h3>
 <pre class="sig" data-name="ti_audio_effect">ti_error ti_audio_effect(uint8_t voice, uint16_t period, uint8_t volume,
                          uint16_t duration, uint8_t priority);</pre>
-<p>Plays a tone on an effect voice at once, for <code>duration</code> device ticks. A new effect replaces the voice's current one when its priority is at least as high.</p>
+<p>This function plays a tone on an effect voice immediately, for <code>duration</code> device ticks. A new effect replaces the current effect of the voice when its priority is the same or higher.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_STATE</code> without audio; <code>TI_E_RANGE</code> for a voice out of range (including 255 from <code>ti_audio_effect_voice</code>), a period above 2047, a volume above 15, or a zero duration or priority; <code>TI_E_BUSY</code> when the voice is reserved for music or plays an effect of higher priority.</p>
+<p><code>TI_OK</code>; <code>TI_E_STATE</code> without audio; <code>TI_E_RANGE</code> for a voice out of range (255 from <code>ti_audio_effect_voice</code> included), a period above 2047, a volume above 15, or a zero duration or priority; <code>TI_E_BUSY</code> when the voice is a music voice or plays an effect of higher priority.</p>
 <pre><code class="c">/* A short laser on the first effect voice, priority 2. */
 ti_audio_effect(ti_audio_effect_voice(0), 150, 12, 3, 2);</code></pre>
 </section>
 
 <h2 id="envelopes">Hardware envelopes</h2>
-<p>Each AY chip has one envelope generator, shared by its three voices. The envelope calls drive it on reserved music voices; they are a separate archive module, linked only when called.</p>
+<p>Each AY chip has one envelope generator, and its three voices share it. The envelope functions control it on music voices. They are a separate archive module, which the linker adds only when a program calls them.</p>
 <section class="fn" id="ti_audio_envelope">
 <h3><code class="def">ti_audio_envelope</code></h3>
 <pre class="sig" data-name="ti_audio_envelope">ti_error ti_audio_envelope(uint16_t voices, uint16_t period, uint8_t shape);</pre>
-<p>Switches the voices in the mask to envelope amplitude and programs each affected chip's period and shape. Every call writes registers 11, 12 and 13, even with an unchanged shape, because writing register 13 restarts the envelope. Ducking mutes envelope voices during speech and lets the envelope run on.</p>
+<p>This function sets the voices in the mask to envelope amplitude. It writes the period and shape to each chip of these voices. Each call writes registers 11, 12 and 13, also when the shape does not change, because a write to register 13 starts the envelope again. Ducking mutes envelope voices during speech, and the envelope continues.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_STATE</code> without audio; <code>TI_E_RANGE</code> for an empty or out-of-range mask, a zero period, a shape above 15, or on a native Phasor a period above 32,767 (the driver doubles it); <code>TI_E_BUSY</code> when a voice is not reserved for music, when the call would reprogram a chip without including a voice that already uses its envelope, or for voices 0-2 on a Mockingboard with speech enabled: the SSI shares the first chip's port and can reset it, so use voices 3-5 there.</p>
+<p><code>TI_OK</code>; <code>TI_E_STATE</code> without audio; <code>TI_E_RANGE</code> for an empty mask or a mask out of range, a zero period, a shape above 15, or a period above 32,767 on a native Phasor (the driver doubles it); <code>TI_E_BUSY</code> for these conditions:</p>
+<ul>
+  <li>A voice in the mask is not a music voice.</li>
+  <li>The call changes a chip but does not include a voice that already uses the envelope of that chip.</li>
+  <li>The mask contains voices 0-2 on a Mockingboard with speech enabled. The SSI shares the port of the first chip and can reset it. Use voices 3-5 for envelopes there.</li>
+</ul>
 </section>
 <section class="fn" id="ti_audio_envelope_stop">
 <h3><code class="def">ti_audio_envelope_stop</code></h3>
 <pre class="sig" data-name="ti_audio_envelope_stop">ti_error ti_audio_envelope_stop(uint16_t voices);</pre>
-<p>Returns the voices in the mask to their score volume.</p>
+<p>This function sets the voices in the mask back to their score volume.</p>
 <p class="returns-title">Returns</p>
 <p><code>TI_OK</code>; <code>TI_E_STATE</code> without audio; <code>TI_E_RANGE</code> for a mask bit out of range.</p>
 </section>

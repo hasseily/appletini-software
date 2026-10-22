@@ -16,31 +16,32 @@
 </header>
 <main id="main">
 <h1>Tools</h1>
-<p class="lead">The host programs in <code>tools/</code>. All are Python 3.10 or newer and use only the standard library unless they say otherwise. Run them from the <code>libtini/</code> folder.</p>
+<p class="lead">These are the host programs in <code>tools/</code>. They need Python 3.10 or newer. They use only the standard library of Python, unless their entry tells otherwise. Run them from the <code>libtini/</code> folder.</p>
 
 <div class="table"><table class="compact">
-<tr><th>Tool</th><th>Does</th></tr>
-<tr><td><a href="#setup_inputs"><code>setup_inputs.py</code></a></td><td>Installs the pinned ProDOS input once</td></tr>
+<tr><th>Tool</th><th>Function</th></tr>
+<tr><td><a href="#setup_inputs"><code>setup_inputs.py</code></a></td><td>Installs the pinned ProDOS input one time</td></tr>
 <tr><td><a href="build.html"><code>build.py</code></a></td><td>Builds the library, programs, games and disks</td></tr>
-<tr><td><a href="#assets"><code>assets.py</code></a></td><td>Converts images, fonts and maps; builds resource packs</td></tr>
+<tr><td><a href="#assets"><code>assets.py</code></a></td><td>Converts images, fonts and maps. Builds resource packs.</td></tr>
 <tr><td><a href="#speech"><code>speech.py</code></a></td><td>Compiles phrase text to SSI-263 phonemes</td></tr>
 <tr><td><a href="#music"><code>music.py</code></a></td><td>Compiles event scores and pattern songs</td></tr>
 <tr><td><a href="#midi"><code>midi.py</code></a></td><td>Arranges a MIDI file as a pattern song</td></tr>
-<tr><td><a href="#starfall_assets"><code>starfall_assets.py</code></a></td><td>STARFALL's art converter</td></tr>
-<tr><td><a href="#disk"><code>disk.py</code></a></td><td>The ProDOS disk packager used by the builds</td></tr>
+<tr><td><a href="#starfall_assets"><code>starfall_assets.py</code></a></td><td>The art converter of STARFALL</td></tr>
+<tr><td><a href="#disk"><code>disk.py</code></a></td><td>The ProDOS disk packager of the builds</td></tr>
 <tr><td><a href="#native_emulator"><code>native_emulator.py</code></a></td><td>Builds and runs the development emulator</td></tr>
-<tr><td><a href="#profiler"><code>profiler.py</code></a></td><td>Times functions of a game on the emulator</td></tr>
+<tr><td><a href="#profiler"><code>profiler.py</code></a></td><td>Measures the time of game functions on the emulator</td></tr>
 <tr><td><a href="#benchmark"><code>benchmark.py</code></a></td><td>Measures library routines on the emulator</td></tr>
-<tr><td><a href="browser.html"><code>web.py</code></a></td><td>Builds a game's browser player</td></tr>
-<tr><td><a href="testing.html"><code>check.py</code>, <code>test.py</code></a></td><td>Run the checks</td></tr>
-<tr><td><a href="build.html#release"><code>release.py</code></a></td><td>Verifies an isolated rebuild and writes release archives</td></tr>
-<tr><td><a href="#reference_guard"><code>reference_guard.py</code></a></td><td>Fingerprints a read-only reference checkout</td></tr>
+<tr><td><a href="browser.html"><code>web.py</code></a></td><td>Builds the browser player of a game</td></tr>
+<tr><td><a href="testing.html"><code>check.py</code>, <code>test.py</code></a></td><td>Run the checks. See <a href="testing.html">Checks</a>.</td></tr>
+<tr><td><a href="build.html#release"><code>release.py</code></a></td><td>Builds again in an isolated folder, compares the results and writes release archives</td></tr>
+<tr><td><a href="#reference_guard"><code>reference_guard.py</code></a></td><td>Records a fingerprint of a read-only reference checkout</td></tr>
 </table></div>
 
 <section class="fn" id="setup_inputs">
 <h2><code class="def">setup_inputs.py</code></h2>
 <pre><code>python tools/setup_inputs.py</code></pre>
-<p>Downloads the official ProDOS 8 2.4.3 140 KiB image named in <code>tools/prodos-input.json</code>, checks its SHA-256 and writes it to <code>build-inputs/prodos/ProDOS_2_4_3.po</code>. If the file is already there it only checks the hash. This is the only tool that uses the network. The repository does not redistribute ProDOS.</p>
+<p>This tool downloads the official ProDOS 8 2.4.3 image of 140 KiB that <code>tools/prodos-input.json</code> names. It checks the SHA-256 and writes the image to <code>build-inputs/prodos/ProDOS_2_4_3.po</code>. If the file is already there, the tool only checks the hash.</p>
+<p>This is the only tool that uses the network. The repository does not distribute ProDOS.</p>
 </section>
 
 <section class="fn" id="assets">
@@ -52,44 +53,49 @@ python tools/assets.py map     INPUT.json OUTPUT.tim [--report FILE]
 python tools/assets.py pack    PACK.json  OUTPUT.tpk [--report FILE]</code></pre>
 <div class="table"><table>
 <tr><th>Command</th><th>Input</th><th>Output</th></tr>
-<tr><td><code>image</code></td><td>P3 or P6 PPM, 8-bit channels, 1-320 by 1-200, matched to the palette by nearest colour</td><td>TI4; <code>--masked</code> appends an opacity mask; <code>--palette-output</code> writes the 32-byte palette</td></tr>
-<tr><td><code>indexed</code></td><td>JSON <code>width</code>, <code>height</code>, <code>pixels</code> (0-15), optional <code>masked</code></td><td>TI4</td></tr>
-<tr><td><code>font</code></td><td>JSON <code>width</code> 1-8, <code>height</code> 1-16, <code>first</code> (default 32), <code>glyphs</code> as rows of <code>.</code> and <code>#</code></td><td>TIF</td></tr>
-<tr><td><code>map</code></td><td>JSON <code>rows</code> of tile numbers, 1-256 by 1-256, optional <code>tile_count</code></td><td>TIM</td></tr>
-<tr><td><code>pack</code></td><td>JSON <code>entries</code>, each a <code>name</code> and a <code>path</code> under the manifest's folder</td><td>TPK1</td></tr>
+<tr><td><code>image</code></td><td>P3 or P6 PPM with 8-bit channels and 1-320 by 1-200 pixels. The tool gives each pixel the nearest palette colour.</td><td>TI4. <code>--masked</code> adds an opacity mask. <code>--palette-output</code> writes the 32-byte palette.</td></tr>
+<tr><td><code>indexed</code></td><td>JSON <code>width</code>, <code>height</code>, <code>pixels</code> (0-15) and optional <code>masked</code></td><td>TI4</td></tr>
+<tr><td><code>font</code></td><td>JSON <code>width</code> 1-8, <code>height</code> 1-16, <code>first</code> (default 32) and <code>glyphs</code> as rows of <code>.</code> and <code>#</code></td><td>TIF</td></tr>
+<tr><td><code>map</code></td><td>JSON <code>rows</code> of tile numbers, 1-256 by 1-256, and optional <code>tile_count</code></td><td>TIM</td></tr>
+<tr><td><code>pack</code></td><td>JSON <code>entries</code>. Each entry has a <code>name</code> and a <code>path</code> in the folder of the manifest.</td><td>TPK1</td></tr>
 </table></div>
-<p>Every command prints, and with <code>--report</code> writes, the output size and the least number of 48,640-byte banks it needs. Outputs contain no timestamps. Formats are in <a href="formats.html">Data formats</a>; usage is in <a href="../guides/assets.html">Art, fonts, maps and packs</a>.</p>
+<p>Each command prints the output size and the minimum number of 48,640-byte banks that it needs. With <code>--report</code>, it also writes these values to a file. The outputs contain no timestamps. <a href="formats.html">Data formats</a> gives the formats. <a href="../guides/assets.html">Art, fonts, maps and packs</a> shows how to use them.</p>
 </section>
 
 <section class="fn" id="speech">
 <h2><code class="def">speech.py</code></h2>
 <pre><code>python tools/speech.py PHRASES.json --preview
 python tools/speech.py PHRASES.json --output HEADER.h [--symbol NAME] [--no-numbers]</code></pre>
-<p>Compiles each phrase's text to SSI-263 phoneme bytes with a small authored English vocabulary and the file's pronunciations. Unknown words, unsupported characters and phrases over 255 phonemes fail. The header defines each phrase name as its number and a <code>ti_speech_bank</code> named <code>NAME</code> (default <code>ti_speech_assets</code>), with the thirty number words unless <code>--no-numbers</code>. A bank holds up to 225 phrases with number words or 255 without. <code>--preview</code> prints each phrase's phonemes and an estimated length at rate 10; it makes no sound.</p>
+<p>This tool compiles the text of each phrase to SSI-263 phoneme bytes. It uses a small English vocabulary and the pronunciations of the file. It stops for unknown words, unsupported characters and phrases of more than 255 phonemes.</p>
+<p>The header defines each phrase name as its number. It also defines a <code>ti_speech_bank</code> with the name <code>NAME</code> (default <code>ti_speech_assets</code>). The bank contains the thirty number words, if you do not give <code>--no-numbers</code>. A bank holds a maximum of 225 phrases with number words, or 255 without them.</p>
+<p><code>--preview</code> prints the phonemes and an estimated length of each phrase at rate 10. It makes no sound.</p>
 </section>
 
 <section class="fn" id="music">
 <h2><code class="def">music.py</code></h2>
 <pre><code>python tools/music.py SOURCE.json --preview
 python tools/music.py SOURCE.json --output HEADER.h [--symbol NAME] [--report FILE]</code></pre>
-<p>A document with <code>events</code> becomes a <code>ti_music_event</code> array named <code>NAME</code> (default <code>score</code>) and <code>NAME_COUNT</code>, in capitals. A document with <code>song</code> becomes the pattern-song bytes in a <code>uint8_t</code> array and <code>NAME_SIZE</code>. The report gives the event or row count, the size and the nominal length at 100 ticks a second. An optional <code>credit</code> string is repeated in the header's comment.</p>
+<p>A document with <code>events</code> becomes a <code>ti_music_event</code> array with the name <code>NAME</code> (default <code>score</code>), and <code>NAME_COUNT</code> in capitals. A document with <code>song</code> becomes the pattern-song bytes in a <code>uint8_t</code> array, and <code>NAME_SIZE</code>.</p>
+<p>The report gives the number of events or rows, the size, and the nominal length at 100 ticks a second. The header comment contains the optional <code>credit</code> string.</p>
 </section>
 
 <section class="fn" id="midi">
 <h2><code class="def">midi.py</code></h2>
 <pre><code>python tools/midi.py TUNE.mid ARRANGEMENT.json --output SONG.json</code></pre>
-<p>Arranges a Standard MIDI File as a song document for <code>music.py</code>, using the arrangement's bars, loop bar, rows per beat and tracks. It prints, per channel, the notes no track took. The MIDI file is only read; builds use the song document. See <a href="../guides/sound.html#midi">Arranging a MIDI file</a>.</p>
+<p>This tool arranges a Standard MIDI File as a song document for <code>music.py</code>. It uses the bars, loop bar, rows per beat and tracks of the arrangement. For each channel, it prints the number of notes that no track uses. The tool only reads the MIDI file. Builds use the song document. See <a href="../guides/sound.html#midi">Arrange a MIDI file</a>.</p>
 </section>
 
 <section class="fn" id="starfall_assets">
 <h2><code class="def">starfall_assets.py</code></h2>
 <pre><code>python tools/starfall_assets.py --header build/starfall_assets.h [--preview build/starfall-art.ppm]</code></pre>
-<p>Checks the SHA-256 of the vendored Kenney archive in <code>assets/starfall/</code>, reads its indexed PNGs with a small built-in PNG reader, and writes STARFALL's sixteen 16x16 cells, palette and sub-sprite table as a C header. <code>--preview</code> writes an enlarged contact sheet. It is an example of a game-specific generator; <code>assets/starfall/README.md</code> describes the conversion.</p>
+<p>This tool checks the SHA-256 of the vendored Kenney archive in <code>assets/starfall/</code>. It reads the indexed PNG files of the archive with a small built-in PNG reader. It writes the sixteen 16x16 cells, the palette and the table of small images of STARFALL as a C header.</p>
+<p><code>--preview</code> writes an enlarged contact sheet. The tool is an example of a generator for one game. <code>assets/starfall/README.md</code> describes the conversion.</p>
 </section>
 
 <section class="fn" id="disk">
 <h2><code class="def">disk.py</code></h2>
-<p>A library module, not a command. It writes deterministic ProDOS-order volumes with a root directory of seedling and sapling files, copying the boot blocks and unmodified <code>PRODOS</code> kernel from the installed release, and validates directory links, block ownership, the allocation bitmap and every payload. <code>build.py</code> and a separate project's <code>build.py</code> use it.</p>
+<p>This file is a library module, not a command. It writes deterministic ProDOS-order volumes with a root directory of seedling and sapling files. It copies the boot blocks and the unchanged <code>PRODOS</code> kernel from the installed release.</p>
+<p>It checks the directory links, the block ownership, the allocation bitmap and each payload. <code>build.py</code> and the <code>build.py</code> of a separate project use it.</p>
 </section>
 
 <section class="fn" id="native_emulator">
@@ -97,19 +103,27 @@ python tools/music.py SOURCE.json --output HEADER.h [--symbol NAME] [--report FI
 <pre><code>python tools/native_emulator.py --cc GCC [--rebuild] build
 python tools/native_emulator.py --cc GCC run  --disk DISK.po --system NAME.SYSTEM --profile vtw33 --frames 120 --screenshot OUT.png
 python tools/native_emulator.py --cc GCC play --disk DISK.po --boot --rom ROM --slot7-rom C700 --slot7-c8-rom C800 [--video-rom CHARROM]</code></pre>
-<p>Builds the repository's development machine, <code>../tools/appletini</code> and <code>../demos/doom_gs/tools/a2vm</code>, as <code>build/native/libappletini.dll</code> with GCC, without changing its sources, and passes the remaining arguments to the runner. <code>--disk</code> with <code>--system</code> launches one SYS file through a ProDOS MLI stand-in; <code>--boot</code> boots the disk through ROMs that must be installed under <code>build-inputs/</code>. <code>--profile</code> is <code>vtw33</code> or <code>turbo-f122</code>. This wrapper runs without sound synthesis. The emulator is GPL-3.0-only and is not linked into any libtini program.</p>
+<p>This tool builds the development machine of the repository, <code>../tools/appletini</code> and <code>../demos/doom_gs/tools/a2vm</code>. It uses GCC, does not change the sources, and makes <code>build/native/libappletini.dll</code>. It gives the other arguments to the runner.</p>
+<ul>
+  <li><code>--disk</code> with <code>--system</code> starts one SYS file through a ProDOS MLI stand-in.</li>
+  <li><code>--boot</code> boots the disk through ROMs. You must install the ROMs in <code>build-inputs/</code>.</li>
+  <li><code>--profile</code> is <code>vtw33</code> or <code>turbo-f122</code>.</li>
+</ul>
+<p>This wrapper does not make sound. The emulator is GPL-3.0-only. No libtini program links it.</p>
 </section>
 
 <section class="fn" id="profiler">
 <h2><code class="def">profiler.py</code></h2>
 <pre><code>python tools/profiler.py --game starfall --cc65-home D:/Repos/cc65 --cc C:/msys64/ucrt64/bin/gcc.exe `
     --key 13 --skip 360 --frames 1200 --count _sf_frames:4 _render _hud _field _ti_gfx_text_opaque</code></pre>
-<p>Boots a game that <code>build.py</code> built, from the installed ROMs, waits for <code>main</code>, sends the keys in order and measures a window of emulator frames. Each named function's time includes everything it calls, interrupts too, and is reported per call path such as <code>_hud/_field/_ti_gfx_text_opaque</code>, with calls, milliseconds a call and share of the window. Exported names come from the label file; static C functions and other labels come from listings of the staged sources, and a name several modules share is given as <code>module:name</code>. <code>--count LABEL:BYTES</code> reports how much a variable changed.</p>
+<p>This tool boots a game that <code>build.py</code> built, from the installed ROMs. It waits for <code>main</code>, sends the keys in sequence and measures a window of emulator frames.</p>
+<p>The time of a named function includes all that it calls, interrupts also. The report gives each call path, for example <code>_hud/_field/_ti_gfx_text_opaque</code>, with the number of calls, the milliseconds for each call and the part of the window.</p>
+<p>Exported names come from the label file. Static C functions and other labels come from listings of the staged sources. For a name in more than one module, write <code>module:name</code>. <code>--count LABEL:BYTES</code> reports the change of a variable.</p>
 <div class="table"><table class="compact">
 <tr><th>Option</th><th>Default</th><th>Meaning</th></tr>
 <tr><td><code>--profile</code></td><td><code>vtw33</code></td><td>Or <code>turbo-f122</code></td></tr>
 <tr><td><code>--wait</code></td><td>600</td><td>Frames after <code>main</code> starts</td></tr>
-<tr><td><code>--key</code></td><td></td><td>A key code or character; repeatable</td></tr>
+<tr><td><code>--key</code></td><td></td><td>A key code or character. You can give it more than one time.</td></tr>
 <tr><td><code>--key-frames</code></td><td>30</td><td>Frames after each key</td></tr>
 <tr><td><code>--skip</code></td><td>0</td><td>Frames before the window</td></tr>
 <tr><td><code>--frames</code></td><td>600</td><td>Frames in the window</td></tr>
@@ -120,17 +134,18 @@ python tools/native_emulator.py --cc GCC play --disk DISK.po --boot --rom ROM --
 <section class="fn" id="benchmark">
 <h2><code class="def">benchmark.py</code></h2>
 <pre><code>python tools/benchmark.py --cc65-home D:/Repos/cc65 --cc C:/msys64/ucrt64/bin/gcc.exe [--private] [--boot-roms build-inputs/native-roms] [--repeat 2]</code></pre>
-<p>Builds <code>examples/benchmark.c</code> as its own program and disk, runs it on the emulator and records CPU cycles, profile clock ticks, instruction and I/O counts and modelled time for cross-bank resource writes, reads, fills and copies, a full publication and a dirty rectangle, checking every result. <code>--private</code> also builds and measures the AMEM variant; <code>--boot-roms</code> boots through installed ROMs, which lets the emulated controller provide AMEM. Repeated runs must give identical counters. Results go to <code>build/benchmark/results.json</code>. Recorded results are in <a href="../../design/BENCHMARKS.md">design/BENCHMARKS.md</a>.</p>
+<p>This tool builds <code>examples/benchmark.c</code> as a separate program and disk, and runs it on the emulator. It measures cross-bank resource writes, reads, fills and copies, a full publication and a dirty rectangle. For each one, it records CPU cycles, profile clock ticks, instruction and I/O counts, and the modelled time. It checks each result.</p>
+<p><code>--private</code> also builds and measures the AMEM variant. <code>--boot-roms</code> boots through the installed ROMs, and then the emulated controller supplies AMEM. Repeated runs must give identical counters. The results go to <code>build/benchmark/results.json</code>. <a href="../../design/BENCHMARKS.md">design/BENCHMARKS.md</a> gives the results.</p>
 </section>
 
 <section class="fn" id="reference_guard">
 <h2><code class="def">reference_guard.py</code></h2>
 <pre><code>python tools/reference_guard.py ROOT RECORD.json
 python tools/reference_guard.py ROOT RECORD.json --check</code></pre>
-<p>Records a fingerprint of a reference checkout's files before it is read and checks afterwards that nothing changed. It is an audit aid, never a build input.</p>
+<p>This tool records a fingerprint of the files of a reference checkout before you read it. With <code>--check</code>, it makes sure that no file changed. It is an audit tool. It is never a build input.</p>
 </section>
 
-<footer class="page-foot">Installed tool versions, hashes and licences are in <a href="../../tools/DEPENDENCIES.md">tools/DEPENDENCIES.md</a>.</footer>
+<footer class="page-foot"><a href="../../tools/DEPENDENCIES.md">tools/DEPENDENCIES.md</a> gives the installed tool versions, hashes and licences.</footer>
 </main>
 </div>
 </body>

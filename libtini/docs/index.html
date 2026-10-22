@@ -19,7 +19,7 @@
 
 <div class="hero">
   <h1>libtini</h1>
-  <p class="lead">A C game SDK for an enhanced Apple //e with Appletini. You write the game loop in C with cc65; libtini draws Super Hi-Res screens, keeps large data in RamWorks banks, plays Mockingboard or Phasor music, speaks through the SSI-263, reads the keyboard and joystick, and loads and saves ProDOS files.</p>
+  <p class="lead">libtini is a C game SDK for an enhanced Apple //e with an Appletini. You write the game loop in C with cc65. libtini draws Super Hi-Res screens, keeps large data in RamWorks banks and plays Mockingboard or Phasor music. It also speaks through the SSI-263, reads the keyboard and joystick, and loads and saves ProDOS files.</p>
   <div class="palette" role="img" aria-label="Sixteen palette swatches, entries 0 to F">
     <div style="background:#001122"><b>0</b><span>012</span></div>
     <div style="background:#112233"><b>1</b><span>123</span></div>
@@ -38,18 +38,26 @@
     <div style="background:#5577aa"><b>E</b><span>57A</span></div>
     <div class="lt" style="background:#99eedd"><b>F</b><span>9ED</span></div>
   </div>
-  <p class="palette-caption">The starter game's palette: sixteen 0RGB words that <code>ti_gfx_begin</code> writes to the SHR palette at AUX $9E00. Every pixel on a libtini screen is one of these sixteen entries, packed two to a byte.</p>
+  <p class="palette-caption">The palette of the starter game. <code>ti_gfx_begin</code> writes these sixteen 0RGB words to the SHR palette at AUX $9E00. Each pixel on a libtini screen is one of these sixteen entries. One byte holds two pixels.</p>
 </div>
 
-<p>libtini uses only interfaces that existing Appletini firmware already has: CPU writes to the Super Hi-Res screen, RamWorks bank selection, the slot-4 Mockingboard or Phasor, the slot-7 SmartPort through ProDOS, and the standard //e keyboard, buttons and paddles. It needs no firmware or FPGA change and no slot swapping. An optional build adds Appletini's private AMEM memory service for large banked copies; the default build leaves it out.</p>
+<p>libtini runs on Appletini hardware with firmware F1.3.2. It uses only interfaces that this firmware has:</p>
+<ul>
+  <li>CPU writes to the Super Hi-Res screen.</li>
+  <li>RamWorks bank selection.</li>
+  <li>The slot-4 Mockingboard or Phasor.</li>
+  <li>The slot-7 SmartPort, through ProDOS.</li>
+  <li>The standard //e keyboard, buttons and paddles.</li>
+</ul>
+<p>libtini needs no firmware change, no FPGA change and no slot change. An optional build adds the Appletini AMEM memory service for large banked copies. The default build does not include it.</p>
 
-<p>The library is MIT licensed, so games built with it can use any terms. It lives in the <code>libtini/</code> folder of the appletini-software repository, with an example game, STARFALL, and a starter game to copy.</p>
+<p>libtini has the MIT License. A game that uses libtini can have any license. libtini is in the <code>libtini/</code> folder of the appletini-software repository. This folder also has an example game, STARFALL, and a starter game that you can copy.</p>
 
 <h2>A first program</h2>
-<p>This program clears the screen, prints a line of text and waits for a key. Returning from <code>main</code> restores the text screen and quits to ProDOS.</p>
+<p>This program clears the screen, writes a line of text and waits for a key. When <code>main</code> returns, libtini restores the text screen and quits to ProDOS.</p>
 <pre><code class="c">#include "libtini.h"
 
-static ti_surface screen;          /* zero-initialized, as create requires */
+static ti_surface screen;          /* create needs a structure of zeros */
 static const uint16_t palette[16] = {
     0x000, 0xFFF, 0xF00, 0x0F0, 0x00F, 0xFF0, 0x0FF, 0xF0F,
     0x888, 0x444, 0xF80, 0x08F, 0x8F0, 0xF08, 0x0F8, 0xCCC
@@ -60,42 +68,38 @@ int main(void)
     uint8_t key;
     if (ti_init(1, 2) != TI_OK) return 1;        /* RamWorks selectors 1 and 2 */
     if (ti_gfx_surface_create(&amp;screen, 320, 200) != TI_OK) return 1;
-    if (ti_gfx_begin(palette) != TI_OK) return 1; /* the screen now shows SHR */
+    if (ti_gfx_begin(palette) != TI_OK) return 1; /* the screen shows SHR */
     ti_gfx_clear(&amp;screen, 0);
     ti_gfx_text(&amp;screen, 8, 8, "HELLO FROM LIBTINI", 1);
     ti_gfx_present(&amp;screen, 0, 0);                /* publish the whole surface */
     do ti_input_poll(); while (ti_input_key(&amp;key) != TI_OK);
-    return 0;                                     /* cleanup runs on return */
+    return 0;                                     /* libtini cleans up on return */
 }</code></pre>
-<p>The surface lives in banked memory, not in C memory: it is a handle and an offset into the RamWorks banks that <code>ti_init</code> granted. Drawing changes the surface; <code>ti_gfx_present</code> copies it to the screen with ordinary CPU writes. <a href="start.html">Getting started</a> shows how to build it into a bootable disk.</p>
+<p>The surface is in banked memory, not in C memory. It is a handle and an offset into the RamWorks banks that <code>ti_init</code> grants. The draw functions change only the surface. <code>ti_gfx_present</code> copies the surface to the screen with usual CPU writes. <a href="start.html">First steps</a> shows how to make a bootable disk from this program.</p>
 
-<h2>What the library covers</h2>
+<h2>The parts of libtini</h2>
 <div class="cards">
-  <a href="api/memory.html" style="--card: var(--m-memory)"><strong>Memory</strong><span>Near buffers, banked resources, bounded reads, writes, fills and copies.</span></a>
-  <a href="api/timing.html" style="--card: var(--m-timing)"><strong>Timing</strong><span>Fixed-rate updates from the audio device clock, independent of CPU speed.</span></a>
-  <a href="api/graphics.html" style="--card: var(--m-graphics)"><strong>Graphics</strong><span>320x200 SHR, surfaces, rectangles, lines, text, sprites, tile maps, palettes.</span></a>
-  <a href="api/scene.html" style="--card: var(--m-scene)"><strong>Sprite scenes</strong><span>A band renderer that redraws only the blocks that changed.</span></a>
-  <a href="api/audio.html" style="--card: var(--m-audio)"><strong>Audio</strong><span>Six or twelve AY voices: event scores, pattern songs, effects, envelopes.</span></a>
-  <a href="api/speech.html" style="--card: var(--m-speech)"><strong>Speech</strong><span>SSI-263 phrases compiled from text, spoken numbers, a priority queue.</span></a>
-  <a href="api/input.html" style="--card: var(--m-input)"><strong>Input</strong><span>Key events, held keys, buttons, raw paddles and calibrated stick directions.</span></a>
-  <a href="api/storage.html" style="--card: var(--m-storage)"><strong>Storage</strong><span>Whole-file ProDOS reads and writes, and resource packs into banked memory.</span></a>
-  <a href="api/amem.html" style="--card: var(--m-amem)"><strong>Optional AMEM</strong><span>Probed private acceleration for large banked transfers.</span></a>
+  <a href="api/memory.html" style="--card: var(--m-memory)"><strong>Memory</strong><span>Near buffers and banked resources: read, write, fill and copy.</span></a>
+  <a href="api/timing.html" style="--card: var(--m-timing)"><strong>Timing</strong><span>Fixed-rate updates from the audio device clock, at all CPU speeds.</span></a>
+  <a href="api/graphics.html" style="--card: var(--m-graphics)"><strong>Graphics</strong><span>320x200 SHR: surfaces, rectangles, lines, text, sprites, tile maps and palettes.</span></a>
+  <a href="api/scene.html" style="--card: var(--m-scene)"><strong>Sprite scenes</strong><span>A band renderer that draws only the blocks that change.</span></a>
+  <a href="api/audio.html" style="--card: var(--m-audio)"><strong>Audio</strong><span>Six or twelve AY voices: event scores, pattern songs, effects and envelopes.</span></a>
+  <a href="api/speech.html" style="--card: var(--m-speech)"><strong>Speech</strong><span>SSI-263 phrases from text, spoken numbers and a priority queue.</span></a>
+  <a href="api/input.html" style="--card: var(--m-input)"><strong>Input</strong><span>Key events, the held key, buttons, paddles and calibrated stick directions.</span></a>
+  <a href="api/storage.html" style="--card: var(--m-storage)"><strong>Storage</strong><span>ProDOS file reads and writes, and resource packs in banked memory.</span></a>
+  <a href="api/amem.html" style="--card: var(--m-amem)"><strong>Optional AMEM</strong><span>Optional private acceleration for large banked transfers.</span></a>
 </div>
-<p>Host tools convert art, fonts, tile maps, speech text, music and MIDI files into data the library reads, package bootable ProDOS disks, profile functions on an emulator and build a browser version of a game.</p>
-
-<h2>Status</h2>
-<p>All modules have working source, example programs and host and emulator checks. The selected board baseline is existing Appletini firmware F1.3.2, commit <code>73de6fe03c31ad6f8ebfce3328704761fcd8c5a2</code>. The owner has played STARFALL on a board and reported, by eye, that the joystick fix works and that play looks the same at 33 MHz and in TURBO; the effect volumes were set by listening. The release checks have not yet been run and recorded on a board. Timing figures in these pages come from emulator models unless they say otherwise. <a href="reference/testing.html">Checks and status</a> lists what each kind of evidence covers.</p>
-
+<p>Host tools change art, fonts, tile maps, speech text, music and MIDI files into data for libtini. They also make bootable ProDOS disks, measure functions on an emulator and make a browser version of a game.</p>
 <h2 id="contents">Contents</h2>
 <div class="table"><table class="compact">
-<tr><th>Start</th><td><a href="start.html">Getting started</a>, <a href="concepts.html">How libtini works</a>, <a href="examples.html">Examples</a></td></tr>
-<tr><th>Guides</th><td><a href="guides/loop.html">Game loop and timing</a>, <a href="guides/drawing.html">Drawing and publishing</a>, <a href="guides/sound.html">Music, effects and speech</a>, <a href="guides/input.html">Keyboard and joystick</a>, <a href="guides/assets.html">Art, fonts, maps and packs</a>, <a href="guides/saves.html">Saved games</a>, <a href="guides/memory.html">Memory and layouts</a></td></tr>
+<tr><th>Start</th><td><a href="start.html">First steps</a>, <a href="concepts.html">How libtini works</a>, <a href="examples.html">Examples</a></td></tr>
+<tr><th>Guides</th><td><a href="guides/loop.html">Game loop and timing</a>, <a href="guides/drawing.html">Draw and publish</a>, <a href="guides/sound.html">Music, effects and speech</a>, <a href="guides/input.html">Keyboard and joystick</a>, <a href="guides/assets.html">Art, fonts, maps and packs</a>, <a href="guides/saves.html">Saved games</a>, <a href="guides/memory.html">Memory and layouts</a></td></tr>
 <tr><th>API</th><td><a href="api/index.html">All functions</a>, <a href="api/errors.html">Types and errors</a>, <a href="api/memory.html">Memory</a>, <a href="api/timing.html">Timing</a>, <a href="api/graphics.html">Graphics</a>, <a href="api/scene.html">Sprite scenes</a>, <a href="api/audio.html">Audio</a>, <a href="api/speech.html">Speech</a>, <a href="api/input.html">Input</a>, <a href="api/storage.html">Storage</a>, <a href="api/amem.html">Optional AMEM</a></td></tr>
-<tr><th>Reference</th><td><a href="reference/build.html">Builds and game manifests</a>, <a href="reference/tools.html">Tools</a>, <a href="reference/formats.html">Data formats</a>, <a href="reference/machine.html">Machine contract</a>, <a href="reference/browser.html">Browser player</a>, <a href="reference/testing.html">Checks and status</a></td></tr>
+<tr><th>Reference</th><td><a href="reference/build.html">Builds and game manifests</a>, <a href="reference/tools.html">Tools</a>, <a href="reference/formats.html">Data formats</a>, <a href="reference/machine.html">Machine contract</a>, <a href="reference/browser.html">Browser player</a>, <a href="reference/testing.html">Checks</a></td></tr>
 </table></div>
-<p>Design notes, the development plan and measurement records are Markdown files in <a href="../design/">libtini/design</a>.</p>
+<p>The design notes, the development plan and the measurements are Markdown files in <a href="../design/">libtini/design</a>.</p>
 
-<footer class="page-foot">libtini is licensed under the <a href="../LICENSE">MIT License</a>. The browser player in <code>tools/web/</code> is GPL-3.0-only.</footer>
+<footer class="page-foot">libtini has the <a href="../LICENSE">MIT License</a>. The browser player in <code>tools/web/</code> has the GPL-3.0-only license.</footer>
 </main>
 </div>
 </body>

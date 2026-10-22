@@ -17,23 +17,24 @@
 <main id="main">
 <h1>Timing</h1>
 <p class="include">#include "libtini/timing.h"</p>
-<p class="lead">Fixed-rate game updates from a device clock, and sampled display edges. This module claims no hardware: the clock comes from a source function, normally the audio driver's <code>ti_audio_ticks</code>.</p>
+<p class="lead">This header gives fixed-rate game updates from a device clock, and sampled display edges. The module uses no hardware. The clock comes from a source function, usually <code>ti_audio_ticks</code> from the audio driver.</p>
 
 <div class="table"><table class="compact">
 <tr><th>Function</th><th>Purpose</th></tr>
-<tr><td><code>ti_steps_begin</code></td><td>Start counting fixed-rate updates from a clock</td></tr>
-<tr><td><code>ti_steps_due</code></td><td>The updates due since the last call</td></tr>
-<tr><td><code>ti_steps_reset</code></td><td>Restart from now and drop any backlog</td></tr>
-<tr><td><code>ti_time_begin</code></td><td>Start elapsed-time and display-edge observation</td></tr>
-<tr><td><code>ti_time_poll</code></td><td>Sample elapsed ticks and count display edges</td></tr>
-<tr><td><code>ti_time_note_gap</code></td><td>Record that work may have hidden display edges</td></tr>
+<tr><td><code>ti_steps_begin</code></td><td>Start to count fixed-rate updates from a clock</td></tr>
+<tr><td><code>ti_steps_due</code></td><td>Get the updates that are due since the last call</td></tr>
+<tr><td><code>ti_steps_reset</code></td><td>Start again from the current time and drop the backlog</td></tr>
+<tr><td><code>ti_time_begin</code></td><td>Start to observe elapsed time and display edges</td></tr>
+<tr><td><code>ti_time_poll</code></td><td>Sample the elapsed ticks and count display edges</td></tr>
+<tr><td><code>ti_time_note_gap</code></td><td>Record that work can hide display edges</td></tr>
 </table></div>
 
 <h2 id="types">Types</h2>
 <section class="fn" id="ti_tick_source">
 <h3><code class="def">ti_tick_source</code></h3>
 <pre class="sig" data-name="ti_tick_source">typedef uint32_t (*ti_tick_source)(void);</pre>
-<p>A clock: a function returning a count that a real device advances at a fixed rate, independent of CPU speed, modulo 2<sup>32</sup>. It must return an atomic snapshot in the foreground without changing mappings or calling libtini. <code>ti_audio_ticks</code> is one, at a nominal 100 ticks a second. A CPU delay loop is not a valid source.</p>
+<p>A clock is a function that returns a count. A real device increases the count at a fixed rate that does not change with the CPU speed. The count is modulo 2<sup>32</sup>.</p>
+<p>The function must return an atomic snapshot in the foreground. It must not change mappings or call libtini. <code>ti_audio_ticks</code> is such a function, at a nominal 100 ticks each second. A CPU delay loop is not a valid source.</p>
 </section>
 <section class="fn" id="ti_time_sample">
 <h3><code class="def">ti_time_sample</code></h3>
@@ -45,67 +46,68 @@ typedef struct ti_time_sample {
     uint8_t flags;
 } ti_time_sample;</pre>
 <dl class="params">
-  <dt>display_edges</dt><dd>Blank-to-active transitions of the //e's $C019 flag that <code>ti_time_poll</code> happened to see. Whole frames between two polls are invisible, so this is a lower bound, not a frame count.</dd>
-  <dt>elapsed_ticks</dt><dd>Source ticks since <code>ti_time_begin</code>, as an unsigned modulo difference. Zero without a source.</dd>
-  <dt>flags</dt><dd><code>TI_TIME_ELAPSED_VALID</code> when a source was given. <code>TI_TIME_GAP</code> once anything has called <code>ti_time_note_gap</code> since begin; memory, graphics and storage calls set it, because their work can hide edges.</dd>
+  <dt>display_edges</dt><dd>The blank-to-active changes of the //e flag at $C019 that <code>ti_time_poll</code> saw. The poll cannot see full frames between two polls. Thus this value is a lower limit, not a frame count.</dd>
+  <dt>elapsed_ticks</dt><dd>The source ticks since <code>ti_time_begin</code>, as an unsigned modulo difference. Zero when there is no source.</dd>
+  <dt>flags</dt><dd><code>TI_TIME_ELAPSED_VALID</code> when a source is set. <code>TI_TIME_GAP</code> when a call to <code>ti_time_note_gap</code> occurred since begin. Memory, graphics and storage calls set this flag, because their work can hide edges.</dd>
 </dl>
 </section>
 
 <h2 id="steps">Fixed-rate steps</h2>
-<p>A game simulates at a fixed rate and draws as often as it can. These calls turn device ticks into a count of simulation steps, carry the remainder of a step over, cap the catch-up after a slow frame and report long gaps instead of inventing time. They keep their state in static variables and are not reentrant. <a href="../guides/loop.html">Game loop and timing</a> shows a complete loop.</p>
+<p>A game simulates at a fixed rate and draws as frequently as it can. These functions change device ticks into a number of simulation steps. They keep the part of a step that is left for the next call. They limit the catch-up after a slow frame. They report long gaps and do not add time that did not occur.</p>
+<p>The functions keep their state in static variables and are not reentrant. <a href="../guides/loop.html">Game loop and timing</a> shows a full loop.</p>
 
 <section class="fn" id="ti_steps_begin">
 <h3><code class="def">ti_steps_begin</code></h3>
 <pre class="sig" data-name="ti_steps_begin">#define TI_STEPS_GAP 255
 ti_error ti_steps_begin(ti_tick_source source, uint16_t ticks_per_second,
                         uint8_t steps_per_second, uint8_t max_steps);</pre>
-<p>Starts counting <code>steps_per_second</code> updates a second from <code>source</code>, which advances <code>ticks_per_second</code> times a second. The count starts from now.</p>
+<p>This function starts to count <code>steps_per_second</code> updates each second. It uses <code>source</code>, which increases <code>ticks_per_second</code> times each second. The count starts at the current time.</p>
 <dl class="params">
-  <dt>source</dt><dd>The device clock, such as <code>ti_audio_ticks</code>.</dd>
-  <dt>ticks_per_second</dt><dd>The clock's rate, such as <code>TI_AUDIO_TICKS_PER_SECOND</code>.</dd>
-  <dt>steps_per_second</dt><dd>Updates a second, at least 1. <code>ticks_per_second * (steps_per_second + 1)</code> must be at most 65,535; with the 100 Hz audio clock every rate up to 255 fits.</dd>
-  <dt>max_steps</dt><dd>The most steps one call returns, 1 to 254. Time beyond it is dropped, so a slow frame slows the game instead of piling up updates.</dd>
+  <dt>source</dt><dd>The device clock, for example <code>ti_audio_ticks</code>.</dd>
+  <dt>ticks_per_second</dt><dd>The rate of the clock, for example <code>TI_AUDIO_TICKS_PER_SECOND</code>.</dd>
+  <dt>steps_per_second</dt><dd>Updates each second, 1 or more. <code>ticks_per_second * (steps_per_second + 1)</code> must be 65,535 or less. With the 100 Hz audio clock, all rates to 255 are correct.</dd>
+  <dt>max_steps</dt><dd>The maximum number of steps that one call returns, 1 to 254. The function drops the time above this limit. Thus a slow frame makes the game slower and does not add a large number of updates.</dd>
 </dl>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_ARGUMENT</code> for a NULL source, a zero rate or a <code>max_steps</code> of 0 or 255; <code>TI_E_RANGE</code> when the product above exceeds 65,535.</p>
-<pre><code class="c">ti_steps_begin(ti_audio_ticks, TI_AUDIO_TICKS_PER_SECOND, 30, 30);  /* 30 updates a second */</code></pre>
+<p><code>TI_OK</code>; <code>TI_E_ARGUMENT</code> for a NULL source, a zero rate, or a <code>max_steps</code> of 0 or 255; <code>TI_E_RANGE</code> when the product above is more than 65,535.</p>
+<pre><code class="c">ti_steps_begin(ti_audio_ticks, TI_AUDIO_TICKS_PER_SECOND, 30, 30);  /* 30 updates each second */</code></pre>
 </section>
 
 <section class="fn" id="ti_steps_due">
 <h3><code class="def">ti_steps_due</code></h3>
 <pre class="sig" data-name="ti_steps_due">uint8_t ti_steps_due(void);</pre>
-<p>The number of updates due since the previous call, 0 to <code>max_steps</code>. Part of a step carries over to the next call. Returns 0 before <code>ti_steps_begin</code>.</p>
-<p>More than one second of ticks between two calls returns <code>TI_STEPS_GAP</code> (255) and restarts timing from now; a game normally pauses then. A paused audio clock, as during a file call, does not advance, so that pause is not a gap.</p>
-<p>Only the low 16 bits of the clock are kept between calls. Before resuming after a pause that may have lasted 65,536 ticks or more (about eleven minutes at 100 Hz), call <code>ti_steps_reset</code>.</p>
+<p>This function returns the number of updates that are due since the last call, 0 to <code>max_steps</code>. The part of a step that is left stays for the next call. Before <code>ti_steps_begin</code>, the function returns 0.</p>
+<p>When more than one second of ticks occurs between two calls, the function returns <code>TI_STEPS_GAP</code> (255) and starts the time again from the current tick. A game usually pauses then. A paused audio clock does not increase, for example during a file call. Thus that pause is not a gap.</p>
+<p>The function keeps only the low 16 bits of the clock between calls. A pause of 65,536 ticks or more is approximately eleven minutes at 100 Hz. After such a pause, call <code>ti_steps_reset</code> before you continue.</p>
 </section>
 
 <section class="fn" id="ti_steps_reset">
 <h3><code class="def">ti_steps_reset</code></h3>
 <pre class="sig" data-name="ti_steps_reset">void ti_steps_reset(void);</pre>
-<p>Restarts the count from the clock's current value and drops any partial step, for example when a game leaves its pause screen.</p>
+<p>This function starts the count again from the current value of the clock and drops the partial step. Use it, for example, when a game closes its pause screen.</p>
 </section>
 
 <h2 id="observation">Elapsed time and display edges</h2>
 <section class="fn" id="ti_time_begin">
 <h3><code class="def">ti_time_begin</code></h3>
 <pre class="sig" data-name="ti_time_begin">ti_error ti_time_begin(ti_tick_source source, uint16_t ticks_per_second);</pre>
-<p>Starts observation. With a source, elapsed ticks count from its current value. <code>ti_time_begin(NULL, 0)</code> chooses display observation without elapsed time. Clears the edge count and the gap flag.</p>
+<p>This function starts the observation. With a source, the elapsed ticks start at the current value of the source. <code>ti_time_begin(NULL, 0)</code> selects display observation without elapsed time. The function clears the edge count and the gap flag.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>, or <code>TI_E_ARGUMENT</code> when only one of <code>source</code> and <code>ticks_per_second</code> is given.</p>
+<p><code>TI_OK</code>, or <code>TI_E_ARGUMENT</code> when only one of <code>source</code> and <code>ticks_per_second</code> is set.</p>
 </section>
 
 <section class="fn" id="ti_time_poll">
 <h3><code class="def">ti_time_poll</code></h3>
 <pre class="sig" data-name="ti_time_poll">ti_error ti_time_poll(ti_time_sample *sample);</pre>
-<p>Samples the display flag once, counting an edge if it changed from blank to active since the last poll, and fills <code>*sample</code>. Elapsed ticks support one wrap of the 32-bit source; begin again before 2<sup>32</sup> ticks pass.</p>
+<p>This function samples the display flag one time. When the flag changed from blank to active since the last poll, the function counts one edge. Then it fills <code>*sample</code>. The elapsed ticks accept one wrap of the 32-bit source. Call begin again before 2<sup>32</sup> ticks occur.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_UNAVAILABLE</code> when there is no source, with the sample filled, elapsed zero and <code>TI_TIME_ELAPSED_VALID</code> clear; <code>TI_E_ARGUMENT</code> when <code>sample</code> is not writable near memory.</p>
+<p><code>TI_OK</code>; <code>TI_E_UNAVAILABLE</code> when there is no source (the sample is filled, the elapsed value is zero and <code>TI_TIME_ELAPSED_VALID</code> is clear); <code>TI_E_ARGUMENT</code> when <code>sample</code> is not writable near memory.</p>
 </section>
 
 <section class="fn" id="ti_time_note_gap">
 <h3><code class="def">ti_time_note_gap</code></h3>
 <pre class="sig" data-name="ti_time_note_gap">void ti_time_note_gap(void);</pre>
-<p>Sets <code>TI_TIME_GAP</code> until the next <code>ti_time_begin</code>. The library calls it after memory transfers, drawing, publication, storage and audio gaps; a game can call it around its own long work. It does not count missed frames.</p>
+<p>This function sets <code>TI_TIME_GAP</code> until the next <code>ti_time_begin</code>. The library calls it after memory transfers, draw calls, publication, storage and audio gaps. A game can call it around its own long work. It does not count missed frames.</p>
 </section>
 
 <footer class="page-foot">Defined in <code>include/libtini/timing.h</code>, implemented in <code>src/timing.c</code>, <code>src/timing_gap.c</code> and <code>src/timing_steps.c</code>.</footer>

@@ -16,62 +16,81 @@
 </header>
 <main id="main">
 <h1>Machine contract</h1>
-<p class="lead">What libtini expects of the machine at launch, what it changes and restores, and the rules for interrupts, memory mapping and shared devices. Read this before you add assembly, an interrupt handler or another driver to a libtini program.</p>
+<p class="lead">This page gives the machine state that libtini needs at launch, the state that it changes and restores, and the rules for interrupts, memory mapping and shared devices. Read it before you add assembly, an interrupt handler or a different driver to a libtini program.</p>
 
 <h2 id="launch">Launch</h2>
-<p>A libtini program is a ProDOS SYS file, launched at $2000 on an enhanced //e (65C02). At entry:</p>
+<p>A libtini program is a ProDOS SYS file. ProDOS starts it at $2000 on an enhanced //e (65C02). At entry, these conditions must be true:</p>
 <ul>
-  <li>Main memory is selected for reads and writes (RAMRD and RAMWRT off) and ALTZP is off.</li>
+  <li>Main memory is selected for reads and writes (RAMRD and RAMWRT off). ALTZP is off.</li>
   <li>The RamWorks selector is 0.</li>
   <li>Appletini fake SHR is off: $C029 holds $01.</li>
-  <li>80STORE, HIRES and PAGE2 do not redirect the instruction stream at $2000 to auxiliary memory.</li>
+  <li>80STORE, HIRES and PAGE2 do not send the instruction stream at $2000 to auxiliary memory.</li>
 </ul>
-<p>A normal ProDOS launch from the text screen meets all of these. $C073 and $C029 cannot be read back, so their entry values are requirements, not something startup checks.</p>
+<p>A usual ProDOS launch from the text screen gives all of these conditions. Software cannot read $C073 and $C029. Thus their entry values are requirements, and startup does not check them.</p>
 
 <h2 id="startup">What startup changes</h2>
-<p>Before <code>main</code>, startup saves cc65's zero page ($80-$99), the 64 bytes at $0140 that the transfer trampoline will use, the entry processor status, 80STORE and six readable display switches. It masks interrupts, turns 80STORE off, copies the full-game layout's low segments into place, clears <code>NEARBSS</code> and BSS, sets up the C stack, installs the trampoline and enables interrupts again if they were enabled at entry. C runs in binary mode. The RESET vector, ProDOS's device list and the language card are left alone.</p>
+<p>Before <code>main</code>, startup saves these items:</p>
+<ul>
+  <li>the cc65 zero page ($80-$99)</li>
+  <li>the 64 bytes at $0140 that the transfer trampoline uses</li>
+  <li>the entry processor status, 80STORE and six display switches that it can read.</li>
+</ul>
+<p>Then it masks interrupts and sets 80STORE off. It copies the low segments of the full-game layout into position. It clears <code>NEARBSS</code> and BSS, sets up the C stack and installs the trampoline. If interrupts were enabled at entry, it enables them again. C runs in binary mode. Startup does not change the RESET vector, the ProDOS device list or the language card.</p>
 
 <h2 id="exit">Exit</h2>
-<p>Returning from <code>main</code> or calling <code>exit</code> runs <code>ti_shutdown</code>, then restores main memory mapping, selector 0, fake SHR off, the saved display switches, 80STORE, the trampoline bytes, the zero page and the entry processor status, and calls ProDOS QUIT. It restores the OS state it saved, not the program's own low memory. Reset and power loss cannot run this.</p>
-<p>If <code>ti_shutdown</code> fails because ProDOS refused to remove the audio interrupt handler, quitting would leave ProDOS calling into freed memory. Startup instead turns on the text screen, shows <code>CLEANUP ERROR. KEY RETRIES; CODE RETAINED</code>, and retries the shutdown on each key.</p>
+<p>A return from <code>main</code>, or a call to <code>exit</code>, runs <code>ti_shutdown</code>. Then startup restores these items: main memory mapping, selector 0, fake SHR off, the saved display switches, 80STORE, the trampoline bytes, the zero page and the entry processor status. Then it calls ProDOS QUIT.</p>
+<p>Startup restores the OS state that it saved. It does not restore the low memory of the program. A reset or a power loss cannot run this procedure.</p>
+<p>If ProDOS does not remove the audio interrupt handler, <code>ti_shutdown</code> fails. A QUIT then makes ProDOS call into freed memory. Thus startup does not quit. It sets the text screen on and shows <code>CLEANUP ERROR. KEY RETRIES; CODE RETAINED</code>. It tries the shutdown again for each key.</p>
 
 <h2 id="banks">The bank grant</h2>
-<p><code>ti_init(first_bank, bank_count)</code> is a grant from the game, not a discovery: grant a contiguous run of selectors 1-126 that no RAM disk or other program uses. The probe at AUX $A000 detects missing and aliased banks without keeping its writes; it does not certify every byte or identify the firmware. Selector 127 is outside the F1.3.2 baseline's first PSRAM chip and is rejected.</p>
+<p><code>ti_init(first_bank, bank_count)</code> is a grant from the game. libtini cannot find which programs use a bank. Grant a continuous sequence of selectors 1-126 that no RAM disk or other program uses.</p>
+<p>The probe at AUX $A000 finds missing banks and aliased banks, and it does not keep its writes. It does not test each byte, and it does not identify the firmware. Selector 127 is outside the first PSRAM chip of F1.3.2, so libtini rejects it.</p>
 
 <h2 id="mapping">Mapping and transfers</h2>
 <ul>
-  <li>Every public call runs in the foreground with main memory mapped, ALTZP and 80STORE off and selector 0. Calls are not reentrant.</li>
-  <li>A CPU transfer burst moves at most 128 bytes: it saves the processor status, masks interrupts, copies its parameters to main zero page, selects the bank, runs the copy loop from the trampoline at $0140, and restores main memory and selector 0 before the status. Callers with interrupts enabled get them back between bursts. The bound is a byte and instruction count, not a measured board time.</li>
-  <li>RAMRD also redirects instruction fetches, so only the page-one trampoline runs while auxiliary reads are mapped.</li>
-  <li>A bank 0 transfer, which every screen write is, relies on the selector already being 0 and writes no $C073, because any $C070-$C07F access also starts the paddle timers.</li>
-  <li>No pointer into a bank ever reaches C code.</li>
+  <li>Each public call runs in the foreground with main memory mapped, ALTZP and 80STORE off, and selector 0. Calls are not reentrant.</li>
+  <li>A CPU transfer burst moves a maximum of 128 bytes. It saves the processor status, masks interrupts, copies its parameters to main zero page and selects the bank. It runs the copy loop from the trampoline at $0140. It restores main memory and selector 0, and then the status.</li>
+  <li>If interrupts are enabled in the caller, they are enabled again between bursts. The limit of a burst is a byte and instruction count.</li>
+  <li>RAMRD also changes the source of instruction fetches. Thus only the page-one trampoline runs while auxiliary reads are mapped.</li>
+  <li>All screen writes are bank 0 transfers. A bank 0 transfer uses the selector value 0 that is already set, and it does not write $C073. Each access to $C070-$C07F also starts the paddle timers.</li>
+  <li>C code never gets a pointer into a bank.</li>
 </ul>
 
 <h2 id="interrupts">Interrupts and NMI</h2>
 <ul>
-  <li>An interrupt handler must not call libtini, change memory mappings or the selector, touch libtini's zero page or read granted banks. A C handler in switched memory is unsafe.</li>
-  <li>An NMI cannot be masked: an NMI handler must run safely while auxiliary reads are mapped, preserve every scratch location and follow the same rules.</li>
-  <li>libtini's own handler, the audio clock, is assembly registered through ProDOS. It counts ticks and acknowledges the timer without C, zero page, mapping changes or MLI calls. During a declared gap it declines every interrupt before touching slot I/O.</li>
-  <li>The hardware stack has 128 bytes, $0180-$01FF, for the program's deepest call chain plus ProDOS's interrupt dispatch. Measure both stacks when adding depth or interrupt nesting.</li>
+  <li>An interrupt handler must not call libtini. It must not change memory mappings or the selector, use the libtini zero page or read granted banks. A C handler in switched memory is not safe.</li>
+  <li>The CPU cannot mask an NMI. An NMI handler must run safely while auxiliary reads are mapped. It must keep each scratch location and obey the same rules.</li>
+  <li>The libtini handler is the audio clock. It is assembly that libtini registers through ProDOS. It counts ticks and acknowledges the timer. It uses no C, no zero page, no mapping changes and no MLI calls.</li>
+  <li>During a declared gap, the handler declines each interrupt before it accesses slot I/O.</li>
+  <li>The hardware stack has 128 bytes, $0180-$01FF. These bytes must hold the deepest call chain of the program and the ProDOS interrupt dispatch. Measure the two stacks when you add depth or interrupt nesting.</li>
 </ul>
 
 <h2 id="video">The screen</h2>
-<p><code>ti_gfx_begin</code> saves all of AUX bank 0 from $2000 to $9FFF and turns on fake SHR by writing $C1 to $C029; <code>ti_gfx_end</code> writes $01 and restores every byte. Surfaces stay in banked memory and reach the screen only through CPU writes. A return from a publication means the writes finished: there is no page swap, no promise about the HDMI frame and no guaranteed deadline. Byte budgets are checked before writing; a measured deadline overrun is reported after.</p>
+<p><code>ti_gfx_begin</code> saves all of AUX bank 0 from $2000 to $9FFF. It sets fake SHR on: it writes $C1 to $C029. <code>ti_gfx_end</code> writes $01 and restores each byte.</p>
+<p>Surfaces stay in banked memory. They go to the screen only through CPU writes. When a publication returns, its writes are complete. There is no page swap, no promise about the HDMI frame and no deadline. libtini checks the byte budget before it writes. It reports a deadline overrun after the writes.</p>
 
 <h2 id="storage">ProDOS during a video session</h2>
-<p>ProDOS's /RAM can live in the same AUX bank 0 bytes as the picture, and a mode change alone does not make them safe. Each file call during a session therefore saves the picture to a temporary 32,768-byte resource, turns SHR off, restores the OS's bytes, calls ProDOS, saves the OS's changes into the session backup, then restores the picture and SHR. Audio init and shutdown do the same around ProDOS's interrupt calls. If the temporary resource cannot be allocated the call fails before ProDOS runs. No /RAM device is disconnected or reformatted. Handlers that use auxiliary memory while SHR is shown remain excluded.</p>
+<p>The ProDOS /RAM disk can use the same AUX bank 0 bytes as the picture. A mode change alone does not make these bytes safe. Thus each file call during a session does these steps:</p>
+<ol>
+  <li>It saves the picture to a temporary resource of 32,768 bytes.</li>
+  <li>It sets SHR off and restores the bytes of the OS.</li>
+  <li>It calls ProDOS.</li>
+  <li>It saves the changes of the OS into the session backup.</li>
+  <li>It restores the picture and sets SHR on.</li>
+</ol>
+<p>Audio init and shutdown do the same steps around the ProDOS interrupt calls. If libtini cannot allocate the temporary resource, the call fails before ProDOS runs. libtini does not disconnect or format a /RAM device. Handlers that use auxiliary memory while SHR is on are not permitted.</p>
 
 <h2 id="devices">Devices</h2>
 <div class="table"><table>
 <tr><th>Device</th><th>Use</th></tr>
-<tr><td>Slot 4 Mockingboard or Phasor</td><td>Owned exclusively by the audio driver from <code>ti_audio_init</code> to <code>ti_audio_shutdown</code>: both VIAs and timers, every AY and both SSI-263s. Entry personality is Mockingboard, and shutdown restores it.</td></tr>
-<tr><td>Slot 7 SmartPort</td><td>Storage, through ProDOS. The optional AMEM build also uses its expansion ROM space and FIFO briefly, with interrupts masked.</td></tr>
+<tr><td>Slot 4 Mockingboard or Phasor</td><td>The audio driver owns it from <code>ti_audio_init</code> to <code>ti_audio_shutdown</code>: the two VIAs and timers, all AY chips and the two SSI-263 chips. The entry personality is Mockingboard. Shutdown restores it.</td></tr>
+<tr><td>Slot 7 SmartPort</td><td>Storage, through ProDOS. The optional AMEM build also uses its expansion ROM space and FIFO for short times, with interrupts masked.</td></tr>
 <tr><td>Keyboard, buttons, paddles</td><td>Standard //e locations: $C000, $C010, $C061-$C065, $C070.</td></tr>
-<tr><td>Slot 2</td><td>Not used. <code>ti_mouse_read</code> is reserved and reports unavailable.</td></tr>
+<tr><td>Slot 2</td><td>Not used. <code>ti_mouse_read</code> is reserved and reports that the mouse is not available.</td></tr>
 </table></div>
-<p>libtini changes no slot assignment and no speed setting, and uses no firmware service that F1.3.2 does not already have.</p>
+<p>libtini does not change slot assignments or speed settings. It uses only firmware services that F1.3.2 has.</p>
 
-<footer class="page-foot">Implemented in <code>src/target/startup.s</code>, <code>src/target/memory.s</code>, <code>src/memory.c</code> and the module sources. Linker layouts are in <code>cfg/</code>.</footer>
+<footer class="page-foot">Implemented in <code>src/target/startup.s</code>, <code>src/target/memory.s</code>, <code>src/memory.c</code> and the module sources. The linker layouts are in <code>cfg/</code>.</footer>
 </main>
 </div>
 </body>

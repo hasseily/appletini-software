@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Checks and status - libtini</title>
+<title>Checks - libtini</title>
 <link rel="stylesheet" href="../assets/style.css">
 <script src="../assets/site.js" defer></script>
 </head>
@@ -15,66 +15,52 @@
   <noscript><p><a href="../index.html#contents">Contents</a></p></noscript>
 </header>
 <main id="main">
-<h1>Checks and status</h1>
-<p class="lead">How to run the checks, what each kind of evidence can and cannot show, and what still needs a board.</p>
+<h1>Checks</h1>
+<p class="lead">libtini runs on Appletini hardware with firmware F1.3.2. The automated checks on this page test the tools and the compiled library on the host and on the emulator.</p>
 
-<h2 id="kinds">Three kinds of evidence</h2>
+<h2 id="kinds">Two types of checks</h2>
 <div class="table"><table>
-<tr><th>Kind</th><th>Runs</th><th>Shows</th></tr>
-<tr><td>Host</td><td>Python tests of the tools, and the C game logic and input code compiled with GCC</td><td>Formats, compilers, game rules, determinism</td></tr>
-<tr><td>Emulator</td><td>The linked 65C02 programs on py65 with independent memory and device models, and on the repository's native Appletini machine at the <code>vtw33</code> and <code>turbo-f122</code> models</td><td>That the actual compiled code produces the right bytes, register writes and results, and model timing</td></tr>
-<tr><td>Board</td><td>The disks on an Appletini //e</td><td>Real timing, output, sound and input; nothing else establishes these</td></tr>
+<tr><th>Type</th><th>What runs</th><th>What it tests</th></tr>
+<tr><td>Host</td><td>Python tests of the tools. The C game logic and input code, compiled with GCC.</td><td>Formats, compilers, game rules and deterministic output</td></tr>
+<tr><td>Emulator</td><td>The linked 65C02 programs on py65, with independent memory and device models. The same programs on the native Appletini machine of the repository, at the <code>vtw33</code> and <code>turbo-f122</code> models.</td><td>The bytes, register writes and results of the compiled code, and its time on the models</td></tr>
 </table></div>
-<p>The models do not include the Appletini capture stream, HDMI presentation, bus contention or physical interrupt latency. <code>turbo-f122</code> uses historical F1.2.2 costs, not complete F1.3.2 timing.</p>
 
-<h2 id="run">Run every check</h2>
+<h2 id="run">Run all checks</h2>
 <pre><code>python -m pip install py65==1.2.0
 python tools/check.py --cc65-home D:/Repos/cc65 --cc C:/msys64/ucrt64/bin/gcc.exe [--rom-boot] [--only NAME,NAME]</code></pre>
-<p>The runner builds both variants and runs each check in order, stopping at the first failure. Logs go to <code>build/checks/NAME.log</code> and results to <code>build/checks/validation.json</code>. <code>--only</code> reruns named checks and keeps the other recorded results. <code>--rom-boot</code> adds real ProDOS boots, which need the separately installed ROMs under <code>build-inputs/native-roms/</code>. The Python that runs it must have py65 1.2.0, and GCC's folder must be usable for the native machine.</p>
-<div class="table"><table class="compact">
-<tr><th>Check</th><th>Command</th><th>Covers</th></tr>
-<tr><td>build-cpu, build-private</td><td><code>tools/build.py --test-target</code></td><td>Both variants and their layouts</td></tr>
-<tr><td>host-assets</td><td><code>tests/test_graphics_tools.py</code></td><td>Image, font, map and pack conversion</td></tr>
-<tr><td>host-speech</td><td><code>tests/test_speech.py</code></td><td>Every number 0-9999, overrides, unknown words, generated identifiers</td></tr>
-<tr><td>host-music</td><td><code>tests/test_music.py</code></td><td>Both music compilers and the MIDI arranger</td></tr>
-<tr><td>host-starfall-assets</td><td><code>tests/test_starfall_assets.py</code></td><td>STARFALL's archive hashes, packed cells and phrases</td></tr>
-<tr><td>host-starfall</td><td><code>tests/test_starfall.py</code></td><td>STARFALL's simulation rules and long runs</td></tr>
-<tr><td>host-input</td><td><code>tests/test_input.py</code></td><td>Stick thresholds and calibration, fixed-step accounting</td></tr>
-<tr><td>cpu-scene</td><td><code>tests/scene_validate.py</code></td><td>Every scene draw against an independent rendering</td></tr>
-<tr><td>host-volumes</td><td><code>tests/test_disk_release.py</code></td><td>ProDOS volume limits and corruption checks</td></tr>
-<tr><td>cpu-foundation</td><td><code>tools/test.py --no-build</code></td><td>Memory, mapping, startup and exit on py65; the diagnostic</td></tr>
-<tr><td>native-foundation</td><td><code>tests/native_validate.py</code></td><td>The diagnostic and target tests on the native machine</td></tr>
-<tr><td>native-graphics</td><td><code>tests/graphics_validate.py</code></td><td>Drawing, text and publication against reference pixels</td></tr>
-<tr><td>cpu-audio</td><td><code>tests/audio_validate.py</code></td><td>The audio, speech and input driver against VIA, AY and SSI models</td></tr>
-<tr><td>target-storage</td><td><code>tests/storage_validate.py</code></td><td>File calls, packs and the screen loan, with injected failures</td></tr>
-<tr><td>target-amem</td><td><code>tests/amem_validate.py</code></td><td>The AMEM transport and its fallback rules against a modelled controller</td></tr>
-<tr><td>native-benchmarks-direct</td><td><code>tools/benchmark.py --private</code></td><td>Benchmark counters by direct launch</td></tr>
-<tr><td colspan="3"><code>--rom-boot</code> adds:</td></tr>
-<tr><td>native-benchmarks-boot</td><td><code>tools/benchmark.py --boot-roms</code></td><td>The benchmarks after a ProDOS boot, AMEM included</td></tr>
-<tr><td>boot-audio</td><td><code>tests/audio_native_validate.py</code></td><td>The audio demo booted, in both personalities and profiles</td></tr>
-<tr><td>boot-starter</td><td><code>tests/starter_native_validate.py</code></td><td>The starter driven by held keys and a stick</td></tr>
-<tr><td>boot-starfall, boot-starfall-phasor</td><td><code>tests/starfall_native_validate.py</code></td><td>STARFALL played through, with each card</td></tr>
-</table></div>
-<p>Each script can also run alone; see <code>tests/README.md</code>. The browser player has its own comparison, <code>tests/web_validate.py</code>, described on the <a href="browser.html#evidence">browser player</a> page.</p>
-
-<h2 id="status">Status</h2>
-<p>The selected board baseline is existing Appletini firmware F1.3.2, commit <code>73de6fe03c31ad6f8ebfce3328704761fcd8c5a2</code>. It differs from the earlier F1.3.1 baseline in speech clocking, ONE//e video timing and USB input; the slot-7 ROM, the AMEM service and RamWorks are unchanged. The full set of checks, ROM boots included, passed for the build of 2026-10-22.</p>
-<p>Board observations so far are by eye, not recorded tests. On 2026-10-21 the owner played STARFALL in standalone ONE//e mode with a physical Apple joystick: before the joystick reader waited for running paddle timers, the pause panel's readout jumped back while the stick moved right or down; with the wait, the jumps were gone. Which paddle path ran, its interrupt retry and the calibration thresholds were not measured. On 2026-10-22 the owner played the build with the faster text and publication and saw no visible difference in play between TURBO, 33 MHz and 26 MHz. Effect volumes were set by listening on the board. On F1.3.1 in standalone ONE//e mode the SSI-263 had no clock and speech timed out, as <code>examples/speech_check</code> showed; the owner reports that F1.3.2 fixes this.</p>
-
-<h2 id="board-gates">Board checks still to run</h2>
-<p>On the installed F1.3.2 baseline, without rebuilding or flashing firmware, at 33 MHz and in TURBO:</p>
+<p>The runner builds the two variants. Then it runs each check in sequence, and it stops at the first failure. The logs go to <code>build/checks/NAME.log</code>, and the results go to <code>build/checks/validation.json</code>.</p>
 <ul>
-  <li>Boot the disks with RamWorks enabled and selectors 1-2 (diagnostic) or 1-3 (starter, STARFALL) free. Confirm the diagnostic's full SHR screen and five PASS results, and a normal return to the ProDOS launcher.</li>
-  <li>Put known files on /RAM before launch and check their data after exit.</li>
-  <li>Measure the longest interrupt-masked burst, memory-operation latency and the cost of full and dirty screen publication. No bandwidth, frame deadline or clock accuracy is established on a board yet.</li>
-  <li>Calibrate the VIA clock source, compare simulation, music and speech rates across both speeds, listen to pronunciation and ducking, and confirm AY pitch and envelopes.</li>
-  <li>Play STARFALL and the starter with a keyboard and joystick: held keys, rest calibration, all four directions, the pause readout, game over, retry and a clean exit.</li>
-  <li>Save and load files while SHR is shown, including an ordinary disk error.</li>
-  <li>Compare the CPU-only build with the AMEM build, with the service available and unavailable before submission; video stays on CPU writes throughout.</li>
-  <li>Check missing speech hardware, smaller-memory failure messages and visible publication gaps.</li>
+  <li><code>--only</code> runs the named checks again and keeps the other recorded results.</li>
+  <li><code>--rom-boot</code> adds ProDOS boots. They need the separately installed ROMs in <code>build-inputs/native-roms/</code>.</li>
+  <li>The Python that runs the checks must have py65 1.2.0. The native machine must be able to use the GCC folder.</li>
 </ul>
+<div class="table"><table class="compact">
+<tr><th>Check</th><th>Command</th><th>What it tests</th></tr>
+<tr><td>build-cpu, build-private</td><td><code>tools/build.py --test-target</code></td><td>The two variants and their layouts</td></tr>
+<tr><td>host-assets</td><td><code>tests/test_graphics_tools.py</code></td><td>Image, font, map and pack conversion</td></tr>
+<tr><td>host-speech</td><td><code>tests/test_speech.py</code></td><td>All numbers 0-9999, pronunciations, unknown words, generated identifiers</td></tr>
+<tr><td>host-music</td><td><code>tests/test_music.py</code></td><td>The two music compilers and the MIDI arranger</td></tr>
+<tr><td>host-starfall-assets</td><td><code>tests/test_starfall_assets.py</code></td><td>The archive hashes, packed cells and phrases of STARFALL</td></tr>
+<tr><td>host-starfall</td><td><code>tests/test_starfall.py</code></td><td>The simulation rules of STARFALL and long runs</td></tr>
+<tr><td>host-input</td><td><code>tests/test_input.py</code></td><td>Stick thresholds and calibration, and fixed-step calculation</td></tr>
+<tr><td>cpu-scene</td><td><code>tests/scene_validate.py</code></td><td>Each scene draw, compared with an independent rendering</td></tr>
+<tr><td>host-volumes</td><td><code>tests/test_disk_release.py</code></td><td>ProDOS volume limits and corruption checks</td></tr>
+<tr><td>cpu-foundation</td><td><code>tools/test.py --no-build</code></td><td>Memory, mapping, startup and exit on py65, and the diagnostic</td></tr>
+<tr><td>native-foundation</td><td><code>tests/native_validate.py</code></td><td>The diagnostic and the target tests on the native machine</td></tr>
+<tr><td>native-graphics</td><td><code>tests/graphics_validate.py</code></td><td>Drawing, text and publication, compared with reference pixels</td></tr>
+<tr><td>cpu-audio</td><td><code>tests/audio_validate.py</code></td><td>The audio, speech and input driver with VIA, AY and SSI models</td></tr>
+<tr><td>target-storage</td><td><code>tests/storage_validate.py</code></td><td>File calls, packs and the screen loan, with injected failures</td></tr>
+<tr><td>target-amem</td><td><code>tests/amem_validate.py</code></td><td>The AMEM transport and its fallback rules, with a modelled controller</td></tr>
+<tr><td>native-benchmarks-direct</td><td><code>tools/benchmark.py --private</code></td><td>Benchmark counters with a direct launch</td></tr>
+<tr><td colspan="3"><code>--rom-boot</code> adds:</td></tr>
+<tr><td>native-benchmarks-boot</td><td><code>tools/benchmark.py --boot-roms</code></td><td>The benchmarks after a ProDOS boot, with AMEM</td></tr>
+<tr><td>boot-audio</td><td><code>tests/audio_native_validate.py</code></td><td>The booted audio demo, in the two personalities and profiles</td></tr>
+<tr><td>boot-starter</td><td><code>tests/starter_native_validate.py</code></td><td>The starter, controlled by held keys and a stick</td></tr>
+<tr><td>boot-starfall, boot-starfall-phasor</td><td><code>tests/starfall_native_validate.py</code></td><td>STARFALL, played to the end with each card</td></tr>
+</table></div>
+<p>Each script can also run alone. See <code>tests/README.md</code>. The browser player has its own comparison check, <code>tests/web_validate.py</code>. The <a href="browser.html#evidence">browser player</a> page describes it.</p>
 
-<footer class="page-foot">Check scripts are in <code>tests/</code>; the runner is <code>tools/check.py</code>.</footer>
+<footer class="page-foot">The check scripts are in <code>tests/</code>. The runner is <code>tools/check.py</code>.</footer>
 </main>
 </div>
 </body>

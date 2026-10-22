@@ -17,38 +17,40 @@
 <main id="main">
 <h1>Memory</h1>
 <p class="include">#include "libtini/memory.h"</p>
-<p class="lead">The bank grant, checked near moves and fills, and banked resources: allocation, release, reads, writes, fills and copies.</p>
+<p class="lead">This header gives the bank grant, checked near moves and fills, and banked resources. A resource has functions to allocate, release, read, write, fill and copy.</p>
 
 <div class="table"><table class="compact">
 <tr><th>Function</th><th>Purpose</th></tr>
 <tr><td><code>ti_init</code></td><td>Grant RamWorks banks to the library</td></tr>
-<tr><td><code>ti_shutdown</code></td><td>Stop audio and graphics and invalidate every resource</td></tr>
+<tr><td><code>ti_shutdown</code></td><td>Stop audio and graphics and make all resources not valid</td></tr>
 <tr><td><code>ti_near_move</code></td><td>Checked <code>memmove</code> in near memory</td></tr>
 <tr><td><code>ti_near_fill</code></td><td>Checked <code>memset</code> in near memory</td></tr>
 <tr><td><code>ti_res_alloc</code></td><td>Allocate a banked resource</td></tr>
 <tr><td><code>ti_res_free</code></td><td>Release a resource</td></tr>
 <tr><td><code>ti_res_read</code></td><td>Copy resource bytes into a near buffer</td></tr>
 <tr><td><code>ti_res_write</code></td><td>Copy a near buffer into a resource</td></tr>
-<tr><td><code>ti_res_fill</code></td><td>Fill part of a resource with one byte</td></tr>
-<tr><td><code>ti_res_copy</code></td><td>Copy between or within resources</td></tr>
+<tr><td><code>ti_res_fill</code></td><td>Fill a part of a resource with one byte</td></tr>
+<tr><td><code>ti_res_copy</code></td><td>Copy between two resources or in one resource</td></tr>
 </table></div>
 
 <h2 id="constants">Constants</h2>
 <div class="table"><table>
 <tr><th>Name</th><th class="num">Value</th><th>Meaning</th></tr>
-<tr><td><code>TI_RESOURCE_SLOTS</code></td><td class="num">8</td><td>Resources that can be live at once, the library's own included</td></tr>
-<tr><td><code>TI_BANK_BYTES</code></td><td class="num">48,640</td><td>Resource bytes in one granted bank, its $0200-$BFFF range</td></tr>
-<tr><td><code>TI_TRANSFER_BYTES</code></td><td class="num">128</td><td>The largest CPU burst with a bank mapped and interrupts masked</td></tr>
+<tr><td><code>TI_RESOURCE_SLOTS</code></td><td class="num">8</td><td>The number of resources that can be live at the same time, the resources of the library included</td></tr>
+<tr><td><code>TI_BANK_BYTES</code></td><td class="num">48,640</td><td>The resource bytes in one granted bank: its range $0200-$BFFF</td></tr>
+<tr><td><code>TI_TRANSFER_BYTES</code></td><td class="num">128</td><td>The largest CPU burst while a bank is mapped and interrupts are masked</td></tr>
 </table></div>
 
-<h2 id="rules">Rules that apply to every call</h2>
+<h2 id="rules">Rules for all calls</h2>
 <ul>
-  <li>Calls are foreground-only and non-reentrant. No interrupt handler may call them.</li>
-  <li>All handles, ranges and near buffers are checked before anything is changed. Bounds use subtraction, so offsets near 2<sup>32</sup> cannot wrap past a check.</li>
-  <li>An offset equal to a resource's size is valid only with a zero length. A zero-length call still needs a live handle and touches nothing.</li>
-  <li>Near buffers are borrowed only until the call returns. No call keeps a pointer, and no call returns a pointer into a bank.</li>
-  <li>CPU transfers split at the end of each bank and into bursts of at most 128 bytes. Each burst saves the processor status, masks interrupts, maps the bank, copies from the page-one trampoline and restores main memory and selector 0 before restoring the status. A caller with interrupts enabled gets them back between bursts.</li>
-  <li>Successful transfers mark a display-timing gap (<code>ti_time_note_gap</code>): a long transfer can hide vertical blank edges.</li>
+  <li>All calls are foreground calls and are not reentrant. Do not call them from an interrupt handler.</li>
+  <li>Each call checks all handles, ranges and near buffers before it changes anything. The limit checks use subtraction, thus offsets near 2<sup>32</sup> cannot wrap past a check.</li>
+  <li>An offset equal to the size of a resource is valid only with a zero length. A call with a zero length must have a live handle, and it touches no memory.</li>
+  <li>A call uses a near buffer only until it returns. No call keeps a pointer, and no call returns a pointer into a bank.</li>
+  <li>CPU transfers split at the end of each bank and into bursts of a maximum of 128 bytes.</li>
+  <li>Each burst saves the processor status, masks interrupts, maps the bank and copies from the page-one trampoline. Then it restores main memory and selector 0, and then the processor status.</li>
+  <li>When interrupts are enabled at the call, they are enabled again between bursts.</li>
+  <li>A successful transfer marks a display-timing gap with <code>ti_time_note_gap</code>, because a long transfer can hide vertical blank edges.</li>
 </ul>
 
 <h2 id="functions">Functions</h2>
@@ -56,87 +58,88 @@
 <section class="fn" id="ti_init">
 <h3><code class="def">ti_init</code></h3>
 <pre class="sig" data-name="ti_init">ti_error ti_init(uint8_t first_bank, uint8_t bank_count);</pre>
-<p>Grants the RamWorks selectors <code>first_bank</code> to <code>first_bank + bank_count - 1</code> to the library for resources. The grant is a promise from the game that nothing else uses those banks, such as a RAM disk driver; libtini cannot discover ownership.</p>
-<p>Before it accepts the grant it saves one byte at AUX $A000 of bank 0 and of every granted bank, writes a different test value to each, reads them all back and restores the originals. This finds missing banks and banks that alias each other or bank 0. It does not test every byte or identify the firmware.</p>
+<p>This function grants the RamWorks selectors <code>first_bank</code> to <code>first_bank + bank_count - 1</code> to the library for resources. With the grant, the game makes sure that no other software uses these banks, for example a RAM disk driver. libtini cannot find the owner of a bank.</p>
+<p>The function examines the banks before it accepts the grant. It saves one byte at AUX $A000 of bank 0 and of each granted bank. It writes a different test value to each, reads all values back and restores the original bytes. This finds missing banks, and banks that are aliases of other banks or of bank 0. It does not test each byte, and it does not identify the firmware.</p>
 <dl class="params">
-  <dt>first_bank</dt><dd>The first selector, 1 to 126. Selector 0 holds the OS and the screen and is never granted.</dd>
-  <dt>bank_count</dt><dd>At least 1; the last selector must be at most 126. The F1.3.2 baseline serves selectors 0 to 126 from its first 8 MiB PSRAM chip, so 127 is rejected.</dd>
+  <dt>first_bank</dt><dd>The first selector, 1 to 126. Selector 0 holds the OS and the screen. The game cannot grant it.</dd>
+  <dt>bank_count</dt><dd>1 or more. The last selector must be 126 or less. F1.3.2 serves selectors 0 to 126 from its first 8 MiB PSRAM chip, thus the function rejects 127.</dd>
 </dl>
 <p class="returns-title">Returns</p>
 <div class="table"><table class="compact">
-<tr><td><code>TI_OK</code></td><td>The grant is active; capacity is <code>bank_count * TI_BANK_BYTES</code>.</td></tr>
+<tr><td><code>TI_OK</code></td><td>The grant is active. The capacity is <code>bank_count * TI_BANK_BYTES</code>.</td></tr>
 <tr><td><code>TI_E_STATE</code></td><td>The library is already initialized.</td></tr>
 <tr><td><code>TI_E_ARGUMENT</code></td><td>Zero banks, bank 0, or a range past 126.</td></tr>
-<tr><td><code>TI_E_UNAVAILABLE</code></td><td>The probe found a missing or aliased bank. The probe bytes are restored.</td></tr>
+<tr><td><code>TI_E_UNAVAILABLE</code></td><td>The test found a missing bank or an alias. The test bytes are restored.</td></tr>
 </table></div>
-<pre><code class="c">/* A 320x200 canvas, the screen backup and audio's temporary loan
- * need 97,536 bytes: three banks. */
+<pre><code class="c">/* A 320x200 canvas, the screen backup and the temporary loan for audio
+ * use 97,536 bytes: three banks. */
 if (ti_init(1, 3) != TI_OK) return 1;</code></pre>
 </section>
 
 <section class="fn" id="ti_shutdown">
 <h3><code class="def">ti_shutdown</code></h3>
 <pre class="sig" data-name="ti_shutdown">ti_error ti_shutdown(void);</pre>
-<p>Shuts down audio if it is running (which also ends the video session first, so ProDOS gets its AUX bytes back before the interrupt handler is removed), ends the video session and restores the saved screen bytes, removes optional AMEM hooks, releases every resource slot and ends the grant. Calling it again does nothing and returns <code>TI_OK</code>. The program's startup code calls it when <code>main</code> returns.</p>
-<p>Releasing a slot advances its generation, so every handle from before the shutdown becomes invalid, even after a new <code>ti_init</code> in the same run.</p>
+<p>This function stops audio when it runs. Audio shutdown ends the video session first, thus ProDOS has its AUX bytes again before the library removes the interrupt handler. Then the function ends the video session and restores the saved screen bytes. It removes the optional AMEM hooks, releases all resource slots and ends the grant.</p>
+<p>A second call does nothing and returns <code>TI_OK</code>. The startup code of the program calls this function when <code>main</code> returns.</p>
+<p>When the function releases a slot, it increases the generation of the slot. Thus each handle from before the shutdown is not valid, also after a new <code>ti_init</code> in the same program run.</p>
 <p class="returns-title">Returns</p>
 <div class="table"><table class="compact">
-<tr><td><code>TI_OK</code></td><td>Everything was released.</td></tr>
-<tr><td><code>TI_E_IO</code></td><td>ProDOS refused to remove the audio interrupt handler. Audio is silent, but its handler code and the remaining resources are kept; call <code>ti_shutdown</code> again to retry.</td></tr>
+<tr><td><code>TI_OK</code></td><td>The function released all items.</td></tr>
+<tr><td><code>TI_E_IO</code></td><td>ProDOS did not remove the audio interrupt handler. Audio is silent, but the library keeps the handler code and the other resources. Call <code>ti_shutdown</code> again to try again.</td></tr>
 </table></div>
 </section>
 
 <section class="fn" id="ti_near_move">
 <h3><code class="def">ti_near_move</code></h3>
 <pre class="sig" data-name="ti_near_move">ti_error ti_near_move(void *dst, const void *src, uint16_t length);</pre>
-<p>Copies <code>length</code> bytes with <code>memmove</code> semantics: overlapping ranges copy correctly in both directions. The destination must lie wholly in one writable near region and the source in one readable region. A zero length accepts NULL pointers.</p>
+<p>This function copies <code>length</code> bytes with <code>memmove</code> semantics. Ranges that overlap copy correctly in the two directions. The destination must be fully in one writable near region. The source must be fully in one readable region. With a zero length, the pointers can be NULL.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>, or <code>TI_E_RANGE</code> when either range leaves its region; nothing is copied then.</p>
+<p><code>TI_OK</code>, or <code>TI_E_RANGE</code> when a range goes out of its region. The function then copies nothing.</p>
 </section>
 
 <section class="fn" id="ti_near_fill">
 <h3><code class="def">ti_near_fill</code></h3>
 <pre class="sig" data-name="ti_near_fill">ti_error ti_near_fill(void *dst, uint8_t value, uint16_t length);</pre>
-<p>Writes <code>value</code> to <code>length</code> bytes of writable near memory.</p>
+<p>This function writes <code>value</code> to <code>length</code> bytes of writable near memory.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>, or <code>TI_E_RANGE</code> when the range leaves its region.</p>
+<p><code>TI_OK</code>, or <code>TI_E_RANGE</code> when the range goes out of its region.</p>
 </section>
 
 <section class="fn" id="ti_res_alloc">
 <h3><code class="def">ti_res_alloc</code></h3>
 <pre class="sig" data-name="ti_res_alloc">ti_error ti_res_alloc(uint32_t size, ti_handle *out);</pre>
-<p>Allocates <code>size</code> contiguous bytes in the granted banks, first fit. The bytes are not cleared. The allocation can cross bank boundaries; the library splits transfers there.</p>
+<p>This function allocates <code>size</code> contiguous bytes in the granted banks. It uses the first free range that is sufficiently large. It does not clear the bytes. An allocation can cross bank boundaries; the library splits transfers at these boundaries.</p>
 <dl class="params">
-  <dt>size</dt><dd>1 up to the free capacity.</dd>
-  <dt>out</dt><dd>A writable near <code>ti_handle</code>. It receives the handle, or <code>TI_INVALID_HANDLE</code> on any failure after the pointer check.</dd>
+  <dt>size</dt><dd>1 to the free capacity.</dd>
+  <dt>out</dt><dd>A writable near <code>ti_handle</code>. It receives the handle. After the pointer check, each failure stores <code>TI_INVALID_HANDLE</code> in it.</dd>
 </dl>
 <p class="returns-title">Returns</p>
 <div class="table"><table class="compact">
 <tr><td><code>TI_OK</code></td><td>The handle is in <code>*out</code>.</td></tr>
 <tr><td><code>TI_E_ARGUMENT</code></td><td><code>out</code> is not writable near memory, or <code>size</code> is zero.</td></tr>
 <tr><td><code>TI_E_STATE</code></td><td>No <code>ti_init</code> grant is active.</td></tr>
-<tr><td><code>TI_E_NOMEM</code></td><td>All eight slots are in use, or no free run of <code>size</code> bytes remains.</td></tr>
+<tr><td><code>TI_E_NOMEM</code></td><td>All eight slots are in use, or no free range of <code>size</code> bytes is available.</td></tr>
 </table></div>
-<p>A slot whose generation reaches 4095 retires instead of wrapping to a value an old handle might still hold. A program would have to allocate and free one slot thousands of times for that to matter.</p>
+<p>When the generation of a slot gets to 4095, the slot stops. It does not wrap to a value that an old handle can still hold. This occurs only after a program allocates and frees one slot thousands of times.</p>
 </section>
 
 <section class="fn" id="ti_res_free">
 <h3><code class="def">ti_res_free</code></h3>
 <pre class="sig" data-name="ti_res_free">ti_error ti_res_free(ti_handle handle);</pre>
-<p>Releases the resource. Every copy of the handle, and every surface, sprite, font or map view that borrows it, becomes invalid.</p>
+<p>This function releases the resource. All copies of the handle become not valid. All surface, sprite, font and map views of the resource also become not valid.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>, or <code>TI_E_HANDLE</code> for a handle that is not live, including a second free.</p>
+<p><code>TI_OK</code>, or <code>TI_E_HANDLE</code> for a handle that is not live. A second free of the same handle also gives <code>TI_E_HANDLE</code>.</p>
 </section>
 
 <section class="fn" id="ti_res_read">
 <h3><code class="def">ti_res_read</code></h3>
 <pre class="sig" data-name="ti_res_read">ti_error ti_res_read(ti_handle handle, uint32_t offset, void *dst, uint16_t length);</pre>
-<p>Copies <code>length</code> bytes starting at <code>offset</code> in the resource into the near buffer <code>dst</code>.</p>
+<p>This function copies <code>length</code> bytes from <code>offset</code> in the resource into the near buffer <code>dst</code>.</p>
 <p class="returns-title">Returns</p>
 <div class="table"><table class="compact">
-<tr><td><code>TI_OK</code></td><td>The bytes were copied.</td></tr>
+<tr><td><code>TI_OK</code></td><td>The function copied the bytes.</td></tr>
 <tr><td><code>TI_E_HANDLE</code></td><td>The handle is not live.</td></tr>
-<tr><td><code>TI_E_RANGE</code></td><td>The range passes the resource's end, or <code>dst</code> is not writable near memory for <code>length</code> bytes.</td></tr>
+<tr><td><code>TI_E_RANGE</code></td><td>The range goes past the end of the resource, or <code>dst</code> is not writable near memory for <code>length</code> bytes.</td></tr>
 <tr><td><code>TI_E_IO</code></td><td>Optional AMEM build only: a submitted accelerated transfer failed. See <a href="amem.html">AMEM</a>.</td></tr>
 </table></div>
 </section>
@@ -144,27 +147,27 @@ if (ti_init(1, 3) != TI_OK) return 1;</code></pre>
 <section class="fn" id="ti_res_write">
 <h3><code class="def">ti_res_write</code></h3>
 <pre class="sig" data-name="ti_res_write">ti_error ti_res_write(ti_handle handle, uint32_t offset, const void *src, uint16_t length);</pre>
-<p>Copies <code>length</code> bytes from the near buffer <code>src</code> into the resource at <code>offset</code>. The source may be any readable near memory, constants included.</p>
+<p>This function copies <code>length</code> bytes from the near buffer <code>src</code> into the resource at <code>offset</code>. The source can be any readable near memory, constants included.</p>
 <p class="returns-title">Returns</p>
-<p>As <code>ti_res_read</code>; <code>TI_E_RANGE</code> also when <code>src</code> is not readable near memory.</p>
+<p>The same results as <code>ti_res_read</code>. The function also returns <code>TI_E_RANGE</code> when <code>src</code> is not readable near memory.</p>
 </section>
 
 <section class="fn" id="ti_res_fill">
 <h3><code class="def">ti_res_fill</code></h3>
 <pre class="sig" data-name="ti_res_fill">ti_error ti_res_fill(ti_handle handle, uint32_t offset, uint8_t value, uint32_t length);</pre>
-<p>Writes <code>value</code> to <code>length</code> bytes of the resource. The length is 32 bits, so one call can fill a whole multi-bank resource.</p>
+<p>This function writes <code>value</code> to <code>length</code> bytes of the resource. The length has 32 bits, thus one call can fill a full resource that uses many banks.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>, <code>TI_E_HANDLE</code>, <code>TI_E_RANGE</code>, or in the optional AMEM build <code>TI_E_IO</code>.</p>
+<p><code>TI_OK</code>, <code>TI_E_HANDLE</code>, <code>TI_E_RANGE</code>, or <code>TI_E_IO</code> in the optional AMEM build.</p>
 </section>
 
 <section class="fn" id="ti_res_copy">
 <h3><code class="def">ti_res_copy</code></h3>
 <pre class="sig" data-name="ti_res_copy">ti_error ti_res_copy(ti_handle dst, uint32_t dst_offset,
                      ti_handle src, uint32_t src_offset, uint32_t length);</pre>
-<p>Copies <code>length</code> bytes from one resource to another, or within one resource, with <code>memmove</code> semantics in both overlap directions. The CPU path moves the bytes through a 128-byte staging buffer in main memory. Distinct live allocations never overlap, so only a same-handle copy can overlap.</p>
+<p>This function copies <code>length</code> bytes from one resource to a different resource, or in one resource. It has <code>memmove</code> semantics in the two overlap directions. The CPU path moves the bytes through a 128-byte buffer in main memory. Different live allocations do not overlap, thus only a copy in one resource can overlap.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_HANDLE</code> if either handle is not live; <code>TI_E_RANGE</code> if either range passes its resource's end; in the optional AMEM build <code>TI_E_IO</code>.</p>
-<pre><code class="c">/* Scroll a 64-row map buffer up by one 32-byte row, in place. */
+<p><code>TI_OK</code>; <code>TI_E_HANDLE</code> when a handle is not live; <code>TI_E_RANGE</code> when a range goes past the end of its resource; <code>TI_E_IO</code> in the optional AMEM build.</p>
+<pre><code class="c">/* Move a 64-row map buffer up by one 32-byte row, in the same resource. */
 ti_res_copy(map, 0, map, 32, 63UL * 32);</code></pre>
 </section>
 
@@ -173,21 +176,21 @@ ti_res_copy(map, 0, map, 32, 63UL * 32);</code></pre>
 
 #define LEVEL_BYTES 20000UL
 static ti_handle level;
-static uint8_t row[64];                 /* near working buffer */
+static uint8_t row[64];                 /* near work buffer */
 
 ti_error load_level(void)
 {
     ti_error e = ti_res_alloc(LEVEL_BYTES, &amp;level);
     if (e) return e;
-    e = ti_res_fill(level, 0, 0, LEVEL_BYTES);      /* allocations start uninitialized */
+    e = ti_res_fill(level, 0, 0, LEVEL_BYTES);      /* new allocations are not cleared */
     if (e) return e;
-    /* ... write rows from a pack or generator ... */
+    /* ... write rows from a pack or a generator ... */
     return TI_OK;
 }
 
 uint8_t tile_at(uint16_t x, uint16_t y)
 {
-    /* Read a whole row once, then index it near. */
+    /* Read one full row, then use the near copy. */
     ti_res_read(level, (uint32_t)y * 64, row, sizeof(row));
     return row[x];
 }</code></pre>

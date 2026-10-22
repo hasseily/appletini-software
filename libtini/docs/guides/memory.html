@@ -16,28 +16,28 @@
 </header>
 <main id="main">
 <h1>Memory and layouts</h1>
-<p class="lead">Where a program's code, data and stacks sit in the //e's 64 KiB, how to choose and adapt a linker layout, how to read the build's memory report, and what each part of the library costs.</p>
+<p class="lead">This page shows where the code, data and stacks of a program are in the 64 KiB of the //e. It tells how to select and change a linker layout, and how to read the memory report of the build. It also gives the cost of each part of the library.</p>
 
 <h2 id="main-map">Main memory</h2>
 <div class="table"><table>
-<tr><th>Range</th><th>Owner</th></tr>
+<tr><th>Range</th><th>Used by</th></tr>
 <tr><td>$0000-$007F</td><td>OS and firmware zero page</td></tr>
-<tr><td>$0080-$0099</td><td>cc65 zero page, saved at entry and restored before QUIT</td></tr>
+<tr><td>$0080-$0099</td><td>cc65 zero page. Startup saves it at entry and restores it before QUIT.</td></tr>
 <tr><td>$009A-$00FF</td><td>OS and firmware zero page</td></tr>
-<tr><td>$0100-$013F</td><td>ProDOS's part of the hardware stack page, untouched</td></tr>
-<tr><td>$0140-$017F</td><td>The bank-transfer trampoline; the original bytes are saved and restored</td></tr>
-<tr><td>$0180-$01FF</td><td>Hardware stack: 128 bytes, ProDOS interrupt dispatch included</td></tr>
-<tr><td>$0200-$03FF</td><td>OS workspace and vectors, untouched</td></tr>
-<tr><td>$0400-$07FF</td><td>Text page 1; fatal messages use it</td></tr>
-<tr><td>$0800-$1FFF</td><td>Unused by <code>cfg/libtini.cfg</code>; constants and low code in the full-game layout</td></tr>
-<tr><td>$2000-$BEFF</td><td>The program, its stacks, the near arena and the file buffer; see the layouts below</td></tr>
-<tr><td>$BF00-$BFFF</td><td>ProDOS global page and MLI entry, untouched</td></tr>
-<tr><td>$C000-$CFFF</td><td>I/O and slot ROM; no reassignment</td></tr>
-<tr><td>$D000-$FFFF</td><td>ProDOS in the language card and ROM, untouched; libtini uses no language-card code</td></tr>
+<tr><td>$0100-$013F</td><td>The ProDOS part of the hardware stack page. libtini does not change it.</td></tr>
+<tr><td>$0140-$017F</td><td>The bank-transfer trampoline. Startup saves the original bytes and restores them at exit.</td></tr>
+<tr><td>$0180-$01FF</td><td>Hardware stack: 128 bytes, with ProDOS interrupt dispatch</td></tr>
+<tr><td>$0200-$03FF</td><td>OS workspace and vectors. libtini does not change them.</td></tr>
+<tr><td>$0400-$07FF</td><td>Text page 1. Fatal messages use it.</td></tr>
+<tr><td>$0800-$1FFF</td><td>Not used by <code>cfg/libtini.cfg</code>. Constants and low code in the full-game layout.</td></tr>
+<tr><td>$2000-$BEFF</td><td>The program, its stacks, the near arena and the file buffer. See the layouts below.</td></tr>
+<tr><td>$BF00-$BFFF</td><td>ProDOS global page and MLI entry. libtini does not change them.</td></tr>
+<tr><td>$C000-$CFFF</td><td>I/O and slot ROM. libtini does not change slot assignments.</td></tr>
+<tr><td>$D000-$FFFF</td><td>ProDOS in the language card, and ROM. libtini does not change them and has no language-card code.</td></tr>
 </table></div>
 
 <h2 id="layouts">The two shared layouts</h2>
-<p>Both produce a raw ProDOS SYS file loaded and entered at $2000, linked with cc65's <code>none.lib</code> and the project's startup. A manifest picks one with <code>config</code>.</p>
+<p>The two layouts make a raw ProDOS SYS file that ProDOS loads and starts at $2000. They link with the cc65 <code>none.lib</code> and the startup code of the project. A manifest selects one layout with <code>config</code>.</p>
 <div class="table"><table>
 <tr><th></th><th><code>cfg/libtini.cfg</code> (default)</th><th><code>cfg/game.cfg</code></th></tr>
 <tr><td>Used by</td><td>The diagnostic, tests, the starter</td><td>Larger games</td></tr>
@@ -49,55 +49,57 @@
 <tr><td>Guard</td><td>$AF00-$AFFF</td><td>$AF00-$AFFF</td></tr>
 <tr><td>ProDOS file buffer, <code>_ti_file_buffer</code></td><td>$B000-$B3FF</td><td>$B000-$B3FF</td></tr>
 </table></div>
-<p>In <code>cfg/game.cfg</code>, startup copies the low segments from the end of the loaded image into $0800-$1FFF once, before it clears BSS. The code that runs once at entry is in the <code>ONCE</code> segment, which that layout places where BSS will be, so clearing BSS reclaims it. Low memory remains read-only to the near-pointer checks.</p>
+<p>In <code>cfg/game.cfg</code>, startup copies the low segments one time from the end of the loaded image into $0800-$1FFF. It does this before it clears BSS. The code that runs one time at entry is in the <code>ONCE</code> segment. This layout puts <code>ONCE</code> at the addresses of BSS, so the clear of BSS makes these bytes available again. For the near-pointer checks, low memory is read-only.</p>
 
 <h3 id="custom">A layout of your own</h3>
-<p>A game can link with its own copy of either file and take what it does not use from the library. STARFALL makes no file calls, so <code>examples/starfall/starfall.cfg</code> leaves <code>_ti_file_buffer</code> out and moves the end of WORK and of writable near memory, <code>_ti_memory_end</code>, from $AF00 to $B400: the guard page and the buffer become 1,280 bytes of game memory. A file call in that game would fail to link instead of letting ProDOS write over its variables. Keep the build's checks: it rejects any segment outside the regions a layout's symbols describe.</p>
+<p>A game can link with its own copy of a layout file. Then it can use the memory that the library does not need. STARFALL makes no file calls. Thus <code>examples/starfall/starfall.cfg</code> does not define <code>_ti_file_buffer</code>.</p>
+<p>That layout sets the end of WORK and of writable near memory, <code>_ti_memory_end</code>, to $B400. In the shared layouts this end is $AF00. Thus the guard page and the buffer give 1,280 more bytes of game memory. In that game, a file call does not link, so ProDOS cannot write over its variables.</p>
+<p>Keep the checks of the build. The build rejects each segment outside the areas that the symbols of a layout give.</p>
 
-<h2 id="report">Reading the memory report</h2>
+<h2 id="report">Read the memory report</h2>
 <pre><code>starfall memory: LOW $0800-$1FFF 88 free; IMAGE $2000-$BEFF 1032 free; WORK $A26C-$B3FF 1110 free; NEAR $B480-$B6FF 1 free
 starter memory: MAIN $2000-$9FFF 12321 free; NEAR $A900-$AEFF 1532 free</code></pre>
-<p>Each entry is a linker memory area and the bytes still free in it. <code>build/memory.json</code> has the same figures with the used bytes, for every program. When a segment does not fit, the build stops with the shortfall:</p>
+<p>Each entry is a linker memory area with its free bytes. <code>build/memory.json</code> gives the same values and the used bytes for each program. When a segment does not fit, the build stops and gives the missing bytes:</p>
 <pre><code>starfall does not fit: segment BSS needs 50 more bytes in memory area WORK</code></pre>
-<p>IMAGE is the load image, which also carries the low segments until startup copies them, so its free bytes say how much more the SYS file can hold; WORK is where BSS lives once the program runs.</p>
+<p>IMAGE is the load image. It also holds the low segments until startup copies them. Thus its free bytes show how much more the SYS file can hold. WORK holds BSS while the program runs.</p>
 
 <h2 id="near-arena">The near arena</h2>
-<p>Variables placed in the <code>NEARBSS</code> segment live in the layout's near arena, outside the program's main area. Startup zeroes them like BSS, the linker rejects more than the arena holds, and every near API accepts pointers into it. The library itself puts nothing there.</p>
+<p>Variables in the <code>NEARBSS</code> segment are in the near arena of the layout, outside the main area of the program. Startup sets them to zero, as for BSS. The linker rejects more data than the arena holds. All near API calls accept pointers into the arena. The library puts no data there.</p>
 <pre><code class="c">#pragma bss-name (push, "NEARBSS")
 static uint8_t level[512];
 static uint16_t palette[16];
 #pragma bss-name (pop)</code></pre>
-<p>STARFALL keeps its 547-byte simulation state, star columns, animated palette and two text buffers there: 639 of the 640 bytes.</p>
+<p>STARFALL keeps its 547-byte simulation state, star columns, animated palette and two text buffers there. They use 639 of the 640 bytes.</p>
 
-<h2 id="segments">Placing code and data</h2>
-<p>cc65 puts code in <code>CODE</code>, constants in <code>RODATA</code>, initialized variables in <code>DATA</code> and the rest in <code>BSS</code>. Pragmas move a part of a file elsewhere:</p>
-<pre><code class="c">/* Rarely used code into low memory, in the full-game layout. */
+<h2 id="segments">Where code and data go</h2>
+<p>cc65 puts code in <code>CODE</code>, constants in <code>RODATA</code>, initialized variables in <code>DATA</code> and the other variables in <code>BSS</code>. Pragmas move a part of a file to a different segment:</p>
+<pre><code class="c">/* Code that runs rarely, into low memory, in the full-game layout. */
 #pragma code-name (push, "LOWCODE")
 static void title_option(void) { /* ... */ }
 #pragma code-name (pop)
 
-/* Keep this file's constants in main memory, where there is room. */
+/* Keep the constants of this file in main memory, where space is available. */
 #pragma rodata-name (push, "CODE")
 static const uint8_t table[64] = { /* ... */ };
 #pragma rodata-name (pop)</code></pre>
-<p>Do not place code that runs after startup in <code>ONCE</code>, and keep <code>OSSTATE</code> to the startup code.</p>
+<p>Do not put code that runs after startup in <code>ONCE</code>. Use <code>OSSTATE</code> only for the startup code.</p>
 
 <h2 id="aux">Auxiliary memory and banks</h2>
 <div class="table"><table>
-<tr><th>Range</th><th>Owner</th></tr>
-<tr><td>Selector 0, all of it</td><td>The OS and the display; never a resource bank</td></tr>
-<tr><td>Selector 0, $2000-$9FFF</td><td>SHR pixels, scan-line bytes and palettes; all 32,768 bytes are saved by <code>ti_gfx_begin</code></td></tr>
-<tr><td>Selectors 1-126, $0000-$01FF</td><td>Reserved; never resource bytes</td></tr>
-<tr><td>Granted selectors, $0200-$BFFF</td><td>48,640 resource bytes per bank</td></tr>
-<tr><td>Every selector, $C000-$FFFF</td><td>I/O, ROM and language card; excluded</td></tr>
+<tr><th>Range</th><th>Used by</th></tr>
+<tr><td>Selector 0, all</td><td>The OS and the display. It is never a resource bank.</td></tr>
+<tr><td>Selector 0, $2000-$9FFF</td><td>SHR pixels, scan-line bytes and palettes. <code>ti_gfx_begin</code> saves all 32,768 bytes.</td></tr>
+<tr><td>Selectors 1-126, $0000-$01FF</td><td>Reserved. These are never resource bytes.</td></tr>
+<tr><td>Granted selectors, $0200-$BFFF</td><td>48,640 resource bytes for each bank</td></tr>
+<tr><td>All selectors, $C000-$FFFF</td><td>I/O, ROM and language card. Not used.</td></tr>
 </table></div>
-<p>A resource crosses from $BFFF of one granted bank to $0200 of the next. Only the page-one trampoline runs while auxiliary reads are mapped, and main memory and selector 0 come back before C code or interrupts resume. A full grant of selectors 1-126 gives 6,128,640 resource bytes.</p>
+<p>A resource continues from $BFFF of one granted bank to $0200 of the next bank. While auxiliary reads are mapped, only the page-one trampoline runs. Main memory and selector 0 come back before C code or interrupts continue. A grant of all selectors 1-126 gives 6,128,640 resource bytes.</p>
 
-<h2 id="costs">What each part of the library costs</h2>
-<p>A program links an archive member only when it uses one of its symbols. These sizes come from the CPU-only build of 2026-10-22; read <code>build/&lt;game&gt;.map</code> for your own program.</p>
+<h2 id="costs">The cost of each part of the library</h2>
+<p>A program links an archive member only when it uses one of its symbols. These sizes come from the CPU-only build. For your program, read <code>build/&lt;game&gt;.map</code>.</p>
 <div class="table"><table class="compact">
 <tr><th>Archive members</th><th>Linked by</th><th class="num">Code and constants</th><th class="num">State</th></tr>
-<tr><td>memory, target_memory, target_hardware</td><td>Any resource or graphics call</td><td class="num">3,977</td><td class="num">261</td></tr>
+<tr><td>memory, target_memory, target_hardware</td><td>All resource and graphics calls</td><td class="num">3,977</td><td class="num">261</td></tr>
 <tr><td>memory_near</td><td><code>ti_near_move</code>, <code>ti_near_fill</code></td><td class="num">271</td><td class="num">0</td></tr>
 <tr><td>memory_copy</td><td><code>ti_res_copy</code></td><td class="num">434</td><td class="num">0</td></tr>
 <tr><td>error</td><td><code>ti_error_*</code></td><td class="num">30</td><td class="num">1</td></tr>
@@ -112,7 +114,7 @@ static const uint8_t table[64] = { /* ... */ };
 <tr><td>graphics_line</td><td><code>ti_gfx_line</code></td><td class="num">546</td><td class="num">0</td></tr>
 <tr><td>graphics_font</td><td><code>ti_gfx_text_font</code></td><td class="num">925</td><td class="num">0</td></tr>
 <tr><td>graphics_blit</td><td>Blits, sprites, maps, animation frames</td><td class="num">3,631</td><td class="num">288</td></tr>
-<tr><td>scene, target_scene</td><td>Sprite scenes, besides <code>TI_SCENE_STORAGE</code></td><td class="num">2,042</td><td class="num">197</td></tr>
+<tr><td>scene, target_scene</td><td>Sprite scenes, without <code>TI_SCENE_STORAGE</code></td><td class="num">2,042</td><td class="num">197</td></tr>
 <tr><td>audio, target_audio</td><td>The audio driver and speech</td><td class="num">5,075</td><td class="num">331</td></tr>
 <tr><td>audio_music</td><td><code>ti_music_start</code></td><td class="num">632</td><td class="num">7</td></tr>
 <tr><td>target_song</td><td><code>ti_song_start</code></td><td class="num">1,120</td><td class="num">195</td></tr>
@@ -123,14 +125,14 @@ static const uint8_t table[64] = { /* ... */ };
 <tr><td>input_stick</td><td><code>ti_stick_read</code></td><td class="num">476</td><td class="num">20</td></tr>
 <tr><td>storage, target_storage</td><td>File calls and packs</td><td class="num">2,752</td><td class="num">236</td></tr>
 </table></div>
-<p>The startup code adds 563 bytes, including 228 bytes of entry code that the full-game layout reclaims for BSS and 98 bytes of saved OS state. cc65's runtime routines come on top, as the program uses them.</p>
+<p>The startup code adds 563 bytes. This includes 228 bytes of entry code, which the full-game layout uses again for BSS, and 98 bytes of saved OS state. The cc65 runtime routines that the program uses are added to this.</p>
 
-<h2 id="tips">Saving memory and time with cc65</h2>
+<h2 id="tips">Save memory and time with cc65</h2>
 <ul>
-  <li>Foreground-only code that never recurses can use <code>--static-locals</code> in the manifest's <code>cflags</code>, as STARFALL does, which removes most C stack traffic.</li>
-  <li>Keep pools as parallel byte arrays (<code>enemy_x[i]</code>, <code>enemy_y[i]</code>) rather than arrays of structures: the 65C02 indexes each with one absolute,Y operand.</li>
-  <li>Avoid 32-bit arithmetic in loops; the library's own checks moved to 16 bits for that reason.</li>
-  <li>The library favours memory over speed, because every game pays for its bytes. A game may spend its own memory where that buys speed.</li>
+  <li>Foreground code that does not call itself can use <code>--static-locals</code> in the <code>cflags</code> of the manifest, as STARFALL does. This removes most C stack operations.</li>
+  <li>Keep pools as parallel byte arrays (<code>enemy_x[i]</code>, <code>enemy_y[i]</code>), not as arrays of structures. The 65C02 indexes each array with one absolute,Y operand.</li>
+  <li>Do not use 32-bit arithmetic in loops. For this reason, the library uses 16-bit arithmetic in its checks.</li>
+  <li>The library gives memory a higher priority than speed, because each game pays for its bytes. A game can use its own memory to get more speed.</li>
 </ul>
 
 <div class="pager"><a href="saves.html">Saved games</a><a href="../api/index.html">All functions</a></div>

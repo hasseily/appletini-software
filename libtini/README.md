@@ -1,40 +1,40 @@
 # libtini
 
-libtini is part of [appletini-software](../README.md); run its commands from
-this `libtini/` folder. It is licensed under the [MIT License](LICENSE).
+libtini is part of [appletini-software](../README.md). Run its commands from
+this `libtini/` folder. The [MIT License](LICENSE) applies to libtini.
 
-A self-contained C game SDK for an enhanced Apple //e with Appletini. It uses
-existing firmware interfaces: CPU SHR graphics with a sprite renderer,
-banked resources, shared Mockingboard/Phasor music and effects, SSI-263
-speech, input and ProDOS files.
+libtini is a self-contained C game SDK for an enhanced Apple //e with an
+Appletini. It uses the interfaces of the Appletini firmware: CPU SHR graphics
+with a sprite renderer, banked resources, Mockingboard and Phasor music and
+effects, SSI-263 speech, input and ProDOS files.
 
 **Documentation:** open [docs/index.html](docs/index.html) in a browser. It
-has a getting-started guide, guides with sample code, the complete API
-reference, the build and manifest reference, tool options, data formats and
-the machine contract. [design/](design/) holds the development plan, design
-notes and recorded measurements as Markdown.
+contains a guide to start, guides with sample code, the full API reference,
+the build and manifest reference, tool options, data formats and the machine
+contract. The [design/](design/) folder contains the development plan, the
+design notes and the measurements as Markdown.
 
-All modules have working source, applications and host and emulator checks.
-Release acceptance on a physical board is pending. Networking, additional
-video backends and experimental 3D are later work.
+[STARFALL](examples/starfall/README.md) is the example game. It is a vertical
+shooter with one endless level, five enemy types, automatic fire, four weapon
+levels, wingmen, overdrive, chain scores, shields, repairs, bombs, music and
+spoken callouts. It uses public-domain Kenney sprites and an eight-voice
+arrangement of a free doranarasi MIDI demo.
 
-[STARFALL](examples/starfall/README.md) is the example game: a vertical
-scrolling survival shooter with five enemy types that arrive sector by
-sector, automatic fire, four weapon levels, wingmen, overdrive, chain
-scoring, shields, repairs, bombs, music and spoken callouts. It uses
-public-domain Kenney sprites and an eight-voice arrangement of a free
-doranarasi MIDI demo, and runs one endless level. Boot
-`build/starfall.po`; Enter or a joystick button launches with Mockingboard,
-or P selects Phasor. Hold WASD/arrows to move, Space drops a bomb and Q
-exits. A joystick works without setup: each launch measures where it rests.
-J turns it off. [The starter](examples/starter/README.md) is a small game to
-copy for a new one. A game can also run in a web browser on the development
-machine model; see [the browser player](docs/reference/browser.html).
+Boot `build/starfall.po`. Push Return or a joystick button to start with the
+Mockingboard, or push P to select the Phasor. Hold WASD or the arrow keys to
+move. Space drops a bomb and Q exits. A joystick operates without setup: each
+start measures its rest position, and J turns it off.
+
+[The starter](examples/starter/README.md) is a small game to copy for a new
+game. A game can also operate in a web browser on the development machine
+model; see [the browser player](docs/reference/browser.html). Networking,
+more video backends and 3D are not part of libtini at this time.
 
 # Build
 
-Install Python 3.10+ and a complete **cc65 SDK 2.19**. Reference tools are
-CPython 3.12.0 and cc65/ca65/ld65/ar65 V2.19. In PowerShell from this directory:
+Install Python 3.10 or newer and a complete **cc65 SDK 2.19**. The reference
+tools are CPython 3.12.0 and cc65, ca65, ld65 and ar65 V2.19. In PowerShell,
+from this folder:
 
 ~~~powershell
 python tools/setup_inputs.py
@@ -42,77 +42,82 @@ python tools/build.py --cc65-home D:/Repos/cc65 --test-target
 python tools/build.py --cc65-home D:/Repos/cc65 --private --test-target --build-dir build/private
 ~~~
 
-The first command installs hash-pinned official ProDOS 8 2.4.3 as ordinary,
-ignored files under build-inputs/prodos/. Normal builds then work offline.
-Use --no-disk to build application/library outputs without an OS image.
-Put the installed SDK's bin on PATH or set CC65_HOME to omit --cc65-home.
-Each game is a `game.json` manifest under games/ or examples/; `--game NAME`
-builds the library and that game only. Every build prints each game's free
-bytes per memory area and stops with the shortfall when a segment does not
-fit. [Dependencies and licenses](tools/DEPENDENCIES.md) document exact
-versions, input hashes, deterministic object metadata and local ROM
+The first command installs the official ProDOS 8 2.4.3 image, with a pinned
+hash, as ignored files in `build-inputs/prodos/`. Builds then operate offline.
+Use `--no-disk` to build the programs and the library without an OS image.
+To omit `--cc65-home`, put the bin folder of the SDK on PATH or set
+CC65_HOME.
+
+Each game is a `game.json` manifest in `games/` or `examples/`. The option
+`--game NAME` builds the library and that game only. Each build shows the free
+bytes of each memory area of each game. When a segment does not fit, the build
+stops and shows the number of bytes that are missing.
+[Dependencies and licenses](tools/DEPENDENCIES.md) gives the exact versions,
+the input hashes, the deterministic object metadata and the local ROM
 installation.
 
-Default builds compile out private SmartPort transport. The optional build
-probes the selected existing controller and uses AMEM only for eligible
-working-memory operations. Absence selects CPU before submission. Video
-always uses CPU writes.
+The default build does not contain the private SmartPort transport. The
+optional build identifies the controller and uses AMEM only for applicable
+working-memory operations. When AMEM is not available before a transfer
+starts, the CPU does the transfer. Video always uses CPU writes.
 
 | Artifact | Purpose |
 | --- | --- |
-| build/libtini.po, libtini.system | Memory/SHR diagnostic disk and SYS |
-| build/audio_demo.po, audio_demo.system | Music/speech/number demo; disk boots AUDIO.SYSTEM |
-| build/starfall.po, starfall.system | STARFALL survival shooter; disk boots STARFALL.SYSTEM |
-| build/starter.po, starter.system | Starter game; disk boots STARTER.SYSTEM |
-| build/speech_check.po, speech_check.system | SSI-263 board check; disk boots SPEECH.SYSTEM |
-| build/libtini.lib | cc65 library, with project startup and linker configuration |
+| build/libtini.po, libtini.system | Memory and SHR diagnostic disk and SYS |
+| build/audio_demo.po, audio_demo.system | Music, speech and number demo; the disk boots AUDIO.SYSTEM |
+| build/starfall.po, starfall.system | STARFALL shooter; the disk boots STARFALL.SYSTEM |
+| build/starter.po, starter.system | Starter game; the disk boots STARTER.SYSTEM |
+| build/speech_check.po, speech_check.system | SSI-263 check; the disk boots SPEECH.SYSTEM |
+| build/libtini.lib | cc65 library, with the project startup and linker configuration |
 | build/*.map, *.lbl, *.dbg, layout.json, memory.json | Checked static layout, symbols and free bytes |
-| build/manifest.json | Source, tool, installed OS and output hashes |
-| build/private/ | Corresponding optional-AMEM build of the library and the other programs; STARFALL has none |
+| build/manifest.json | Hashes of sources, tools, the installed OS and outputs |
+| build/private/ | The optional-AMEM build of the library and the other programs; STARFALL has no AMEM build |
 | dist/libtini-source.zip | Source, starter, tests, tools, documentation and design notes |
-| dist/libtini-local-release.zip | Local applications/disks, source and check records |
+| dist/libtini-local-release.zip | Local programs and disks, source and check records |
 
-The ProDOS kernel is a separately installed input. Source archives omit OS
-and Apple ROM bytes. Local boot disks contain ProDOS; check its distribution
-terms before sharing those disks. No firmware binaries, Apple ROMs or host
-compiler binaries are bundled in the source archive.
+The ProDOS kernel is a separately installed input. The source archives do not
+contain OS bytes or Apple ROM bytes. The local boot disks contain ProDOS.
+Read the ProDOS distribution terms before you share these disks. The source
+archive does not contain firmware binaries, Apple ROMs or host compiler
+binaries.
 
 # Run
 
-Use existing **Appletini F1.3.2**, commit
-73de6fe03c31ad6f8ebfce3328704761fcd8c5a2, as the named board baseline.
-No firmware rebuild, flashing or slot change is required.
+The firmware is **Appletini F1.3.2**. You do not have to rebuild or flash
+firmware, or change slots.
 
-Enable RamWorks. Grant selectors **1-3** exclusively for STARFALL and the
-starter (1-2 for the diagnostic), with no RAM disk/driver occupying those
-expansion banks. Keep SmartPort in slot 7 and a Mockingboard or Phasor
-personality in slot 4.
+Enable RamWorks. Give selectors **1-3** to STARFALL and the starter, and
+selectors 1-2 to the diagnostic. No RAM disk or driver can use these banks.
+Keep SmartPort in slot 7 and a Mockingboard or Phasor personality in slot 4.
 
-Boot build/libtini.po for five memory-test results on one SHR screen; press a
-key to restore AUX0 and return to ProDOS. If granted banks are missing or
-aliased it reports the requirement in text and still exits normally.
-Boot build/audio_demo.po for music and speech; 1 says READY, 2 speaks 1984,
-S stops speech and Q exits. Configured VIA timing is independent of CPU speed;
-physical clock calibration and audible quality remain board gates.
+Boot `build/libtini.po` to see five memory-test results on one SHR screen.
+Push a key to restore AUX0 and go back to ProDOS. If granted banks are missing
+or aliased, the diagnostic shows the requirement in text and then exits
+normally.
+
+Boot `build/audio_demo.po` for music and speech. Push 1 to hear READY, 2 to
+hear 1984, S to stop speech and Q to exit. The VIA timing does not change with
+the CPU speed.
 
 # Tests and tools
 
-Install py65==1.2.0 for instruction-level tests. Native tests and host game
-logic need an installed C compiler; reference is MSYS2 UCRT64 GCC 15.1.0:
+Install py65==1.2.0 for the instruction-level tests. The native tests and
+the host game logic need an installed C compiler. The reference compiler is
+MSYS2 UCRT64 GCC 15.1.0:
 
 ~~~powershell
 python -m pip install py65==1.2.0
 python tools/check.py --cc65-home D:/Repos/cc65 --cc C:/msys64/ucrt64/bin/gcc.exe
 ~~~
 
-The full check command builds both variants, checks asset/disk/speech/music
-tools and host game and input logic, then runs actual compiled memory,
-graphics, audio, storage and AMEM routines. Add --rom-boot to include real
-ProDOS audio, starter and STARFALL boots with explicitly installed
-repo-local ROM inputs. [Checks and status](docs/reference/testing.html) lists each check and
-what it covers; [tests/README.md](tests/README.md) describes the
-foundation harness. Emulator previews sample AUX/video/device models; only
-board execution proves physical output/timing.
+The full check builds the two variants and checks the asset, disk, speech and
+music tools and the host game and input logic. Then it runs the compiled
+memory, graphics, audio, storage and AMEM routines. Add `--rom-boot` to boot
+the audio demo, the starter and STARFALL in ProDOS with the installed local
+ROM inputs.
+
+[Checks](docs/reference/testing.html) gives each check and what it covers.
+[tests/README.md](tests/README.md) describes the foundation harness.
 
 ~~~powershell
 python tools/assets.py --help
@@ -127,17 +132,19 @@ python tools/profiler.py --game starfall --cc65-home D:/Repos/cc65 --cc C:/msys6
 python tools/release.py --cc65-home D:/Repos/cc65 --verify-isolation
 ~~~
 
-The starter copies its runtime as ordinary source files; it needs no sibling
-checkout or SDK build directory. The release command checks a fresh source
-export using only installed tools and the copied pinned OS input, then creates
-deterministic local archives. Ordinary C pointers remain near pointers.
-RamWorks resources use handles and explicit offsets; configured memory is
-never a flat 8 MB heap.
+The starter copies its runtime as ordinary source files. It does not need a
+sibling checkout or an SDK build folder. The release command builds a new
+source export with only the installed tools and the copied, pinned OS input.
+Then it makes deterministic local archives.
+
+Ordinary C pointers are near pointers. RamWorks resources use handles and
+explicit offsets. Configured memory is never a flat 8 MB heap.
 
 # License
 
-libtini is licensed under the [MIT License](LICENSE), so games built with it
-can use any terms. The browser player in `tools/web/` is GPL-3.0-only because
-it links the repository's GPL-3.0 development emulator; its files carry SPDX
-notices. Bundled assets and installed tools keep their own terms: see
-[dependencies and licenses](tools/DEPENDENCIES.md) and each asset folder.
+The [MIT License](LICENSE) applies to libtini, thus games that you build with
+it can use any terms. The browser player in `tools/web/` is GPL-3.0-only,
+because it links the GPL-3.0 development emulator of this repository. Its
+files contain SPDX notices. The bundled assets and the installed tools keep
+their own terms: see [dependencies and licenses](tools/DEPENDENCIES.md) and
+each asset folder.

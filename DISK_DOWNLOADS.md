@@ -9,7 +9,7 @@ packaging; they do not establish hardware compatibility.
 
 | Download | Build output | Checks performed |
 |---|---|---|
-| `libtini/examples/starfall/STARFALL.po` | `libtini/build/starfall.po` | All 22 libtini checks pass, among them builds, host tests, native emulator tests and ROM-boot STARFALL runs with Mockingboard and Phasor; the browser player matches the native machine through a ROM boot at vtw33 and turbo-f122 |
+| `libtini/examples/starfall/STARFALL.po` | `libtini/build/starfall.po` | All 22 libtini checks pass: builds, host tests, native emulator tests and ProDOS boots of STARFALL with the Mockingboard and the Phasor. The browser player gives the same results as the native machine after a ROM boot at vtw33 and turbo-f122 |
 
 Build it from `libtini/` with Python 3 and cc65 2.19; the first command
 installs the pinned ProDOS 2.4.3 input:
@@ -19,9 +19,9 @@ python tools/setup_inputs.py
 python tools/build.py --cc65-home <cc65>
 ```
 
-The checks are emulator evidence. This build's effect and music levels follow
-the owner's listening on hardware; libtini's checks and status page,
-`libtini/docs/reference/testing.html`, lists the remaining board gates.
+The effect and music levels of this build are set for the hardware.
+[Checks](libtini/docs/reference/testing.html) gives each libtini check and
+what it covers.
 
 ## Built on 2026-10-12
 

@@ -17,29 +17,30 @@
 <main id="main">
 <h1>Sprite scenes</h1>
 <p class="include">#include "libtini/scene.h"</p>
-<p class="lead">A band renderer for games that move many small sprites over a plain background. Each frame the game lists its sprites; <code>ti_scene_draw</code> rebuilds and publishes only the parts of one screen rectangle that changed since the last draw.</p>
+<p class="lead">A scene is a band renderer for games that move many small sprites on a plain background. In each frame, the game makes a list of its sprites. <code>ti_scene_draw</code> then draws and publishes only the parts of one screen rectangle that changed since the last draw.</p>
 
 <div class="table"><table class="compact">
 <tr><th>Name</th><th>Purpose</th></tr>
-<tr><td><code>TI_SCENE_STORAGE</code></td><td>Define the sprite list and composition strip, once per program</td></tr>
+<tr><td><code>TI_SCENE_STORAGE</code></td><td>Define the sprite list and the composition strip, one time in a program</td></tr>
 <tr><td><code>ti_scene_begin</code></td><td>Start a scene on a screen rectangle</td></tr>
-<tr><td><code>ti_scene_frame</code></td><td>Start the next frame's sprite list</td></tr>
-<tr><td><code>ti_scene_add</code></td><td>Append a sprite, in draw order</td></tr>
-<tr><td><code>ti_scene_draw</code></td><td>Compose and publish every changed block</td></tr>
-<tr><td><code>ti_scene_forget</code></td><td>The area now shows only the background</td></tr>
-<tr><td><code>ti_scene_invalidate</code></td><td>Redraw the whole area at the next draw</td></tr>
+<tr><td><code>ti_scene_frame</code></td><td>Start the sprite list of the next frame</td></tr>
+<tr><td><code>ti_scene_add</code></td><td>Add a sprite to the list, in draw order</td></tr>
+<tr><td><code>ti_scene_draw</code></td><td>Compose and publish all changed blocks</td></tr>
+<tr><td><code>ti_scene_forget</code></td><td>Tell the scene that the area shows only the background</td></tr>
+<tr><td><code>ti_scene_invalidate</code></td><td>Draw the full area at the next draw</td></tr>
 </table></div>
 
 <h2 id="how">How a scene draws</h2>
-<p>The scene divides its rectangle into blocks of 16 pixels (8 bytes) by 8 lines. <code>ti_scene_add</code> compares each sprite with the one at the same position in the previous list. An identical sprite costs nothing. A sprite that moved, changed image or colour, or disappeared marks the blocks it covered and the blocks it now covers.</p>
-<p>For every 8-line band that holds marked blocks, <code>ti_scene_draw</code> fills those blocks of an 8-line near strip with the background colour, draws every listed sprite that reaches the band in list order, and publishes each run of adjacent marked blocks with ordinary CPU writes. An unchanged list publishes nothing. No banked surface is involved, and the draw needs an active <a href="graphics.html#ti_gfx_begin">video session</a>.</p>
-<p>The scene has no image of what else is on the screen. It assumes its rectangle shows only the background and its own sprites. When something else draws there, tell it with <code>ti_scene_forget</code> or <code>ti_scene_invalidate</code>.</p>
+<p>The scene divides its rectangle into blocks of 16 pixels (8 bytes) by 8 lines. <code>ti_scene_add</code> compares each sprite with the sprite at the same position in the last list. An identical sprite costs no time. A sprite can move, change its image or colour, or go away. Then it marks the blocks of its old position and the blocks of its new position.</p>
+<p><code>ti_scene_draw</code> examines each 8-line band that has marked blocks. It fills these blocks of an 8-line near strip with the background colour. It draws all listed sprites that touch the band, in list order. Then it publishes each run of adjacent marked blocks with usual CPU writes. A list without changes publishes nothing. The scene uses no banked surface. A draw needs an active <a href="graphics.html#ti_gfx_begin">video session</a>.</p>
+<p>The scene has no image of the other contents of the screen. It operates on the condition that its rectangle shows only the background and its own sprites. When other code draws in the rectangle, tell the scene with <code>ti_scene_forget</code> or <code>ti_scene_invalidate</code>.</p>
 
 <h2 id="types">Types and storage</h2>
 <section class="fn" id="ti_image">
 <h3><code class="def">ti_image</code></h3>
 <pre class="sig" data-name="ti_image">typedef struct ti_image { const uint8_t *pixels; uint8_t row_bytes, rows, stride; } ti_image;</pre>
-<p>A sprite image in near memory: packed 4-bit pixels, two per byte, high nibble first, colour 0 transparent. <code>row_bytes</code> is the width in bytes (two pixels each), <code>rows</code> the height, <code>stride</code> the bytes from one row to the next, so an image can sit inside a larger sheet. <code>pixels</code> NULL makes a solid rectangle <code>2 * row_bytes</code> by <code>rows</code> pixels in the colour given to <code>ti_scene_add</code>; its stride is ignored.</p>
+<p>A sprite image in near memory. It has packed 4-bit pixels, two in each byte, high nibble first. Colour 0 is transparent. <code>row_bytes</code> is the width in bytes, with two pixels in each byte. <code>rows</code> is the height. <code>stride</code> is the number of bytes from one row to the next. Thus an image can be a part of a larger sheet.</p>
+<p>When <code>pixels</code> is NULL, the image is a solid rectangle of <code>2 * row_bytes</code> by <code>rows</code> pixels. It has the colour that <code>ti_scene_add</code> gives. Its stride is not used.</p>
 </section>
 <section class="fn" id="ti_scene_config">
 <h3><code class="def">ti_scene_config</code></h3>
@@ -51,17 +52,18 @@
     void (*service)(void);         /* called after every fourth band while drawing, or NULL */
 } ti_scene_config;</pre>
 <dl class="params">
-  <dt>x, y, width, height</dt><dd>The screen rectangle. <code>x</code> and <code>width</code> are even, <code>height</code> is a nonzero multiple of 8, and the rectangle lies within 320x200. <code>width</code> is at most <code>2 * row_bytes</code> of the storage.</dd>
-  <dt>images, image_count</dt><dd>The image table, 1-255 entries. Sprites name images by index.</dd>
+  <dt>x, y, width, height</dt><dd>The screen rectangle. <code>x</code> and <code>width</code> are even. <code>height</code> is a nonzero multiple of 8. The rectangle is fully in 320x200. <code>width</code> is a maximum of <code>2 * row_bytes</code> of the storage.</dd>
+  <dt>images, image_count</dt><dd>The image table, 1-255 entries. Sprites identify images by their index.</dd>
   <dt>background</dt><dd>The colour of the area under all sprites.</dd>
-  <dt>service</dt><dd>Called after bands 4, 8, 12 and so on of every draw, changed or not. Use it to call <code>ti_audio_update</code> so a long draw does not starve the music. It must not call scene functions or draw in the area.</dd>
+  <dt>service</dt><dd>A function that the scene calls after bands 4, 8, 12 and the subsequent multiples of 4 in each draw. The scene calls it also when a band has no change. Use it to call <code>ti_audio_update</code>, thus the music continues during a long draw. The function must not call scene functions or draw in the area.</dd>
 </dl>
 </section>
 <section class="fn" id="TI_SCENE_STORAGE">
 <h3><code class="def">TI_SCENE_STORAGE</code></h3>
 <pre class="sig" data-name="TI_SCENE_STORAGE">#define TI_SCENE_STORAGE(sprites, row_bytes) ...</pre>
-<p>Defines the sprite list and the composition strip as global variables, which the renderer reaches at fixed addresses. Use it exactly once in a program, at file scope. <code>sprites</code> is the list capacity, 1-255; <code>row_bytes</code> the widest area in bytes. It costs 8 bytes per sprite plus <code>8 * row_bytes</code> for the strip, in BSS, or in the near arena when placed between <code>#pragma bss-name (push, "NEARBSS")</code> and <code>#pragma bss-name (pop)</code>.</p>
-<pre><code class="c">TI_SCENE_STORAGE(64, 120);   /* 64 sprites a frame, areas up to 240 pixels wide:
+<p>This macro defines the sprite list and the composition strip as global variables. The renderer finds them at fixed addresses. Use the macro exactly one time in a program, at file scope.</p>
+<p><code>sprites</code> is the list capacity, 1-255. <code>row_bytes</code> is the width of the widest area in bytes. The macro uses 8 bytes for each sprite plus <code>8 * row_bytes</code> for the strip, in BSS. To put this memory in the near arena, put the macro between <code>#pragma bss-name (push, "NEARBSS")</code> and <code>#pragma bss-name (pop)</code>.</p>
+<pre><code class="c">TI_SCENE_STORAGE(64, 120);   /* 64 sprites each frame, areas to 240 pixels wide:
                                  512 + 960 bytes */</code></pre>
 </section>
 
@@ -69,60 +71,62 @@
 <section class="fn" id="ti_scene_begin">
 <h3><code class="def">ti_scene_begin</code></h3>
 <pre class="sig" data-name="ti_scene_begin">ti_error ti_scene_begin(const ti_scene_config *config);</pre>
-<p>Starts a scene. The configuration is copied; the image table and pixels stay borrowed until the next <code>ti_scene_begin</code>. Every image is checked once here: nonzero <code>row_bytes</code> and <code>rows</code>, and for images with pixels a <code>stride</code> of at least <code>row_bytes</code> and <code>(rows - 1) * stride + row_bytes</code> readable near bytes. The list starts empty and the area is taken to show only the background; call <code>ti_scene_invalidate</code> when it does not. A video session is not needed to begin, only to draw.</p>
+<p>This function starts a scene. It copies the configuration. The scene uses the image table and the pixels until the next <code>ti_scene_begin</code>.</p>
+<p>The function checks each image one time. <code>row_bytes</code> and <code>rows</code> must not be zero. For an image with pixels, <code>stride</code> must be <code>row_bytes</code> or more, and <code>(rows - 1) * stride + row_bytes</code> near bytes must be readable.</p>
+<p>The list starts empty. The scene operates on the condition that the area shows only the background. When the area shows other contents, call <code>ti_scene_invalidate</code>. The function does not need a video session. Only a draw needs a session.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_ARGUMENT</code> for a missing or unreadable configuration or image table, or zero images; <code>TI_E_RANGE</code> for a bad area, a background above 15 or a bad image. After an error no scene is active.</p>
+<p><code>TI_OK</code>; <code>TI_E_ARGUMENT</code> for a missing configuration or image table, one that the function cannot read, or zero images; <code>TI_E_RANGE</code> for an incorrect area, a background above 15 or an incorrect image. After an error, no scene is active.</p>
 </section>
 
 <section class="fn" id="ti_scene_frame">
 <h3><code class="def">ti_scene_frame</code></h3>
 <pre class="sig" data-name="ti_scene_frame">void ti_scene_frame(void);</pre>
-<p>Starts the next frame's list. The last drawn list is kept for comparison, so sprites that moved, changed or went away are erased by the next draw.</p>
+<p>This function starts the list of the next frame. The scene keeps the last drawn list to compare. Thus the next draw erases the sprites that moved, changed or went away.</p>
 </section>
 
 <section class="fn" id="ti_scene_add">
 <h3><code class="def">ti_scene_add</code></h3>
 <pre class="sig" data-name="ti_scene_add">ti_error ti_scene_add(int16_t x, int16_t y, uint8_t image, uint8_t color);</pre>
-<p>Appends a sprite with its top-left corner at screen position <code>x</code>, <code>y</code>. Later sprites cover earlier ones. Positions are signed and sprites are clipped to the area. An odd <code>x</code> is rounded down: sprites sit on whole bytes. <code>color</code> is used only by rectangle images.</p>
-<p>The comparison is by list position, so keep each object at a stable index from frame to frame. Pixels changed inside an image are not noticed; switch to another image index or call <code>ti_scene_invalidate</code>.</p>
+<p>This function adds a sprite. The top-left corner of the sprite is at the screen position <code>x</code>, <code>y</code>. Sprites that you add later cover the sprites before them. Positions are signed. The scene clips sprites to the area. The function rounds an odd <code>x</code> down, because sprites start on full bytes. Only rectangle images use <code>color</code>.</p>
+<p>The scene compares sprites by their position in the list. Keep each object at the same list position from frame to frame. The scene does not see pixels that change in an image. Use a different image index, or call <code>ti_scene_invalidate</code>.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_FULL</code> when the list holds its capacity (the sprite is dropped); <code>TI_E_RANGE</code> for an image index not below <code>image_count</code>; <code>TI_E_STATE</code> before <code>ti_scene_begin</code>.</p>
+<p><code>TI_OK</code>; <code>TI_E_FULL</code> when the list is at its capacity (the function drops the sprite); <code>TI_E_RANGE</code> for an image index of <code>image_count</code> or more; <code>TI_E_STATE</code> when no <code>ti_scene_begin</code> occurred.</p>
 </section>
 
 <section class="fn" id="ti_scene_draw">
 <h3><code class="def">ti_scene_draw</code></h3>
 <pre class="sig" data-name="ti_scene_draw">ti_error ti_scene_draw(void);</pre>
-<p>Erases sprites past the new list's end, composes every band with marked blocks and publishes them, calling <code>service</code> after every fourth band. Draws do not use <code>ti_gfx_budget</code> or statistics: the list capacity and the area bound the work.</p>
+<p>This function erases the sprites past the end of the new list. It composes and publishes each band that has marked blocks. After each fourth band, it calls <code>service</code>. A draw does not use <code>ti_gfx_budget</code> or statistics. The list capacity and the area limit the work.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>, or <code>TI_E_STATE</code> without an active scene and video session, before any write.</p>
+<p><code>TI_OK</code>, or <code>TI_E_STATE</code> without an active scene and video session. The function returns this error before it writes.</p>
 </section>
 
 <section class="fn" id="ti_scene_forget">
 <h3><code class="def">ti_scene_forget</code></h3>
 <pre class="sig" data-name="ti_scene_forget">void ti_scene_forget(void);</pre>
-<p>Something else drew over the area and left only the background there, such as publishing a canvas that is clear in the area. Nothing of the last list is on screen any more: the next draw draws every listed sprite and erases nothing.</p>
+<p>Call this function when other code drew in the area and left only the background there. An example is a canvas publication with a clear area at the scene position. The screen shows no sprite of the last list. The next draw draws all listed sprites and erases nothing.</p>
 </section>
 
 <section class="fn" id="ti_scene_invalidate">
 <h3><code class="def">ti_scene_invalidate</code></h3>
 <pre class="sig" data-name="ti_scene_invalidate">void ti_scene_invalidate(void);</pre>
-<p>The area shows something other than the background and the last list. The next draw redraws the whole area, background included.</p>
+<p>Call this function when the area shows contents other than the background and the last list. The next draw draws the full area again, the background included.</p>
 </section>
 
 <h2 id="example">Example</h2>
 <pre><code class="c">#include "libtini.h"
 
-TI_SCENE_STORAGE(64, 120);                  /* 64 sprites, areas up to 240 pixels wide */
+TI_SCENE_STORAGE(64, 120);                  /* 64 sprites, areas to 240 pixels wide */
 extern const uint8_t ship[], sheet[];        /* packed pixels, colour 0 transparent */
-extern int16_t ship_x, ship_y, shot_x[], shot_y[];   /* the game's state */
+extern int16_t ship_x, ship_y, shot_x[], shot_y[];   /* the state of the game */
 extern uint8_t shots;
 
 static void service(void) { ti_audio_update(); }
 
 static const ti_image images[] = {
     {ship, 8, 16, 8},                         /* 16x16 */
-    {sheet + 4, 2, 4, 16},                    /* 4x4 inside a 32-pixel-wide sheet */
-    {0, 1, 2, 0},                             /* a 2x2 rectangle in the sprite's colour */
+    {sheet + 4, 2, 4, 16},                    /* 4x4 in a sheet of 32 pixels width */
+    {0, 1, 2, 0},                             /* a 2x2 rectangle in the colour of the sprite */
 };
 static const ti_scene_config scene = {0, 16, 240, 184, images, 3, 0, service};
 
@@ -140,7 +144,8 @@ void play(void)
 }</code></pre>
 
 <h2 id="costs">Costs</h2>
-<p>The renderer adds 2,042 bytes of code and constants and 197 bytes of state to a program, besides the storage that <code>TI_SCENE_STORAGE</code> defines. Its work grows with the number of marked blocks and with the sprites that reach marked bands. When STARFALL moved its 240x184 playfield to this renderer, listing and drawing took about 14-16 ms a frame on the emulator's 33 MHz model, against 22.5-23.6 ms for the game's own earlier renderer. Its later parallax backdrop of 24 more sprites adds about 6 ms. These are model figures, not board timing.</p>
+<p>The renderer adds 2,042 bytes of code and constants and 197 bytes of state to a program. The storage that <code>TI_SCENE_STORAGE</code> defines is in addition to this. The work increases with the number of marked blocks and with the number of sprites that touch marked bands.</p>
+<p>STARFALL has a 240x184 playfield with a maximum of 112 sprites and its backdrop. In it, the scene draw uses approximately 15 ms for each frame at <code>vtw33</code> and 17 ms with the <code>turbo-f122</code> cost model. The sprite list uses 4.7 ms and 2.5 ms. These values are measured on the development emulator.</p>
 
 <footer class="page-foot">Defined in <code>include/libtini/scene.h</code>, implemented in <code>src/scene.c</code> and <code>src/target/scene.s</code>.</footer>
 </main>

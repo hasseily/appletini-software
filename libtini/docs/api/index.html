@@ -16,21 +16,21 @@
 </header>
 <main id="main">
 <h1>All functions</h1>
-<p class="lead">Every public function, in alphabetical order. Include <code>libtini.h</code> for all of them, or a single header from <code>include/libtini/</code>.</p>
+<p class="lead">This page lists all public functions in alphabetical order. Include <code>libtini.h</code> for all functions, or one header from <code>include/libtini/</code>.</p>
 
 <div class="table"><table class="compact">
 <tr><th>Function</th><th>Header</th><th>Does</th></tr>
-<tr><td><a href="amem.html#ti_amem_available"><code>ti_amem_available</code></a></td><td>amem.h</td><td>Whether AMEM acceleration is active</td></tr>
+<tr><td><a href="amem.html#ti_amem_available"><code>ti_amem_available</code></a></td><td>amem.h</td><td>Tell if AMEM acceleration is active</td></tr>
 <tr><td><a href="amem.html#ti_amem_disable"><code>ti_amem_disable</code></a></td><td>amem.h</td><td>Return to CPU transfers</td></tr>
 <tr><td><a href="amem.html#ti_amem_enable"><code>ti_amem_enable</code></a></td><td>amem.h</td><td>Identify and enable AMEM acceleration</td></tr>
 <tr><td><a href="amem.html#ti_amem_last_error"><code>ti_amem_last_error</code></a></td><td>amem.h</td><td>Last AMEM controller error byte</td></tr>
-<tr><td><a href="audio.html#ti_audio_clock_valid"><code>ti_audio_clock_valid</code></a></td><td>audio.h</td><td>Whether the device clock is running without a gap</td></tr>
+<tr><td><a href="audio.html#ti_audio_clock_valid"><code>ti_audio_clock_valid</code></a></td><td>audio.h</td><td>Tell if the device clock runs without a gap</td></tr>
 <tr><td><a href="audio.html#ti_audio_effect"><code>ti_audio_effect</code></a></td><td>audio.h</td><td>Play a prioritized tone on an effect voice</td></tr>
 <tr><td><a href="audio.html#ti_audio_effect_voice"><code>ti_audio_effect_voice</code></a></td><td>audio.h</td><td>The nth voice left to effects</td></tr>
 <tr><td><a href="audio.html#ti_audio_envelope"><code>ti_audio_envelope</code></a></td><td>audio.h</td><td>Start the AY envelope on music voices</td></tr>
 <tr><td><a href="audio.html#ti_audio_envelope_stop"><code>ti_audio_envelope_stop</code></a></td><td>audio.h</td><td>Return voices to score volume</td></tr>
 <tr><td><a href="audio.html#ti_audio_init"><code>ti_audio_init</code></a></td><td>audio.h</td><td>Take the slot-4 card and start the clock</td></tr>
-<tr><td><a href="audio.html#ti_audio_mark_gap"><code>ti_audio_mark_gap</code></a></td><td>audio.h</td><td>Pause audio before blocking work</td></tr>
+<tr><td><a href="audio.html#ti_audio_mark_gap"><code>ti_audio_mark_gap</code></a></td><td>audio.h</td><td>Pause audio before work that blocks</td></tr>
 <tr><td><a href="audio.html#ti_audio_reserve"><code>ti_audio_reserve</code></a></td><td>audio.h</td><td>Choose the music voices</td></tr>
 <tr><td><a href="audio.html#ti_audio_resume_clock"><code>ti_audio_resume_clock</code></a></td><td>audio.h</td><td>Resume after a gap</td></tr>
 <tr><td><a href="audio.html#ti_audio_shutdown"><code>ti_audio_shutdown</code></a></td><td>audio.h</td><td>Silence and release the card</td></tr>
@@ -53,7 +53,7 @@
 <tr><td><a href="graphics.html#ti_gfx_clear"><code>ti_gfx_clear</code></a></td><td>graphics.h</td><td>Fill a surface</td></tr>
 <tr><td><a href="graphics.html#ti_gfx_end"><code>ti_gfx_end</code></a></td><td>graphics.h</td><td>Restore the screen</td></tr>
 <tr><td><a href="graphics.html#ti_gfx_line"><code>ti_gfx_line</code></a></td><td>graphics.h</td><td>Draw a line</td></tr>
-<tr><td><a href="graphics.html#ti_gfx_map"><code>ti_gfx_map</code></a></td><td>graphics.h</td><td>Draw a scrolling tile map</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_map"><code>ti_gfx_map</code></a></td><td>graphics.h</td><td>Draw a tile map that scrolls</td></tr>
 <tr><td><a href="graphics.html#ti_gfx_palette"><code>ti_gfx_palette</code></a></td><td>graphics.h</td><td>Replace the sixteen colours</td></tr>
 <tr><td><a href="graphics.html#ti_gfx_present"><code>ti_gfx_present</code></a></td><td>graphics.h</td><td>Publish a surface rectangle</td></tr>
 <tr><td><a href="graphics.html#ti_gfx_present_rows"><code>ti_gfx_present_rows</code></a></td><td>graphics.h</td><td>Publish packed rows from near memory</td></tr>
@@ -68,7 +68,7 @@
 <tr><td><a href="input.html#ti_input_buttons"><code>ti_input_buttons</code></a></td><td>input.h</td><td>The three button bits</td></tr>
 <tr><td><a href="input.html#ti_input_held"><code>ti_input_held</code></a></td><td>input.h</td><td>The key held down now</td></tr>
 <tr><td><a href="input.html#ti_input_key"><code>ti_input_key</code></a></td><td>input.h</td><td>Take a queued character</td></tr>
-<tr><td><a href="input.html#ti_input_poll"><code>ti_input_poll</code></a></td><td>input.h</td><td>Queue a pending keypress</td></tr>
+<tr><td><a href="input.html#ti_input_poll"><code>ti_input_poll</code></a></td><td>input.h</td><td>Queue a waiting keypress</td></tr>
 <tr><td><a href="input.html#ti_input_reset"><code>ti_input_reset</code></a></td><td>input.h</td><td>Empty the key queue</td></tr>
 <tr><td><a href="input.html#ti_joystick_read"><code>ti_joystick_read</code></a></td><td>input.h</td><td>Raw paddle readings</td></tr>
 <tr><td><a href="input.html#ti_mouse_read"><code>ti_mouse_read</code></a></td><td>input.h</td><td>Reserved; unavailable</td></tr>
@@ -89,10 +89,10 @@
 <tr><td><a href="scene.html#ti_scene_forget"><code>ti_scene_forget</code></a></td><td>scene.h</td><td>The area shows only background now</td></tr>
 <tr><td><a href="scene.html#ti_scene_frame"><code>ti_scene_frame</code></a></td><td>scene.h</td><td>Start a new sprite list</td></tr>
 <tr><td><a href="scene.html#ti_scene_invalidate"><code>ti_scene_invalidate</code></a></td><td>scene.h</td><td>Redraw the whole area next time</td></tr>
-<tr><td><a href="memory.html#ti_shutdown"><code>ti_shutdown</code></a></td><td>memory.h</td><td>Release everything</td></tr>
+<tr><td><a href="memory.html#ti_shutdown"><code>ti_shutdown</code></a></td><td>memory.h</td><td>Release all library resources</td></tr>
 <tr><td><a href="audio.html#ti_song_start"><code>ti_song_start</code></a></td><td>audio.h</td><td>Play a pattern song</td></tr>
 <tr><td><a href="speech.html#ti_speech_bind"><code>ti_speech_bind</code></a></td><td>audio.h</td><td>Choose the phrase bank</td></tr>
-<tr><td><a href="speech.html#ti_speech_busy"><code>ti_speech_busy</code></a></td><td>audio.h</td><td>Whether speech is playing or queued</td></tr>
+<tr><td><a href="speech.html#ti_speech_busy"><code>ti_speech_busy</code></a></td><td>audio.h</td><td>Tell if speech plays or waits</td></tr>
 <tr><td><a href="speech.html#ti_speech_number"><code>ti_speech_number</code></a></td><td>audio.h</td><td>Speak a number</td></tr>
 <tr><td><a href="speech.html#ti_speech_say"><code>ti_speech_say</code></a></td><td>audio.h</td><td>Speak a phrase</td></tr>
 <tr><td><a href="speech.html#ti_speech_stop"><code>ti_speech_stop</code></a></td><td>audio.h</td><td>Cancel speech</td></tr>

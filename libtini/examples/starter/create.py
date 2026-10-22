@@ -34,14 +34,14 @@ def main():
     (destination/'.gitignore').write_text('/build/\n/runtime/build-inputs/\n__pycache__/\n*.py[cod]\n')
     (destination/'SDK_INPUTS.json').write_text(json.dumps(inputs,indent=2)+'\n')
     (destination/'README.md').write_text(
-      '# My libtini project\n\nEdit `main.c`. All runtime sources and headers are ordinary copies under `runtime/`.\n'
-      'No sibling checkout, temporary directory, SDK build output or link is required.\n\n'
-      'Install Python 3.10+ and cc65 SDK2.19, then run:\n\n'
+      '# My libtini project\n\nEdit `main.c`. All runtime sources and headers are ordinary copies in `runtime/`.\n'
+      'The project needs no sibling checkout, temporary folder, SDK build output or link.\n\n'
+      'Install Python 3.10 or newer and cc65 SDK 2.19. Then run:\n\n'
       '```powershell\npython runtime/tools/setup_inputs.py\npython build.py --cc65-home D:/Repos/cc65\n```\n\n'
-      'Outputs: `build/APP.SYSTEM`, `build/APP.po`, map and labels. '
+      'The outputs are `build/APP.SYSTEM`, `build/APP.po`, the map and the labels. '
       '`--no-disk` builds without the separately installed ProDOS image.\n'
-      'The documented baseline is existing Appletini F1.3.2; physical timing/output requires board validation. '
-      'See runtime/tools/DEPENDENCIES.md for installed tools and ProDOS distribution terms.\n')
+      'The firmware is Appletini F1.3.2. '
+      'runtime/tools/DEPENDENCIES.md gives the installed tools and the ProDOS distribution terms.\n')
     print(destination)
 
 if __name__=='__main__':main()

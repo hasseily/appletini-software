@@ -16,10 +16,10 @@
 </header>
 <main id="main">
 <h1>Game loop and timing</h1>
-<p class="lead">Simulate at a fixed rate from the audio device clock, draw only when something is due, keep the music serviced during long work and pause cleanly when time cannot be trusted.</p>
+<p class="lead">Run the simulation at a fixed rate from the audio device clock. Draw only when an update is due. Keep the music serviced during long work. Pause when the clock is not valid.</p>
 
 <h2 id="shape">The shape of a loop</h2>
-<p>The game owns its loop. libtini gives it a clock that runs at the same rate at 33 MHz and in TURBO, and turns that clock into a number of simulation steps. The simulation then advances by fixed steps, while drawing happens as often as the machine allows.</p>
+<p>The game owns its loop. libtini supplies a clock that has the same rate at 33 MHz and in TURBO. libtini also converts that clock into a number of simulation steps. The simulation advances in fixed steps, and the game draws as often as the machine can.</p>
 <pre><code class="c">#include "libtini.h"
 
 /* The game's own parts. */
@@ -46,7 +46,7 @@ int main(void)
         if (!ti_audio_clock_valid()) { pause_game(); continue; }
         steps = ti_steps_due();
         if (steps == TI_STEPS_GAP) { pause_game(); continue; }
-        if (!steps) continue;              /* nothing due: nothing to draw */
+        if (!steps) continue;              /* no update due: no draw */
         controls = read_controls();        /* ti_input_held, ti_stick_read */
         while (steps--) update_game(controls);
         draw_changes();                    /* scene and HUD; see Drawing */
@@ -55,57 +55,68 @@ int main(void)
     return 0;                              /* cleanup runs on return */
 }</code></pre>
 <ul>
-  <li><code>ti_steps_begin(ti_audio_ticks, TI_AUDIO_TICKS_PER_SECOND, 30, 30)</code> asks for 30 updates a second from the nominal 100 Hz clock. The remainder of a step carries over, so an update falls due every 3 or 4 ticks and the average stays exactly 30 a second.</li>
-  <li>The last argument caps one call at 30 steps. Time beyond the cap is dropped: after a very slow frame the game slows down instead of jumping ahead. Use a smaller cap, such as 4, when catching up a whole second at once would be unfair to the player.</li>
-  <li>Controls are read once per drawn frame and applied to every step of that frame.</li>
-  <li>The loop draws only after it ran at least one step, so a fast frame does not redraw an unchanged screen.</li>
+  <li><code>ti_steps_begin(ti_audio_ticks, TI_AUDIO_TICKS_PER_SECOND, 30, 30)</code> gives 30 updates a second from the nominal 100 Hz clock. The remainder of a step carries over. Thus an update is due every 3 or 4 ticks, and the average is exactly 30 a second.</li>
+  <li>The last argument sets the maximum number of steps for one call, here 30. libtini discards time above this limit. After a very slow frame, the game slows down and does not jump ahead.</li>
+  <li>Use a smaller limit, for example 4, if one large catch-up is unfair to the player.</li>
+  <li>The loop reads the controls once for each drawn frame. All the steps of that frame use the same controls.</li>
+  <li>The loop draws only after at least one step. Thus a fast frame does not draw an unchanged screen again.</li>
 </ul>
 
-<h2 id="pausing">Pausing and gaps</h2>
-<p>Two things mean the clock cannot be trusted for the moment: <code>ti_steps_due</code> returns <code>TI_STEPS_GAP</code> when more than a second passed between calls, and <code>ti_audio_clock_valid</code> turns 0 when the audio driver detects a gap: more than a second between updates, or more than 32 score events or song rows due at once. A game should pause then, as STARFALL does, instead of simulating a second it did not see.</p>
+<h2 id="pausing">Pauses and gaps</h2>
+<p>Two conditions tell the game that the clock is not valid for the moment:</p>
+<ul>
+  <li><code>ti_steps_due</code> returns <code>TI_STEPS_GAP</code> when more than one second passes between two calls.</li>
+  <li><code>ti_audio_clock_valid</code> returns 0 when the audio driver finds a gap. A gap is more than one second between updates, or more than 32 score events or song rows due at the same time.</li>
+</ul>
+<p>Then pause the game, as STARFALL does. Do not simulate a second that the game did not see.</p>
 <pre><code class="c">void pause_game(void)
 {
     uint8_t key;
     ti_music_stop();
     show_pause_panel();
     do ti_input_poll(); while (ti_input_key(&amp;key) != TI_OK);
-    ti_audio_resume_clock();   /* re-arm the clock after a gap; harmless otherwise */
-    ti_steps_reset();          /* the paused time is not game time */
+    ti_audio_resume_clock();   /* arm the clock again after a gap; no effect otherwise */
+    ti_steps_reset();          /* the pause is not game time */
     redraw_screen();
     start_music();
 }</code></pre>
-<p><code>ti_steps_due</code> keeps only the low 16 bits of the clock. A pause that can last 65,536 ticks or more, about eleven minutes, must end with <code>ti_steps_reset</code>, as above.</p>
+<p><code>ti_steps_due</code> keeps only the low 16 bits of the clock. A pause of 65,536 ticks or more is approximately eleven minutes. End such a pause with <code>ti_steps_reset</code>, as the example shows.</p>
 
-<h2 id="service">Keep the music going</h2>
-<p><code>ti_audio_update</code> plays the score events and song rows that came due since its last call, and writes the AY registers once a tick. It catches up to 32 events or rows; more than that, or more than 100 ticks between calls, stops the music with <code>TI_E_TIMING</code>. Call it at least once a tick, every 10 ms, for even music. Long work needs extra calls:</p>
+<h2 id="service">Keep the music serviced</h2>
+<p><code>ti_audio_update</code> plays the score events and song rows that are due since its last call. It writes the AY registers one time for each tick. It can catch up a maximum of 32 events or rows. If more are due, or if more than 100 ticks pass between calls, the music stops and the call returns <code>TI_E_TIMING</code>.</p>
+<p>Call <code>ti_audio_update</code> at least one time for each tick, which is every 10 ms. Long work needs more calls:</p>
 <ul>
-  <li>A sprite scene calls its configuration's <code>service</code> function after every fourth 8-line band. Point it at a function that calls <code>ti_audio_update</code>.</li>
-  <li>Between drawing calls, call <code>ti_audio_update</code> yourself. STARFALL's <code>present</code> helper calls it after each publication, and its large title logo calls it after each letter.</li>
-  <li>Calls within one tick do almost nothing, so extra calls are cheap.</li>
+  <li>A sprite scene calls the <code>service</code> function of its configuration after every fourth band of 8 lines. Set <code>service</code> to a function that calls <code>ti_audio_update</code>.</li>
+  <li>Between drawing calls, call <code>ti_audio_update</code> in your code. The <code>present</code> function of STARFALL calls it after each publication. Its large title logo calls it after each letter.</li>
+  <li>A call in the same tick as the last call does almost no work. Thus more calls cost little time.</li>
 </ul>
 <pre><code class="c">static void service(void) { ti_audio_update(); }
 static const ti_scene_config scene = {0, 16, 240, 184, images, IMAGE_COUNT, 0, service};</code></pre>
 
-<h2 id="blocking">Blocking work</h2>
-<p>File calls and AMEM requests pause the audio driver themselves: the clock stops, effects and speech are cancelled and music mutes, then everything resumes and the paused time does not count. For other work that blocks or keeps interrupts masked for more than a tick, do the same:</p>
+<h2 id="blocking">Long operations</h2>
+<p>File calls and AMEM requests pause the audio driver automatically. The clock stops, effects and speech stop, and the music becomes silent. After the operation, the driver starts again, and the pause does not count as game time.</p>
+<p>Other work can block, or keep interrupts masked for more than one tick. Put the same calls around this work:</p>
 <pre><code class="c">ti_audio_mark_gap();        /* silence, stop the clock */
 long_blocking_work();
-ti_audio_resume_clock();    /* rebase; the gap is not elapsed time */
+ti_audio_resume_clock();    /* set a new base; the gap is not elapsed time */
 ti_steps_reset();</code></pre>
 
 <h2 id="animation">Animation by ticks</h2>
-<p>Animate with elapsed device ticks or simulation steps, not with drawn frames, so animations keep their speed when drawing slows. <code>ti_gfx_animation_frame</code> does the arithmetic for a frame run; palette animation, STARFALL's pulsing bullets and shields, needs only a new palette from the step counter and one <code>ti_gfx_palette</code> call a frame.</p>
+<p>Use elapsed device ticks or simulation steps for animation. Do not use the number of drawn frames. Then animations keep their speed when the drawing slows down.</p>
+<p><code>ti_gfx_animation_frame</code> calculates the frame of a frame sequence. Palette animation needs only a new palette from the step counter and one <code>ti_gfx_palette</code> call for each frame. STARFALL uses palette animation for its bullets and shields.</p>
 
-<h2 id="errors">Errors once a frame</h2>
-<p>Wrap drawing and other calls whose failure should end the game in <code>ti_error_keep</code> and test <code>ti_error_first</code> once a frame. Do not keep the result of <code>ti_audio_update</code>: it reports gaps and speech timeouts, which a game handles by pausing or by playing on without speech.</p>
+<h2 id="errors">Errors one time for each frame</h2>
+<p>Put <code>ti_error_keep</code> around drawing calls and other calls that must stop the game when they fail. Test <code>ti_error_first</code> one time for each frame.</p>
+<p>Do not keep the result of <code>ti_audio_update</code>. It reports gaps and speech timeouts. The game pauses for a gap. For a speech timeout, the game continues without speech.</p>
 
 <h2 id="display">Display edges are not a clock</h2>
-<p><code>ti_time_poll</code> counts the vertical blank edges it happens to see. The count is a lower bound and stops whenever the game is busy, so it cannot time a game. libtini has no wait-for-vertical-blank call either: publication finishes when its CPU writes do, and the Appletini shows the screen at its own frame boundary.</p>
+<p><code>ti_time_poll</code> counts only the vertical blank edges that it sees. The count is a lower limit, and it stops when the game is busy. Thus it cannot time a game.</p>
+<p>libtini has no call that waits for vertical blank. A publication is complete when its CPU writes are complete. The Appletini shows the screen at its own frame boundary.</p>
 
-<h2 id="measure">Measure</h2>
-<p><code>tools/profiler.py</code> times named functions of a built game on the emulator, per call path, at both CPU models. It shows where a frame's time goes before you tune anything. See <a href="../reference/tools.html#profiler">Tools</a>. Its figures are models; only a board establishes timing.</p>
+<h2 id="measure">Measure the time</h2>
+<p><code>tools/profiler.py</code> measures named functions of a built game on the emulator. It gives the time for each call path, at both CPU models. Use it to find where the time of a frame goes, and then make the code faster. See <a href="../reference/tools.html#profiler">Tools</a>.</p>
 
-<div class="pager"><a href="../examples.html">Examples</a><a href="drawing.html">Drawing and publishing</a></div>
+<div class="pager"><a href="../examples.html">Examples</a><a href="drawing.html">Draw and publish</a></div>
 <footer class="page-foot">libtini is licensed under the <a href="../../LICENSE">MIT License</a>.</footer>
 </main>
 </div>

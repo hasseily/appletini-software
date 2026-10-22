@@ -17,55 +17,63 @@
 <main id="main">
 <h1>Storage</h1>
 <p class="include">#include "libtini/storage.h"</p>
-<p class="lead">Whole-file ProDOS reads and writes into near memory, and resource packs loaded into banked memory. Calls use the standard ProDOS MLI at $BF00; no private SmartPort service is involved.</p>
+<p class="lead">This header reads and writes full ProDOS files in near memory, and loads entries of resource packs into banked memory. The calls use the standard ProDOS MLI at $BF00. They use no private SmartPort service.</p>
 
 <div class="table"><table class="compact">
 <tr><th>Function</th><th>Purpose</th></tr>
-<tr><td><code>ti_file_read</code></td><td>Read a whole file into a near buffer</td></tr>
+<tr><td><code>ti_file_read</code></td><td>Read a full file into a near buffer</td></tr>
 <tr><td><code>ti_file_write</code></td><td>Create or replace a file from a near buffer</td></tr>
-<tr><td><code>ti_file_last_error</code></td><td>The ProDOS error behind the last failure</td></tr>
+<tr><td><code>ti_file_last_error</code></td><td>Get the ProDOS error of the last failure</td></tr>
 <tr><td><code>ti_pack_load</code></td><td>Load one entry of a TPK1 pack into a new resource</td></tr>
 </table></div>
 
-<h2 id="rules">How file calls work</h2>
+<h2 id="rules">How file calls operate</h2>
 <ul>
-  <li>Every call is synchronous and foreground-only, and handles one file: it opens, transfers and closes before returning. A call made while another runs returns <code>TI_E_BUSY</code> before opening anything.</li>
-  <li>Names are relative to the current ProDOS prefix: 1-15 characters, a capital letter first, then capitals, digits or periods. Paths, lower case and underscores are rejected with <code>TI_E_ARGUMENT</code>.</li>
-  <li>ProDOS needs a 1 KiB I/O buffer at a page boundary. The shared layouts reserve MAIN $B000-$B3FF for it under the linker symbol <code>_ti_file_buffer</code>; do not use those bytes. A layout that leaves the symbol out gives that memory to the game, and then no file call links. See <a href="../guides/memory.html#layouts">memory and layouts</a>.</li>
-  <li>The audio driver pauses while ProDOS owns the machine: music mutes, effects and speech are cancelled, and the clock stops instead of counting the pause as game time.</li>
-  <li>Standard ProDOS can keep its /RAM disk in the same AUX bank 0 bytes as the SHR picture. During a video session each call saves the picture into a temporary resource, turns SHR off, puts the OS's own bytes back, calls ProDOS, captures any change ProDOS made, restores the picture and turns SHR on again. That needs a free slot and 32,768 resource bytes; without them the call returns <code>TI_E_NOMEM</code> before any ProDOS call. Outside a session no resource is needed and file calls work without <code>ti_init</code>.</li>
-  <li>Only <code>TI_OK</code> means the transaction completed. After an error, discard any data the call returned. A failed write can leave a changed or partial file: keep two save slots and validate them, as <a href="../guides/saves.html">Saved games</a> shows.</li>
+  <li>Each call is a synchronous foreground call for one file. It opens, transfers and closes the file before it returns.</li>
+  <li>A call that starts while a different call runs returns <code>TI_E_BUSY</code> before it opens a file.</li>
+  <li>Names are relative to the current ProDOS prefix. A name has 1-15 characters: a capital letter first, then capitals, digits or periods. Paths, lower-case letters and underscores give <code>TI_E_ARGUMENT</code>.</li>
+  <li>ProDOS needs a 1 KiB I/O buffer at a page boundary. The shared layouts keep MAIN $B000-$B3FF for it, with the linker symbol <code>_ti_file_buffer</code>. Do not use these bytes. A layout without this symbol gives that memory to the game, and then no file call can link. See <a href="../guides/memory.html#layouts">Memory and layouts</a>.</li>
+  <li>The audio driver pauses while ProDOS controls the machine. Music mutes, and effects and speech stop. The clock stops, thus the pause is not game time.</li>
 </ul>
+<p>Standard ProDOS can keep its /RAM disk in the AUX bank 0 bytes that also hold the SHR picture. Thus during a video session, each call does these steps:</p>
+<ol>
+  <li>It saves the picture in a temporary resource and sets SHR off.</li>
+  <li>It puts the bytes of the OS back and calls ProDOS.</li>
+  <li>It saves the changes that ProDOS made.</li>
+  <li>It restores the picture and sets SHR on.</li>
+</ol>
+<p>This needs a free slot and 32,768 resource bytes. Without them, the call returns <code>TI_E_NOMEM</code> before any ProDOS call. Outside a video session, the call needs no resource, and file calls operate without <code>ti_init</code>.</p>
+<p>Only <code>TI_OK</code> means that the transaction is complete. After an error, do not use the data that the call returned. A failed write can leave a changed or partial file. Keep two save slots and check them, as <a href="../guides/saves.html">Saved games</a> shows.</p>
 
 <h2 id="functions">Functions</h2>
 <section class="fn" id="ti_file_read">
 <h3><code class="def">ti_file_read</code></h3>
 <pre class="sig" data-name="ti_file_read">ti_error ti_file_read(const char *name, void *dst, uint16_t capacity, uint16_t *length);</pre>
-<p>Reads the whole file into <code>dst</code> and stores its size in <code>*length</code>. A file larger than <code>capacity</code> is not read at all. An empty file may use a NULL buffer with zero capacity.</p>
+<p>This function reads the full file into <code>dst</code> and stores its size in <code>*length</code>. When the file is larger than <code>capacity</code>, the function reads nothing. For an empty file, the buffer can be NULL with a zero capacity.</p>
 <p class="returns-title">Returns</p>
 <div class="table"><table class="compact">
-<tr><td><code>TI_OK</code></td><td>The whole file is in <code>dst</code>.</td></tr>
-<tr><td><code>TI_E_ARGUMENT</code></td><td><code>length</code> is not writable near memory, or the name is invalid.</td></tr>
+<tr><td><code>TI_OK</code></td><td>The full file is in <code>dst</code>.</td></tr>
+<tr><td><code>TI_E_ARGUMENT</code></td><td><code>length</code> is not writable near memory, or the name is not valid.</td></tr>
 <tr><td><code>TI_E_RANGE</code></td><td><code>dst</code> is not writable near memory for <code>capacity</code> bytes, or the file is larger than <code>capacity</code>.</td></tr>
-<tr><td><code>TI_E_BUSY</code></td><td>Another storage call is running.</td></tr>
-<tr><td><code>TI_E_NOMEM</code></td><td>During a video session, no room for the screen loan.</td></tr>
-<tr><td><code>TI_E_IO</code></td><td>ProDOS failed to open, size, read or close the file; see <code>ti_file_last_error</code>.</td></tr>
+<tr><td><code>TI_E_BUSY</code></td><td>A different storage call runs.</td></tr>
+<tr><td><code>TI_E_NOMEM</code></td><td>During a video session, no space is available for the screen loan.</td></tr>
+<tr><td><code>TI_E_IO</code></td><td>ProDOS did not open, size, read or close the file. See <code>ti_file_last_error</code>.</td></tr>
 </table></div>
-<p><code>*length</code> is 0 unless the call succeeds.</p>
+<p><code>*length</code> is 0 when the call does not succeed.</p>
 </section>
 
 <section class="fn" id="ti_file_write">
 <h3><code class="def">ti_file_write</code></h3>
 <pre class="sig" data-name="ti_file_write">ti_error ti_file_write(const char *name, const void *src, uint16_t length);</pre>
-<p>Creates the file as a binary file (ProDOS type $06) if it does not exist, writes <code>length</code> bytes, sets the end of file to exactly <code>length</code> and closes it, which flushes the data and directory. Writing fewer bytes than the old file held truncates it; a zero length leaves an empty file.</p>
+<p>When the file does not exist, this function creates it as a binary file (ProDOS type $06). It writes <code>length</code> bytes and sets the end of file to exactly <code>length</code>. Then it closes the file, which writes the data and the directory to the disk. When the old file was longer, the function makes it shorter. A zero length gives an empty file.</p>
 <p class="returns-title">Returns</p>
-<p><code>TI_OK</code>; <code>TI_E_RANGE</code> when <code>src</code> is not readable near memory for <code>length</code> bytes; <code>TI_E_ARGUMENT</code> for an invalid name; <code>TI_E_BUSY</code>; <code>TI_E_NOMEM</code> as above; <code>TI_E_IO</code> when a ProDOS create, open, write, set-EOF or close fails.</p>
+<p><code>TI_OK</code>; <code>TI_E_RANGE</code> when <code>src</code> is not readable near memory for <code>length</code> bytes; <code>TI_E_ARGUMENT</code> for a name that is not valid; <code>TI_E_BUSY</code>; <code>TI_E_NOMEM</code> as above; <code>TI_E_IO</code> when a ProDOS create, open, write, set-EOF or close fails.</p>
 </section>
 
 <section class="fn" id="ti_file_last_error">
 <h3><code class="def">ti_file_last_error</code></h3>
 <pre class="sig" data-name="ti_file_last_error">uint8_t ti_file_last_error(void);</pre>
-<p>The ProDOS MLI error code of the last failed call, or 0 after a successful one. An unexpectedly short read or write records $4C. Argument, range and memory errors leave no new ProDOS code; read the byte together with the call's result.</p>
+<p>This function returns the ProDOS MLI error code of the last failed call. After a successful call, it returns 0. A read or write that is shorter than expected records $4C. Argument, range and memory errors do not record a new ProDOS code. Read this value together with the result of the call.</p>
 <div class="table"><table class="compact">
 <tr><th>Code</th><th>ProDOS meaning</th></tr>
 <tr><td>$27</td><td>I/O error</td></tr>
@@ -77,7 +85,7 @@
 <tr><td>$48</td><td>Volume full</td></tr>
 <tr><td>$49</td><td>Volume directory full</td></tr>
 <tr><td>$4C</td><td>End of file encountered</td></tr>
-<tr><td>$4E</td><td>Access error, such as a locked file</td></tr>
+<tr><td>$4E</td><td>Access error, for example a locked file</td></tr>
 </table></div>
 </section>
 
@@ -85,17 +93,17 @@
 <h3><code class="def">ti_pack_load</code></h3>
 <pre class="sig" data-name="ti_pack_load">ti_error ti_pack_load(const char *name, const char *entry,
                       ti_handle *out, uint32_t *size);</pre>
-<p>Opens the TPK1 pack <code>name</code>, validates its whole directory, allocates one resource of the entry's size and streams the entry's bytes into it in 128-byte pieces. On success the caller owns the handle and frees it with <code>ti_res_free</code>. On any error the file is closed, a partly loaded resource is freed and both outputs are zero.</p>
-<p>Entry names are 1-15 characters: a capital letter, then capitals, digits, periods or underscores. File names keep ProDOS's narrower rule. The loader does not interpret the entry: read its TI4, TIF or TIM header yourself and make the surface, font or map view, as <a href="../guides/assets.html#views">Art, fonts, maps and packs</a> shows. A pack needs an active <code>ti_init</code> grant.</p>
+<p>This function opens the TPK1 pack <code>name</code> and checks its full directory. It allocates one resource of the size of the entry. Then it moves the bytes of the entry into the resource in pieces of 128 bytes. After a success, the caller owns the handle and frees it with <code>ti_res_free</code>. After an error, the function closes the file, frees a partly loaded resource and sets the two outputs to zero.</p>
+<p>An entry name has 1-15 characters: a capital letter, then capitals, digits, periods or underscores. File names keep the narrower ProDOS rule. The function does not interpret the entry. Read its TI4, TIF or TIM header and make the surface, font or map view yourself, as <a href="../guides/assets.html#views">Art, fonts, maps and packs</a> shows. A pack needs an active <code>ti_init</code> grant.</p>
 <p class="returns-title">Returns</p>
 <div class="table"><table class="compact">
 <tr><td><code>TI_OK</code></td><td><code>*out</code> owns a resource of <code>*size</code> bytes.</td></tr>
-<tr><td><code>TI_E_ARGUMENT</code></td><td>Unwritable outputs, or an invalid file or entry name.</td></tr>
-<tr><td><code>TI_E_UNAVAILABLE</code></td><td>The pack has no such entry.</td></tr>
-<tr><td><code>TI_E_FORMAT</code></td><td>The directory is malformed: bad header, count, names, order, offsets or sizes. Unselected entries are checked too.</td></tr>
-<tr><td><code>TI_E_NOMEM</code>, <code>TI_E_STATE</code></td><td>No slot or room for the entry or the screen loan, or no <code>ti_init</code>.</td></tr>
+<tr><td><code>TI_E_ARGUMENT</code></td><td>An output is not writable, or the file or entry name is not valid.</td></tr>
+<tr><td><code>TI_E_UNAVAILABLE</code></td><td>The pack does not have this entry.</td></tr>
+<tr><td><code>TI_E_FORMAT</code></td><td>The directory is not correct: header, count, names, order, offsets or sizes. The function also checks the entries that it does not load.</td></tr>
+<tr><td><code>TI_E_NOMEM</code>, <code>TI_E_STATE</code></td><td>No slot or space is available for the entry or the screen loan, or there is no <code>ti_init</code>.</td></tr>
 <tr><td><code>TI_E_IO</code></td><td>A ProDOS open, read, seek or close failed.</td></tr>
-<tr><td><code>TI_E_BUSY</code></td><td>Another storage call is running.</td></tr>
+<tr><td><code>TI_E_BUSY</code></td><td>A different storage call runs.</td></tr>
 </table></div>
 <pre><code class="c">ti_handle art;
 uint32_t bytes;
@@ -103,7 +111,7 @@ if (ti_pack_load("RESOURCES.TPK", "SHIP", &amp;art, &amp;bytes) != TI_OK) return
 /* ... make views of art; ti_res_free(art) when done ... */</code></pre>
 </section>
 
-<p>The pack format is in <a href="../reference/formats.html#tpk">Data formats</a>. <code>tools/assets.py pack</code> writes packs; the repository's disk packager stores files of up to 131,072 bytes, so larger packs need another ProDOS tool even though the loader can stream them.</p>
+<p><a href="../reference/formats.html#tpk">Data formats</a> gives the pack format. <code>tools/assets.py pack</code> writes packs. The disk packager of the repository stores files of a maximum of 131,072 bytes. Use a different ProDOS tool for larger packs. The loader can read them.</p>
 
 <footer class="page-foot">Defined in <code>include/libtini/storage.h</code>, implemented in <code>src/storage.c</code> and <code>src/target/storage.s</code>.</footer>
 </main>
