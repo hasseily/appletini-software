@@ -2,7 +2,7 @@
 """Build libtini, its SDK programs, every game manifest and local ProDOS disks.
 
 Uses cc65 2.19. A game is a games/*/game.json or examples/*/game.json
-manifest; docs/GAMES.md describes the format. --game NAME builds the library
+manifest; docs/reference/build.html describes the format. --game NAME builds the library
 and that game alone.
 """
 import argparse
@@ -512,8 +512,8 @@ def main():
     manifest = {
         "profile": "65C02, " + ("optional probed AMEM" if args.private else "CPU-only, private transport compiled out"),
         "firmware_validation_baseline": {
-            "release": "F1.3.1",
-            "commit": "8af06741f3b9454b6bc226b7d55f69cc09097ccf",
+            "release": "F1.3.2",
+            "commit": "73de6fe03c31ad6f8ebfce3328704761fcd8c5a2",
             "board_tested": False,
         },
         "python": ".".join(map(str, sys.version_info[:3])),

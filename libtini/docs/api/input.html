@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Input API - libtini</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/site.js" defer></script>
+</head>
+<body data-module="input">
+<a class="skip" href="#main">Skip to content</a>
+<div class="layout">
+<header id="side">
+  <div class="side-top"><a class="brand" href="../index.html">libtini</a></div>
+  <noscript><p><a href="../index.html#contents">Contents</a></p></noscript>
+</header>
+<main id="main">
+<h1>Input</h1>
+<p class="include">#include "libtini/input.h"</p>
+<p class="lead">Key events and the held key from the //e keyboard, the three Apple buttons, raw paddle readings and calibrated joystick directions.</p>
+
+<div class="table"><table class="compact">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td><code>ti_input_poll</code></td><td>Move a pending keypress into the key queue</td></tr>
+<tr><td><code>ti_input_key</code></td><td>Take the oldest queued character</td></tr>
+<tr><td><code>ti_input_held</code></td><td>The key held down now, for hold-to-move</td></tr>
+<tr><td><code>ti_input_buttons</code></td><td>The three button inputs</td></tr>
+<tr><td><code>ti_input_reset</code></td><td>Empty the key queue</td></tr>
+<tr><td><code>ti_joystick_read</code></td><td>Raw paddle 0 and 1 readings and the buttons</td></tr>
+<tr><td><code>ti_stick_read</code>, <code>ti_stick_recalibrate</code></td><td>Up, down, left and right from a calibrated stick</td></tr>
+<tr><td><code>ti_mouse_read</code></td><td>Reserved; always unavailable</td></tr>
+</table></div>
+
+<h2 id="keyboard">The keyboard</h2>
+<p>The //e keyboard gives one character at a time through its latch at $C000, not a matrix of keys: the library cannot tell which of several held keys are down. Characters are 7-bit ASCII. Keyboard and buttons need neither <code>ti_init</code> nor audio.</p>
+<div class="table"><table class="compact">
+<tr><th>Key</th><th class="num">Code</th><th>Key</th><th class="num">Code</th></tr>
+<tr><td>Left arrow</td><td class="num">8</td><td>Return</td><td class="num">13</td></tr>
+<tr><td>Right arrow</td><td class="num">21</td><td>Escape</td><td class="num">27</td></tr>
+<tr><td>Up arrow</td><td class="num">11</td><td>Tab</td><td class="num">9</td></tr>
+<tr><td>Down arrow</td><td class="num">10</td><td>Delete</td><td class="num">127</td></tr>
+</table></div>
+
+<section class="fn" id="ti_input_poll">
+<h3><code class="def">ti_input_poll</code></h3>
+<pre class="sig" data-name="ti_input_poll">ti_error ti_input_poll(void);</pre>
+<p>If a key is waiting in the latch, clears the keyboard strobe and appends the character to an eight-character queue. Call it once a loop.</p>
+<p class="returns-title">Returns</p>
+<p><code>TI_OK</code>, or <code>TI_E_NOMEM</code> when the queue is full; that key is lost.</p>
+</section>
+
+<section class="fn" id="ti_input_key">
+<h3><code class="def">ti_input_key</code></h3>
+<pre class="sig" data-name="ti_input_key">ti_error ti_input_key(uint8_t *character);</pre>
+<p>Removes the oldest queued character into <code>*character</code>.</p>
+<p class="returns-title">Returns</p>
+<p><code>TI_OK</code>; <code>TI_E_UNAVAILABLE</code> when the queue is empty; <code>TI_E_ARGUMENT</code> for an unwritable pointer.</p>
+<pre><code class="c">uint8_t key;
+ti_input_poll();
+while (ti_input_key(&amp;key) == TI_OK) {
+    if (key &gt;= 'a' &amp;&amp; key &lt;= 'z') key -= 32;
+    if (key == 'Q') quit = 1;
+    if (key == 'P' || key == 27) toggle_pause();
+}</code></pre>
+</section>
+
+<section class="fn" id="ti_input_held">
+<h3><code class="def">ti_input_held</code></h3>
+<pre class="sig" data-name="ti_input_held">uint8_t ti_input_held(void);</pre>
+<p>The most recent key while any key is still down, or 0 when none is. The //e reports only that one key: hold A, tap Space, and the call returns Space until every key is up. Diagonals therefore need a joystick.</p>
+<p>The latch keeps the last key's code and $C010 reports in bit 7 whether any key is down. Reading $C010 also clears the strobe, so the call reads it only when no key event is pending. A pending key counts as held and stays queued for <code>ti_input_poll</code>. A key that arrives between the two reads would lose its strobe; the call queues it from the latch instead.</p>
+</section>
+
+<section class="fn" id="ti_input_buttons">
+<h3><code class="def">ti_input_buttons</code></h3>
+<pre class="sig" data-name="ti_input_buttons">uint8_t ti_input_buttons(void);</pre>
+<p>Bit 0 is button 0 (Open Apple, $C061), bit 1 button 1 (Solid Apple, $C062), bit 2 button 2 ($C063). A bit is 1 while its button is pressed. Detect a press by comparing with the previous reading.</p>
+</section>
+
+<section class="fn" id="ti_input_reset">
+<h3><code class="def">ti_input_reset</code></h3>
+<pre class="sig" data-name="ti_input_reset">void ti_input_reset(void);</pre>
+<p>Discards every queued character.</p>
+</section>
+
+<h2 id="joystick">The joystick</h2>
+<p>An Apple joystick is two paddles, timed by the //e's 558 timer: a read starts both timers with an access to $C070, and each paddle's input at $C064/$C065 stays high for a time proportional to its position. libtini measures that time against the audio driver's VIA timers, never a CPU loop, so readings mean the same at 33 MHz and in TURBO. The joystick needs initialized audio.</p>
+<section class="fn" id="ti_joystick">
+<h3><code class="def">ti_joystick</code></h3>
+<pre class="sig" data-name="ti_joystick">typedef struct ti_joystick { uint8_t x, y, buttons; } ti_joystick;</pre>
+<p>Paddle 0 and paddle 1 as 0-255, about 11 microseconds of device time per unit, and <code>ti_input_buttons()</code> at the time of the read.</p>
+</section>
+
+<section class="fn" id="ti_joystick_read">
+<h3><code class="def">ti_joystick_read</code></h3>
+<pre class="sig" data-name="ti_joystick_read">ti_error ti_joystick_read(ti_joystick *state);</pre>
+<p>Measures both paddles. It uses VIA-B timer 2 where it counts; on a VIA whose timer 2 does not count it times windows of the running timer 1 instead, reading only its high counter byte so the clock interrupt flag is not cleared. A measurement that a clock interrupt disturbed is taken again, up to three times.</p>
+<p>Any access to $C070-$C07F starts the paddle timers, including the RamWorks selector writes at $C073 that banked transfers make, and a 558 timer still running ignores a new start. So each read first waits, up to 4 ms, for both paddles to finish. Bank 0 transfers, which include every screen publication, do not write the selector.</p>
+<p class="returns-title">Returns</p>
+<div class="table"><table class="compact">
+<tr><td><code>TI_OK</code></td><td>Both axes measured.</td></tr>
+<tr><td><code>TI_E_TIMING</code></td><td>A paddle was still running after 4 ms: it reads 255 and the other axis is still valid. A disconnected stick reads 255 on both.</td></tr>
+<tr><td><code>TI_E_BUSY</code></td><td>Interrupts disturbed every attempt; <code>*state</code> is unchanged. A later read can succeed.</td></tr>
+<tr><td><code>TI_E_UNAVAILABLE</code></td><td>Audio is not initialized.</td></tr>
+<tr><td><code>TI_E_ARGUMENT</code></td><td>An unwritable <code>state</code>.</td></tr>
+</table></div>
+<p>An axis that never finishes makes the read last about 8 ms. These are raw readings: rest position, travel and direction vary from stick to stick.</p>
+</section>
+
+<section class="fn" id="ti_stick_read">
+<h3><code class="def">ti_stick_read</code></h3>
+<pre class="sig" data-name="ti_stick_read">#define TI_STICK_UP     1
+#define TI_STICK_DOWN   2
+#define TI_STICK_LEFT   4
+#define TI_STICK_RIGHT  8
+#define TI_STICK_ABSENT 128
+uint8_t ti_stick_read(ti_joystick *state);</pre>
+<p>Reads the stick and returns its directions as <code>TI_STICK_*</code> bits, measured against the stick's own rest position. If <code>state</code> is not NULL it receives the raw reading.</p>
+<ul>
+  <li><strong>Rest.</strong> The first reading within 48-207 on both axes after startup or <code>ti_stick_recalibrate</code> becomes the rest position. Call recalibrate when the stick should be untouched, such as when a run starts.</li>
+  <li><strong>Threshold.</strong> Each side starts with an assumed travel of 60 units and remembers the furthest reading seen. A direction engages beyond a third of that travel, at least 16 units, and releases at three quarters of the threshold, so a stick held near it does not flicker.</li>
+  <li><strong>Unfinished axes.</strong> Once a stick has answered, an axis still running at the 4 ms limit counts as full deflection.</li>
+  <li><strong>Disturbed reads.</strong> A read that interrupts disturbed keeps the last directions, or returns <code>TI_STICK_ABSENT</code> if no stick has answered yet.</li>
+  <li><strong>No stick.</strong> Before any answer, both axes unfinished returns <code>TI_STICK_ABSENT</code>. After four such reads the next three seconds of audio ticks return it at once without touching the paddles, so a missing stick costs a game little.</li>
+</ul>
+<p>An unwritable <code>state</code> also returns <code>TI_STICK_ABSENT</code>. The calibration is static state: the call is not reentrant, and there is one calibrated stick.</p>
+<pre><code class="c">uint8_t d = ti_stick_read(0);
+if (d == TI_STICK_ABSENT) d = 0;
+if (d &amp; TI_STICK_LEFT)  x -= 2;
+if (d &amp; TI_STICK_RIGHT) x += 2;
+if (d &amp; TI_STICK_UP)    y -= 2;
+if (d &amp; TI_STICK_DOWN)  y += 2;</code></pre>
+</section>
+
+<section class="fn" id="ti_stick_recalibrate">
+<h3><code class="def">ti_stick_recalibrate</code></h3>
+<pre class="sig" data-name="ti_stick_recalibrate">void ti_stick_recalibrate(void);</pre>
+<p>Makes the next suitable reading the new rest position and ends any no-stick wait.</p>
+</section>
+
+<section class="fn" id="ti_mouse_read">
+<h3><code class="def">ti_mouse_read</code></h3>
+<pre class="sig" data-name="ti_mouse_read">ti_error ti_mouse_read(void *state);</pre>
+<p>Reserved for an optional AppleMouse driver. It always returns <code>TI_E_UNAVAILABLE</code> and never changes slot personalities.</p>
+</section>
+
+<footer class="page-foot">Defined in <code>include/libtini/input.h</code>, implemented in <code>src/input.c</code>, <code>src/input_joystick.c</code> and <code>src/input_stick.c</code>.</footer>
+</main>
+</div>
+</body>
+</html>

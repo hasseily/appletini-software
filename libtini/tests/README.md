@@ -3,12 +3,14 @@
 The complete runner is `python tools/check.py --cc65-home D:/Repos/cc65
 --cc C:/msys64/ucrt64/bin/gcc.exe`. Add `--rom-boot` with the separately
 installed repo-local ROM inputs for real ProDOS audio/game integration.
-Commands, evidence classes, counts and board gates are maintained in
-[docs/VALIDATION.md](../docs/VALIDATION.md). The foundation harness below
-is one part of that suite, not a substitute for device/game tests.
+[Checks and status](../docs/reference/testing.html) lists every check, the
+script it runs, the kinds of evidence and the remaining board gates. Each
+`*_validate.py` and `test_*.py` script here also runs on its own. The
+foundation harness below is one part of that suite, not a substitute for
+device/game tests.
 
-Run from the repository root with installed cc65 2.19, Python 3.10 or newer,
-and `py65==1.2.0`:
+Run from the `libtini/` folder with installed cc65 2.19, Python 3.10 or
+newer, and `py65==1.2.0`:
 
 ```powershell
 python tools/test.py
@@ -54,5 +56,5 @@ These checks do not boot ProDOS: the runner loads the SYS as ProDOS would and
 traps the documented QUIT MLI. They model memory switching and sample display
 levels; they do not emulate Appletini video capture, display timing, bus
 contention, physical interrupts, 33 MHz or TURBO. The PNG is an emulated memory
-render, not a board screenshot. Board results and full boot tests are recorded
-separately in the project validation documentation.
+render, not a board screenshot. Full ProDOS boots are the `--rom-boot` checks;
+only board runs establish physical output and timing.

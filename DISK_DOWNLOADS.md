@@ -20,8 +20,8 @@ python tools/build.py --cc65-home <cc65>
 ```
 
 The checks are emulator evidence. This build's effect and music levels follow
-the owner's listening on hardware; libtini's validation notes list the
-remaining board gates.
+the owner's listening on hardware; libtini's checks and status page,
+`libtini/docs/reference/testing.html`, lists the remaining board gates.
 
 ## Built on 2026-10-12
 

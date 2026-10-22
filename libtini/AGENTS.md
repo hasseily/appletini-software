@@ -2,7 +2,7 @@
 
 ## Scope
 
-- Read README.md and PLAN.md before changing project scope.
+- Read README.md and design/PLAN.md before changing project scope.
 - Build a C SDK for the Appletini's existing 65C02-facing interfaces.
 - Do not change or require changes to Appletini firmware or FPGA logic.
 - Keep the appletini-one repository unchanged.
@@ -19,6 +19,8 @@
 - libtini is MIT. Files that link GPL code, such as the browser player in `tools/web/`, carry their own SPDX notices.
 - Source references are not runtime or build dependencies.
 - Do not edit generated output as a substitute for changing its source.
+- `docs/` is the HTML developer reference and `design/` holds the Markdown
+  design notes. Update both when a public API, tool or format changes.
 
 ## Implementation
 

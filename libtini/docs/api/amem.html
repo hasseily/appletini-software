@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Optional AMEM API - libtini</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/site.js" defer></script>
+</head>
+<body data-module="amem">
+<a class="skip" href="#main">Skip to content</a>
+<div class="layout">
+<header id="side">
+  <div class="side-top"><a class="brand" href="../index.html">libtini</a></div>
+  <noscript><p><a href="../index.html#contents">Contents</a></p></noscript>
+</header>
+<main id="main">
+<h1>Optional AMEM</h1>
+<p class="include">#include "libtini/amem.h"</p>
+<p class="lead">Acceleration of large banked transfers through Appletini's private AMEM memory service, behind the ordinary resource API. The default build leaves the transport out; the CPU path is always present and is the reference.</p>
+
+<div class="table"><table class="compact">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td><code>ti_amem_enable</code></td><td>Identify the controller and service, then use it for eligible transfers</td></tr>
+<tr><td><code>ti_amem_disable</code></td><td>Go back to CPU transfers</td></tr>
+<tr><td><code>ti_amem_available</code></td><td>Whether acceleration is active</td></tr>
+<tr><td><code>ti_amem_last_error</code></td><td>The controller's last error byte</td></tr>
+</table></div>
+
+<h2 id="build">Building with AMEM</h2>
+<pre><code>python tools/build.py --cc65-home D:/Repos/cc65 --private --build-dir build/private</code></pre>
+<p>This builds the library and every game whose manifest does not set <code>"private": false</code> again, with <code>TI_PRIVATE_TRANSPORT=1</code> and the slot-7 FIFO transport, into <code>build/private/</code>. The CPU-only outputs in <code>build/</code> are not touched. STARFALL has no AMEM build. In the default build the four functions exist but enable returns <code>TI_E_UNAVAILABLE</code>.</p>
+
+<h2 id="what">What it accelerates</h2>
+<ul>
+  <li><code>ti_res_read</code>, <code>ti_res_write</code> and <code>ti_res_fill</code> of 256 bytes or more.</li>
+  <li><code>ti_res_copy</code> of 256 bytes or more between two different resources. Copies within one resource, overlapping or not, stay on the CPU.</li>
+  <li>Large operations split at each bank boundary, with the same checks and buffer lifetimes as the CPU path. Each request targets private working memory only.</li>
+</ul>
+<p>The screen is never written through AMEM: publication, the video session's backup and restore, and storage's screen loans always use CPU writes. AMEM is not a framebuffer blitter. Its request overhead can cost more than a CPU loop for small transfers; see the <a href="../../design/BENCHMARKS.md">benchmark notes</a>.</p>
+
+<h2 id="failure">Failure rules</h2>
+<p>A service that is missing, unsupported or unavailable <em>before</em> a transfer's first request makes that transfer use the CPU instead, silently. Once part of a transfer has gone through AMEM, any failure returns <code>TI_E_IO</code>: earlier pieces may already have changed the destination, so the library never repeats the operation with CPU copies. Treat the destination as possibly partial and recover at your own transaction boundary.</p>
+<p>A failed request, a response that never arrives or a malformed response also poisons the driver for the rest of the program: later enables and transfers return <code>TI_E_IO</code> without sending anything. The wait for a response is bounded by 240 changes of the //e vertical blank flag, 2 seconds at 60 Hz and 2.4 at 50 Hz, whatever the CPU speed; the time the controller holds the CPU does not count. Do not use disable and enable again as an automatic retry after an uncertain failure.</p>
+
+<h2 id="functions">Functions</h2>
+<section class="fn" id="ti_amem_enable">
+<h3><code class="def">ti_amem_enable</code></h3>
+<pre class="sig" data-name="ti_amem_enable">ti_error ti_amem_enable(void);</pre>
+<p>Call after <code>ti_init</code>. With interrupts masked, it takes the slot-7 expansion ROM space, saves INTCXROM, and checks the C700 ROM: its signature bytes and a CRC-16/CCITT-FALSE of $95D9 over the 256 bytes, which identifies the controller; F1.3.1 and F1.3.2 share that ROM. An unidentified controller receives nothing. A matching one gets a STATUS request for the AMEM service, which must report the <code>AMEM</code> signature, a supported major version and descriptor size, copy and fill support, the $0200-$BFFF windows and PRIVATE support. The transport then restores the caller's interrupt state and INTCXROM and deselects the expansion ROM; a previously selected expansion ROM is not reselected.</p>
+<p>Every later transfer repeats the STATUS check before its first request and checks the reported highest bank. The audio driver is paused around each request, and long requests mark a timing gap.</p>
+<p class="returns-title">Returns</p>
+<p><code>TI_OK</code> when acceleration is active; <code>TI_E_UNAVAILABLE</code> for an unidentified controller, a service that reports itself unavailable or unsupported, or a CPU-only build; <code>TI_E_IO</code> for a poisoned driver or a failed STATUS exchange.</p>
+</section>
+
+<section class="fn" id="ti_amem_disable">
+<h3><code class="def">ti_amem_disable</code></h3>
+<pre class="sig" data-name="ti_amem_disable">void ti_amem_disable(void);</pre>
+<p>Removes the acceleration hooks; transfers use the CPU. It does not clear poisoning or repair partly changed data. <code>ti_shutdown</code> also removes the hooks, and a new <code>ti_init</code> needs a new enable.</p>
+</section>
+
+<section class="fn" id="ti_amem_available">
+<h3><code class="def">ti_amem_available</code></h3>
+<pre class="sig" data-name="ti_amem_available">uint8_t ti_amem_available(void);</pre>
+<p>1 while acceleration is enabled, not poisoned and hooked in; 0 in a CPU-only build.</p>
+</section>
+
+<section class="fn" id="ti_amem_last_error">
+<h3><code class="def">ti_amem_last_error</code></h3>
+<pre class="sig" data-name="ti_amem_last_error">uint8_t ti_amem_last_error(void);</pre>
+<p>The last error byte from the controller, or the driver's own: $61 for a malformed STATUS reply and $67 for a response timeout. A CPU-only build returns $21.</p>
+</section>
+
+<p class="note">The transport has been checked against a modelled controller and FIFO, not on the selected firmware. No other foreground code or NMI handler may claim the slot-7 expansion ROM or the FIFO at $CFF0-$CFF2 while a request runs.</p>
+
+<footer class="page-foot">Defined in <code>include/libtini/amem.h</code>, implemented in <code>src/amem.c</code>, <code>src/memory.c</code>, <code>src/memory_copy.c</code> and <code>src/optional/amem_transport.s</code>.</footer>
+</main>
+</div>
+</body>
+</html>

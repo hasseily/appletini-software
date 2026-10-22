@@ -34,10 +34,10 @@ Enable RamWorks and grant expansion selectors 1-3 exclusively to this
 application. Keep SmartPort in slot 7 and select a Mockingboard or Phasor
 personality in slot 4. The slot 4 audio driver also supplies the simulation
 clock, so the current example requires that audio configuration. The named
-board baseline is existing Appletini F1.3.1; physical STARFALL acceptance on
-that baseline remains pending. Speech needs the Apple's Q3 clock: in
-standalone ONE//e mode F1.3.1 gives the speech chips none, so the game plays
-without speech or its spoken captions (see [audio](../../docs/AUDIO.md)).
+board baseline is existing Appletini F1.3.2; physical STARFALL acceptance on
+that baseline remains pending. In standalone ONE//e mode, firmware before
+F1.3.2 gives the speech chips no clock, so the game plays without speech or
+its spoken captions (see [speech](../../docs/api/speech.html#hardware)).
 
 ## Controls
 
@@ -253,10 +253,10 @@ darker than the near stars. Their positions follow the game tick, so the
 backdrop keeps no state; turning it off frees its list entries for stars.
 In the emulator it adds about 6 ms to each drawn frame at 33 MHz and 5.5 ms
 at TURBO, about 20 ms in all, and every game step is still drawn; see
-[benchmarks](../../docs/BENCHMARKS.md).
+[benchmarks](../../design/BENCHMARKS.md).
 
 The playfield, 240x184 pixels below the caption, is a libtini
-[sprite scene](../../docs/GRAPHICS.md#sprite-scenes). Each frame lists its
+[sprite scene](../../docs/api/scene.html). Each frame lists its
 sprites in draw order, and the scene redraws only the 16x8-pixel blocks that
 changed, composing them in a 120-byte-wide near strip. Atlas sub-sprites are
 images inside the atlas cell with that cell's 8-byte stride. Stars, the
@@ -292,7 +292,7 @@ simulation as the target application.
 
 The scene check runs the library renderer on the 65C02 model and compares
 the screen after every draw with an independent rendering of the sprite
-list; see [validation evidence](../../docs/VALIDATION.md). The ROM-boot
+list; see [checks and status](../../docs/reference/testing.html). The ROM-boot
 validation applies the same comparison to STARFALL's own playfield at
 sampled frames of unattended play.
 
@@ -310,7 +310,7 @@ fallback must both read the model's paddles within a narrow range. An axis
 that never finishes must saturate at 255 while the other stays valid. A
 $C073 bank write just before a read must not shorten it. The calibrated
 reader, held keys, fixed steps and voice count have their own checks; see
-[validation evidence](../../docs/VALIDATION.md).
+[checks and status](../../docs/reference/testing.html).
 
 The ROM-boot validation also restarts with the stick resting off-centre at
 165, 95. The rest must not move the ship, and deflections to 105 and 150,
@@ -318,8 +318,8 @@ which the old fixed 80/175 thresholds ignored, must move it left and down.
 
 The ROM-boot validation drives the actual program through held and tapped
 keys and joystick input in both model profiles; see
-[validation evidence](../../docs/VALIDATION.md#starfall-example) for the
-measurements, commands and their limits.
+[checks and status](../../docs/reference/testing.html) for the commands
+and their limits.
 
 The simulation targets thirty updates per second from the audio driver's
 100 Hz device clock. Long or invalid clock gaps pause the game for an

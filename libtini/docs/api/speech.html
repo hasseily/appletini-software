@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Speech API - libtini</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/site.js" defer></script>
+</head>
+<body data-module="speech">
+<a class="skip" href="#main">Skip to content</a>
+<div class="layout">
+<header id="side">
+  <div class="side-top"><a class="brand" href="../index.html">libtini</a></div>
+  <noscript><p><a href="../index.html#contents">Contents</a></p></noscript>
+</header>
+<main id="main">
+<h1>Speech</h1>
+<p class="include">#include "libtini/audio.h"</p>
+<p class="lead">Prepared phrases and spoken numbers through the SSI-263 on the slot-4 card. Text becomes phonemes on the host, with <code>tools/speech.py</code>; the game names phrases by generated identifiers and the audio driver plays them one phoneme per update.</p>
+
+<div class="table"><table class="compact">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td><code>ti_speech_bind</code></td><td>Choose the phrase bank</td></tr>
+<tr><td><code>ti_speech_say</code></td><td>Queue or interrupt with a phrase</td></tr>
+<tr><td><code>ti_speech_number</code></td><td>Queue a number from 0 to 9999</td></tr>
+<tr><td><code>ti_speech_busy</code></td><td>Whether anything is speaking or queued</td></tr>
+<tr><td><code>ti_speech_stop</code></td><td>Cancel everything and power down</td></tr>
+<tr><td><code>ti_speech_voice</code></td><td>Preset, pitch and rate</td></tr>
+</table></div>
+
+<h2 id="setup">Setting up speech</h2>
+<p>Speech is part of the audio driver: set <code>speech</code> in the <a href="audio.html#ti_audio_config">audio configuration</a>, start audio, then bind the bank that <code>tools/speech.py</code> generated. Keep calling <code>ti_audio_update</code>: it sends the next phoneme when the chip reports the last one finished.</p>
+<pre><code>python tools/speech.py speech.json --preview
+python tools/speech.py speech.json --output build/my_speech.h --symbol my_speech</code></pre>
+<pre><code class="c">#include "my_speech.h"     /* SAY_READY, SAY_GAME_OVER, ... and my_speech */
+
+static ti_audio_config audio = {TI_AUDIO_MOCKINGBOARD, 1, 1, 0, 0};
+
+ti_audio_init(&amp;audio);
+ti_speech_bind(&amp;my_speech);
+ti_speech_say(SAY_READY, 1);
+ti_speech_number(score, 1);         /* "one thousand nine hundred eighty four" */</code></pre>
+<p>The phrase file and the compiler's vocabulary are described in <a href="../guides/sound.html#speech">Music, effects and speech</a> and <a href="../reference/formats.html#speech">Data formats</a>.</p>
+
+<h2 id="queue">Queue and priorities</h2>
+<p>One phrase speaks while up to four more wait (<code>TI_SPEECH_QUEUE</code>). A priority is 0-127; the waiting phrase with the highest priority speaks next, and equal priorities keep their order. Adding <code>TI_SPEECH_INTERRUPT</code> (128) to the priority starts the phrase at once, cutting off the current one if the new priority is at least as high; the waiting queue is kept. A number is one queue item even when it joins several words.</p>
+
+<h2 id="constants">Constants and types</h2>
+<div class="table"><table>
+<tr><th>Name</th><th class="num">Value</th><th>Meaning</th></tr>
+<tr><td><code>TI_SPEECH_QUEUE</code></td><td class="num">4</td><td>Waiting items besides the one speaking</td></tr>
+<tr><td><code>TI_SPEECH_INTERRUPT</code></td><td class="num">128</td><td>Priority flag: replace the current phrase</td></tr>
+</table></div>
+<section class="fn" id="ti_phrase">
+<h3><code class="def">ti_phrase</code></h3>
+<pre class="sig" data-name="ti_phrase">typedef struct ti_phrase { const uint8_t *data; uint8_t length; } ti_phrase;</pre>
+<p>One prepared phrase: 1-255 SSI-263 phoneme bytes in near memory. Repeated phonemes stay separate writes to the chip.</p>
+</section>
+<section class="fn" id="ti_speech_bank">
+<h3><code class="def">ti_speech_bank</code></h3>
+<pre class="sig" data-name="ti_speech_bank">typedef struct ti_speech_bank {
+    const ti_phrase *phrases;
+    uint8_t count;
+    const uint8_t *number_ids; /* 0..19, twenty..ninety, hundred, thousand; NULL omits numbers */
+} ti_speech_bank;</pre>
+<p>A table of phrases and, optionally, the phrase numbers of the thirty number words: zero to nineteen, twenty to ninety, hundred and thousand. <code>tools/speech.py</code> generates the whole bank; <code>--no-numbers</code> leaves the number words out and sets <code>number_ids</code> to NULL. The bank and everything it points to stay borrowed until another bind or audio shutdown.</p>
+</section>
+
+<h2 id="functions">Functions</h2>
+<section class="fn" id="ti_speech_bind">
+<h3><code class="def">ti_speech_bind</code></h3>
+<pre class="sig" data-name="ti_speech_bind">ti_error ti_speech_bind(const ti_speech_bank *bank);</pre>
+<p>Checks the bank and makes it current, cancelling any speech in progress. Binding works before <code>ti_audio_init</code> too.</p>
+<p class="returns-title">Returns</p>
+<p><code>TI_OK</code>; <code>TI_E_ARGUMENT</code> for an unreadable bank, phrase table or number table, or zero phrases; <code>TI_E_RANGE</code> for an empty or unreadable phrase, or a number word that is not a phrase of the bank.</p>
+</section>
+
+<section class="fn" id="ti_speech_say">
+<h3><code class="def">ti_speech_say</code></h3>
+<pre class="sig" data-name="ti_speech_say">ti_error ti_speech_say(uint8_t phrase, uint8_t priority);</pre>
+<p>Queues phrase number <code>phrase</code> of the bound bank, or starts it at once with <code>TI_SPEECH_INTERRUPT</code>. The call returns immediately; speech advances in <code>ti_audio_update</code>.</p>
+<p class="returns-title">Returns</p>
+<div class="table"><table class="compact">
+<tr><td><code>TI_OK</code></td><td>Queued or started.</td></tr>
+<tr><td><code>TI_E_RANGE</code></td><td>No bank is bound, or the phrase number is not below the bank's count.</td></tr>
+<tr><td><code>TI_E_UNAVAILABLE</code></td><td>Audio is not running, speech is not enabled, or speech timed out earlier and is off until audio is started again.</td></tr>
+<tr><td><code>TI_E_BUSY</code></td><td>An interrupting phrase with a lower priority than the one speaking.</td></tr>
+<tr><td><code>TI_E_FULL</code></td><td>Four items are already waiting.</td></tr>
+</table></div>
+</section>
+
+<section class="fn" id="ti_speech_number">
+<h3><code class="def">ti_speech_number</code></h3>
+<pre class="sig" data-name="ti_speech_number">ti_error ti_speech_number(uint16_t value, uint8_t priority);</pre>
+<p>Queues a number as ordinary cardinal English without "and": 1001 is "one thousand one", 1984 "one thousand nine hundred eighty four". It joins at most six words into one queue item. This code is a separate archive module, linked only by programs that call it.</p>
+<p class="returns-title">Returns</p>
+<p>As <code>ti_speech_say</code>, with <code>TI_E_STATE</code> when no bank is bound, <code>TI_E_RANGE</code> above 9999 and <code>TI_E_UNAVAILABLE</code> when the bank has no number words.</p>
+</section>
+
+<section class="fn" id="ti_speech_busy">
+<h3><code class="def">ti_speech_busy</code></h3>
+<pre class="sig" data-name="ti_speech_busy">uint8_t ti_speech_busy(void);</pre>
+<p>Nonzero while a phrase is speaking or waiting. A game can skip a minor line when another is still playing: <code>if (!ti_speech_busy()) ti_speech_say(SAY_POWER, 1);</code></p>
+</section>
+
+<section class="fn" id="ti_speech_stop">
+<h3><code class="def">ti_speech_stop</code></h3>
+<pre class="sig" data-name="ti_speech_stop">void ti_speech_stop(void);</pre>
+<p>Cancels the current and waiting phrases and powers the SSI-263 down.</p>
+</section>
+
+<section class="fn" id="ti_speech_voice">
+<h3><code class="def">ti_speech_voice</code></h3>
+<pre class="sig" data-name="ti_speech_voice">ti_error ti_speech_voice(uint8_t preset, uint8_t pitch, uint8_t rate);</pre>
+<p>Cancels pending speech and sets the voice: <code>preset</code> 0-2 chooses one of three articulation and amplitude settings, <code>pitch</code> is the SSI-263 inflection value, and <code>rate</code> 0-15 goes into the chip's rate field. Audio init uses preset 0, pitch 0x40 and rate 10. The chip stays powered down until the next phrase.</p>
+<p class="returns-title">Returns</p>
+<p><code>TI_OK</code>; <code>TI_E_UNAVAILABLE</code> when audio is not running or speech is not enabled; <code>TI_E_ARGUMENT</code> for a preset above 2 or a rate above 15.</p>
+</section>
+
+<h2 id="hardware">How the driver talks to the SSI-263</h2>
+<ul>
+  <li>On a native Phasor, the interrupt handler notes the chip's completion signal and acknowledges it by rewriting the inflection register, which does not change the phoneme.</li>
+  <li>On a Mockingboard, the driver polls the VIA's CA1 flag; its interrupt stays disabled. SSI writes share the first VIA's port with the first AY chip, so after each one the driver restores the port setup and resends that chip's registers. AY writes use the no-handshake port register so they do not clear CA1.</li>
+  <li>A phoneme that does not report completion within two seconds of device ticks powers speech down, cancels the queue and makes <code>ti_audio_update</code> return <code>TI_E_TIMING</code> once. Later speech calls return <code>TI_E_UNAVAILABLE</code> until audio is shut down and started again. Music and effects carry on.</li>
+</ul>
+<p class="note warn">The SSI-263 needs a clock from the Appletini. The F1.3.2 baseline clocks both speech engines from the virtual PHI0 in standalone ONE//e mode. F1.3.1 clocked them only from the physical Q3 pin, which no motherboard drives in that mode: the chip never started a phoneme, the first phrase timed out after two seconds and speech was then off, while music, effects and the VIA clock kept working. <code>examples/speech_check</code> shows the condition on a board. libtini needed no change for F1.3.2. Configured speech is an attempt, not a claim that a chip is present; keep essential messages on screen as captions.</p>
+
+<footer class="page-foot">Defined in <code>include/libtini/audio.h</code>, implemented in <code>src/audio.c</code>, <code>src/audio_numbers.c</code> and <code>src/target/audio.s</code>.</footer>
+</main>
+</div>
+</body>
+</html>

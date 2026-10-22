@@ -13,7 +13,7 @@ This is the initial implementation ABI, not a stable future ABI promise.
 | TI_E_NOMEM / HANDLE | Capacity/slots exhausted, or stale/invalid handle |
 | TI_E_UNAVAILABLE | Device/service absent or unsupported before use |
 | TI_E_TIMING | Explicit service gap, timeout or publication budget exceeded |
-| TI_E_BUSY / FULL | Ownership/priority conflict or disturbed measurement, or bounded queue full |
+| TI_E_BUSY / FULL | Ownership/priority conflict, reentrant call or disturbed measurement; or a bounded queue or list full |
 | TI_E_IO / FORMAT | OS/transport failure, or invalid authored data |
 
 `ti_error_keep(e)` returns `e` and keeps the first nonzero result passed to

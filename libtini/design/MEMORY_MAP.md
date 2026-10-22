@@ -90,7 +90,7 @@ retain the current playfield.
 | Explicitly granted selectors $0200-$BFFF | 48640 resource bytes per bank |
 | Every selector $C000-$FFFF | I/O/ROM/LC, excluded |
 
-The existing F1.3.1 baseline serves selectors 0..126. Selector 127 addresses
+The existing F1.3.2 baseline serves selectors 0..126. Selector 127 addresses
 beyond the first PSRAM chip and is rejected. A maximum grant has 6,128,640
 resource bytes before allocations, not a flat 8 MB C heap. The grant must
 exclude other owners. The diagnostic grants banks 1-2. STARFALL and the

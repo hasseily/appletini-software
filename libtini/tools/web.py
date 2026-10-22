@@ -7,7 +7,7 @@ Build the game's disk first with tools/build.py. By default the player loads
 the disk's files through the machine's ProDOS MLI stand-in, and the ProDOS
 image is not copied. With --boot-roms it boots the whole disk through the
 installed //e ROM and slot-7 firmware. Output: build/web/<game>/, a static
-page with source.zip, the player's GPL-3.0 source. See docs/WEB.md.
+page with source.zip, the player's GPL-3.0 source. See docs/reference/browser.html.
 """
 from __future__ import annotations
 

@@ -18,8 +18,9 @@ python tools/build.py --cc65-home D:/Repos/cc65 --game speech_check
 
 In standalone ONE//e mode on Appletini F1.3.1, every line fails: RAW START
 reports `NONE`, RAW PHONEMES `0/4`, and each driver line `TIMING AT 2.00S`.
-The card's SSI is clocked only by the Apple's Q3 pin, which no motherboard
-drives in that mode.
+That firmware clocks the card's SSI only from the Apple's Q3 pin, which no
+motherboard drives in that mode. Appletini F1.3.2, the board baseline, fixes
+this, and speech works in standalone ONE//e mode.
 
 `TIMING` is the driver's two-second limit for a phoneme that never reports
 finishing; after it, further speech is refused until the driver is started

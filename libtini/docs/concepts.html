@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How libtini works - libtini</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="layout">
+<header id="side">
+  <div class="side-top"><a class="brand" href="index.html">libtini</a></div>
+  <noscript><p><a href="index.html#contents">Contents</a></p></noscript>
+</header>
+<main id="main">
+<h1>How libtini works</h1>
+<p class="lead">The ideas the rest of the reference relies on: two kinds of memory, who owns which part of the machine, the order of startup and shutdown, and the difference between a device clock and a display.</p>
+
+<h2 id="machine">The target</h2>
+<p>A libtini program is a ProDOS SYS file that ProDOS loads at $2000 on an enhanced //e. The C code runs from main memory. The Super Hi-Res picture lives in auxiliary memory, bank 0, at $2000-$9FFF; the Appletini shows it when its fake SHR mode is on. RamWorks expansion banks, selected by writing a selector to $C073, hold the game's large data. The slot-4 card supplies sound, speech and a timer that does not depend on the CPU speed.</p>
+<p>The library is written for cc65 2.19's C99 subset and its default calling convention: non-variadic functions are fastcall. All public types are fixed-width integers from <code>stdint.h</code>. Errors are <code>uint8_t</code> codes and handles are <code>uint16_t</code>. This is the first implementation's ABI, not a promise of a stable future one.</p>
+
+<h2 id="memory">Near memory and banked resources</h2>
+<p>libtini keeps two kinds of memory apart.</p>
+<h3>Near memory</h3>
+<p>Near memory is ordinary C memory in main RAM: globals, the C stack, constants and the near arena. Every API call that takes a near pointer checks it against the regions the linker layout defines before it reads or writes anything:</p>
+<ul>
+  <li>The program's writable data and BSS, from the end of its saved OS state up to the layout's memory end.</li>
+  <li>The C software stack.</li>
+  <li>The near arena, where variables declared in the <code>NEARBSS</code> segment live.</li>
+  <li>For reads only, also the program's code and constants from $2000, and in the full-game layouts the constants copied to $0800-$1FFF.</li>
+</ul>
+<p>A pointer outside these regions, such as the text screen, ProDOS's globals at $BF00 or I/O space, is rejected with <code>TI_E_RANGE</code> or <code>TI_E_ARGUMENT</code>. A zero length accepts any pointer, NULL included, and touches nothing. The checks catch mistakes; they do not track which object owns which bytes.</p>
+
+<h3>Banked resources</h3>
+<p>Large data lives in the RamWorks banks that the game grants with <code>ti_init(first_bank, bank_count)</code>. Each granted bank contributes 48,640 bytes, its $0200-$BFFF range (<code>TI_BANK_BYTES</code>). The granted banks form one logical stream: an allocation is contiguous in that stream and may cross from one bank into the next.</p>
+<p>A resource is a <code>ti_handle</code> plus byte offsets. There is no C pointer to banked bytes: the CPU sees a bank only for the length of one transfer burst, with interrupts masked, from a small trampoline in page one. Reads, writes, fills and copies move data between a resource and near memory, or between two resources, and check every handle and range before they start.</p>
+<ul>
+  <li>There are eight resource slots (<code>TI_RESOURCE_SLOTS</code>). A full-screen surface takes one, the active video session's screen backup another.</li>
+  <li>Allocation is first fit in the logical stream; capacity, fragmentation or a lack of free slots can make it fail with <code>TI_E_NOMEM</code>.</li>
+  <li>A handle encodes its slot and a generation. Freeing a resource invalidates every copy of its handle; using one afterwards returns <code>TI_E_HANDLE</code>.</li>
+  <li>Bank 0 is never a resource bank, and banks 1-126 are the ones the F1.3.2 baseline serves. Configured memory is never a flat 8 MB heap: a grant of all 126 banks gives 6,128,640 resource bytes.</li>
+</ul>
+
+<h2 id="budget">How many banks a game needs</h2>
+<p>Some parts of the library allocate resources of their own:</p>
+<div class="table"><table>
+<tr><th>Allocation</th><th class="num">Bytes</th><th>Held</th></tr>
+<tr><td>A 320x200 surface from <code>ti_gfx_surface_create</code></td><td class="num">32,000</td><td>Until <code>ti_gfx_surface_free</code> or shutdown</td></tr>
+<tr><td>The original AUX0 screen, saved by <code>ti_gfx_begin</code></td><td class="num">32,768</td><td>Until <code>ti_gfx_end</code></td></tr>
+<tr><td>The picture, while a file call or <code>ti_audio_init</code>/<code>ti_audio_shutdown</code> lends AUX0 to ProDOS during a video session</td><td class="num">32,768</td><td>During that call only</td></tr>
+<tr><td>A pack entry from <code>ti_pack_load</code></td><td class="num">Its size</td><td>Until the caller frees it</td></tr>
+</table></div>
+<p>A game with one full canvas that starts audio after graphics needs 32,000 + 32,768 + 32,768 = 97,536 bytes. That is 256 bytes more than two banks hold, so the starter and STARFALL grant three. A game that draws only with a <a href="api/scene.html">sprite scene</a> needs no canvas.</p>
+
+<h2 id="requirements">What each part needs</h2>
+<div class="table"><table>
+<tr><th>To use</th><th>You need</th></tr>
+<tr><td>Keyboard and buttons</td><td>Nothing</td></tr>
+<tr><td>Near moves and fills</td><td>Nothing</td></tr>
+<tr><td>Resources, surfaces and packs</td><td><code>ti_init</code></td></tr>
+<tr><td>A video session</td><td><code>ti_init</code> with room for the 32,768-byte screen backup</td></tr>
+<tr><td>A sprite scene</td><td>An active video session; no surface</td></tr>
+<tr><td>Audio and speech</td><td>The slot-4 card; while a video session is active, also a free slot and 32,768 resource bytes during <code>ti_audio_init</code> and <code>ti_audio_shutdown</code></td></tr>
+<tr><td>The game clock, <code>ti_audio_ticks</code></td><td>Initialized audio</td></tr>
+<tr><td>Joystick reads</td><td>Initialized audio, which owns the VIA timers</td></tr>
+<tr><td>Fixed-rate steps</td><td>A device tick source, normally <code>ti_audio_ticks</code></td></tr>
+<tr><td>File reads and writes</td><td>A linker layout that defines the ProDOS file buffer; during a video session also a free slot and 32,768 resource bytes</td></tr>
+</table></div>
+
+<h2 id="lifecycle">Startup and shutdown</h2>
+<p>The project's startup code runs before <code>main</code>. It saves the zero page bytes cc65 uses, the page-one trampoline area, the entry processor status and the display switches it can read, masks interrupts, copies the full-game layout's low segments into place, clears BSS and the near arena, sets up the C stack and then enables interrupts again if they were enabled at entry.</p>
+<p>A typical game then calls, in order:</p>
+<ol>
+  <li><code>ti_init</code> to grant banks.</li>
+  <li><code>ti_gfx_surface_create</code> and <code>ti_gfx_begin</code> for the screen.</li>
+  <li><code>ti_audio_init</code> for sound and the clock, and <code>ti_steps_begin</code> for fixed-rate updates.</li>
+  <li>Its loop.</li>
+  <li><code>ti_audio_shutdown</code>, <code>ti_gfx_end</code>, <code>ti_gfx_surface_free</code> and <code>ti_shutdown</code>.</li>
+</ol>
+<p>The last step is optional. Returning from <code>main</code>, or calling <code>exit</code>, runs <code>ti_shutdown</code>: it shuts down audio, ends the video session and restores the saved AUX0 screen, removes acceleration hooks and invalidates every resource. Startup then restores the saved machine state and calls ProDOS QUIT. Reset and power loss cannot run this cleanup.</p>
+<p class="note warn">If ProDOS refuses to remove the audio interrupt handler, shutdown returns <code>TI_E_IO</code> with the hardware silent and keeps the handler's code. Startup then refuses to quit, because ProDOS would call into unloaded memory: it shows <code>CLEANUP ERROR. KEY RETRIES; CODE RETAINED</code> on the text screen and retries on a key.</p>
+
+<h2 id="foreground">Everything runs in the foreground</h2>
+<p>Every libtini call is synchronous and none is reentrant. An interrupt or NMI handler must never call libtini, change memory mappings or the RamWorks selector, touch libtini's zero page or read granted banks. The library's own interrupt handler, the audio clock, is assembly that only counts ticks and acknowledges the timer. Long work gives the game a chance to keep sound going: a sprite scene calls its <code>service</code> function every fourth band, and a game can call <code>ti_audio_update</code> between its own drawing calls.</p>
+
+<h2 id="errors">Errors</h2>
+<p>Every call that can fail returns a <code>ti_error</code>, where <code>TI_OK</code> is zero. Most games do not test every call: they wrap calls in <code>ti_error_keep</code>, which remembers the first failure, and check <code>ti_error_first</code> once a frame. <a href="api/errors.html">Types and errors</a> lists the codes.</p>
+<pre><code class="c">ti_error_keep(ti_gfx_rect(&amp;canvas, 0, 0, 320, 12, 1));
+ti_error_keep(ti_gfx_text(&amp;canvas, 8, 2, "SCORE", 13));
+ti_error_keep(ti_gfx_present(&amp;canvas, &amp;bar, 0));
+if (ti_error_first()) stop_game();</code></pre>
+
+<h2 id="time">Device time and display edges</h2>
+<p>CPU delay loops cannot time a game that must run the same at 33 MHz and in TURBO. libtini counts time with the slot-4 card's VIA timer instead: <code>ti_audio_init</code> programs it for a nominal 100 ticks a second (<code>TI_AUDIO_TICKS_PER_SECOND</code>) and an interrupt handler counts them. <code>ti_audio_ticks</code> reads the count. The real rate depends on the card's clock; the <code>via_hz</code> setting accepts a calibrated value.</p>
+<p>The //e's vertical blank flag at $C019 is a different thing: a level that libtini samples. <code>ti_time_poll</code> counts the blank-to-active edges it happens to see, which is a lower bound on the frames shown, not a clock and not proof that the Appletini presented a frame.</p>
+<p>Some work stops the clock on purpose. File calls pause the audio driver while ProDOS owns the machine; the tick count does not advance, so the pause does not count as game time. A long interruption the driver does not know about leaves a gap: <code>ti_audio_update</code> and <code>ti_steps_due</code> report it instead of inventing time. <a href="guides/loop.html">Game loop and timing</a> shows how a game handles both.</p>
+
+<h2 id="publication">Putting pixels on the screen</h2>
+<p>libtini draws into software surfaces in banked memory, or composes a sprite scene in a near strip, and then copies the changed bytes to AUX bank 0 with ordinary CPU writes. A return from <code>ti_gfx_present</code> means those writes have finished. There is no second screen page and no atomic page swap: the Appletini samples the screen at its own frame boundary, so a large update can show half old and half new. Keep updates small: publish only the rectangles that changed. <code>ti_gfx_present</code> and <code>ti_gfx_present_rows</code> reject an update larger than their byte budget before writing, and an optional clock measures them.</p>
+
+<h2 id="builds">The CPU-only and optional AMEM builds</h2>
+<p>The default build contains only CPU code paths. <code>tools/build.py --private --build-dir build/private</code> also links a transport for Appletini's private AMEM memory service. A program that calls <code>ti_amem_enable</code> in that build checks the exact controller and service first; large banked transfers may then use AMEM, with the same results as the CPU path. The screen is always written by the CPU. See <a href="api/amem.html">Optional AMEM</a>.</p>
+
+<div class="pager"><a href="start.html">Getting started</a><a href="examples.html">Examples</a></div>
+<footer class="page-foot">libtini is licensed under the <a href="../LICENSE">MIT License</a>.</footer>
+</main>
+</div>
+</body>
+</html>

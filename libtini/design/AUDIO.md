@@ -21,8 +21,8 @@ out of range. The per-update register flush indexes all chips' registers as
 one flat array. Compared with the earlier two-dimensional indexing it is
 less than half the code, and the unchanged target-model audio checks ran in
 less than half the 65C02 instructions. This is capability
-evidence, not identification of the firmware release. Board baseline remains
-F1.3.1; real pitch, speech quality and timing at both CPU modes are hardware gates.
+evidence, not identification of the firmware release. Board baseline is
+F1.3.2; real pitch, speech quality and timing at both CPU modes are hardware gates.
 
 ## Device cadence and ownership
 
@@ -279,14 +279,17 @@ missing/stuck speech readiness, powers down, cancels queued speech and returns
 Configured speech is an attempt, not a chip-presence claim. Essential game
 messages retain visible captions.
 
-Speech needs the Apple's Q3 clock. Appletini F1.3.1 clocks both SSI engines
-only from the physical Q3 pin. In standalone ONE//e mode no motherboard drives
+The SSI needs a clock from the Appletini. Appletini F1.3.1 clocks both SSI
+engines only from the physical Q3 pin. In standalone ONE//e mode no motherboard drives
 that pin, and any Apple clock edge would end the session. The SSI then never
 starts a phoneme, makes no sound and never reports one finished. The first
 phrase times out after two seconds and later submissions return
 `TI_E_UNAVAILABLE`. On the board in that mode, music, effects and the VIA
 clock kept working. `examples/speech_check` shows the condition: its RAW
-lines report no finished phoneme.
+lines report no finished phoneme. Appletini F1.3.2, the baseline, fixes
+this: both edges of the virtual PHI0 clock the SSI engines in standalone
+mode, and the owner reports that speech works there. libtini needed no
+change.
 
 ## Standard input
 

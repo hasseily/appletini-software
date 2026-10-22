@@ -10,7 +10,7 @@ import sys
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-DIRECTORIES = ("assets", "cfg", "docs", "examples", "games", "include", "src", "tests", "tools")
+DIRECTORIES = ("assets", "cfg", "design", "docs", "examples", "games", "include", "src", "tests", "tools")
 
 
 def digest(path):
@@ -18,7 +18,7 @@ def digest(path):
 
 
 def source_files():
-    selected = [ROOT / name for name in (".gitignore", "AGENTS.md", "LICENSE", "README.md", "PLAN.md")]
+    selected = [ROOT / name for name in (".gitignore", "AGENTS.md", "LICENSE", "README.md")]
     for name in DIRECTORIES:
         for path in (ROOT / name).rglob("*"):
             if "__pycache__" in path.parts or path.suffix in (".pyc", ".pyo"):
@@ -57,7 +57,7 @@ def main():
     selected = source_files()
     evidence = {"source_files": len(selected), "source_sha256": {
         path.relative_to(ROOT).as_posix(): digest(path) for path in selected},
-        "board_tested": False, "firmware_baseline": "F1.3.1 8af06741f3b9454b6bc226b7d55f69cc09097ccf"}
+        "board_tested": False, "firmware_baseline": "F1.3.2 73de6fe03c31ad6f8ebfce3328704761fcd8c5a2"}
     prior_isolation = ROOT / "build/selfcontained-check.json"
     if not args.verify_isolation and prior_isolation.exists():
         previous = json.loads(prior_isolation.read_text())
@@ -135,7 +135,7 @@ def main():
     entries.append(("LOCAL-INPUTS.txt", b"Local build package: boot disks contain the separately installed ProDOS 2.4.3.\n"
                     b"No Apple ROMs, Appletini firmware or host compiler binaries are included.\n"
                     b"Check ProDOS distribution terms before sharing disks. Source-only archive omits OS bytes.\n"
-                    b"Physical board validation remains pending; read docs/VALIDATION.md.\n"))
+                    b"Physical board validation remains pending; read docs/reference/testing.html.\n"))
     archive(destination / "libtini-local-release.zip", entries)
     evidence["archives"] = {path.name: {"bytes": path.stat().st_size, "sha256": digest(path)}
                             for path in sorted(destination.glob("libtini-*.zip"))}

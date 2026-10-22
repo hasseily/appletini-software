@@ -2,7 +2,7 @@
 
 This directory builds a separate **GPL-3.0** executable for the runner, which
 is GPL-3.0-only too. libtini's browser player links its Voice model directly
-(see [the browser player](../../../libtini/docs/WEB.md)). The runner's independently written client
+(see [the browser player](../../../libtini/design/WEB.md)). The runner's independently written client
 `../speech.py` exchanges timestamped register writes and PCM with the worker
 over standard input/output. `../speech_state.c` independently implements the
 guest-visible registers, response counters and IRQ routing; it runs even when

@@ -242,7 +242,7 @@ STARFALL's 240x184 playfield moved to this renderer from its own. In a
 frame profile on the native emulator, listing and drawing the playfield took
 14.4-15.8 ms a frame at the 33 MHz `vtw33` model and 13.6-15.2 ms at
 historical TURBO costs, against 22.5-23.6 and 20.7-21.7 ms before. These are
-model figures, not board timing; see [validation](VALIDATION.md).
+model figures, not board timing; see [benchmarks](BENCHMARKS.md).
 
 ## Offline assets and packs
 
@@ -311,7 +311,7 @@ split into a full burst and one byte, untouched neighbours, padded odd
 strides, exact screen/near-region endpoints, validation and byte-budget rejection
 before publication, elapsed overruns and clock wrap.
 
-A second program, `tests/text_target.c`, passes 1137 checks on both
+A second program, `tests/text_target.c`, passes 1367 checks on both
 profiles. It draws both text functions at 64 random positions, 32 random
 rectangles, the 1024-character limit both ways and full 160-byte rows on a
 320-pixel surface. After each call it compares the whole surface, padding

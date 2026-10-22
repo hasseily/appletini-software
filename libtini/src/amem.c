@@ -66,8 +66,9 @@ static uint8_t identify(void)
         crc ^= (uint16_t)rom[i] << 8;
         for (bit = 0; bit < 8; ++bit) crc = (crc & 0x8000) ? (crc << 1) ^ 0x1021 : crc << 1;
     }
-    /* F1.3.1 slot-7 ROM, CRC-16/CCITT-FALSE of 256 bytes. This identifies
-     * the read-only interface; no third-party ROM bytes are redistributed. */
+    /* Slot-7 ROM of F1.3.1 and F1.3.2, which share it: CRC-16/CCITT-FALSE
+     * of 256 bytes. This identifies the read-only interface; no third-party
+     * ROM bytes are redistributed. */
     return crc == 0x95D9;
 }
 static void put16(uint8_t *p, uint16_t n) { p[0] = (uint8_t)n; p[1] = (uint8_t)(n >> 8); }

@@ -9,7 +9,7 @@ AMEM is never a framebuffer blitter.
 
 Include `libtini/amem.h`. Call `ti_amem_enable` explicitly after `ti_init`.
 It takes temporary slot-7 C8 ownership with IRQs masked, saves/restores
-INTCXROM and checks the existing F1.3.1 controller ROM signature and
+INTCXROM and checks the controller ROM signature, shared by F1.3.1 and F1.3.2, and
 CRC-16/CCITT-FALSE `$95D9` over C700's 256 bytes. An unidentified controller
 receives no private FIFO command. This is an interface compatibility check,
 not a generic SmartPort-driver discovery mechanism.

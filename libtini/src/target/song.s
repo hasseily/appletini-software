@@ -1,5 +1,5 @@
-; Pattern song player for ti_song_start; docs/AUDIO.md describes the bytes
-; that tools/music.py writes. ti_audio_update calls it in the foreground and
+; Pattern song player for ti_song_start; docs/reference/formats.html#song
+; describes the bytes that tools/music.py writes. ti_audio_update calls it in the foreground and
 ; it never re-enters. The checks run once from CODE; the rest is in
 ; LOWCODE, which the full game runs from low MAIN.
 .setcpu "65C02"

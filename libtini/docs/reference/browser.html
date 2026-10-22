@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Browser player - libtini</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="layout">
+<header id="side">
+  <div class="side-top"><a class="brand" href="../index.html">libtini</a></div>
+  <noscript><p><a href="../index.html#contents">Contents</a></p></noscript>
+</header>
+<main id="main">
+<h1>Browser player</h1>
+<p class="lead">Run a libtini game in a web page: <code>tools/web.py</code> compiles the repository's development machine to WebAssembly and packages it with the game's own disk. The page runs the same 65C02 program as the board, so a game needs no changes.</p>
+<p>STARFALL plays this way at <a href="https://appletini.org/demo/starfall">appletini.org/demo/starfall</a>. The player is an emulator: its timing is a model, and only a board establishes real timing and output.</p>
+
+<h2 id="build">Build and play locally</h2>
+<p>Install Emscripten 6.0.13 with emsdk (the tool refuses other versions), build the game's disk with <code>tools/build.py</code>, then:</p>
+<pre><code>python tools/web.py --emsdk D:/Repos/emsdk --game starfall --boot-roms build-inputs/native-roms --serve 8642</code></pre>
+<p>Open <code>http://localhost:8642/</code>, choose a speed and press Play. The output is <code>build/web/GAME/</code>, a folder of static files. Browsers allow audio worklets and module workers only over <code>http://localhost</code> or HTTPS, so open it through a server, not as a file; <code>--serve</code> serves it to this computer only, with the MIME types browsers need.</p>
+<div class="table"><table>
+<tr><th>Option</th><th>Effect</th></tr>
+<tr><td><code>--emsdk DIR</code></td><td>The installed emsdk; or set <code>EMSDK</code></td></tr>
+<tr><td><code>--game NAME</code></td><td>The game under <code>examples/</code>, STARFALL by default</td></tr>
+<tr><td><code>--boot-roms DIR</code></td><td>Boot the whole disk through the installed enhanced //e ROM and slot-7 SmartPort firmware. The package then contains the Apple ROM and the disk's ProDOS.</td></tr>
+<tr><td><code>--download-disk</code></td><td>Also offer the disk, with its ProDOS, as <code>GAME.po</code> beside the page</td></tr>
+<tr><td><code>--serve PORT</code></td><td>Serve the page on <code>http://localhost:PORT/</code> after building</td></tr>
+<tr><td><code>--rebuild</code></td><td>Rebuild the WebAssembly player</td></tr>
+</table></div>
+<p class="note">Without <code>--boot-roms</code>, the player loads the disk's files, all but PRODOS, through the machine's ProDOS MLI stand-in, and the package contains only the game. That stand-in does not implement <code>ALLOC_INTERRUPT</code>, so <code>ti_audio_init</code> fails there and a game that needs the slot-4 clock reports it missing; STARFALL shows "SLOT 4 AUDIO REQUIRED". Use <code>--boot-roms</code> for such games.</p>
+
+<h2 id="page">What the page does</h2>
+<ul>
+  <li>It runs whole NTSC frames, 262 lines of 63.695 µs, at the <code>vtw33</code> model (33.33 MHz) or the <code>turbo-f122</code> model (historical F1.2.2 TURBO costs), keeping 100 ms of audio queued, or by the wall clock without sound, at most four frames per display refresh.</li>
+  <li>A second instance of the module mixes SSI-263 speech in a Web Worker, as the native runner does. The page doubles speech before mixing, because the board's speech is louder than the reference model's.</li>
+  <li>After each frame it decodes SHR from AUX $2000-$9FFF and draws it at 640x400, the Appletini's square-pixel shape. Other video modes show black. It does not model the production capture stream.</li>
+  <li>Keys reach the //e as a held key with any-key-down. A gamepad drives paddles 0 and 1 and buttons 0-2.</li>
+  <li>Touch devices get a virtual stick, A and B buttons, Return and Esc keys and a Keyboard button that opens the device's keyboard; typed characters arrive in capitals. The controls appear on a coarse pointer or the first touch; <code>?touch=1</code> or <code>?touch=0</code> overrides that.</li>
+  <li>On iOS the page starts audio inside the Play tap and asks for the playback audio session, so sound plays with the silent switch on; the status line says "tap for sound" while sound is off.</li>
+</ul>
+
+<h2 id="publish">Publishing a game page</h2>
+<p>Copy <code>build/web/GAME/</code> to any static host that serves HTTPS. The page sets its base URL from its own location, so it works at any path. Every package carries <code>COPYING.txt</code> and <code>source.zip</code>, the player's Corresponding Source with its build record.</p>
+<p class="note warn">The player links the repository's GPL-3.0 emulator and speech code, so the player and its files in <code>tools/web/</code> are GPL-3.0-only, unlike the MIT library. A published copy must offer its source, which the package does. A <code>--boot-roms</code> or <code>--download-disk</code> package also contains the Apple ROM and ProDOS; publish it only where you have the right to distribute them.</p>
+
+<h2 id="evidence">How it is checked</h2>
+<pre><code>python tests/web_validate.py --emsdk D:/Repos/emsdk --cc C:/msys64/ucrt64/bin/gcc.exe --boot-roms build-inputs/native-roms</code></pre>
+<p>This runs a 1,100-frame STARFALL script in the player under Node and in the native machine with its separate speech worker: boot, launch with the Mockingboard, move, drop a bomb and use the joystick. At every checkpoint the tick count, program counter, AUX $2000-$9FFF and decoded frame must match, and so must the digest of the mixed audio. On 2026-10-22 both profiles matched at all nine checkpoints, with Node running at 2.08 times real time for <code>vtw33</code> and 1.33 times for <code>turbo-f122</code>; a slower computer may not keep up with TURBO. No browser or board timing is claimed.</p>
+
+<footer class="page-foot">Implemented in <code>tools/web.py</code> and <code>tools/web/</code>. Notes on the published STARFALL demo are in <a href="../../design/WEB.md">design/WEB.md</a>.</footer>
+</main>
+</div>
+</body>
+</html>

@@ -19,7 +19,8 @@ audio driver's temporary storage loan.
 ## Inside this repository
 
 [`game.json`](game.json) is its build manifest; see
-[game manifests](../../docs/GAMES.md). Build the library and this game only:
+[builds and game manifests](../../docs/reference/build.html). The
+[examples page](../../docs/examples.html#starter) walks through `main.c`. Build the library and this game only:
 
 ```powershell
 python tools/build.py --cc65-home D:/Repos/cc65 --game starter
@@ -43,7 +44,7 @@ public headers, linker configuration and local packaging tools into that
 project. `SDK_INPUTS.json` records their hashes. It copies no object files,
 compiler executables, ProDOS image, sibling checkout or linked directory.
 The new project remains buildable after the originating checkout is moved.
-Install the documented cc65 SDK2.19 and Python, run its README commands and
+Install the documented cc65 SDK 2.19 and Python, run its README commands and
 edit `main.c`.
 
 Runtime source is maintained in the main libtini source tree. Recreate a

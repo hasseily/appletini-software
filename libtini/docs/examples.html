@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Examples - libtini</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="layout">
+<header id="side">
+  <div class="side-top"><a class="brand" href="index.html">libtini</a></div>
+  <noscript><p><a href="index.html#contents">Contents</a></p></noscript>
+</header>
+<main id="main">
+<h1>Examples</h1>
+<p class="lead">Four programs in <code>examples/</code> show the library at different sizes: a starter game to copy, an audio demo, a board check for speech and STARFALL, a complete shooter.</p>
+
+<h2 id="starter">The starter</h2>
+<p><code>examples/starter/</code> is a small game to copy: a square that held WASD or arrow keys, or a joystick, move at thirty updates a second. A joystick button plays a tone and <kbd>Q</kbd> returns to ProDOS. It needs RamWorks selectors 1-3 and a slot-4 card for the clock.</p>
+<pre><code class="c">/* A libtini starter: a square that held keys or a joystick move at a fixed
+ * 30 updates a second, a tone on a joystick button, and Q to quit. */
+#include "libtini.h"
+
+static ti_surface screen;
+static const uint16_t colors[16]={0x012,0x123,0x235,0x346,0x467,0x68A,0x9BC,0xDEF,
+ 0xFA6,0xD64,0x832,0x4DC,0xA8F,0xFFB,0x57A,0x9ED};
+/* Three voices on one AY chip: the least audio work per update. */
+static ti_audio_config audio={TI_AUDIO_MOCKINGBOARD,0,0,0,3};
+/* The square's position; tests read it. The caller near arena's NEARBSS
+ * holds it, outside main memory, and startup zeroes it like BSS. */
+#pragma bss-name (push, "NEARBSS")
+int16_t starter_x, starter_y;
+#pragma bss-name (pop)
+
+static void square(uint8_t color)
+{
+    ti_rect r;
+    r.x=starter_x;r.y=starter_y;r.width=16;r.height=16;
+    ti_gfx_rect(&amp;screen,starter_x,starter_y,16,16,color);
+    ti_gfx_present(&amp;screen,&amp;r,0);
+}
+
+/* WASD or arrows while held, plus the stick's calibrated directions. */
+static uint8_t directions(void)
+{
+    uint8_t d=ti_stick_read(0),k=ti_input_held();
+    if(d==TI_STICK_ABSENT)d=0;
+    if(k&gt;='a'&amp;&amp;k&lt;='z')k-=32;
+    if(k=='W'||k==11)d|=TI_STICK_UP;
+    if(k=='S'||k==10)d|=TI_STICK_DOWN;
+    if(k=='A'||k==8)d|=TI_STICK_LEFT;
+    if(k=='D'||k==21)d|=TI_STICK_RIGHT;
+    return d;
+}
+
+int main(void)
+{
+    uint8_t key=0,steps,d,buttons,last_buttons=0;
+    /* The canvas, display backup and audio init's temporary storage loan
+     * need 97,536 bytes: three 48,640-byte resource banks, selectors 1-3. */
+    if(ti_init(1,3)!=TI_OK)return 1;
+    if(ti_gfx_surface_create(&amp;screen,320,200)!=TI_OK)return 1;
+    if(ti_gfx_begin(colors)!=TI_OK)return 1;
+    ti_gfx_clear(&amp;screen,0);
+    ti_gfx_rect(&amp;screen,0,0,320,12,1);
+    ti_gfx_text(&amp;screen,8,2,"MY FIRST LIBTINI GAME",13);
+    ti_gfx_text(&amp;screen,8,190,"HOLD WASD OR ARROWS, OR USE A STICK. Q QUITS",7);
+    /* The audio driver also owns the clock and joystick timer. */
+    if(ti_audio_init(&amp;audio)==TI_OK) {
+        ti_audio_reserve(0);
+        ti_steps_begin(ti_audio_ticks,TI_AUDIO_TICKS_PER_SECOND,30,30);
+    } else ti_gfx_text(&amp;screen,8,96,"A SLOT 4 AUDIO CARD IS REQUIRED",9);
+    ti_gfx_present(&amp;screen,0,0);
+    starter_x=152;starter_y=92;square(11);
+    while(key!='Q') {
+        ti_audio_update();ti_input_poll();
+        while(ti_input_key(&amp;key)==TI_OK&amp;&amp;key!='Q'&amp;&amp;key!='q');
+        if(key=='q')key='Q';
+        buttons=ti_input_buttons()&amp;3;
+        if(buttons&amp;&amp;!last_buttons)ti_audio_effect(0,300,12,10,1);
+        last_buttons=buttons;
+        steps=ti_steps_due();
+        if(!steps||steps==TI_STEPS_GAP)continue;
+        d=directions();
+        if(!d)continue;
+        square(0);
+        /* Two pixels a step, inside the play area. */
+        while(steps--) {
+            if((d&amp;TI_STICK_LEFT)&amp;&amp;starter_x&gt;0)starter_x-=2;
+            if((d&amp;TI_STICK_RIGHT)&amp;&amp;starter_x&lt;304)starter_x+=2;
+            if((d&amp;TI_STICK_UP)&amp;&amp;starter_y&gt;14)starter_y-=2;
+            if((d&amp;TI_STICK_DOWN)&amp;&amp;starter_y&lt;172)starter_y+=2;
+        }
+        square(11);
+    }
+    ti_audio_shutdown();ti_gfx_end();ti_gfx_surface_free(&amp;screen);ti_shutdown();return 0;
+}</code></pre>
+<ul>
+  <li><strong>Memory.</strong> <code>ti_init(1, 3)</code> grants three banks: the 32,000-byte canvas, the 32,768-byte screen backup and audio init's temporary 32,768-byte loan need 97,536 bytes, just over two.</li>
+  <li><strong>Near arena.</strong> The square's position lives in <code>NEARBSS</code>, outside the program's main area. The checks read it there.</li>
+  <li><strong>Audio as the clock.</strong> <code>voices</code> 3 limits the driver to one AY chip, the least work per update. <code>ti_audio_reserve(0)</code> leaves every voice to effects, so the button's tone can use voice 0. If audio fails the game says so and never moves, because there is no clock.</li>
+  <li><strong>Fixed steps.</strong> <code>ti_steps_due</code> gives the updates due; the loop skips drawing when none are, and on a gap.</li>
+  <li><strong>Drawing.</strong> Each move erases the old square, draws the new one, and publishes only those two 16x16 rectangles.</li>
+  <li><strong>Exit.</strong> The explicit cleanup at the end is what <code>return</code> alone would also do.</li>
+</ul>
+<p>Build it with <code>python tools/build.py --cc65-home D:/Repos/cc65 --game starter</code>, or make a separate project from it with <code>examples/starter/create.py</code>; see <a href="start.html#new-game">Getting started</a>.</p>
+
+<h2 id="audio-demo">The audio demo</h2>
+<p><code>examples/audio_demo.c</code> plays the event score from <code>assets/music.json</code> and speaks phrases from <code>assets/speech.json</code> on the 40-column text screen, with no graphics and no <code>ti_init</code>. Its configuration enables speech and ducking: <code>{TI_AUDIO_MOCKINGBOARD, 1, 1, 0}</code>. Keys: <kbd>1</kbd> says READY, <kbd>2</kbd> speaks 1984 with <code>ti_speech_number</code>, <kbd>S</kbd> stops speech and <kbd>Q</kbd> or <kbd>Esc</kbd> exits. Boot <code>build/audio_demo.po</code>.</p>
+
+<h2 id="speech-check">The speech check</h2>
+<p><code>examples/speech_check/</code> is a text-mode board check for the SSI-263. Boot <code>build/speech_check.po</code>; it runs for up to about 25 seconds, prints one line per test and waits for a key.</p>
+<div class="table"><table>
+<tr><th>Line</th><th>Reports</th></tr>
+<tr><td><code>VIA-B T2</code></td><td>Whether the $C480 VIA's timer 2 counts. The joystick reader uses it when it does.</td></tr>
+<tr><td><code>RAW START</code></td><td>With the driver's speech code bypassed, the SSI is started directly: which VIA raised the finished-phoneme CA1 flag, and how soon. <code>NONE</code> after 1.00 s means no flag came.</td></tr>
+<tr><td><code>RAW PHONEMES</code></td><td>The four phonemes of READY, one at a time: how many finished, the flags each VIA showed and the total time.</td></tr>
+<tr><td><code>MOCKINGBOARD</code>, <code>PHASOR</code></td><td>The driver says READY and EXCELLENT: <code>OK</code> and the time, or the first error and when it came. <code>SEEN</code> counts finished-phoneme signals sampled before the driver took them; in Phasor mode the interrupt handler takes them first, so it stays 0.</td></tr>
+<tr><td><code>MB+JOYSTICK</code>, <code>PH+JOYSTICK</code></td><td>The same with a joystick read every 30 ms. <code>J</code> gives reads and failed reads.</td></tr>
+</table></div>
+<p>On F1.3.1 in standalone ONE//e mode every line fails: RAW START reports <code>NONE</code>, RAW PHONEMES <code>0/4</code>, and each driver line <code>TIMING AT 2.00S</code>, because that firmware clocks the SSI only from the Apple's Q3 pin. F1.3.2, the baseline, fixes this. In the emulator every line succeeds and timer 2 does not count.</p>
+
+<h2 id="starfall">STARFALL</h2>
+<p><code>examples/starfall/</code> is a vertically scrolling survival shooter with five enemy types, four weapon levels, wingmen, overdrive, chain scoring, bombs, an eight-track song and spoken callouts. <code>examples/starfall/README.md</code> describes the game and its controls; a built disk is committed as <code>examples/starfall/STARFALL.po</code>, and it plays in a browser at <a href="https://appletini.org/demo/starfall">appletini.org/demo/starfall</a>. It is written entirely in C. What it shows about the library:</p>
+<div class="table"><table>
+<tr><th>Part</th><th>How STARFALL does it</th></tr>
+<tr><td>Code layout</td><td><code>game.c</code> and <code>game.h</code> are the portable simulation, also compiled for the host checks; <code>main.c</code> owns input, audio and drawing.</td></tr>
+<tr><td>Memory</td><td>Its own layout, <code>starfall.cfg</code>, a copy of <code>cfg/game.cfg</code> without the file buffer, since it makes no file calls. The simulation state, star columns, animated palette and text buffers fill 639 of the near arena's 640 bytes. Sprite cells, speech, the song and the effect table are constants in low memory.</td></tr>
+<tr><td>Errors</td><td>Every drawing call goes through <code>ti_error_keep</code>; the loop stops on <code>ti_error_first</code> and the text screen shows <code>ERROR ee STEP s</code>, the library code and the startup step.</td></tr>
+<tr><td>Playfield</td><td>A 240x184 <a href="api/scene.html">sprite scene</a> of up to 112 sprites with a 120-byte strip. Stars, the shield bubble and the ship's core are rectangle images; atlas sub-sprites are images inside one cell. Busy scenes list fewer stars and backdrop aircraft so every aircraft, shot and pickup fits.</td></tr>
+<tr><td>Interface</td><td>A banked canvas for the HUD, captions and panels. HUD values are opaque fixed-length text, published cell by cell. After the whole canvas is published, <code>ti_scene_forget</code>.</td></tr>
+<tr><td>Effects</td><td>Palette entries 14 and 15 pulse for aimed bullets and shields, entry 0 flashes for bombs and hits, one <code>ti_gfx_palette</code> a frame.</td></tr>
+<tr><td>Timing</td><td>Thirty updates a second from <code>ti_steps_due</code>; a gap or an invalid audio clock pauses the game, and resuming re-arms the clock and resets the steps.</td></tr>
+<tr><td>Sound</td><td><kbd>M</kbd> or <kbd>P</kbd> picks the card. The song plays on voices 0-7 of a Phasor or 0-1 of a Mockingboard; one effect table works on both through <code>ti_audio_effect_voice</code>. The scene's <code>service</code> calls <code>ti_audio_update</code>.</td></tr>
+<tr><td>Speech</td><td>Eight prepared phrases compiled with <code>--no-numbers</code>, each with an on-screen caption.</td></tr>
+<tr><td>Input</td><td>Held keys and taps for movement, a calibrated stick that overrides keys when deflected, <kbd>J</kbd> to turn the stick off, and a pause panel that shows raw stick readings.</td></tr>
+</table></div>
+
+<h2 id="benchmark">The benchmark program</h2>
+<p><code>examples/benchmark.c</code> is not a demo: <code>tools/benchmark.py</code> builds it into its own disk to time library routines on the emulator. See <a href="reference/tools.html#benchmark">Tools</a>.</p>
+
+<div class="pager"><a href="concepts.html">How libtini works</a><a href="guides/loop.html">Game loop and timing</a></div>
+<footer class="page-foot">libtini is licensed under the <a href="../LICENSE">MIT License</a>. STARFALL's art is CC0 from Kenney; its music is an arrangement of a doranarasi MIDI file, used under that pack's terms.</footer>
+</main>
+</div>
+</body>
+</html>

@@ -40,7 +40,7 @@ def main():
       '```powershell\npython runtime/tools/setup_inputs.py\npython build.py --cc65-home D:/Repos/cc65\n```\n\n'
       'Outputs: `build/APP.SYSTEM`, `build/APP.po`, map and labels. '
       '`--no-disk` builds without the separately installed ProDOS image.\n'
-      'The documented baseline is existing Appletini F1.3.1; physical timing/output requires board validation. '
+      'The documented baseline is existing Appletini F1.3.2; physical timing/output requires board validation. '
       'See runtime/tools/DEPENDENCIES.md for installed tools and ProDOS distribution terms.\n')
     print(destination)
 

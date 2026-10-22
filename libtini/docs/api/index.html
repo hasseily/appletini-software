@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>All functions - libtini</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="layout">
+<header id="side">
+  <div class="side-top"><a class="brand" href="../index.html">libtini</a></div>
+  <noscript><p><a href="../index.html#contents">Contents</a></p></noscript>
+</header>
+<main id="main">
+<h1>All functions</h1>
+<p class="lead">Every public function, in alphabetical order. Include <code>libtini.h</code> for all of them, or a single header from <code>include/libtini/</code>.</p>
+
+<div class="table"><table class="compact">
+<tr><th>Function</th><th>Header</th><th>Does</th></tr>
+<tr><td><a href="amem.html#ti_amem_available"><code>ti_amem_available</code></a></td><td>amem.h</td><td>Whether AMEM acceleration is active</td></tr>
+<tr><td><a href="amem.html#ti_amem_disable"><code>ti_amem_disable</code></a></td><td>amem.h</td><td>Return to CPU transfers</td></tr>
+<tr><td><a href="amem.html#ti_amem_enable"><code>ti_amem_enable</code></a></td><td>amem.h</td><td>Identify and enable AMEM acceleration</td></tr>
+<tr><td><a href="amem.html#ti_amem_last_error"><code>ti_amem_last_error</code></a></td><td>amem.h</td><td>Last AMEM controller error byte</td></tr>
+<tr><td><a href="audio.html#ti_audio_clock_valid"><code>ti_audio_clock_valid</code></a></td><td>audio.h</td><td>Whether the device clock is running without a gap</td></tr>
+<tr><td><a href="audio.html#ti_audio_effect"><code>ti_audio_effect</code></a></td><td>audio.h</td><td>Play a prioritized tone on an effect voice</td></tr>
+<tr><td><a href="audio.html#ti_audio_effect_voice"><code>ti_audio_effect_voice</code></a></td><td>audio.h</td><td>The nth voice left to effects</td></tr>
+<tr><td><a href="audio.html#ti_audio_envelope"><code>ti_audio_envelope</code></a></td><td>audio.h</td><td>Start the AY envelope on music voices</td></tr>
+<tr><td><a href="audio.html#ti_audio_envelope_stop"><code>ti_audio_envelope_stop</code></a></td><td>audio.h</td><td>Return voices to score volume</td></tr>
+<tr><td><a href="audio.html#ti_audio_init"><code>ti_audio_init</code></a></td><td>audio.h</td><td>Take the slot-4 card and start the clock</td></tr>
+<tr><td><a href="audio.html#ti_audio_mark_gap"><code>ti_audio_mark_gap</code></a></td><td>audio.h</td><td>Pause audio before blocking work</td></tr>
+<tr><td><a href="audio.html#ti_audio_reserve"><code>ti_audio_reserve</code></a></td><td>audio.h</td><td>Choose the music voices</td></tr>
+<tr><td><a href="audio.html#ti_audio_resume_clock"><code>ti_audio_resume_clock</code></a></td><td>audio.h</td><td>Resume after a gap</td></tr>
+<tr><td><a href="audio.html#ti_audio_shutdown"><code>ti_audio_shutdown</code></a></td><td>audio.h</td><td>Silence and release the card</td></tr>
+<tr><td><a href="audio.html#ti_audio_source_hz"><code>ti_audio_source_hz</code></a></td><td>audio.h</td><td>The assumed VIA clock rate</td></tr>
+<tr><td><a href="audio.html#ti_audio_tick_divisor"><code>ti_audio_tick_divisor</code></a></td><td>audio.h</td><td>VIA clocks per tick</td></tr>
+<tr><td><a href="audio.html#ti_audio_ticks"><code>ti_audio_ticks</code></a></td><td>audio.h</td><td>The device tick count</td></tr>
+<tr><td><a href="audio.html#ti_audio_update"><code>ti_audio_update</code></a></td><td>audio.h</td><td>Advance music, effects and speech</td></tr>
+<tr><td><a href="audio.html#ti_audio_voices"><code>ti_audio_voices</code></a></td><td>audio.h</td><td>Voices the driver serves</td></tr>
+<tr><td><a href="graphics.html#ti_digits"><code>ti_digits</code></a></td><td>graphics.h</td><td>Zero-padded decimal text</td></tr>
+<tr><td><a href="errors.html#ti_error_clear"><code>ti_error_clear</code></a></td><td>types.h</td><td>Forget the kept error</td></tr>
+<tr><td><a href="errors.html#ti_error_first"><code>ti_error_first</code></a></td><td>types.h</td><td>The first kept error</td></tr>
+<tr><td><a href="errors.html#ti_error_keep"><code>ti_error_keep</code></a></td><td>types.h</td><td>Keep a result if it is the first failure</td></tr>
+<tr><td><a href="storage.html#ti_file_last_error"><code>ti_file_last_error</code></a></td><td>storage.h</td><td>The last ProDOS error code</td></tr>
+<tr><td><a href="storage.html#ti_file_read"><code>ti_file_read</code></a></td><td>storage.h</td><td>Read a whole file into near memory</td></tr>
+<tr><td><a href="storage.html#ti_file_write"><code>ti_file_write</code></a></td><td>storage.h</td><td>Create or replace a file</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_animation_frame"><code>ti_gfx_animation_frame</code></a></td><td>graphics.h</td><td>Frame number for elapsed ticks</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_begin"><code>ti_gfx_begin</code></a></td><td>graphics.h</td><td>Take the screen and set the palette</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_blit"><code>ti_gfx_blit</code></a></td><td>graphics.h</td><td>Copy a rectangle between surfaces</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_budget"><code>ti_gfx_budget</code></a></td><td>graphics.h</td><td>Limit and time publications</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_clear"><code>ti_gfx_clear</code></a></td><td>graphics.h</td><td>Fill a surface</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_end"><code>ti_gfx_end</code></a></td><td>graphics.h</td><td>Restore the screen</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_line"><code>ti_gfx_line</code></a></td><td>graphics.h</td><td>Draw a line</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_map"><code>ti_gfx_map</code></a></td><td>graphics.h</td><td>Draw a scrolling tile map</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_palette"><code>ti_gfx_palette</code></a></td><td>graphics.h</td><td>Replace the sixteen colours</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_present"><code>ti_gfx_present</code></a></td><td>graphics.h</td><td>Publish a surface rectangle</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_present_rows"><code>ti_gfx_present_rows</code></a></td><td>graphics.h</td><td>Publish packed rows from near memory</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_rect"><code>ti_gfx_rect</code></a></td><td>graphics.h</td><td>Fill a rectangle</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_sprite"><code>ti_gfx_sprite</code></a></td><td>graphics.h</td><td>Draw a masked or keyed sprite</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_surface_create"><code>ti_gfx_surface_create</code></a></td><td>graphics.h</td><td>Allocate a surface</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_surface_free"><code>ti_gfx_surface_free</code></a></td><td>graphics.h</td><td>Free a surface</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_text"><code>ti_gfx_text</code></a></td><td>graphics.h</td><td>Text in the built-in font</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_text_font"><code>ti_gfx_text_font</code></a></td><td>graphics.h</td><td>Text in a bitmap font</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_text_opaque"><code>ti_gfx_text_opaque</code></a></td><td>graphics.h</td><td>Text over filled cells</td></tr>
+<tr><td><a href="memory.html#ti_init"><code>ti_init</code></a></td><td>memory.h</td><td>Grant RamWorks banks</td></tr>
+<tr><td><a href="input.html#ti_input_buttons"><code>ti_input_buttons</code></a></td><td>input.h</td><td>The three button bits</td></tr>
+<tr><td><a href="input.html#ti_input_held"><code>ti_input_held</code></a></td><td>input.h</td><td>The key held down now</td></tr>
+<tr><td><a href="input.html#ti_input_key"><code>ti_input_key</code></a></td><td>input.h</td><td>Take a queued character</td></tr>
+<tr><td><a href="input.html#ti_input_poll"><code>ti_input_poll</code></a></td><td>input.h</td><td>Queue a pending keypress</td></tr>
+<tr><td><a href="input.html#ti_input_reset"><code>ti_input_reset</code></a></td><td>input.h</td><td>Empty the key queue</td></tr>
+<tr><td><a href="input.html#ti_joystick_read"><code>ti_joystick_read</code></a></td><td>input.h</td><td>Raw paddle readings</td></tr>
+<tr><td><a href="input.html#ti_mouse_read"><code>ti_mouse_read</code></a></td><td>input.h</td><td>Reserved; unavailable</td></tr>
+<tr><td><a href="audio.html#ti_music_start"><code>ti_music_start</code></a></td><td>audio.h</td><td>Play an event score</td></tr>
+<tr><td><a href="audio.html#ti_music_stop"><code>ti_music_stop</code></a></td><td>audio.h</td><td>Stop music</td></tr>
+<tr><td><a href="memory.html#ti_near_fill"><code>ti_near_fill</code></a></td><td>memory.h</td><td>Checked fill in near memory</td></tr>
+<tr><td><a href="memory.html#ti_near_move"><code>ti_near_move</code></a></td><td>memory.h</td><td>Checked move in near memory</td></tr>
+<tr><td><a href="storage.html#ti_pack_load"><code>ti_pack_load</code></a></td><td>storage.h</td><td>Load a pack entry into a resource</td></tr>
+<tr><td><a href="memory.html#ti_res_alloc"><code>ti_res_alloc</code></a></td><td>memory.h</td><td>Allocate a banked resource</td></tr>
+<tr><td><a href="memory.html#ti_res_copy"><code>ti_res_copy</code></a></td><td>memory.h</td><td>Copy between or within resources</td></tr>
+<tr><td><a href="memory.html#ti_res_fill"><code>ti_res_fill</code></a></td><td>memory.h</td><td>Fill part of a resource</td></tr>
+<tr><td><a href="memory.html#ti_res_free"><code>ti_res_free</code></a></td><td>memory.h</td><td>Free a resource</td></tr>
+<tr><td><a href="memory.html#ti_res_read"><code>ti_res_read</code></a></td><td>memory.h</td><td>Resource to near memory</td></tr>
+<tr><td><a href="memory.html#ti_res_write"><code>ti_res_write</code></a></td><td>memory.h</td><td>Near memory to resource</td></tr>
+<tr><td><a href="scene.html#ti_scene_add"><code>ti_scene_add</code></a></td><td>scene.h</td><td>List a sprite</td></tr>
+<tr><td><a href="scene.html#ti_scene_begin"><code>ti_scene_begin</code></a></td><td>scene.h</td><td>Start a sprite scene</td></tr>
+<tr><td><a href="scene.html#ti_scene_draw"><code>ti_scene_draw</code></a></td><td>scene.h</td><td>Redraw and publish changed blocks</td></tr>
+<tr><td><a href="scene.html#ti_scene_forget"><code>ti_scene_forget</code></a></td><td>scene.h</td><td>The area shows only background now</td></tr>
+<tr><td><a href="scene.html#ti_scene_frame"><code>ti_scene_frame</code></a></td><td>scene.h</td><td>Start a new sprite list</td></tr>
+<tr><td><a href="scene.html#ti_scene_invalidate"><code>ti_scene_invalidate</code></a></td><td>scene.h</td><td>Redraw the whole area next time</td></tr>
+<tr><td><a href="memory.html#ti_shutdown"><code>ti_shutdown</code></a></td><td>memory.h</td><td>Release everything</td></tr>
+<tr><td><a href="audio.html#ti_song_start"><code>ti_song_start</code></a></td><td>audio.h</td><td>Play a pattern song</td></tr>
+<tr><td><a href="speech.html#ti_speech_bind"><code>ti_speech_bind</code></a></td><td>audio.h</td><td>Choose the phrase bank</td></tr>
+<tr><td><a href="speech.html#ti_speech_busy"><code>ti_speech_busy</code></a></td><td>audio.h</td><td>Whether speech is playing or queued</td></tr>
+<tr><td><a href="speech.html#ti_speech_number"><code>ti_speech_number</code></a></td><td>audio.h</td><td>Speak a number</td></tr>
+<tr><td><a href="speech.html#ti_speech_say"><code>ti_speech_say</code></a></td><td>audio.h</td><td>Speak a phrase</td></tr>
+<tr><td><a href="speech.html#ti_speech_stop"><code>ti_speech_stop</code></a></td><td>audio.h</td><td>Cancel speech</td></tr>
+<tr><td><a href="speech.html#ti_speech_voice"><code>ti_speech_voice</code></a></td><td>audio.h</td><td>Preset, pitch and rate</td></tr>
+<tr><td><a href="timing.html#ti_steps_begin"><code>ti_steps_begin</code></a></td><td>timing.h</td><td>Start fixed-rate steps</td></tr>
+<tr><td><a href="timing.html#ti_steps_due"><code>ti_steps_due</code></a></td><td>timing.h</td><td>Steps due now</td></tr>
+<tr><td><a href="timing.html#ti_steps_reset"><code>ti_steps_reset</code></a></td><td>timing.h</td><td>Restart steps from now</td></tr>
+<tr><td><a href="input.html#ti_stick_read"><code>ti_stick_read</code></a></td><td>input.h</td><td>Calibrated stick directions</td></tr>
+<tr><td><a href="input.html#ti_stick_recalibrate"><code>ti_stick_recalibrate</code></a></td><td>input.h</td><td>Measure the rest position again</td></tr>
+<tr><td><a href="timing.html#ti_time_begin"><code>ti_time_begin</code></a></td><td>timing.h</td><td>Start elapsed and edge observation</td></tr>
+<tr><td><a href="timing.html#ti_time_note_gap"><code>ti_time_note_gap</code></a></td><td>timing.h</td><td>Record a display-timing gap</td></tr>
+<tr><td><a href="timing.html#ti_time_poll"><code>ti_time_poll</code></a></td><td>timing.h</td><td>Sample elapsed ticks and edges</td></tr>
+</table></div>
+
+<h2 id="types">Types and macros</h2>
+<div class="table"><table class="compact">
+<tr><th>Name</th><th>Header</th><th>Is</th></tr>
+<tr><td><a href="graphics.html#ti_animation"><code>ti_animation</code></a></td><td>graphics.h</td><td>A run of animation frames</td></tr>
+<tr><td><a href="audio.html#ti_audio_config"><code>ti_audio_config</code></a></td><td>audio.h</td><td>Audio driver settings</td></tr>
+<tr><td><a href="graphics.html#ti_bitmap_font"><code>ti_bitmap_font</code></a></td><td>graphics.h</td><td>A banked bitmap font</td></tr>
+<tr><td><a href="errors.html#ti_error"><code>ti_error</code></a></td><td>types.h</td><td>A result code</td></tr>
+<tr><td><a href="graphics.html#ti_gfx_stats"><code>ti_gfx_stats</code></a></td><td>graphics.h</td><td>Publication statistics</td></tr>
+<tr><td><a href="errors.html#ti_handle"><code>ti_handle</code></a></td><td>types.h</td><td>A banked resource</td></tr>
+<tr><td><a href="scene.html#ti_image"><code>ti_image</code></a></td><td>scene.h</td><td>A near sprite image</td></tr>
+<tr><td><a href="input.html#ti_joystick"><code>ti_joystick</code></a></td><td>input.h</td><td>Raw paddle readings</td></tr>
+<tr><td><a href="audio.html#ti_music_event"><code>ti_music_event</code></a></td><td>audio.h</td><td>One event-score step</td></tr>
+<tr><td><a href="speech.html#ti_phrase"><code>ti_phrase</code></a></td><td>audio.h</td><td>Phoneme bytes of a phrase</td></tr>
+<tr><td><a href="graphics.html#ti_rect"><code>ti_rect</code></a></td><td>graphics.h</td><td>A signed rectangle</td></tr>
+<tr><td><a href="scene.html#ti_scene_config"><code>ti_scene_config</code></a></td><td>scene.h</td><td>A scene's area, images and background</td></tr>
+<tr><td><a href="scene.html#TI_SCENE_STORAGE"><code>TI_SCENE_STORAGE</code></a></td><td>scene.h</td><td>Defines the sprite list and strip</td></tr>
+<tr><td><a href="speech.html#ti_speech_bank"><code>ti_speech_bank</code></a></td><td>audio.h</td><td>Phrases and number words</td></tr>
+<tr><td><a href="graphics.html#ti_sprite"><code>ti_sprite</code></a></td><td>graphics.h</td><td>An image with an optional mask</td></tr>
+<tr><td><a href="graphics.html#ti_surface"><code>ti_surface</code></a></td><td>graphics.h</td><td>Packed pixels in a resource</td></tr>
+<tr><td><a href="timing.html#ti_tick_source"><code>ti_tick_source</code></a></td><td>timing.h</td><td>A device clock function</td></tr>
+<tr><td><a href="graphics.html#ti_tilemap"><code>ti_tilemap</code></a></td><td>graphics.h</td><td>Banked tile numbers</td></tr>
+<tr><td><a href="graphics.html#ti_tileset"><code>ti_tileset</code></a></td><td>graphics.h</td><td>A tile atlas</td></tr>
+<tr><td><a href="timing.html#ti_time_sample"><code>ti_time_sample</code></a></td><td>timing.h</td><td>Elapsed ticks and display edges</td></tr>
+</table></div>
+
+<footer class="page-foot">Headers are in <code>include/</code>: <code>libtini.h</code> and <code>libtini/{types,memory,timing,graphics,scene,audio,input,storage,amem}.h</code>.</footer>
+</main>
+</div>
+</body>
+</html>

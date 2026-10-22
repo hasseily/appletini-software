@@ -44,5 +44,7 @@ Decay gives the guitars and bass a plucked attack; the strings hold their
 volume.
 
 The build compiles `song.json` with `tools/music.py` into
-`build/starfall_music.h`; it never reads a MIDI file. docs/AUDIO.md
-describes both tools and the song format.
+`build/starfall_music.h`; it never reads a MIDI file.
+[Music, effects and speech](../../../docs/guides/sound.html) describes both
+tools, and [data formats](../../../docs/reference/formats.html#song) the song
+format.

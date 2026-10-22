@@ -92,7 +92,7 @@ counts rather than only these rounded figures.
 
 These numbers describe the selected emulator models. `vtw33` uses functional
 execution at nominal 33.333333 MHz without all motherboard/device waits.
-`turbo-f122` uses historical F1.2.2 costs, not complete F1.3.1 board timing.
+`turbo-f122` uses historical F1.2.2 costs, not complete F1.3.2 board timing.
 Neither measures the production capture stream, HDMI presentation or physical
 interrupt/audio latency. Board measurements at 33 MHz and TURBO remain required
 before claiming bandwidth, a visual deadline, or a game frame rate.

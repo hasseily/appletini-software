@@ -9,7 +9,8 @@
 /* Explicit grant of exclusive banks; bank zero is never allocatable.
  * Init probes aliasing without retaining changes. CPU path is always present;
  * the optional AMEM module must be explicitly enabled after initialization.
- * Foreground only, non-reentrant. See docs/CONTRACTS.md before using an IRQ. */
+ * Foreground only, non-reentrant. See docs/reference/machine.html before
+ * using an IRQ. */
 ti_error ti_init(uint8_t first_bank, uint8_t bank_count);
 ti_error ti_shutdown(void);
 ti_error ti_near_move(void *dst, const void *src, uint16_t length);

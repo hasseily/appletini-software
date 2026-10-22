@@ -34,9 +34,10 @@ library, speech worker and a2vm are licensed GPL-3.0-only.
 Apple //e with Appletini, built with cc65: Super Hi-Res graphics with a sprite
 renderer, banked RamWorks resources, Mockingboard/Phasor music and effects,
 SSI-263 speech, input and ProDOS files, with host tools for assets, music and
-speech. Its [browser player](libtini/docs/WEB.md) compiles this repository's
+speech. Its [browser player](libtini/design/WEB.md) compiles this repository's
 emulator to WebAssembly and runs a game's own disk in a web page. STARFALL,
-below, is its example game.
+below, is its example game. Its developer documentation is a set of web
+pages: open `libtini/docs/index.html` in a browser.
 
 ## Demos
 

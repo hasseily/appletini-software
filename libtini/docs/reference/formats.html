@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data formats - libtini</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="layout">
+<header id="side">
+  <div class="side-top"><a class="brand" href="../index.html">libtini</a></div>
+  <noscript><p><a href="../index.html#contents">Contents</a></p></noscript>
+</header>
+<main id="main">
+<h1>Data formats</h1>
+<p class="lead">The bytes the tools write and the library reads. Multi-byte numbers are little-endian unless a table says otherwise.</p>
+
+<h2 id="pixels">Packed pixels and the SHR screen</h2>
+<p>A pixel is a 4-bit palette index; a byte holds two, the left pixel in bits 7-4. A row of <em>w</em> pixels takes <code>(w + 1) / 2</code> bytes.</p>
+<div class="table"><table>
+<tr><th>AUX bank 0</th><th>Contents</th></tr>
+<tr><td>$2000-$9CFF</td><td>200 rows of 160 bytes; row <em>y</em> starts at $2000 + 160<em>y</em></td></tr>
+<tr><td>$9D00-$9DC7</td><td>One scan-line control byte per row; libtini writes 0: 320-pixel mode, palette 0</td></tr>
+<tr><td>$9DC8-$9DFF</td><td>Padding; libtini writes 0</td></tr>
+<tr><td>$9E00-$9FFF</td><td>Sixteen palettes of sixteen 0RGB words; libtini uses palette 0 at $9E00</td></tr>
+</table></div>
+<p>A palette word is <code>0x0RGB</code>: four bits each of red, green and blue, so 0x0F00 is red and 0x0FFF white.</p>
+
+<h2 id="palette-json">Palette JSON</h2>
+<pre><code>["#000000", "#FFFFFF", "#FF0000", 255, 4095]</code></pre>
+<p>Up to sixteen entries, each a 0RGB integer 0-4095 or a <code>"#RRGGBB"</code> string, whose channels keep their high four bits. Missing entries are 0. <code>assets.py image --palette-output</code> writes the sixteen words as 32 bytes.</p>
+
+<h2 id="ti4">TI4 images</h2>
+<div class="table"><table>
+<tr><th>Offset</th><th>Bytes</th><th>Contents</th></tr>
+<tr><td>0</td><td>4</td><td><code>TI4</code> and a zero byte</td></tr>
+<tr><td>4</td><td>2</td><td>Width, 1-320</td></tr>
+<tr><td>6</td><td>2</td><td>Height, 1-200</td></tr>
+<tr><td>8</td><td><code>stride * height</code></td><td>Packed rows, <code>stride = (width + 1) / 2</code></td></tr>
+<tr><td>8 + <code>stride * height</code></td><td><code>((width + 7) / 8) * height</code></td><td>Optional opacity mask: one bit per pixel, bit 7 leftmost, 1 opaque; index 0 is transparent</td></tr>
+</table></div>
+<p>A surface view uses offset 8; a <code>ti_sprite</code>'s <code>mask_offset</code> is the mask's offset.</p>
+
+<h2 id="indexed">Indexed image JSON</h2>
+<pre><code>{"width": 4, "height": 2, "pixels": [0, 1, 1, 0, 1, 2, 2, 1], "masked": true}</code></pre>
+
+<h2 id="tif">TIF fonts</h2>
+<div class="table"><table>
+<tr><th>Offset</th><th>Bytes</th><th>Contents</th></tr>
+<tr><td>0</td><td>4</td><td><code>TIF1</code></td></tr>
+<tr><td>4</td><td>1</td><td>First character code</td></tr>
+<tr><td>5</td><td>1</td><td>Glyph count, 1-255; first plus count at most 256</td></tr>
+<tr><td>6</td><td>1</td><td>Glyph width, 1-8</td></tr>
+<tr><td>7</td><td>1</td><td>Glyph height, 1-16</td></tr>
+<tr><td>8</td><td><code>count * height</code></td><td>Glyph rows, one byte each, bit 7 leftmost</td></tr>
+</table></div>
+<pre><code>{"width": 3, "height": 3, "first": 48, "glyphs": [["###", "#.#", "###"]]}</code></pre>
+
+<h2 id="tim">TIM tile maps</h2>
+<div class="table"><table>
+<tr><th>Offset</th><th>Bytes</th><th>Contents</th></tr>
+<tr><td>0</td><td>4</td><td><code>TIM1</code></td></tr>
+<tr><td>4</td><td>2</td><td>Columns, 1-256</td></tr>
+<tr><td>6</td><td>2</td><td>Rows, 1-256</td></tr>
+<tr><td>8</td><td><code>columns * rows</code></td><td>Tile numbers, row by row</td></tr>
+</table></div>
+<pre><code>{"rows": [[0, 1, 2], [3, 4, 5]], "tile_count": 6}</code></pre>
+
+<h2 id="tpk">TPK1 resource packs</h2>
+<div class="table"><table>
+<tr><th>Offset</th><th>Bytes</th><th>Contents</th></tr>
+<tr><td>0</td><td>4</td><td><code>TPK1</code></td></tr>
+<tr><td>4</td><td>2</td><td>Entry count, 1-16</td></tr>
+<tr><td>6</td><td>2</td><td>Zero</td></tr>
+<tr><td>8</td><td>24 per entry</td><td>The directory</td></tr>
+<tr><td>8 + 24<em>n</em></td><td></td><td>Entry data, in directory order</td></tr>
+</table></div>
+<div class="table"><table>
+<tr><th>Entry offset</th><th>Bytes</th><th>Contents</th></tr>
+<tr><td>0</td><td>16</td><td>Name, NUL-padded: a capital letter, then capitals, digits, <code>.</code> or <code>_</code>, at most 15 characters</td></tr>
+<tr><td>16</td><td>4</td><td>Absolute offset of the data in the file</td></tr>
+<tr><td>20</td><td>4</td><td>Size, nonzero</td></tr>
+</table></div>
+<p>Names are unique and in strictly increasing byte order; padding is all zero. Data starts after the directory and entries do not overlap, in name order. Every byte lies within the file, which fits ProDOS's 24-bit length. <code>ti_pack_load</code> checks all of this for every entry before it allocates memory. The pack manifest is <code>{"entries": [{"name": "SHIP", "path": "ship.ti4"}]}</code>, with entries of 1 byte to 4 MiB.</p>
+
+<h2 id="song">Pattern songs</h2>
+<p>What <code>tools/music.py</code> writes for a <code>song</code> document and <code>ti_song_start</code> reads.</p>
+<div class="table"><table>
+<tr><th>Offset</th><th>Bytes</th><th>Contents</th></tr>
+<tr><td>0</td><td>2</td><td>Device ticks per row, 8.8 fixed point: 256-25,600 (1-100 ticks)</td></tr>
+<tr><td>2</td><td>1</td><td>Tracks, 1-12</td></tr>
+<tr><td>3</td><td>1</td><td>Order positions, 1-255</td></tr>
+<tr><td>4</td><td>1</td><td>Loop position, below the position count</td></tr>
+<tr><td>5</td><td>1</td><td>Notes in the period table, 1-96</td></tr>
+<tr><td>6</td><td>1</td><td>Patterns, 1-255</td></tr>
+<tr><td>7</td><td>3 per track</td><td>Volume, decay ticks and floor, 0-15 each</td></tr>
+<tr><td>then</td><td>2 per note</td><td>Tone periods for the 1 MHz base clock, 0-2047</td></tr>
+<tr><td>then</td><td>2 per pattern</td><td>Offset of each pattern from the song's first byte</td></tr>
+<tr><td>then</td><td>positions per track</td><td>Pattern numbers, track 0's order first</td></tr>
+<tr><td>then</td><td></td><td>Pattern bytes</td></tr>
+</table></div>
+<div class="table"><table>
+<tr><th>Pattern byte</th><th>Meaning</th></tr>
+<tr><td>$00-$5F</td><td>Play that note of the period table</td></tr>
+<tr><td>$60</td><td>Rest</td></tr>
+<tr><td>$61</td><td>Hold the current sound</td></tr>
+<tr><td>$80 + <em>n</em></td><td>Following notes, rests and holds last <em>n</em> + 1 rows, 1-64</td></tr>
+<tr><td>$C0 + <em>v</em>, $D0 + <em>d</em>, $E0 + <em>f</em></td><td>Set the track's volume, decay or floor</td></tr>
+<tr><td>$FF</td><td>End of the pattern</td></tr>
+</table></div>
+<p>The row length, volume, decay and floor carry over into the next pattern. Every pattern starts after the tables, ends inside the song with $FF and holds at least one note, rest or hold.</p>
+<p>At each row, a track whose note has ended reads its next note, rest or hold. A note sets the tone and starts at the track's volume; every <code>decay</code> ticks it falls one level, down to the floor, and decay 0 holds it. Decay runs before the row, so a note starts at full volume, and after a late update it catches up at most 16 ticks.</p>
+
+<h3 id="song-json">Song JSON</h3>
+<pre><code>{"credit": "optional text for the header comment",
+ "song": {"bpm": 152, "rows_per_beat": 8, "loop": 0,
+   "tracks": [{"name": "lead", "volume": 12, "decay": 4, "floor": 8, "order": ["a", "a", "b"]}],
+   "patterns": {"a": "D#5:2 F#5:2 -:4 G#5:8", "b": "v10 B5:12 ^:4"}}}</code></pre>
+<ul>
+  <li><code>bpm</code> 20-400 and <code>rows_per_beat</code> 1-16 must give rows of 1-100 ticks.</li>
+  <li>Tokens: <code>NOTE:ROWS</code> (rows 1-255), <code>-:ROWS</code> rest, <code>^:ROWS</code> hold, <code>vN</code>, <code>dN</code>, <code>fN</code> with N 0-15. Notes are names with an optional <code>#</code> or <code>b</code> and an octave, C4 being MIDI note 60; each must have a period of 1-2047.</li>
+  <li>Tracks default to volume 12, decay 0, floor 0. Every order has the same number of positions, at most 255, and every track the same number of rows.</li>
+  <li>The compiler stores only the notes used, in pitch order, and only the patterns some order uses. A run of more than 64 rows becomes holds.</li>
+</ul>
+
+<h2 id="score">Event score JSON</h2>
+<pre><code>{"voices": 6, "events": [{"duration": 0, "period": 956, "voice": 0, "volume": 7},
+                         {"duration": 25, "period": 1517, "voice": 1, "volume": 5}]}</code></pre>
+<p><code>voices</code> is 6 or 12. Each of 1-512 events has exactly the four keys: duration 0-65,535 ticks, period 0-2047, voice below <code>voices</code>, volume 0-15. The durations must not all be zero, and at most 31 zero durations may follow each other. The header holds a <code>ti_music_event</code> array, six bytes per event.</p>
+
+<h2 id="speech">Speech JSON and phoneme bytes</h2>
+<pre><code>{"phrases": {"SAY_READY": "Ready.", "SAY_SCORE": "Score 100!"},
+ "pronunciations": {"UP": ["UH", "P"], "CLEAR": "K L IY R"}}</code></pre>
+<ul>
+  <li>Phrase names are C identifiers in capitals: a capital or underscore, then capitals, digits or underscores.</li>
+  <li>Text holds letters, digits, spaces and <code>. , ! ? ; : - '</code>, which are ignored. A run of digits, 0-9999, becomes number words.</li>
+  <li>A pronunciation is a list or a space-separated string of phoneme names. Words are joined with a <code>PA</code> pause.</li>
+</ul>
+<p>Each generated byte holds an SSI-263 phoneme code in bits 0-5 and a duration value in bits 6-7: 0 for vowels, 2 for stops and the pause, 1 for every other sound.</p>
+<div class="table"><table class="compact">
+<tr><th>Names</th><th>Codes</th></tr>
+<tr><td><code>PA</code> pause</td><td>$00</td></tr>
+<tr><td>Vowels <code>IY AY IH EH AE AA AO OW OY UW UH ER</code>, and <code>AW</code> sharing <code>AO</code>'s code</td><td>$01, $05, $07, $0A, $0C, $0F, $10, $11, $12, $14, $18, $1C</td></tr>
+<tr><td><code>Y R L W</code></td><td>$03, $1D, $20, $23</td></tr>
+<tr><td>Stops <code>B D G P T K</code></td><td>$24-$29</td></tr>
+<tr><td><code>CH J TH DH Z S ZH SH V F HH M N NG</code></td><td>$2A, $2B, $2C, $2D, $2F, $30, $31, $32, $33, $34, $35, $37, $38, $39</td></tr>
+</table></div>
+
+<footer class="page-foot">Writers: <code>tools/assets.py</code>, <code>tools/music.py</code>, <code>tools/midi.py</code>, <code>tools/speech.py</code>. Readers: <code>src/storage.c</code>, <code>src/target/song.s</code>, the graphics and audio modules.</footer>
+</main>
+</div>
+</body>
+</html>

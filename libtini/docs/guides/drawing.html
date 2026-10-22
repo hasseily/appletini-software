@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drawing and publishing - libtini</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/site.js" defer></script>
+</head>
+<body data-module="graphics">
+<a class="skip" href="#main">Skip to content</a>
+<div class="layout">
+<header id="side">
+  <div class="side-top"><a class="brand" href="../index.html">libtini</a></div>
+  <noscript><p><a href="../index.html#contents">Contents</a></p></noscript>
+</header>
+<main id="main">
+<h1>Drawing and publishing</h1>
+<p class="lead">How to get a picture onto the Super Hi-Res screen without spending the frame on it: a banked canvas for the interface, a sprite scene for things that move, and publishing only what changed.</p>
+
+<h2 id="choose">Choose a way to draw</h2>
+<div class="table"><table>
+<tr><th>Approach</th><th>Good for</th><th>Costs</th></tr>
+<tr><td>A 320x200 canvas surface and <code>ti_gfx_present</code> of changed rectangles</td><td>Title screens, HUDs, panels, anything that changes rarely or in small boxes</td><td>32,000 banked bytes; each publication copies its rows from the bank to the screen</td></tr>
+<tr><td>A <a href="../api/scene.html">sprite scene</a></td><td>Dozens of moving sprites over a plain background</td><td>Near storage for the list and an 8-line strip; no banked memory</td></tr>
+<tr><td><code>ti_gfx_present_rows</code> from a near buffer</td><td>A small area the game composes itself</td><td>The near buffer</td></tr>
+</table></div>
+<p>They combine. STARFALL keeps its interface and its pause and game-over panels on a canvas and draws the moving playfield with a scene.</p>
+
+<h2 id="start">Start the screen</h2>
+<p><code>ti_gfx_begin</code> turns SHR on but leaves the pixel bytes as they were, so publish a cleared canvas straight away.</p>
+<pre><code class="c">static ti_surface canvas;                 /* zero-initialized */
+extern const uint16_t game_palette[16];
+
+ti_error start_screen(void)
+{
+    ti_error e = ti_gfx_surface_create(&amp;canvas, 320, 200);
+    if (!e) e = ti_gfx_begin(game_palette);
+    if (!e) e = ti_gfx_clear(&amp;canvas, 0);
+    if (!e) e = draw_static_interface(&amp;canvas);
+    if (!e) e = ti_gfx_present(&amp;canvas, 0, 0);   /* the only full publication */
+    return e;
+}</code></pre>
+<p>A full publication is 32,000 bytes and takes longer than a 60 Hz frame, about 41 ms on the emulator's 33 MHz model. Do it when the screen changes as a whole, not every frame.</p>
+
+<h2 id="dirty">Publish what changed</h2>
+<p>Draw into the canvas, then publish the rectangles you touched. The starter moves a square this way: erase the old square, draw the new one, publish each.</p>
+<pre><code class="c">static int16_t x, y;
+
+static void square(uint8_t color)
+{
+    ti_rect r;
+    r.x = x; r.y = y; r.width = 16; r.height = 16;
+    ti_gfx_rect(&amp;canvas, x, y, 16, 16, color);
+    ti_gfx_present(&amp;canvas, &amp;r, 0);
+}
+
+static void move_square(int16_t dx, int16_t dy)
+{
+    square(0);           /* erase where it was */
+    x += dx; y += dy;
+    square(11);          /* draw where it is */
+}</code></pre>
+<p>Publication widens a rectangle's edges to whole bytes, taking the neighbour pixel from the canvas, so the canvas must hold the complete picture of every area you publish.</p>
+
+<h2 id="hud">Update a HUD value in place</h2>
+<p>Give every value a fixed length and draw it with <code>ti_gfx_text_opaque</code>: the new digits fill their whole 6x8 cells, covering the old ones without a clearing rectangle, and the area to publish is exactly the cells. <code>ti_digits</code> writes a fixed number of zero-padded digits. Remember what is on screen and skip unchanged values.</p>
+<pre><code class="c">static uint32_t shown_score = 0xFFFFFFFFUL;
+
+static void show_score(uint32_t score)
+{
+    static const ti_rect cells = {250, 64, 7 * 6, 8};
+    char text[8];
+    if (score == shown_score) return;
+    shown_score = score;
+    ti_error_keep(ti_gfx_text_opaque(&amp;canvas, 250, 64, ti_digits(text, score, 7), 9, 0));
+    ti_error_keep(ti_gfx_present(&amp;canvas, &amp;cells, 0));
+}</code></pre>
+<p>On the emulator's models this costs about 1.9 ms at 33 MHz and 1.5 ms in TURBO for a value of two to eight characters.</p>
+
+<h2 id="palette">Animate with the palette</h2>
+<p>All 200 lines share one palette, written by one 32-byte call. Changing an entry recolours every pixel that uses it, at no drawing cost. Keep a working copy of the palette and reserve entries the art does not use for effects: STARFALL pulses entries 14 and 15 for aimed bullets and shields and flashes entry 0, the background, for bombs and hits.</p>
+<pre><code class="c">static uint16_t palette[16];                     /* copy of the game palette */
+static const uint16_t pulse[8] = {0xF6B, 0xF7C, 0xF9D, 0xFBE, 0xFDF, 0xFBE, 0xF9D, 0xF7C};
+
+static void animate(uint16_t step)
+{
+    palette[15] = pulse[(step &gt;&gt; 1) &amp; 7];
+    ti_error_keep(ti_gfx_palette(palette));
+}</code></pre>
+
+<h2 id="sprites">Sprites</h2>
+<p>For a few sprites over a picture, draw them into the canvas with <code>ti_gfx_sprite</code>, restoring what was under them from a separate background surface with <code>ti_gfx_blit</code>, and publish the union of the old and new places. These calls move pixels through resource reads and writes and cost more per pixel than rectangles and text.</p>
+<p>For many sprites over a plain background, use a <a href="../api/scene.html">sprite scene</a> instead. Each frame, list every sprite in draw order; the scene compares the list with the last one and recomposes only the 16x8-pixel blocks that changed, in near memory, without a banked surface.</p>
+<pre><code class="c">static void draw_playfield(void)
+{
+    uint8_t i;
+    ti_scene_frame();
+    for (i = 0; i &lt; STARS; ++i) ti_scene_add(star_x[i], star_y[i], IMG_DOT, star_color[i]);
+    for (i = 0; i &lt; ENEMIES; ++i)
+        if (enemy_active[i]) ti_scene_add(enemy_x[i], enemy_y[i], enemy_image[i], 0);
+    ti_scene_add(ship_x, ship_y, IMG_SHIP, 0);   /* listed last, drawn on top */
+    ti_error_keep(ti_scene_draw());
+}</code></pre>
+<p>Keep each object at the same list position from frame to frame where you can: a sprite that sits still and keeps its index costs nothing. A list that is full drops what comes after, so add what matters to play first and decoration such as explosions last.</p>
+
+<h2 id="combine">Combine a canvas and a scene</h2>
+<p>The scene does not know what else is on the screen. Whenever the canvas is published over the scene's area, tell it:</p>
+<ul>
+  <li>If the area now shows only the scene's background, call <code>ti_scene_forget</code>. The next draw draws every sprite and erases nothing.</li>
+  <li>If it shows anything else, call <code>ti_scene_invalidate</code>. The next draw repaints the whole area.</li>
+</ul>
+<pre><code class="c">static void full_frame(void)
+{
+    ti_error_keep(ti_gfx_clear(&amp;canvas, 0));       /* the playfield area is background */
+    draw_hud(&amp;canvas);
+    ti_error_keep(ti_gfx_present(&amp;canvas, 0, 0));
+    ti_scene_forget();
+}</code></pre>
+<p>A panel drawn on the canvas and published over the playfield, such as a pause screen, stays until the game stops drawing the scene; on resume, publish the frame again and forget.</p>
+
+<h2 id="maps">Scrolling tile maps</h2>
+<p><code>ti_gfx_map</code> fills a viewport of a surface from a tile set and a map at a pixel camera position. Scrolling redraws and republishes the whole viewport, so its cost grows with the viewport's area; measure it before you make it the main view. STARFALL scrolls its stars as sprites in a scene instead of scrolling a picture.</p>
+
+<h2 id="limits">Budgets and tearing</h2>
+<p>There is one screen page. A publication writes bytes while the Appletini keeps showing frames, so a large update can be seen half done. Small updates rarely show it.</p>
+<p><code>ti_gfx_budget</code> guards against an update that is larger or slower than planned: a publication over the byte budget is refused before any write, and one that takes more ticks than the tick budget reports <code>TI_E_TIMING</code> after it finishes. Sprite scene draws are not budgeted; the list capacity and area bound them.</p>
+
+<div class="pager"><a href="loop.html">Game loop and timing</a><a href="sound.html">Music, effects and speech</a></div>
+<footer class="page-foot">libtini is licensed under the <a href="../../LICENSE">MIT License</a>.</footer>
+</main>
+</div>
+</body>
+</html>

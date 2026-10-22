@@ -1,14 +1,15 @@
 # libtini development plan
 
-Date: 2026-10-20
+Date: 2026-10-20. Status, scope table and API examples updated to the code on 2026-10-22.
 
 libtini will be a C game SDK for an Apple //e with Appletini. It will offer a small API, offline asset tools and simple builds that produce ProDOS applications and disk images. The game owns its loop.
 
-[STARFALL](examples/starfall/README.md) is the showcase game: one endless
+[STARFALL](../examples/starfall/README.md) is the showcase game: one endless
 vertically scrolling survival level, five enemy behaviors, bounded
 projectile pools, CC0 sprites, shared music/effects/speech and CPU graphics.
 It uses the same existing-firmware boundary and has separate validation gates.
-[The starter](examples/starter/README.md) is a small game to copy.
+[The starter](../examples/starter/README.md) is a small game to copy.
+The developer reference for what was built is [docs/index.html](../docs/index.html).
 
 ## Agreed boundaries
 
@@ -26,13 +27,13 @@ At the first implementation checkpoint, choose and record an existing firmware r
 | Area | Scope |
 | --- | --- |
 | Runtime | Startup, capability reporting, timing, errors, diagnostics and clean return to ProDOS |
-| Graphics | SHR 320x200, palettes, software sprites, animation, tilemaps, scrolling, clipping, fonts, lines and filled shapes |
+| Graphics | SHR 320x200, palettes, software sprites, a sprite-scene band renderer, animation, tilemaps, scrolling, clipping, fonts, lines and filled shapes |
 | Memory | Near buffers and banked resource handles, allocation, bounded reads and writes, copy and fill |
 | Music and effects | Six Mockingboard voices, twelve Phasor voices, music playback and effects with priorities |
 | Speech | Phrases prepared from text at build time, numbers, a queue, voice controls and cancellation |
-| Input | Keyboard events, Apple buttons and joystick; an optional mouse driver |
+| Input | Keyboard events, the held key, Apple buttons, raw and calibrated joystick; an optional mouse driver (reserved: it reports unavailable) |
 | Storage | ProDOS files, resource packs, buffered asset loading and saved games |
-| Tools | Asset conversion, a starter project, disk packaging, previews, diagnostics and benchmarks |
+| Tools | Asset conversion, music and MIDI arrangement, speech compilation, a starter project, disk packaging, previews, diagnostics, benchmarks, a function profiler and a browser player |
 
 Networking follows as an optional module after the core is stable. Further existing video modes and experimental 3D follow measurements of the first renderer.
 
@@ -44,26 +45,37 @@ Keep the fast paths in 65C02 assembly behind C calls. Avoid requiring users to w
 
 A game project contains C sources, assets and a short build file. One build command converts assets, compiles and links the program, checks its memory layout and packages a ProDOS disk image. Required inputs must live inside the project or a documented installed SDK, without references to sibling build trees.
 
-The API names below describe the intended style; they are not a fixed ABI.
+The loop below uses the implemented API. It is the first implementation's
+ABI, not a frozen one.
 
 ~~~c
-ti_init(&config);
-ti_speech_say(SAY_READY);
+ti_init(1, 3);
+ti_gfx_surface_create(&canvas, 320, 200);
+ti_gfx_begin(palette);
+ti_audio_init(&audio);
+ti_speech_bind(&speech);
+ti_speech_say(SAY_READY, 1);
+ti_steps_begin(ti_audio_ticks, TI_AUDIO_TICKS_PER_SECOND, 30, 30);
 
 while (running) {
-    ti_frame_begin();
-    ti_input_poll();
-    update_game(ti_elapsed_ticks());
-    ti_map_draw(level, camera_x, camera_y);
-    ti_sprite_draw(ship, ship_x, ship_y, animation_frame);
     ti_audio_update();
-    ti_frame_end();
+    ti_input_poll();
+    steps = ti_steps_due();
+    if (steps == TI_STEPS_GAP || !ti_audio_clock_valid()) { pause_game(); continue; }
+    while (steps--) update_game(ti_stick_read(0), ti_input_held());
+    ti_scene_frame();
+    ti_scene_add(ship_x, ship_y, SHIP, 0);
+    ti_scene_draw();
 }
 
 ti_shutdown();
 ~~~
 
-Define elapsed-tick and frame-service rules before implementing this loop. Account for missed display edges and long operations. A frame count alone cannot serve as a reliable wall clock.
+Elapsed time comes from the audio driver's device ticks, not from display
+frames. `ti_steps_due` carries part steps over, caps catch-up and reports a
+gap of more than a second instead of inventing time. Display edges are
+observations with a lower-bound count; a frame count alone cannot serve as a
+wall clock.
 
 ## Graphics
 
@@ -121,9 +133,9 @@ Use the existing SSI-263 register interface. Speech requires neither new firmwar
 Authors write phrases as text in a speech asset file. A new host tool converts text to compact phoneme sequences and generates C identifiers. Provide pronunciation overrides, a preview command and a small documented initial English vocabulary or rule set. Text conversion is new SDK tooling; existing game drivers already consume authored phonemes.
 
 ~~~c
-ti_speech_say(SAY_WELCOME);
-ti_speech_say(SAY_EXTRA_LIFE);
-ti_speech_number(score);
+ti_speech_say(SAY_WELCOME, 1);
+ti_speech_say(SAY_EXTRA_LIFE, TI_SPEECH_INTERRUPT | 2);
+ti_speech_number(score, 1);
 ti_speech_busy();
 ti_speech_stop();
 ~~~
@@ -156,15 +168,22 @@ Use host tests for pure game logic, asset conversion and reference pixel results
 
 ## Implementation checkpoints
 
-All five checkpoints now have implementations. See [build/run instructions](README.md),
-[building a game](docs/GAMES.md), [memory layout](docs/MEMORY_MAP.md),
-[API contracts](docs/CONTRACTS.md) and [validation](docs/VALIDATION.md).
-The CPU-only and optional-AMEM builds include STARFALL, the starter, the
-shared music/speech/input driver, resource tools and per-game build
-manifests. Available host and emulator evidence is recorded
-separately from the remaining physical 33 MHz/TURBO acceptance gates.
-The selected board baseline is existing F1.3.1,
-`8af06741f3b9454b6bc226b7d55f69cc09097ccf`; no firmware rebuild/flash occurred.
+All five checkpoints now have implementations. See [build/run instructions](../README.md),
+[the developer reference](../docs/index.html), [building a game](GAMES.md),
+[memory layout](MEMORY_MAP.md), [API contracts](CONTRACTS.md) and
+[checks and status](../docs/reference/testing.html).
+The CPU-only build includes STARFALL, the starter, the audio demo, the
+speech check, the shared music/speech/input driver, the sprite scene
+renderer, resource tools and per-game build manifests. The optional-AMEM
+build includes the same programs except STARFALL, whose manifest leaves it
+out. A browser player runs the games on the development machine model.
+Host and emulator evidence is kept separate from the remaining physical
+33 MHz/TURBO acceptance gates.
+The selected board baseline is existing F1.3.2,
+`73de6fe03c31ad6f8ebfce3328704761fcd8c5a2`; no firmware rebuild/flash occurred.
+It replaced F1.3.1 (`8af06741`) on 2026-10-22: F1.3.2 clocks SSI-263 speech
+in standalone ONE//e mode and leaves the slot-7 ROM, the AMEM service and
+RamWorks unchanged.
 Checkpoint-five software is present, but release acceptance is not complete
 until the board gates pass. Optional mouse currently reports unavailable.
 
@@ -205,8 +224,8 @@ A hosted preview backend can improve iteration later, while retaining the target
 
 These are source references, not build dependencies or proof that a particular packaged game has passed board tests.
 
-- [Appletini copy and fill API](https://github.com/hasseily/appletini-one/blob/8af06741f3b9454b6bc226b7d55f69cc09097ccf/README_MEMORY_API.md)
-- [Current TURBO behaviour](https://github.com/hasseily/appletini-one/blob/8af06741f3b9454b6bc226b7d55f69cc09097ccf/README_TURBO.md)
+- [Appletini copy and fill API](https://github.com/hasseily/appletini-one/blob/73de6fe03c31ad6f8ebfce3328704761fcd8c5a2/README_MEMORY_API.md)
+- [Current TURBO behaviour](https://github.com/hasseily/appletini-one/blob/73de6fe03c31ad6f8ebfce3328704761fcd8c5a2/README_TURBO.md)
 - [Bosconian C and assembly game](https://github.com/hasseily/appletini-software/tree/main/demos/appletini_bosconian)
 - [Native Phasor stream player](https://github.com/hasseily/appletini-software/tree/main/music/song_to_phasor/player)
 - [Uthernet C examples](https://github.com/hasseily/appletini-software/tree/main/demos/appletini_demos/appletini_webserver)

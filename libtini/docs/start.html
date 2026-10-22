@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting started - libtini</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="layout">
+<header id="side">
+  <div class="side-top"><a class="brand" href="index.html">libtini</a></div>
+  <noscript><p><a href="index.html#contents">Contents</a></p></noscript>
+</header>
+<main id="main">
+<h1>Getting started</h1>
+<p class="lead">Install the compiler and the ProDOS input, build the library with its examples, boot a disk, then start a game of your own.</p>
+
+<h2 id="requirements">What you need</h2>
+<h3>On the Apple</h3>
+<ul>
+  <li>An enhanced Apple //e (65C02) with an Appletini. The selected firmware baseline is existing F1.3.2, commit <code>73de6fe03c31ad6f8ebfce3328704761fcd8c5a2</code>; no firmware rebuild, flashing or slot change is needed.</li>
+  <li>RamWorks enabled. A game grants libtini a set of expansion banks (selectors) with <code>ti_init</code>; no RAM disk or other driver may use those banks. The diagnostic uses selectors 1-2, the starter and STARFALL use 1-3.</li>
+  <li>SmartPort in slot 7, which holds the boot disk.</li>
+  <li>A Mockingboard or Phasor personality in slot 4 for sound, speech, the game clock and the joystick timer.</li>
+</ul>
+
+<h3>On the development computer</h3>
+<div class="table"><table>
+<tr><th>Tool</th><th>Used for</th><th>Version</th></tr>
+<tr><td>Python</td><td>Every build and tool script</td><td>3.10 or newer; reference CPython 3.12.0</td></tr>
+<tr><td>cc65 SDK</td><td>Compiling, assembling, archiving and linking</td><td>Exactly 2.19, the complete SDK with <code>include/</code>, <code>asminc/</code> and <code>lib/none.lib</code></td></tr>
+<tr><td>py65</td><td>Instruction-level tests</td><td>1.2.0, optional</td></tr>
+<tr><td>GCC</td><td>The native emulator, host game tests, the profiler and benchmarks</td><td>Reference MSYS2 UCRT64 GCC 15.1.0, optional</td></tr>
+<tr><td>Emscripten</td><td>The browser player</td><td>6.0.13, optional</td></tr>
+</table></div>
+<p>Download cc65 2.19 from <a href="https://github.com/cc65/cc65/releases/tag/V2.19">its release page</a>. The build checks that all four cc65 programs report V2.19. Pass the SDK folder with <code>--cc65-home</code>, set <code>CC65_HOME</code>, or put the SDK's <code>bin/</code> on <code>PATH</code>. The examples below use <code>D:/Repos/cc65</code>.</p>
+
+<h2 id="build">Build the library and examples</h2>
+<p>Run every command from the <code>libtini/</code> folder of the repository.</p>
+<pre><code>python tools/setup_inputs.py
+python tools/build.py --cc65-home D:/Repos/cc65</code></pre>
+<p>The first command downloads the official ProDOS 8 2.4.3 disk image once, checks its SHA-256 and stores it under <code>build-inputs/prodos/</code>, which git ignores. Every later build works offline. ProDOS is not redistributed by the repository; check its terms before you share a disk that contains it. <code>--no-disk</code> builds the programs and the library without ProDOS.</p>
+<p>A build compiles the library, links every program and game, checks each linked layout and writes bootable disks:</p>
+<div class="table"><table>
+<tr><th>Output</th><th>What it is</th></tr>
+<tr><td><code>build/libtini.lib</code></td><td>The cc65 library archive</td></tr>
+<tr><td><code>build/libtini.po</code></td><td>The memory and SHR diagnostic: five test results on one screen</td></tr>
+<tr><td><code>build/audio_demo.po</code></td><td>Music, speech and spoken numbers; boots AUDIO.SYSTEM</td></tr>
+<tr><td><code>build/starter.po</code></td><td>The starter game; boots STARTER.SYSTEM</td></tr>
+<tr><td><code>build/starfall.po</code></td><td>STARFALL, the example shooter; boots STARFALL.SYSTEM</td></tr>
+<tr><td><code>build/speech_check.po</code></td><td>A text-mode SSI-263 check for the board</td></tr>
+<tr><td><code>build/*.system</code></td><td>Each program as a ProDOS SYS file</td></tr>
+<tr><td><code>build/*.map</code>, <code>*.lbl</code>, <code>*.dbg</code></td><td>Linker map, labels and debug information</td></tr>
+<tr><td><code>build/memory.json</code>, <code>layout.json</code></td><td>Free and used bytes of each memory area, and the linked segments</td></tr>
+<tr><td><code>build/manifest.json</code></td><td>Hashes of every source, tool, installed input and output</td></tr>
+</table></div>
+<p>The build ends with one memory line per game, such as:</p>
+<pre><code>starfall memory: LOW $0800-$1FFF 88 free; IMAGE $2000-$BEFF 1032 free; WORK $A26C-$B3FF 1110 free; NEAR $B480-$B6FF 1 free
+starter memory: MAIN $2000-$9FFF 12321 free; NEAR $A900-$AEFF 1532 free</code></pre>
+
+<h2 id="run">Run a disk</h2>
+<p>Boot <code>build/starter.po</code> from slot 7. Hold WASD or the arrow keys, or move a joystick, to move the square; a joystick button plays a tone and <kbd>Q</kbd> returns to ProDOS. The starter needs the slot-4 card: without it the screen says that a slot 4 audio card is required.</p>
+<p><code>build/starfall.po</code> starts STARFALL. <kbd>Return</kbd> or a joystick button launches with the Mockingboard, <kbd>P</kbd> with the Phasor. <code>build/libtini.po</code> runs five memory tests and shows PASS or FAIL for each; if the granted banks are missing or aliased it says so in text and still exits normally.</p>
+
+<h2 id="new-game">Start your own game</h2>
+<h3>Inside this repository</h3>
+<p>A game is a folder under <code>games/</code> or <code>examples/</code> with a <code>game.json</code> manifest. The build finds every manifest by itself. Copy the starter's <code>main.c</code> into a new folder and add a manifest:</p>
+<pre><code>{
+  "name": "mygame",
+  "title": "MY GAME",
+  "sources": ["main.c"],
+  "disk": {"volume": "MYGAME", "system": "MYGAME.SYSTEM", "blocks": 280}
+}</code></pre>
+<pre><code>python tools/build.py --cc65-home D:/Repos/cc65 --game mygame</code></pre>
+<p><code>--game</code> builds the library, the diagnostic and that one game. The outputs are <code>build/mygame.system</code> and <code>build/mygame.po</code>. <a href="reference/build.html">Builds and game manifests</a> describes every manifest key, generated assets and extra disk files.</p>
+
+<h3>As a separate project</h3>
+<pre><code>python examples/starter/create.py C:/Projects/MyGame</code></pre>
+<p>This copies the runtime sources, public headers, the <code>cfg/libtini.cfg</code> layout and the disk tools into <code>C:/Projects/MyGame/runtime/</code> as ordinary files, with the starter's <code>main.c</code> and a small <code>build.py</code>. The destination must not exist. <code>SDK_INPUTS.json</code> records the hash of every copied file. The project needs no checkout of this repository after that:</p>
+<pre><code>cd C:/Projects/MyGame
+python runtime/tools/setup_inputs.py
+python build.py --cc65-home D:/Repos/cc65</code></pre>
+<p>It builds <code>build/APP.SYSTEM</code> and <code>build/APP.po</code>. The copied runtime does not follow later SDK changes; create a new project, or copy the new sources, to pick them up. Do not patch the copies instead of changing the SDK source.</p>
+
+<h2 id="read-the-starter">Read the starter</h2>
+<p>The starter is about a hundred lines and uses the calls most games need first: <code>ti_init</code>, a 320x200 surface, <code>ti_gfx_begin</code>, <code>ti_audio_init</code> for the clock, <code>ti_steps_due</code> for thirty updates a second, <code>ti_input_held</code> and <code>ti_stick_read</code> for movement, and <code>ti_gfx_present</code> for the changed rectangle. <a href="examples.html#starter">Examples</a> walks through it.</p>
+
+<h2 id="emulator">Run without a board</h2>
+<p>The repository's development emulator runs the same disks. It needs GCC, and a ProDOS boot needs the enhanced //e ROM and SmartPort ROMs, which are not distributed: install them under <code>build-inputs/native-roms/</code> as <a href="../tools/DEPENDENCIES.md">tools/DEPENDENCIES.md</a> describes.</p>
+<pre><code>python tools/native_emulator.py --cc C:/msys64/ucrt64/bin/gcc.exe play --disk build/starfall.po --boot `
+    --rom build-inputs/native-roms/Apple2e_Enhanced.rom `
+    --slot7-rom build-inputs/native-roms/smartport_a2retronet_style_c700.mem `
+    --slot7-c8-rom build-inputs/native-roms/smartport_a2retronet_style_c800.mem `
+    --video-rom build-inputs/native-roms/apple2e-video.bin --profile vtw33</code></pre>
+<p>That wrapper runs without sound. The <a href="reference/browser.html">browser player</a> plays a game with sound and speech in a web page. Emulator timing is a model: <code>vtw33</code> runs at a nominal 33.33 MHz without every device wait, and <code>turbo-f122</code> uses historical F1.2.2 TURBO costs. Only a board shows real timing and output.</p>
+<p class="note">A direct launch with <code>--disk</code> and <code>--system</code> instead of <code>--boot</code> uses the emulator's ProDOS MLI stand-in, which does not implement <code>ALLOC_INTERRUPT</code>. <code>ti_audio_init</code> then fails, so games that need the audio clock report that the slot-4 card is missing.</p>
+
+<div class="pager"><span></span><a href="concepts.html">How libtini works</a></div>
+<footer class="page-foot">libtini is licensed under the <a href="../LICENSE">MIT License</a>.</footer>
+</main>
+</div>
+</body>
+</html>

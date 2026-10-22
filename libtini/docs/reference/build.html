@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Builds and game manifests - libtini</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="layout">
+<header id="side">
+  <div class="side-top"><a class="brand" href="../index.html">libtini</a></div>
+  <noscript><p><a href="../index.html#contents">Contents</a></p></noscript>
+</header>
+<main id="main">
+<h1>Builds and game manifests</h1>
+<p class="lead"><code>tools/build.py</code> builds the library, the SDK programs and every game it finds, checks each linked layout and packages ProDOS disks. A game describes itself in a <code>game.json</code> manifest, so adding one needs no change to the build script.</p>
+
+<h2 id="options">Command line</h2>
+<pre><code>python tools/build.py [--cc65-home DIR] [--game NAME] [--no-disk] [--private] [--build-dir DIR]
+                      [--test-target] [--prodos-image FILE]</code></pre>
+<div class="table"><table>
+<tr><th>Option</th><th>Effect</th></tr>
+<tr><td><code>--cc65-home DIR</code></td><td>The installed cc65 2.19 SDK. Defaults to <code>CC65_HOME</code>, then to the SDK of the <code>cc65</code> on <code>PATH</code>.</td></tr>
+<tr><td><code>--game NAME</code></td><td>Build the library, the diagnostic, this game and any program its disk lists. Without it every manifest is built.</td></tr>
+<tr><td><code>--no-disk</code></td><td>Link programs and the library only; no ProDOS input is needed.</td></tr>
+<tr><td><code>--private</code></td><td>Compile with <code>TI_PRIVATE_TRANSPORT=1</code> and link the optional AMEM transport. Games whose manifest sets <code>"private": false</code> are left out.</td></tr>
+<tr><td><code>--build-dir DIR</code></td><td>Output folder inside the project, <code>build</code> by default. Use <code>build/private</code> for the AMEM variant.</td></tr>
+<tr><td><code>--test-target</code></td><td>Also link the 65C02 test programs that the checks run.</td></tr>
+<tr><td><code>--prodos-image FILE</code></td><td>Use another installed copy of ProDOS 8 2.4.3; it must match the pinned SHA-256.</td></tr>
+</table></div>
+
+<h2 id="steps">What a build does</h2>
+<ol>
+  <li>Reads and checks every <code>examples/*/game.json</code> and <code>games/*/game.json</code> before building anything.</li>
+  <li>Runs the selected games' <code>generate</code> steps, then compiles the audio demo's score and phrases.</li>
+  <li>Compiles every <code>src/*.c</code> except the diagnostic and assembles every <code>src/target/*.s</code> except the startup, and archives them as <code>libtini.lib</code>.</li>
+  <li>Links the diagnostic, the audio demo, each game and the test programs, each with the startup object, its own objects, <code>libtini.lib</code> and cc65's <code>none.lib</code>.</li>
+  <li>Checks each linked layout: the SYS starts at $2000, zero page stays in $80-$9F, <code>NEARBSS</code> stays in the near arena, low segments stay in the readable low range, and nothing else leaves the application region.</li>
+  <li>Writes the ProDOS disks, <code>layout.json</code>, <code>memory.json</code> and <code>manifest.json</code>, and prints one memory line per game.</li>
+</ol>
+<p>The compiler commands are:</p>
+<pre><code>cc65 -t none --cpu 65c02 --standard c99 -O [cflags] -I SDK/include -I include -I src -I BUILD -I GAME -D TI_PRIVATE_TRANSPORT=0|1
+ca65 --cpu 65c02 -t none -I SDK/asminc -I src/target
+ld65 -C CONFIG -o NAME.system -m NAME.map -Ln NAME.lbl --dbgfile NAME.dbg startup.o OBJECTS libtini.lib SDK/lib/none.lib</code></pre>
+<p>Builds are deterministic: identical sources, flags, installed SDK and ProDOS input give identical bytes. Object timestamps are fixed, ca65's informational timestamp is normalized, and no build makes a network request. <code>build/manifest.json</code> records the hash of every input, tool, SDK header and output.</p>
+
+<h2 id="manifest">The game manifest</h2>
+<pre><code>{
+  "name": "starfall",
+  "title": "STARFALL",
+  "sources": ["main.c", "game.c"],
+  "config": "examples/starfall/starfall.cfg",
+  "private": false,
+  "cflags": ["--static-locals"],
+  "generate": [
+    {
+      "command": ["{root}/tools/speech.py", "{game}/speech.json", "--output", "{build}/starfall_speech.h",
+                  "--symbol", "sf_speech", "--no-numbers"],
+      "inputs": ["{root}/tools/speech.py", "speech.json"],
+      "outputs": ["{build}/starfall_speech.h"]
+    }
+  ],
+  "disk": {"volume": "STARFALL", "system": "STARFALL.SYSTEM", "blocks": 1600}
+}</code></pre>
+<div class="table"><table>
+<tr><th>Key</th><th>Meaning</th></tr>
+<tr><td><code>name</code></td><td>Required. 1-15 characters: a lower-case letter, then lower-case letters, digits or <code>_</code>. Outputs are <code>build/NAME.system</code>, <code>.po</code>, <code>.map</code>, <code>.lbl</code> and <code>.dbg</code>. It must not repeat another game's or an SDK program's name.</td></tr>
+<tr><td><code>title</code></td><td>Shown in the build summary; defaults to the name.</td></tr>
+<tr><td><code>sources</code></td><td>Required. C files relative to the manifest; the first defines <code>main</code>.</td></tr>
+<tr><td><code>assembly</code></td><td>ca65 files relative to the manifest.</td></tr>
+<tr><td><code>config</code></td><td>Linker layout relative to the libtini folder; <code>cfg/libtini.cfg</code> by default.</td></tr>
+<tr><td><code>cflags</code></td><td>Extra cc65 options, such as <code>--static-locals</code> for foreground-only code.</td></tr>
+<tr><td><code>private</code></td><td><code>false</code> leaves the game out of <code>--private</code> builds; <code>true</code> by default.</td></tr>
+<tr><td><code>generate</code></td><td>Commands run before compiling, in order; see below.</td></tr>
+<tr><td><code>disk</code></td><td>A bootable ProDOS disk: <code>volume</code> (default the name in capitals), <code>system</code> (default <code>NAME.SYSTEM</code>), <code>blocks</code> (default 1600, an 800 KiB disk) and <code>files</code>.</td></tr>
+</table></div>
+<p>Unknown keys are an error, as are missing sources or a missing layout file.</p>
+
+<h3 id="generate">Generate steps</h3>
+<p>Each step is <code>{"command": [...], "inputs": [...], "outputs": [...]}</code>. A command whose first element ends in <code>.py</code> runs with the build's own Python. <code>{root}</code>, <code>{game}</code> and <code>{build}</code> expand to the libtini folder, the manifest's folder and the build folder. Other relative paths in <code>inputs</code>, <code>outputs</code> and disk files are relative to the manifest. Inputs are hashed into <code>build/manifest.json</code>, a folder counting every file under it; outputs are recorded as build outputs. The build folder and the game's folder are on the include path, so a generated header is included by its bare name.</p>
+
+<h3 id="disk-files">Extra disk files</h3>
+<p>Each entry of <code>disk.files</code> has a <code>name</code> and at most one source. <code>path</code> copies a file; <code>program</code> adds another linked program, such as <code>"libtini"</code>, the diagnostic; neither makes an empty file. Files default to ProDOS type $06 and programs to $FF with auxiliary type $2000; <code>type</code> and <code>aux</code> override them. The disk packager writes seedling and sapling files, up to 131,072 bytes each, and puts the game's SYS first so ProDOS boots it.</p>
+<pre><code>"disk": {"volume": "MYGAME", "system": "MYGAME.SYSTEM", "blocks": 280,
+         "files": [{"name": "RESOURCES.TPK", "path": "{build}/RESOURCES.TPK"},
+                   {"name": "DIAG.SYSTEM", "program": "libtini"},
+                   {"name": "SAVE.A"}]}</code></pre>
+
+<h2 id="outputs">Outputs</h2>
+<div class="table"><table>
+<tr><th>File</th><th>Contents</th></tr>
+<tr><td><code>build/libtini.lib</code></td><td>The library archive</td></tr>
+<tr><td><code>build/NAME.system</code></td><td>Each program as a raw ProDOS SYS file loaded at $2000</td></tr>
+<tr><td><code>build/NAME.po</code></td><td>Each bootable disk: the ProDOS boot blocks and kernel, then the program</td></tr>
+<tr><td><code>build/NAME.map</code>, <code>.lbl</code>, <code>.dbg</code></td><td>ld65's map, VICE-style label file and debug file. Source-level debug information is omitted because cc65 embeds file timestamps in it.</td></tr>
+<tr><td><code>build/layout.json</code></td><td>Every linked segment of every program</td></tr>
+<tr><td><code>build/memory.json</code></td><td>Used and free bytes of each memory area of every program</td></tr>
+<tr><td><code>build/manifest.json</code></td><td>The profile, the firmware baseline, tool versions and hashes of every input and output</td></tr>
+<tr><td><code>build/asm/</code>, <code>build/obj/</code></td><td>Staged assembler sources and objects</td></tr>
+</table></div>
+
+<h2 id="separate">A separate project</h2>
+<p><code>python examples/starter/create.py DESTINATION</code> makes a self-contained project: ordinary copies of the public headers, runtime sources, assembly backends, <code>cfg/libtini.cfg</code>, <code>tools/disk.py</code>, <code>tools/setup_inputs.py</code>, the ProDOS lock file and <code>tools/DEPENDENCIES.md</code> under <code>runtime/</code>, plus the starter's <code>main.c</code>, a <code>build.py</code>, a <code>.gitignore</code>, a README and <code>SDK_INPUTS.json</code> with every copied file's hash. It copies no objects, compilers, ProDOS image or links.</p>
+<pre><code>python runtime/tools/setup_inputs.py
+python build.py --cc65-home D:/Repos/cc65 [--no-disk]</code></pre>
+<p>The project's <code>build.py</code> compiles every runtime source into its own <code>build/libtini.lib</code>, links <code>main.c</code> with <code>runtime/cfg/libtini.cfg</code> and writes <code>build/APP.SYSTEM</code>, <code>APP.map</code>, <code>APP.lbl</code> and, unless <code>--no-disk</code>, <code>APP.po</code>. It has no manifest: add sources and generated assets by editing the script.</p>
+
+<h2 id="release">Release archives</h2>
+<pre><code>python tools/release.py --cc65-home D:/Repos/cc65 --verify-isolation</code></pre>
+<p>After both builds exist (<code>build/</code> and <code>build/private/</code>, each with <code>--test-target</code>), this checks that no build input or output changed since, and with <code>--verify-isolation</code> copies the source files to a fresh folder under <code>build/</code>, rebuilds both variants there with only installed tools and the pinned ProDOS input, and requires identical outputs. It then writes <code>dist/libtini-source.zip</code>, the source without OS or ROM bytes, and <code>dist/libtini-local-release.zip</code>, which adds the built programs, disks and check records. The local release contains ProDOS inside its disks; check ProDOS's terms before sharing it.</p>
+
+<footer class="page-foot">Implemented in <code>tools/build.py</code>, <code>tools/disk.py</code>, <code>examples/starter/create.py</code> and <code>tools/release.py</code>.</footer>
+</main>
+</div>
+</body>
+</html>

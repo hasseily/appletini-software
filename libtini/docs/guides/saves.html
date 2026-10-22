@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Saved games - libtini</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/site.js" defer></script>
+</head>
+<body data-module="storage">
+<a class="skip" href="#main">Skip to content</a>
+<div class="layout">
+<header id="side">
+  <div class="side-top"><a class="brand" href="../index.html">libtini</a></div>
+  <noscript><p><a href="../index.html#contents">Contents</a></p></noscript>
+</header>
+<main id="main">
+<h1>Saved games</h1>
+<p class="lead">A ProDOS write is not atomic: power loss or a disk error can leave a half-written file. Write saves to two files in turn and load the newer one that checks out.</p>
+
+<h2 id="pattern">Two slots</h2>
+<ul>
+  <li>Keep the save in one small structure with a marker, a sequence number and a checksum.</li>
+  <li>Each save goes to the file that does <em>not</em> hold the newest good save, so a failed write never destroys the last good one.</li>
+  <li>Loading reads both files, discards any that is short, has the wrong marker or fails its checksum, and keeps the one with the newer sequence number.</li>
+</ul>
+<pre><code class="c">#include "libtini.h"
+
+#define SAVE_MAGIC 0x5A
+typedef struct save_data {
+    uint8_t magic, sequence;
+    uint32_t best_score;
+    uint8_t level, checksum;            /* checksum stays last */
+} save_data;
+
+static save_data current;
+static const char *const slot_name[2] = {"SAVE.A", "SAVE.B"};
+static uint8_t newest = 1;              /* the slot holding current; saves use the other */
+
+static uint8_t checksum(const save_data *s)
+{
+    const uint8_t *p = (const uint8_t *)s;
+    uint8_t i, sum = 0xA5;
+    for (i = 0; i &lt; sizeof(*s) - 1; ++i) sum = (uint8_t)((sum &lt;&lt; 1 | sum &gt;&gt; 7) ^ p[i]);
+    return sum;
+}
+
+/* Loads the newer valid slot into current; 0 when neither is valid. */
+uint8_t load_game(void)
+{
+    save_data slot[2];
+    uint16_t length;
+    uint8_t i, valid[2];
+    for (i = 0; i &lt; 2; ++i)
+        valid[i] = ti_file_read(slot_name[i], &amp;slot[i], sizeof(slot[i]), &amp;length) == TI_OK &amp;&amp;
+                   length == sizeof(slot[i]) &amp;&amp; slot[i].magic == SAVE_MAGIC &amp;&amp;
+                   slot[i].checksum == checksum(&amp;slot[i]);
+    if (!valid[0] &amp;&amp; !valid[1]) return 0;
+    if (valid[0] &amp;&amp; valid[1]) i = (int8_t)(slot[1].sequence - slot[0].sequence) &gt; 0;
+    else i = valid[1];
+    current = slot[i];
+    newest = i;
+    return 1;
+}
+
+ti_error save_game(void)
+{
+    ti_error e;
+    current.magic = SAVE_MAGIC;
+    ++current.sequence;
+    current.checksum = checksum(&amp;current);
+    e = ti_file_write(slot_name[newest ^ 1], &amp;current, sizeof(current));
+    if (e == TI_OK) newest ^= 1;
+    return e;
+}</code></pre>
+<p>The sequence comparison works across the wrap from 255 to 0. File names follow ProDOS's rule: a capital letter, then capitals, digits or periods, at most 15 characters, relative to the current prefix, which is normally the boot disk's volume.</p>
+
+<h2 id="requirements">What a file call needs</h2>
+<ul>
+  <li><strong>The file buffer.</strong> ProDOS needs the 1 KiB buffer at <code>_ti_file_buffer</code>, $B000-$B3FF in both shared layouts. A layout that leaves it out, as STARFALL's does, cannot link file calls at all.</li>
+  <li><strong>Memory during a video session.</strong> With SHR on, each call lends AUX bank 0 back to ProDOS and keeps the picture in a temporary resource: one free slot and 32,768 bytes. Without them the call returns <code>TI_E_NOMEM</code> before ProDOS runs.</li>
+  <li><strong>Nothing else in flight.</strong> Calls are synchronous; one made while another runs returns <code>TI_E_BUSY</code>.</li>
+</ul>
+
+<h2 id="timing">Timing around a save</h2>
+<p>The audio driver pauses while ProDOS runs: music mutes, effects and speech stop, and the clock stops counting. When the call returns, the clock resumes without a gap and music continues. The picture is restored as it was. A save takes disk time, so do it at a natural pause, such as the game-over screen, and expect a moment of silence.</p>
+
+<h2 id="errors">When a save fails</h2>
+<p><code>ti_file_write</code> returns <code>TI_E_IO</code> for a ProDOS failure; <code>ti_file_last_error</code> gives ProDOS's code, such as $2B for a write-protected disk or $48 for a full volume. Tell the player in words, keep playing, and leave the other slot alone: it still holds the last good save.</p>
+
+<div class="pager"><a href="assets.html">Art, fonts, maps and packs</a><a href="memory.html">Memory and layouts</a></div>
+<footer class="page-foot">libtini is licensed under the <a href="../../LICENSE">MIT License</a>.</footer>
+</main>
+</div>
+</body>
+</html>

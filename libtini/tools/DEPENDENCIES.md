@@ -24,8 +24,9 @@ transport. `--private --build-dir build/private` separately builds the optional
 probed AMEM backend; CPU video publication remains mandatory in both builds.
 
 The build invokes `cc65 -t none --cpu 65c02 --standard c99 -O`, `ca65 -t none
---cpu 65c02`, `ar65 r`, and `ld65 -C cfg/libtini.cfg` (or the static full-game
-`cfg/game.cfg`). It deliberately uses
+--cpu 65c02`, `ar65 r`, and `ld65 -C cfg/libtini.cfg`, or the layout a game's manifest
+names, such as the static full-game `cfg/game.cfg` or STARFALL's
+`examples/starfall/starfall.cfg`. It deliberately uses
 the `none` runtime, the project's startup, and a raw ProDOS SYS binary loaded at
 `$2000`, with no BASIC executable header. The public C interface uses the cc65
 calling convention and the supported cc65 C subset; the option does not imply
@@ -151,11 +152,11 @@ with an installed **Emscripten 6.0.13** (emsdk, release
 `build/web/player/build.json` records the input hashes, commands and output
 hashes. `tests/web_validate.py` runs the player under the emsdk's Node 24.19.0.
 The player links GPL-3.0 code, so any copy of it must offer its source. See
-[the browser player](../docs/WEB.md).
+[the browser player](../docs/reference/browser.html).
 
 The `vtw33` profile is functional execution at nominal 33.333333 MHz without
 all hardware waits. `turbo-f122` is a historical F1.2.2 cost model, not a model
-of the selected F1.3.1 firmware's complete timing. Both provide program and
+of the selected F1.3.2 firmware's complete timing. Both provide program and
 memory evidence; neither establishes board speed or capture-stream behavior.
 Direct launch loads the packaged SYS and uses a ProDOS MLI stand-in. The
 native test injects a key and requires that stand-in to observe QUIT.

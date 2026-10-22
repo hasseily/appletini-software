@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Music, effects and speech - libtini</title>
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/site.js" defer></script>
+</head>
+<body data-module="audio">
+<a class="skip" href="#main">Skip to content</a>
+<div class="layout">
+<header id="side">
+  <div class="side-top"><a class="brand" href="../index.html">libtini</a></div>
+  <noscript><p><a href="../index.html#contents">Contents</a></p></noscript>
+</header>
+<main id="main">
+<h1>Music, effects and speech</h1>
+<p class="lead">Start the driver for whichever card is present, split its voices between music and effects so one effect table suits six or twelve voices, write or arrange music, and add spoken lines with captions.</p>
+
+<h2 id="card">Start the driver</h2>
+<p>A game cannot ask the card which personality it has, so let the player choose, as STARFALL's title screen does with <kbd>M</kbd> and <kbd>P</kbd>. Asking for a Phasor on a card that answers as a Mockingboard still works: the driver finds the second chip pair missing and serves six voices.</p>
+<pre><code class="c">static uint8_t music_voices;
+
+static ti_error start_audio(uint8_t personality)
+{
+    ti_audio_config config;
+    ti_error e;
+    config.personality = personality;   /* TI_AUDIO_MOCKINGBOARD or TI_AUDIO_PHASOR */
+    config.speech = 1;
+    config.ducking = 1;                 /* music three steps quieter while speaking */
+    config.via_hz = 0;                  /* nominal 1 MHz VIA clock */
+    config.voices = 0;                  /* every voice the card has */
+    e = ti_audio_init(&amp;config);
+    if (e) return e;
+    /* Eight song tracks on a Phasor; two on a Mockingboard. */
+    music_voices = ti_audio_voices() == 12 ? 8 : 2;
+    return TI_OK;
+}</code></pre>
+<p>A game that needs few voices sets <code>voices</code>: the starter asks for 3, one AY chip, and every update then compares and writes only that chip.</p>
+
+<h2 id="split">Split voices between music and effects</h2>
+<p><code>ti_audio_reserve</code> takes a mask of music voices; the others play effects. Number effect voices with <code>ti_audio_effect_voice</code>, which counts from the first voice the music leaves: effect voice 0 is voice 2 on a Mockingboard with two music voices and voice 8 on a Phasor with eight. One table then works on both cards.</p>
+<pre><code class="c">static void reserve_music(void)
+{
+    ti_audio_reserve((1U &lt;&lt; music_voices) - 1);   /* 0x03 or 0xFF */
+}
+
+/* One row per game event: period, effect voice, volume, ticks, priority. */
+static const uint16_t sfx_period[4]   = {150, 950, 1700, 2000};
+static const uint8_t  sfx_voice[4]    = {0, 1, 2, 3};
+static const uint8_t  sfx_volume[4]   = {7, 12, 15, 15};
+static const uint8_t  sfx_ticks[4]    = {3, 10, 20, 30};
+static const uint8_t  sfx_priority[4] = {1, 2, 4, 5};
+
+static void sound(uint8_t event)
+{
+    ti_audio_effect(ti_audio_effect_voice(sfx_voice[event]), sfx_period[event],
+                    sfx_volume[event], sfx_ticks[event], sfx_priority[event]);
+}</code></pre>
+<p>An effect replaces the one already on its voice only at an equal or higher priority, so a shot cannot cut off an explosion. Effects end by themselves after their duration in ticks. The four effect voices of a Mockingboard with two music voices are 2-5.</p>
+
+<h2 id="scores">Event scores</h2>
+<p>An event score is a list of tone changes, easy to write by hand for jingles. In JSON:</p>
+<pre><code>{
+  "voices": 6,
+  "events": [
+    {"duration": 0,  "period": 956,  "voice": 0, "volume": 7},
+    {"duration": 25, "period": 1517, "voice": 1, "volume": 5},
+    {"duration": 25, "period": 851,  "voice": 0, "volume": 7}
+  ]
+}</code></pre>
+<pre><code>python tools/music.py jingle.json --output build/jingle.h --symbol jingle --report build/jingle.json</code></pre>
+<pre><code class="c">#include "jingle.h"      /* jingle[], JINGLE_COUNT */
+ti_music_start(jingle, JINGLE_COUNT, 0);</code></pre>
+<p>Each event sets one voice, then waits <code>duration</code> ticks; a duration of 0 changes several voices at once. Periods are AY periods for the nominal 1 MHz clock, which plays 1,000,000 / (16 &times; period) Hz: 956 is about 65 Hz, C2. The compiler accepts 1-512 events, requires time to advance and rejects 32 zero-duration events in a row, which one update could not play.</p>
+
+<h2 id="songs">Pattern songs</h2>
+<p>Real music is far smaller as a pattern song: each track plays an order of patterns, and repeated bars are stored once. Write the song in JSON:</p>
+<pre><code>{"song": {"bpm": 152, "rows_per_beat": 8, "loop": 0,
+  "tracks": [
+    {"name": "lead", "volume": 12, "decay": 4, "floor": 8, "order": ["a", "a", "b"]},
+    {"name": "bass", "volume": 12, "decay": 2, "floor": 6, "order": ["c", "c", "c"]}
+  ],
+  "patterns": {
+    "a": "D#5:2 F#5:2 -:4 G#5:8",
+    "b": "v10 B5:12 ^:4",
+    "c": "D#3:8 D#3:8"
+  }}}</code></pre>
+<ul>
+  <li><code>NOTE:ROWS</code> plays a note such as <code>C4</code> (MIDI note 60), <code>F#3</code> or <code>Bb5</code> for that many rows; <code>-:ROWS</code> rests and <code>^:ROWS</code> holds the current sound.</li>
+  <li><code>vN</code>, <code>dN</code> and <code>fN</code> set the track's volume, decay and floor, 0-15. A note starts at the volume and falls one level every <code>decay</code> ticks down to the floor, so repeated notes stay distinct; decay 0 holds the volume.</li>
+  <li>Every track needs the same number of order positions and the same total rows. <code>loop</code> is the order position a looping song returns to.</li>
+  <li>A row lasts <code>100 * 60 / (bpm * rows_per_beat)</code> ticks, 1-100, kept in 8.8 fixed point so fractional rows keep the tempo.</li>
+</ul>
+<pre><code>python tools/music.py song.json --preview
+python tools/music.py song.json --output build/song.h --symbol song --report build/song.json</code></pre>
+<pre><code class="c">#include "song.h"        /* song[], SONG_SIZE */
+ti_audio_reserve(0x03);   /* track 0 on voice 0, track 1 on voice 1 */
+ti_song_start(song, SONG_SIZE, 1);</code></pre>
+<p>Track <em>i</em> plays on the <em>i</em>th reserved voice. Arrange the most important tracks first: a Mockingboard game that reserves two voices plays only the first two tracks of a song written for a Phasor. The player is 1,120 bytes of code plus 195 bytes of state; the full-game layout runs most of it from low memory.</p>
+
+<h3 id="midi">Arranging a MIDI file</h3>
+<p><code>tools/midi.py</code> turns a Standard MIDI File into a song document. An arrangement file chooses the bars and assigns one MIDI channel and chord note to each track:</p>
+<pre><code>{
+  "credit": "Music arranged from tune.mid, Copyright (C) its author",
+  "bars": [26, 49], "loop_bar": 26, "rows_per_beat": 8,
+  "tracks": [
+    {"name": "lead", "channel": 4, "slot": 0, "volume": 11, "decay": 4, "floor": 7},
+    {"name": "bass", "channel": 8, "slot": 0, "volume": 12, "decay": 2, "floor": 6},
+    {"name": "gtr_hi", "channel": 2, "slot": 0, "volume": 8, "decay": 1, "floor": 3},
+    {"name": "gtr_lo", "channel": 2, "slot": 1, "volume": 9, "decay": 1, "floor": 3}
+  ]
+}</code></pre>
+<pre><code>python tools/midi.py tune.mid arrangement.json --output song.json</code></pre>
+<ul>
+  <li>Bars count from 0 at the start of the file. The range must have one tempo and one meter.</li>
+  <li><code>channel</code> is the MIDI channel, 1-16. <code>slot</code> 0 takes the highest note that starts on a row, 1 the next lower, and so on. A track plays one note at a time; a later note cuts an earlier one. <code>transpose</code> shifts a track by semitones.</li>
+  <li>Notes are rounded to the nearest row and folded by octaves into the AY range. A note held across a bar line continues as a hold. Identical bars become one pattern.</li>
+  <li>The report counts, per channel, the notes no track took.</li>
+</ul>
+<p>The build compiles the song document, never the MIDI file, so the repository can hold an arrangement without the original. The <code>credit</code> line is repeated in the generated header. Check the music's terms before you ship an arrangement; STARFALL's notes in <code>assets/starfall/music/README.md</code> show one case.</p>
+
+<h2 id="envelopes">Hardware envelopes</h2>
+<p><code>ti_audio_envelope</code> gives reserved music voices the AY envelope, for bells, sweeps and buzzes. The three voices of a chip share one envelope, so a call must name every voice of that chip already using it. On a Mockingboard with speech enabled, use voices 3-5: the speech chip shares the first AY's port and can reset it.</p>
+
+<h2 id="speech">Speech</h2>
+<p>Write phrases as text in JSON, with pronunciations for words the compiler does not know:</p>
+<pre><code>{
+  "phrases": {
+    "SAY_READY": "Ready.",
+    "SAY_POWER": "Power up!",
+    "SAY_OVER": "Game over."
+  },
+  "pronunciations": {
+    "UP": ["UH", "P"],
+    "GAME": ["G", "AY", "M"]
+  }
+}</code></pre>
+<pre><code>python tools/speech.py speech.json --preview
+python tools/speech.py speech.json --output build/my_speech.h --symbol my_speech</code></pre>
+<p>The header defines each phrase name as its number and a bank named by <code>--symbol</code>. Bind it once after <code>ti_audio_init</code> and say phrases by name:</p>
+<pre><code class="c">#include "my_speech.h"
+ti_speech_bind(&amp;my_speech);
+ti_speech_say(SAY_READY, TI_SPEECH_INTERRUPT | 2);   /* now, over anything less important */
+if (!ti_speech_busy()) ti_speech_say(SAY_POWER, 1);   /* only if nothing else is playing */</code></pre>
+<ul>
+  <li>The compiler has a small authored English vocabulary: the number words and fifty others, such as READY, POWER, GAME, OVER, SCORE and RECORD. An unknown word stops the build with a request for a pronunciation. This is not general text-to-speech.</li>
+  <li>Pronunciations use the phoneme names <code>PA IY Y AY IH EH AE AA AO OW OY UW UH ER R L W B D G P T K CH J TH DH Z S ZH SH V F HH M N NG</code>, plus <code>AW</code>, which shares <code>AO</code>'s sound. They approximate SSI-263 sounds; listen on a board before relying on one.</li>
+  <li>Digits in a phrase become number words. Numbers at run time come from <code>ti_speech_number</code>, which needs the thirty number words in the bank; <code>--no-numbers</code> leaves them out to save memory.</li>
+  <li><code>--preview</code> prints each phrase's phonemes and an estimated length; it does not synthesize audio.</li>
+</ul>
+<p class="note warn">Show every spoken line as a caption too. The speech chip may be missing or silent: on firmware before F1.3.2 in standalone ONE//e mode it has no clock, the first phrase times out after two seconds and speech is then refused. STARFALL captions every line and, when a repair cannot be spoken, shows HULL REPAIRED instead.</p>
+
+<h2 id="clock">The clock behind the music</h2>
+<p>Durations, rows and effect lengths are device ticks, nominally 100 a second. Until the board's VIA clock is measured and set in <code>via_hz</code>, tempos are nominal too. A clock gap stops the music; restart it from the first bar after a pause, as STARFALL does.</p>
+
+<div class="pager"><a href="drawing.html">Drawing and publishing</a><a href="input.html">Keyboard and joystick</a></div>
+<footer class="page-foot">libtini is licensed under the <a href="../../LICENSE">MIT License</a>.</footer>
+</main>
+</div>
+</body>
+</html>
