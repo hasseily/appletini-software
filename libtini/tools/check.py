@@ -17,7 +17,7 @@ def main():
     parser.add_argument("--cc65-home", required=True)
     parser.add_argument("--cc", required=True)
     parser.add_argument("--rom-boot", action="store_true",
-                        help="also use explicitly installed build-inputs/native-roms for real ProDOS boots")
+                        help="also use bundled build-inputs/native-roms for real ProDOS boots")
     parser.add_argument("--only", help="rerun comma-separated named checks, preserving other recorded results")
     args = parser.parse_args()
     common = ["--cc65-home", args.cc65_home]
@@ -39,12 +39,12 @@ def main():
         ("cpu-audio", ["tests/audio_validate.py"]),
         ("target-storage", ["tests/storage_validate.py", *common, *compiler]),
         ("target-amem", ["tests/amem_validate.py", *common]),
-        ("native-benchmarks-direct", ["tools/benchmark.py", *common, *compiler, "--private",
+        ("native-benchmarks-direct", ["tools/benchmark.py", *common, *compiler, "--private", "--direct-launch",
                                       "--output", "build/benchmark/direct-results.json"]),
     ]
     if args.rom_boot:
         commands += [("native-benchmarks-boot", ["tools/benchmark.py", *common, *compiler, "--private",
-                                                "--boot-roms", "build-inputs/native-roms", "--repeat", "2",
+                                                "--repeat", "2",
                                                 "--output", "build/benchmark/results.json"]),
                      ("boot-audio", ["tests/audio_native_validate.py", *compiler])]
         commands += [("boot-starter", ["tests/starter_native_validate.py", *compiler]),

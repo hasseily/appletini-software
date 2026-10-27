@@ -12,7 +12,7 @@ Install Emscripten 6.0.13 with emsdk (see
 with `tools/build.py`. Then:
 
 ~~~powershell
-python tools/web.py --emsdk D:/Repos/emsdk --game starfall --boot-roms build-inputs/native-roms --serve 8642
+python tools/web.py --emsdk D:/Repos/emsdk --game starfall --serve 8642
 ~~~
 
 Open <http://localhost:8642/>, select a speed and press Play. The output is
@@ -24,11 +24,14 @@ to this computer and sends the MIME types that browsers need.
 
 ## Launch
 
-- With `--boot-roms`, the player boots the whole game disk through the
-  installed enhanced //e ROM and slot-7 SmartPort firmware, as the `--boot`
-  option of the runner does. The output then holds the Apple ROM and the
+- By default, the player boots the whole game disk through the bundled
+  enhanced //e ROM and slot-7 SmartPort firmware in `build-inputs/native-roms/`.
+  Use `--boot-roms DIR` to select another directory inside libtini.
+  The default path is relative to libtini, regardless of the working directory.
+  Boot works as the `--boot` option of the runner does.
+  The output then holds the Apple ROM and the
   ProDOS of the disk.
-- Without `--boot-roms`, the player loads the files of the disk, except
+- With `--direct-launch`, the player loads the files of the disk, except
   PRODOS, through the ProDOS MLI stand-in of the machine and a zero-filled
   ROM, as `--disk --system` does in the runner. That output holds only the
   game.
@@ -43,7 +46,7 @@ to this computer and sends the MIME types that browsers need.
 
 STARFALL is at <https://appletini.org/demo/starfall>. The page comes from
 `public/demo/starfall/` in the private `appletini-one-website` repository,
-which is a copy of a `--boot-roms --download-disk` build. The published
+which is a copy of a `--download-disk` build. The published
 package includes the Apple ROM and ProDOS.
 
 To update the page, build again, replace that folder with
@@ -112,7 +115,7 @@ Every checkpoint (ticks, PC, AUX $2000-$9FFF and the decoded frame) and the
 digest of the mixed PCM must match. Speech is compared at the reference gain.
 
 ~~~powershell
-python tests/web_validate.py --emsdk D:/Repos/emsdk --cc C:/msys64/ucrt64/bin/gcc.exe --boot-roms build-inputs/native-roms
+python tests/web_validate.py --emsdk D:/Repos/emsdk --cc C:/msys64/ucrt64/bin/gcc.exe
 ~~~
 
 With the ROM boot, the two profiles match at all 9 checkpoints:

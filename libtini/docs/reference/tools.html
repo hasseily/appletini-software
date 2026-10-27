@@ -136,7 +136,7 @@ python tools/native_emulator.py --cc GCC play --disk DISK.po --boot --rom ROM --
 <h2><code class="def">benchmark.py</code></h2>
 <pre><code>python tools/benchmark.py --cc65-home D:/Repos/cc65 --cc C:/msys64/ucrt64/bin/gcc.exe [--private] [--boot-roms build-inputs/native-roms] [--repeat 2]</code></pre>
 <p>This tool builds <code>examples/benchmark.c</code> as a separate program and disk, and runs it on the emulator. It measures cross-bank resource writes, reads, fills and copies, a full publication and a dirty rectangle. For each one, it records CPU cycles, profile clock ticks, instruction and I/O counts, and the modelled time. It checks each result.</p>
-<p><code>--private</code> also builds and measures the AMEM variant. <code>--boot-roms</code> boots through the installed ROMs, and then the emulated controller supplies AMEM. Repeated runs must give identical counters. The results go to <code>build/benchmark/results.json</code>. <a href="../../design/BENCHMARKS.md">design/BENCHMARKS.md</a> gives the results.</p>
+<p><code>--private</code> also builds and measures the AMEM variant. The default boots through the bundled ROMs in <code>build-inputs/native-roms/</code>. <code>--boot-roms DIR</code> overrides that directory. <code>--direct-launch</code> uses the MLI stand-in. With ROM boot, the emulated controller supplies AMEM. Repeated runs must give identical counters. The results go to <code>build/benchmark/results.json</code>. <a href="../../design/BENCHMARKS.md">design/BENCHMARKS.md</a> gives the results.</p>
 </section>
 
 <section class="fn" id="publish_docs">

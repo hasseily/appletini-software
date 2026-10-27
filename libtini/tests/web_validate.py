@@ -8,14 +8,13 @@ PC, AUX $2000-$9FFF, decoded frame) and the mixed PCM digest must match. The
 native frame comes from the runner's own SHR preview decoder. Speech is
 compared at the reference gain; the page doubles it.
 
-With --boot-roms, both boot the game disk through the installed //e ROM and
-slot-7 firmware, as the runner's --boot does; otherwise both use the ProDOS
-MLI stand-in.
+By default, both boot the game disk through the bundled //e ROM and slot-7
+firmware. --boot-roms overrides the directory; --direct-launch selects the
+ProDOS MLI stand-in.
 
 These are emulator checks. Profile clocks/costs do not establish board timing.
 
 Example: python tests/web_validate.py --emsdk D:/Repos/emsdk --cc C:/msys64/ucrt64/bin/gcc.exe
-         --boot-roms build-inputs/native-roms
 """
 from __future__ import annotations
 
@@ -34,6 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import native_emulator
 import web
+import boot_roms
 
 # Boot, launch with Mockingboard, move, drop a bomb and use the joystick.
 SCRIPT = [
@@ -189,12 +189,13 @@ def main():
     parser.add_argument("--emsdk", required=True, help="installed emsdk directory")
     parser.add_argument("--cc", required=True, help="installed MSYS2 UCRT64 GCC executable")
     parser.add_argument("--game", default="starfall")
-    parser.add_argument("--boot-roms", type=Path, metavar="DIR",
-                        help="boot through the installed //e ROM and slot-7 firmware in DIR")
+    boot_roms.add_arguments(parser)
     args = parser.parse_args()
     command = [sys.executable, str(ROOT / "tools/web.py"), "--emsdk", args.emsdk, "--game", args.game]
     if args.boot_roms:
         command += ["--boot-roms", str(args.boot_roms)]
+    else:
+        command += ["--direct-launch"]
     target = Path(subprocess.run(command, check=True, capture_output=True, text=True).stdout.strip())
     game = json.loads((target / "game.json").read_text())
     files = (target / "game.bin").read_bytes()

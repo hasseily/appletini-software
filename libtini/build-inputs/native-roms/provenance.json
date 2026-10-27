@@ -1,0 +1,22 @@
+{
+  "purpose": "Bundled emulator boot ROM inputs",
+  "source_repository": "https://github.com/hasseily/appletini-one",
+  "reference_revision": "8af06741f3b9454b6bc226b7d55f69cc09097ccf",
+  "inputs": {
+    "Apple2e_Enhanced.rom": {
+      "source_path": "Assets/ROMs/Apple2e_Enhanced.rom",
+      "bytes": 16384,
+      "sha256": "aab38a03ca8deabbb2f868733148c2efd6f655a59cd9c5d058ef3e0b7aa86a1a"
+    },
+    "smartport_a2retronet_style_c700.mem": {
+      "source_path": "hdl/apple/smartport_a2retronet_style_c700.mem",
+      "bytes": 768,
+      "sha256": "4b8772c82581a2200f87c3facf5ec31b40a5095d07c7fb56816c537f3646e35b"
+    },
+    "smartport_a2retronet_style_c800.mem": {
+      "source_path": "hdl/apple/smartport_a2retronet_style_c800.mem",
+      "bytes": 8192,
+      "sha256": "d2c1c99652b2d211b4095c892464e3f44c415a491cd4ff5aaef32e9401c2e3ae"
+    }
+  }
+}

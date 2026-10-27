@@ -9,6 +9,8 @@ import subprocess
 import sys
 import zipfile
 
+import boot_roms
+
 ROOT = Path(__file__).resolve().parents[1]
 DIRECTORIES = ("assets", "cfg", "design", "docs", "examples", "games", "include", "src", "tests", "tools")
 
@@ -19,6 +21,13 @@ def digest(path):
 
 def source_files():
     selected = [ROOT / name for name in (".gitignore", "AGENTS.md", "LICENSE", "README.md")]
+    for name in boot_roms.FILES:
+        path = ROOT / "build-inputs/native-roms" / name
+        if path.is_symlink() or (hasattr(path, "is_junction") and path.is_junction()):
+            raise SystemExit("Source archive cannot contain links: " + str(path))
+        if not path.is_file():
+            raise SystemExit("Missing bundled boot input: " + str(path))
+        selected.append(path)
     for name in DIRECTORIES:
         for path in (ROOT / name).rglob("*"):
             if "__pycache__" in path.parts or path.suffix in (".pyc", ".pyo"):
@@ -133,7 +142,8 @@ def main():
             if path.exists():
                 entries.append(("benchmarks/" + variant + "/" + name, path.read_bytes()))
     entries.append(("LOCAL-INPUTS.txt", b"Local build package: boot disks contain the separately installed ProDOS 2.4.3.\n"
-                    b"No Apple ROMs, Appletini firmware or host compiler binaries are included.\n"
+                    b"The source includes the enhanced //e and slot-7 boot ROMs with their notices.\n"
+                    b"No FPGA/ARM firmware or host compiler binaries are included.\n"
                     b"Check ProDOS distribution terms before sharing disks. Source-only archive omits OS bytes.\n"
                     b"Physical board validation remains pending; read docs/reference/testing.html.\n"))
     archive(destination / "libtini-local-release.zip", entries)

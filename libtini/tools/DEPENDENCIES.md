@@ -186,14 +186,21 @@ program and memory results. A direct launch loads the packaged SYS and uses a
 ProDOS MLI stand-in. The native test sends a key and requires that the
 stand-in sees QUIT.
 
-A full ROM boot needs separately supplied inputs in the ignored
-`build-inputs/native-roms/` folder:
+The repository and release archives include these boot inputs in
+`build-inputs/native-roms/`:
 
-- The enhanced //e 16 KiB system ROM.
-- The 256-byte C700 and 2048-byte C800 SmartPort firmware.
-- Optionally, a 4096-byte video character ROM for text previews.
+- `Apple2e_Enhanced.rom`: the enhanced //e 16 KiB system ROM.
+- `smartport_a2retronet_style_c700.mem`: 256 bytes of slot-7 firmware.
+- `smartport_a2retronet_style_c800.mem`: 2048 bytes of SmartPort firmware.
 
-The repository does not redistribute these files. The wrapper requires
+The browser builder, browser validation and benchmarks use this directory
+when you omit `--boot-roms`. The default path is relative to libtini, not the
+working directory. `--boot-roms DIR` overrides it. `--direct-launch` selects
+the ProDOS MLI stand-in. The ROM [notices](../build-inputs/native-roms/NOTICES.txt)
+and provenance are included.
+
+Text previews need a separately installed 4096-byte `apple2e-video.bin`. This
+optional file is ignored and excluded from release archives. The native wrapper requires
 explicit `--rom`, `--slot7-rom` and `--slot7-c8-rom` options, and never uses
 the sibling defaults of the upstream helper. Text previews need `--video-rom`,
 because the repository does not bundle the upstream fallback font. SHR

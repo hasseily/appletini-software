@@ -125,7 +125,7 @@ python build.py --cc65-home D:/Repos/cc65 [--no-disk]</code></pre>
 <pre><code>python tools/release.py --cc65-home D:/Repos/cc65 --verify-isolation</code></pre>
 <p>Before you run this command, build <code>build/</code> and <code>build/private/</code>, each with <code>--test-target</code>. The command checks that no build input or output has changed since those builds.</p>
 <p>With <code>--verify-isolation</code>, it copies the source files to a new folder in <code>build/</code>. It builds the two variants there with only installed tools and the pinned ProDOS input. The outputs must be identical.</p>
-<p>Then it writes two archives. <code>dist/libtini-source.zip</code> contains the source without OS or ROM bytes. <code>dist/libtini-local-release.zip</code> also contains the built programs, the disks and the check records. The disks of the local release contain ProDOS. Read the ProDOS terms before you share it.</p>
+<p>Then it writes two archives. <code>dist/libtini-source.zip</code> contains the source and bundled boot ROMs with their notices. It excludes ProDOS bytes and the optional video ROM. <code>dist/libtini-local-release.zip</code> also contains the built programs, the disks and the check records. The disks of the local release contain ProDOS. Read the ProDOS terms before you share it.</p>
 
 <footer class="page-foot">Implemented in <code>tools/build.py</code>, <code>tools/disk.py</code>, <code>examples/starter/create.py</code> and <code>tools/release.py</code>.</footer>
 </main>

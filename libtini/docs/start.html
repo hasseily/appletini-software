@@ -113,7 +113,7 @@ python build.py --cc65-home D:/Repos/cc65</code></pre>
 <p><a href="examples.html#starter">Examples</a> explains the starter.</p>
 
 <h2 id="emulator">Run on the development emulator</h2>
-<p>The development emulator of the repository runs the same disks. It needs GCC. A ProDOS boot also needs the enhanced //e ROM and the SmartPort ROMs. The repository does not distribute these ROMs. Install them in <code>build-inputs/native-roms/</code>, as <a href="../tools/DEPENDENCIES.md">tools/DEPENDENCIES.md</a> tells.</p>
+<p>The development emulator of the repository runs the same disks. It needs GCC. A ProDOS boot also needs the enhanced //e ROM and the SmartPort ROMs. The repository includes these boot ROMs in <code>build-inputs/native-roms/</code>. Text previews also need the separately installed <code>apple2e-video.bin</code>. See <a href="../tools/DEPENDENCIES.md">tools/DEPENDENCIES.md</a>.</p>
 <pre><code>python tools/native_emulator.py --cc C:/msys64/ucrt64/bin/gcc.exe play --disk build/starfall.po --boot `
     --rom build-inputs/native-roms/Apple2e_Enhanced.rom `
     --slot7-rom build-inputs/native-roms/smartport_a2retronet_style_c700.mem `

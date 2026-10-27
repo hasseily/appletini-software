@@ -12,17 +12,19 @@ With the installed tools and the local ProDOS input:
 python tools/benchmark.py --cc65-home D:/Repos/cc65 --cc C:/msys64/ucrt64/bin/gcc.exe
 ```
 
-This default uses a direct SYS launch with the MLI stand-in, and needs no
-Apple ROM. `--private` also builds a separate optional binary. If its
+The default boots ProDOS with the bundled ROMs in `build-inputs/native-roms/`.
+Use `--boot-roms DIR` to override that directory. Use `--direct-launch` for
+a direct SYS launch with the MLI stand-in. `--private` also builds a separate
+optional binary. If its
 controller is unidentified or unavailable, the report says that acceleration
 is inactive and measures the CPU fallback. The tool never overwrites the
 compiled CPU archive.
 
-For the optional service on a real ROM and ProDOS boot, supply the installed,
-ignored inputs that [DEPENDENCIES.md](../tools/DEPENDENCIES.md) describes:
+For the optional service on a real ROM and ProDOS boot, use the bundled
+inputs that [DEPENDENCIES.md](../tools/DEPENDENCIES.md) describes:
 
 ```powershell
-python tools/benchmark.py --cc65-home D:/Repos/cc65 --cc C:/msys64/ucrt64/bin/gcc.exe --private --boot-roms build-inputs/native-roms --repeat 2
+python tools/benchmark.py --cc65-home D:/Repos/cc65 --cc C:/msys64/ucrt64/bin/gcc.exe --private --repeat 2
 ```
 
 The benchmark checks the source snapshot hashes, records the target, tool and

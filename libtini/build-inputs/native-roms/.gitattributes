@@ -1,0 +1,3 @@
+# Preserve ROM input hashes across platforms and Git line-ending settings.
+*.rom -text
+*.mem -text whitespace=cr-at-eol

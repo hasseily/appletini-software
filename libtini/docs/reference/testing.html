@@ -31,7 +31,7 @@ python tools/check.py --cc65-home D:/Repos/cc65 --cc C:/msys64/ucrt64/bin/gcc.ex
 <p>The runner builds the two variants. Then it runs each check in sequence, and it stops at the first failure. The logs go to <code>build/checks/NAME.log</code>, and the results go to <code>build/checks/validation.json</code>.</p>
 <ul>
   <li><code>--only</code> runs the named checks again and keeps the other recorded results.</li>
-  <li><code>--rom-boot</code> adds ProDOS boots. They need the separately installed ROMs in <code>build-inputs/native-roms/</code>.</li>
+  <li><code>--rom-boot</code> adds ProDOS boots. They use the bundled boot ROMs in <code>build-inputs/native-roms/</code>. The text previews also need the separately installed <code>apple2e-video.bin</code>.</li>
   <li>The Python that runs the checks must have py65 1.2.0. The native machine must be able to use the GCC folder.</li>
 </ul>
 <div class="table"><table class="compact">

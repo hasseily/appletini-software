@@ -75,11 +75,11 @@ starts, the CPU does the transfer. Video always uses CPU writes.
 | dist/libtini-source.zip | Source, starter, tests, tools, documentation and design notes |
 | dist/libtini-local-release.zip | Local programs and disks, source and check records |
 
-The ProDOS kernel is a separately installed input. The source archives do not
-contain OS bytes or Apple ROM bytes. The local boot disks contain ProDOS.
+The ProDOS kernel is a separately installed input. The source archives include
+the enhanced //e and slot-7 boot ROMs in `build-inputs/native-roms/`, with their notices. They
+do not contain ProDOS bytes. The local boot disks contain ProDOS.
 Read the ProDOS distribution terms before you share these disks. The source
-archive does not contain firmware binaries, Apple ROMs or host compiler
-binaries.
+archive does not contain FPGA/ARM firmware or host compiler binaries.
 
 # Run
 
@@ -113,8 +113,9 @@ python tools/check.py --cc65-home D:/Repos/cc65 --cc C:/msys64/ucrt64/bin/gcc.ex
 The full check builds the two variants and checks the asset, disk, speech and
 music tools and the host game and input logic. Then it runs the compiled
 memory, graphics, audio, storage and AMEM routines. Add `--rom-boot` to boot
-the audio demo, the starter and STARFALL in ProDOS with the installed local
-ROM inputs.
+the audio demo, the starter and STARFALL in ProDOS with the bundled boot
+ROM inputs. Text previews also need the optional video ROM. See
+[ROM inputs](build-inputs/native-roms/README.md).
 
 [Checks](docs/reference/testing.html) gives each check and what it covers.
 [tests/README.md](tests/README.md) describes the foundation harness.

@@ -3,10 +3,10 @@
 
 Example: python tools/web.py --emsdk D:/Repos/emsdk --game starfall
 
-Build the game's disk first with tools/build.py. By default the player loads
-the disk's files through the machine's ProDOS MLI stand-in, and the ProDOS
-image is not copied. With --boot-roms it boots the whole disk through the
-installed //e ROM and slot-7 firmware. Output: build/web/<game>/, a static
+Build the game's disk first with tools/build.py. By default the player boots
+the whole disk through the bundled //e ROM and slot-7 firmware. --boot-roms
+overrides their directory; --direct-launch uses the ProDOS MLI stand-in.
+Output: build/web/<game>/, a static
 page with source.zip, the player's GPL-3.0 source. See docs/reference/browser.html.
 """
 from __future__ import annotations
@@ -20,6 +20,8 @@ from pathlib import Path
 import shutil
 import subprocess
 import zipfile
+
+import boot_roms
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parent
@@ -119,7 +121,7 @@ def build_player(emsdk, rebuild=False):
     return player
 
 
-def pack_game(game, target, boot_roms=None, download=False):
+def pack_game(game, target, boot_roms=boot_roms.DEFAULT, download=False):
     """Write the game's ProDOS files, except PRODOS itself, as game.json and game.bin.
 
     With boot_roms, also copy the whole disk and the installed //e ROM and
@@ -174,6 +176,7 @@ def pack_game(game, target, boot_roms=None, download=False):
         boot.mkdir()
         for name, data in (("apple2e.rom", apple), ("c700.bin", slot), ("c800.bin", c8)):
             (boot / name).write_bytes(data)
+        shutil.copy2(ROOT / "build-inputs/native-roms/NOTICES.txt", boot / "NOTICES.txt")
         if not download:
             shutil.copy2(disk, target / disk_path)
         record["boot"] = {name: {"path": "boot/" + name, "sha256": digest(boot / name)}
@@ -184,7 +187,8 @@ def pack_game(game, target, boot_roms=None, download=False):
 
 def source_archive(player, target):
     """Write source.zip: the Corresponding Source of player.js and player.wasm."""
-    files = [ROOT / "tools/web.py", ROOT / "LICENSE"] + sorted(p for p in WEB.iterdir() if p.is_file())
+    files = [ROOT / "tools/web.py", ROOT / "tools/boot_roms.py", ROOT / "LICENSE"]
+    files += sorted(p for p in WEB.iterdir() if p.is_file())
     files += [REPO / "demos/doom_gs/README.md"]
     files += sorted(p for directory in (FRONT, CORE) for p in directory.rglob("*")
                     if p.is_file() and not {"__pycache__", "build"} & set(p.relative_to(directory).parts)
@@ -235,9 +239,7 @@ def main():
                         help="installed emsdk directory (or set EMSDK)")
     parser.add_argument("--game", default="starfall", help="game under examples/")
     parser.add_argument("--rebuild", action="store_true")
-    parser.add_argument("--boot-roms", type=Path, metavar="DIR",
-                        help="boot through the installed //e ROM and slot-7 firmware in DIR "
-                             "(the output then holds the Apple ROM and the disk's ProDOS)")
+    boot_roms.add_arguments(parser)
     parser.add_argument("--download-disk", action="store_true",
                         help="also offer the whole game disk, with its ProDOS, as <game>.po")
     parser.add_argument("--serve", type=int, metavar="PORT",

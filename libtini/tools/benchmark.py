@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Benchmark actual libtini routines using native emulator guest counters.
 
-Default: CPU-only direct launch. --private also builds/runs the optional
-binary. --boot-roms DIR selects real ROM/ProDOS boot using local installed
-inputs and lets the matching native controller provide AMEM when supported.
+Default: CPU-only ROM/ProDOS boot with bundled inputs. --private also builds
+and runs the optional binary. --boot-roms DIR overrides the ROM directory;
+--direct-launch uses the ProDOS MLI stand-in without ROM boot.
 """
 from __future__ import annotations
 import argparse
@@ -16,6 +16,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools'))
 import build as build_tools
 import native_emulator
+import boot_roms
 
 OPERATIONS={0:('marker_reference',0),1:('resource_write_cross_bank',512),
             2:('resource_read_cross_bank',512),3:('resource_fill_cross_bank',1024),
@@ -137,7 +138,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--cc65-home',required=True);p.add_argument('--cc',required=True)
     p.add_argument('--private',action='store_true',help='also benchmark the separately compiled optional binary')
-    p.add_argument('--boot-roms',type=Path,help='repo-local installed system/C700/C800 ROM directory')
+    boot_roms.add_arguments(p)
     p.add_argument('--repeat',type=int,default=1)
     p.add_argument('--output',type=Path,default=ROOT/'build/benchmark/results.json')
     a=p.parse_args()

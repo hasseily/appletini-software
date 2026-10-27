@@ -1,6 +1,15 @@
 # Generated output
 /build/
-/build-inputs/
+/build-inputs/*
+!/build-inputs/native-roms/
+/build-inputs/native-roms/*
+!/build-inputs/native-roms/Apple2e_Enhanced.rom
+!/build-inputs/native-roms/smartport_a2retronet_style_c700.mem
+!/build-inputs/native-roms/smartport_a2retronet_style_c800.mem
+!/build-inputs/native-roms/provenance.json
+!/build-inputs/native-roms/README.md
+!/build-inputs/native-roms/NOTICES.txt
+!/build-inputs/native-roms/.gitattributes
 /dist/
 /.venv/
 __pycache__/
