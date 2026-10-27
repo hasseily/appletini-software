@@ -6,6 +6,10 @@
 static ti_tick_source source;
 static uint16_t last, elapsed, per_second, accumulator;
 static uint8_t rate, most, n;
+/* The host input checks also compile this file. */
+#ifdef __CC65__
+#pragma code-name (push, "TISETUP")
+#endif
 ti_error ti_steps_begin(ti_tick_source clock, uint16_t ticks_per_second,
                         uint8_t steps_per_second, uint8_t max_steps)
 {
@@ -16,6 +20,9 @@ ti_error ti_steps_begin(ti_tick_source clock, uint16_t ticks_per_second,
     ti_steps_reset();
     return TI_OK;
 }
+#ifdef __CC65__
+#pragma code-name (pop)
+#endif
 void ti_steps_reset(void)
 {
     if (source) last = (uint16_t)source();

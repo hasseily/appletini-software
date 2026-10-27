@@ -111,6 +111,7 @@ static ti_error cleanup(void)
     return error ? error : ti_audio_shutdown();
 }
 static void resume(void) { (void)ti_audio_resume_clock(); }
+#pragma code-name (push, "TISETUP")
 ti_error ti_audio_init(const ti_audio_config *config)
 {
     uint8_t c, r, os_error;
@@ -162,6 +163,7 @@ ti_error ti_audio_init(const ti_audio_config *config)
     ti_storage_pause_hook = ti_audio_mark_gap; ti_storage_resume_hook = resume;
     return TI_OK;
 }
+#pragma code-name (pop)
 uint8_t ti_audio_voices(void) { return active ? voices : 0; }
 uint8_t ti_audio_effect_voice(uint8_t n)
 {
@@ -222,6 +224,7 @@ ti_error ti_audio_effect(uint8_t voice, uint16_t period, uint8_t volume,
     effect_end[voice] = ti_audio_ticks() + duration;
     tone(voice, period, volume); flush(); return TI_OK;
 }
+#pragma code-name (push, "TISETUP")
 ti_error ti_speech_bind(const ti_speech_bank *new_bank)
 {
     uint8_t i;
@@ -234,6 +237,7 @@ ti_error ti_speech_bind(const ti_speech_bank *new_bank)
         if (new_bank->number_ids[i] >= new_bank->count) return TI_E_RANGE;
     ti_speech_stop(); bank = new_bank; return TI_OK;
 }
+#pragma code-name (pop)
 uint8_t ti_speech_busy(void) { return busy || queued; }
 void ti_speech_stop(void)
 {

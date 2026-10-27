@@ -100,6 +100,7 @@ def main():
         screens = {}
         observations = []
         timing = {}
+        boss_timing = {}
         speech_events = []
         captions_seen = set()
         capturing_audio = False
@@ -193,7 +194,7 @@ def main():
                                 ("_sf_enemy_peak", "enemy_peak"),
                                 ("_sf_bullet_peak", "bullet_peak"),
                                 ("_sf_lag", "lag"), ("_sf_stick", "stick"),
-                                ("_sf_sector", "sector")):
+                                ("_sf_sector", "sector"), ("_sf_boss_number", "boss")):
                 if label in labels:
                     value[name] = number(label)
             if "_sf_joystick" in labels:
@@ -432,6 +433,44 @@ def main():
             until(lambda value: phrase_observed(3), model_frames=600)
             trace.append({"event": "x8-chain-great-shot", **observed})
 
+            # A boss sector: end sector 4 early through two pinned sf_state
+            # offsets, sector (22) and sector_clock (12); sector 5 is MANTA's. The boss
+            # overlay and MANTA's art replace the wave overlay, the playfield
+            # still matches its list, and the game holds its rate. Bombs
+            # (offset 17) then destroy the three emplacements; the ship is
+            # kept invulnerable (offset 19).
+            machine.write("main", state_base + 22, bytes((3,)))
+            machine.write("main", state_base + 12, (720 - 30).to_bytes(2, "little"))
+            observed = until(lambda value: value.get("boss") == 1, model_frames=300)
+            observed = until(lambda value: value["caption"] == 18, model_frames=120)
+            trace.append({"event": "boss-arrives", **observed})
+            until(lambda value: phrase_observed(6), model_frames=600)
+            fight = step_for(120)
+            capture("boss")
+            for _ in range(4):
+                playfield()
+                fight = advance(6)
+            boss_window = sample()
+            fight = step_for(150)
+            assert fight["boss"] == 1 and not fight.get("lag", 0), fight
+            boss_seconds = (fight["model_ticks"] - boss_window["model_ticks"]) / machine.clock_hz
+            boss_timing = {
+                "model_seconds": boss_seconds,
+                "simulation_hz": (fight["simulation_steps"] - boss_window["simulation_steps"]) / boss_seconds,
+                "render_fps": (fight["rendered_frames"] - boss_window["rendered_frames"]) / boss_seconds,
+            }
+            for _ in range(12):
+                if sample()["boss"] != 1:
+                    break
+                machine.write("main", state_base + 17, bytes((5,)))
+                machine.write("main", state_base + 19, bytes((255,)))
+                key(" ")
+                step_for(12)
+            observed = until(lambda value: value["boss"] == 0, model_frames=600)
+            assert observed["sector"] == 5 and observed["caption"] == 9, ("boss not destroyed", observed)
+            until(lambda value: phrase_observed(4), model_frames=600)
+            trace.append({"event": "boss-destroyed-by-bombs", **observed})
+
             key("R")
             observed = until(lambda value: value["mode"] == 1 and value["tick"] <= 6)
             assert observed["hull"] == initial_hull and observed["score"] == 0, observed
@@ -526,9 +565,9 @@ def main():
             trace.append({"event": "music-and-effect-voices", "music_voices": music_voices,
                           "effect_voices_heard": effect_voices,
                           "periods_heard": [len(heard) for heard in voice_periods]})
-            # EXCELLENT comes from the passive run's repair pickup.
-            assert {4, 5, 6} <= captions_seen, (
-                "great-shot/excellent/game-over captions absent", sorted(captions_seen), observed)
+            # EXCELLENT is spoken when the boss falls; its caption is the boss's.
+            assert {4, 6, 18} <= captions_seen, (
+                "great-shot/boss/game-over captions absent", sorted(captions_seen), observed)
             until(lambda value: phrase_observed(5), model_frames=600)
             assert all(phrase_observed(index) for index in (3, 4, 5)), (
                 "actual SSI phrase writes absent",
@@ -564,6 +603,7 @@ def main():
                 "machine": machine.metadata(),
                 "trace": trace,
                 "timing": timing,
+                "boss_timing": boss_timing,
                 "observations": observations,
                 "screenshots": screens,
                 "ssi_events": speech_events,
@@ -576,15 +616,16 @@ def main():
                 "post_exit_irqs": post_exit_irqs,
                 "returned": machine.state(),
             })
-            print(f"STARFALL native {profile}: keyboard and joystick controls, autofire, pause, restart, "
-                  f"passive gameover, retry and clean exit PASS; "
-                  f"{timing['simulation_hz']:.2f} simulation Hz, {timing['render_fps']:.2f} rendered FPS "
-                  f"(model only); peaks {peak_enemies} enemies/{peak_bullets} bullets; "
+            print(f"STARFALL native {profile}: keyboard and joystick controls, autofire, pause, boss, "
+                  f"restart, passive gameover, retry and clean exit PASS; "
+                  f"{timing['simulation_hz']:.2f} simulation Hz, {timing['render_fps']:.2f} rendered FPS, "
+                  f"{boss_timing['render_fps']:.2f} with the boss (model only); "
+                  f"peaks {peak_enemies} enemies/{peak_bullets} bullets; "
                   f"{playfield_checks} playfields matched their sprite lists", flush=True)
         except Exception as error:
             (output / f"failure-{profile}.json").write_text(json.dumps({
                 "error": str(error), "trace": trace,
-                "timing": timing, "observations": observations,
+                "timing": timing, "boss_timing": boss_timing, "observations": observations,
                 "ssi_events": speech_events,
                 "captions_seen": sorted(captions_seen),
                 "observed": state(), "machine": machine.state(),

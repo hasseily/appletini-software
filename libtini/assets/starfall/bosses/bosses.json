@@ -1,0 +1,472 @@
+[
+  {
+    "folder": "1_manta",
+    "name": "Manta",
+    "description": "Space ray",
+    "size": [
+      100,
+      74
+    ],
+    "frames": 4,
+    "frame_layout": "horizontal strip, left to right",
+    "suggested_fps": 8,
+    "facing": "down (toward the player)",
+    "body": {
+      "sheet": "body.png",
+      "frame_size": [
+        100,
+        74
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "parts": [
+      {
+        "id": "laser_left",
+        "label": "Left wing laser",
+        "intact": "laser_left_intact.png",
+        "destroyed": "laser_left_destroyed.png",
+        "frame_size": [
+          15,
+          20
+        ],
+        "offset": [
+          4,
+          30
+        ],
+        "hitbox": [
+          4,
+          31,
+          15,
+          19
+        ]
+      },
+      {
+        "id": "laser_right",
+        "label": "Right wing laser",
+        "intact": "laser_right_intact.png",
+        "destroyed": "laser_right_destroyed.png",
+        "frame_size": [
+          15,
+          20
+        ],
+        "offset": [
+          80,
+          30
+        ],
+        "hitbox": [
+          80,
+          31,
+          15,
+          19
+        ]
+      },
+      {
+        "id": "plasma_maw",
+        "label": "Plasma maw",
+        "intact": "plasma_maw_intact.png",
+        "destroyed": "plasma_maw_destroyed.png",
+        "frame_size": [
+          16,
+          20
+        ],
+        "offset": [
+          42,
+          50
+        ],
+        "hitbox": [
+          42,
+          52,
+          16,
+          18
+        ]
+      }
+    ],
+    "draw_order": [
+      "body",
+      "laser_left",
+      "laser_right",
+      "plasma_maw"
+    ],
+    "palette": "../palette.hex",
+    "transparent_index": 0
+  },
+  {
+    "folder": "2_excalibur",
+    "name": "Excalibur",
+    "description": "Sword cruiser",
+    "size": [
+      94,
+      77
+    ],
+    "frames": 4,
+    "frame_layout": "horizontal strip, left to right",
+    "suggested_fps": 8,
+    "facing": "down (toward the player)",
+    "body": {
+      "sheet": "body.png",
+      "frame_size": [
+        94,
+        77
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "parts": [
+      {
+        "id": "guard_gun_left",
+        "label": "Left guard turret",
+        "intact": "guard_gun_left_intact.png",
+        "destroyed": "guard_gun_left_destroyed.png",
+        "frame_size": [
+          14,
+          20
+        ],
+        "offset": [
+          12,
+          16
+        ],
+        "hitbox": [
+          12,
+          17,
+          14,
+          19
+        ]
+      },
+      {
+        "id": "guard_gun_right",
+        "label": "Right guard turret",
+        "intact": "guard_gun_right_intact.png",
+        "destroyed": "guard_gun_right_destroyed.png",
+        "frame_size": [
+          14,
+          20
+        ],
+        "offset": [
+          68,
+          16
+        ],
+        "hitbox": [
+          68,
+          17,
+          14,
+          19
+        ]
+      },
+      {
+        "id": "point_emitter",
+        "label": "Point emitter",
+        "intact": "point_emitter_intact.png",
+        "destroyed": "point_emitter_destroyed.png",
+        "frame_size": [
+          14,
+          17
+        ],
+        "offset": [
+          40,
+          57
+        ],
+        "hitbox": [
+          40,
+          58,
+          14,
+          16
+        ]
+      }
+    ],
+    "draw_order": [
+      "body",
+      "guard_gun_left",
+      "guard_gun_right",
+      "point_emitter"
+    ],
+    "palette": "../palette.hex",
+    "transparent_index": 0
+  },
+  {
+    "folder": "3_scarab",
+    "name": "Scarab",
+    "description": "Beetle gunship",
+    "size": [
+      78,
+      74
+    ],
+    "frames": 4,
+    "frame_layout": "horizontal strip, left to right",
+    "suggested_fps": 8,
+    "facing": "down (toward the player)",
+    "body": {
+      "sheet": "body.png",
+      "frame_size": [
+        78,
+        74
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "parts": [
+      {
+        "id": "mandible_left",
+        "label": "Left mandible gatling",
+        "intact": "mandible_left_intact.png",
+        "destroyed": "mandible_left_destroyed.png",
+        "frame_size": [
+          14,
+          22
+        ],
+        "offset": [
+          18,
+          52
+        ],
+        "hitbox": [
+          18,
+          53,
+          14,
+          21
+        ]
+      },
+      {
+        "id": "mandible_right",
+        "label": "Right mandible gatling",
+        "intact": "mandible_right_intact.png",
+        "destroyed": "mandible_right_destroyed.png",
+        "frame_size": [
+          14,
+          22
+        ],
+        "offset": [
+          46,
+          52
+        ],
+        "hitbox": [
+          46,
+          53,
+          14,
+          21
+        ]
+      },
+      {
+        "id": "mine_layer",
+        "label": "Mine layer",
+        "intact": "mine_layer_intact.png",
+        "destroyed": "mine_layer_destroyed.png",
+        "frame_size": [
+          16,
+          17
+        ],
+        "offset": [
+          31,
+          23
+        ],
+        "hitbox": [
+          31,
+          24,
+          16,
+          16
+        ]
+      }
+    ],
+    "draw_order": [
+      "body",
+      "mandible_left",
+      "mandible_right",
+      "mine_layer"
+    ],
+    "palette": "../palette.hex",
+    "transparent_index": 0
+  },
+  {
+    "folder": "4_comet",
+    "name": "Comet",
+    "description": "Fireball raider",
+    "size": [
+      66,
+      75
+    ],
+    "frames": 4,
+    "frame_layout": "horizontal strip, left to right",
+    "suggested_fps": 8,
+    "facing": "down (toward the player)",
+    "body": {
+      "sheet": "body.png",
+      "frame_size": [
+        66,
+        75
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "parts": [
+      {
+        "id": "missiles_left",
+        "label": "Left missile pod",
+        "intact": "missiles_left_intact.png",
+        "destroyed": "missiles_left_destroyed.png",
+        "frame_size": [
+          14,
+          16
+        ],
+        "offset": [
+          13,
+          54
+        ],
+        "hitbox": [
+          13,
+          55,
+          14,
+          15
+        ]
+      },
+      {
+        "id": "missiles_right",
+        "label": "Right missile pod",
+        "intact": "missiles_right_intact.png",
+        "destroyed": "missiles_right_destroyed.png",
+        "frame_size": [
+          14,
+          16
+        ],
+        "offset": [
+          39,
+          54
+        ],
+        "hitbox": [
+          39,
+          55,
+          14,
+          15
+        ]
+      },
+      {
+        "id": "tesla_core",
+        "label": "Tesla core",
+        "intact": "tesla_core_intact.png",
+        "destroyed": "tesla_core_destroyed.png",
+        "frame_size": [
+          22,
+          17
+        ],
+        "offset": [
+          22,
+          46
+        ],
+        "hitbox": [
+          22,
+          46,
+          22,
+          17
+        ]
+      }
+    ],
+    "draw_order": [
+      "body",
+      "missiles_left",
+      "missiles_right",
+      "tesla_core"
+    ],
+    "palette": "../palette.hex",
+    "transparent_index": 0
+  },
+  {
+    "folder": "5_bulwark",
+    "name": "Bulwark",
+    "description": "Ziggurat fortress",
+    "size": [
+      96,
+      70
+    ],
+    "frames": 4,
+    "frame_layout": "horizontal strip, left to right",
+    "suggested_fps": 8,
+    "facing": "down (toward the player)",
+    "body": {
+      "sheet": "body.png",
+      "frame_size": [
+        96,
+        67
+      ],
+      "offset": [
+        0,
+        0
+      ]
+    },
+    "parts": [
+      {
+        "id": "flak_left",
+        "label": "Left flak battery",
+        "intact": "flak_left_intact.png",
+        "destroyed": "flak_left_destroyed.png",
+        "frame_size": [
+          14,
+          19
+        ],
+        "offset": [
+          10,
+          20
+        ],
+        "hitbox": [
+          10,
+          21,
+          14,
+          18
+        ]
+      },
+      {
+        "id": "flak_right",
+        "label": "Right flak battery",
+        "intact": "flak_right_intact.png",
+        "destroyed": "flak_right_destroyed.png",
+        "frame_size": [
+          14,
+          19
+        ],
+        "offset": [
+          72,
+          20
+        ],
+        "hitbox": [
+          72,
+          21,
+          14,
+          18
+        ]
+      },
+      {
+        "id": "railgun",
+        "label": "Prow railgun",
+        "intact": "railgun_intact.png",
+        "destroyed": "railgun_destroyed.png",
+        "frame_size": [
+          20,
+          27
+        ],
+        "offset": [
+          38,
+          43
+        ],
+        "hitbox": [
+          38,
+          45,
+          20,
+          25
+        ]
+      }
+    ],
+    "draw_order": [
+      "body",
+      "flak_left",
+      "flak_right",
+      "railgun"
+    ],
+    "palette": "../palette.hex",
+    "transparent_index": 0
+  }
+]

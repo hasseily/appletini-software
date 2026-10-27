@@ -15,9 +15,14 @@ class StarfallTests(unittest.TestCase):
         output = ROOT / 'build' / 'starfall-host'
         output.mkdir(parents=True, exist_ok=True)
         executable = output / ('starfall-host.exe' if os.name == 'nt' else 'starfall-host')
+        # The boss records come from the same converter as the game's art.
+        subprocess.run([sys.executable, str(ROOT / 'tools' / 'starfall_bosses.py'),
+                        '--header', str(output / 'starfall_bosses.h'), '--art', str(output)],
+                       cwd=ROOT, check=True, capture_output=True)
         command = [COMPILER, '-std=c99', '-Wall', '-Wextra', '-Werror', '-O2',
-                   '-I', str(ROOT / 'examples' / 'starfall'),
+                   '-I', str(ROOT / 'examples' / 'starfall'), '-I', str(output),
                    str(ROOT / 'examples' / 'starfall' / 'game.c'),
+                   str(ROOT / 'examples' / 'starfall' / 'boss.c'),
                    str(ROOT / 'tests' / 'starfall_host.c'), '-o', str(executable)]
         env = {k: v for k, v in os.environ.items() if k.upper() != 'PATH'}
         path = next((v for k, v in os.environ.items() if k.upper() == 'PATH'), '')

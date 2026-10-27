@@ -299,6 +299,9 @@ ti_error ti_res_fill(ti_handle handle, uint32_t offset, uint8_t value, uint32_t 
     return TI_OK;
 }
 
+/* Setup-only routines are in TISETUP, which a game layout can overlay. ti_init
+ * is not: a game calls it before it can load anything. */
+#pragma code-name (push, "TISETUP")
 /* Preserve all 32768 aux bytes including SCBs, palettes and unused padding. */
 ti_error ti_diag_video_begin(void)
 {
@@ -317,6 +320,7 @@ ti_error ti_diag_video_begin(void)
     ti_time_note_gap();
     return TI_OK;
 }
+#pragma code-name (pop)
 
 ti_error ti_diag_video_end(void)
 {

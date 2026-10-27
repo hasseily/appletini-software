@@ -1,5 +1,8 @@
 # STARFALL art
 
+The bosses are original art in [bosses](bosses/README.md), under the MIT
+License of libtini. The rest of the art comes from Kenney.
+
 The aircraft, pickup and explosion sprites come from **Pixel Shmup 1.1** by
 Kenney. The publisher puts the pack in the public domain under **Creative
 Commons Zero 1.0 Universal (CC0)**. The license of the pack does not require

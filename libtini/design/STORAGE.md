@@ -28,8 +28,11 @@ valid near buffer for the whole synchronous call.
 The aligned 1024-byte ProDOS I/O buffer is reserved at MAIN `$B000-$B3FF`.
 Applications must not use it. The address comes from the `_ti_file_buffer`
 symbol of the linker layout. The layout of a game can leave that symbol out
-and use the memory. Then no file call links. See
-[GAMES.md](GAMES.md#layouts).
+and use the memory. Then no file call links. A layout can also put the
+buffer in memory that is idle while the game makes its file calls: STARFALL
+loads its pack before its scene starts, and uses the scene storage. The file
+code is in the `TIFILES` segment, which a layout can put in an overlay
+window. See [GAMES.md](GAMES.md#layouts).
 
 Only `TI_OK` makes a returned read length and its data a completed file
 transaction. After an error, discard the output of that transaction, also if

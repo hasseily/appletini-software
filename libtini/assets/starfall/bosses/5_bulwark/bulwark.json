@@ -1,0 +1,93 @@
+{
+  "name": "Bulwark",
+  "description": "Ziggurat fortress",
+  "size": [
+    96,
+    70
+  ],
+  "frames": 4,
+  "frame_layout": "horizontal strip, left to right",
+  "suggested_fps": 8,
+  "facing": "down (toward the player)",
+  "body": {
+    "sheet": "body.png",
+    "frame_size": [
+      96,
+      67
+    ],
+    "offset": [
+      0,
+      0
+    ]
+  },
+  "parts": [
+    {
+      "id": "flak_left",
+      "label": "Left flak battery",
+      "intact": "flak_left_intact.png",
+      "destroyed": "flak_left_destroyed.png",
+      "frame_size": [
+        14,
+        19
+      ],
+      "offset": [
+        10,
+        20
+      ],
+      "hitbox": [
+        10,
+        21,
+        14,
+        18
+      ]
+    },
+    {
+      "id": "flak_right",
+      "label": "Right flak battery",
+      "intact": "flak_right_intact.png",
+      "destroyed": "flak_right_destroyed.png",
+      "frame_size": [
+        14,
+        19
+      ],
+      "offset": [
+        72,
+        20
+      ],
+      "hitbox": [
+        72,
+        21,
+        14,
+        18
+      ]
+    },
+    {
+      "id": "railgun",
+      "label": "Prow railgun",
+      "intact": "railgun_intact.png",
+      "destroyed": "railgun_destroyed.png",
+      "frame_size": [
+        20,
+        27
+      ],
+      "offset": [
+        38,
+        43
+      ],
+      "hitbox": [
+        38,
+        45,
+        20,
+        25
+      ]
+    }
+  ],
+  "draw_order": [
+    "body",
+    "flak_left",
+    "flak_right",
+    "railgun"
+  ],
+  "palette": "../palette.hex",
+  "transparent_index": 0
+}

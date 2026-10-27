@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 import speech
 import starfall_assets as art
+import starfall_bosses as bosses
+import starfall_pack
 
 
 def png_chunk(kind, data):
@@ -181,6 +183,62 @@ class StarfallAssetTests(unittest.TestCase):
             self.assertIn(word, manifest["pronunciations"])
         self.assertTrue(all(0 < len(record[2]) <= 255 for record in records))
         self.assertTrue(all(0 <= code < 192 for record in records for code in record[2]))
+
+
+class StarfallBossTests(unittest.TestCase):
+    def test_boss_art_matches_its_provenance(self):
+        record = json.loads((bosses.SOURCE / "provenance.json").read_text())
+        self.assertEqual(record["license"], "MIT")
+        self.assertEqual(len(record["files"]), 55)
+        for name, digest in record["files"].items():
+            self.assertEqual(hashlib.sha256((bosses.SOURCE / name).read_bytes()).hexdigest(), digest, name)
+
+    def test_art_files_hold_record_strips_and_frames(self):
+        converted = [bosses.convert(boss) for boss in bosses.verify()]
+        self.assertEqual([boss["name"] for boss in converted], ["MANTA", "EXCALIBUR", "SCARAB", "COMET", "BULWARK"])
+        for boss in converted:
+            data = boss["art"]
+            strips, slots = struct.unpack_from("<HH", data)
+            self.assertEqual((strips, slots), (boss["strip_bytes"], boss["slot_bytes"]))
+            self.assertEqual(data[4:4 + bosses.RECORD], bosses.record_bytes(boss))
+            self.assertLessEqual(boss["width"], 100)
+            self.assertLessEqual(boss["height"], 77)
+            self.assertLessEqual(len(boss["bands"]), bosses.BANDS)
+            # Strips are 8 lines from the top, on whole bytes, and inside the boss.
+            for index, (x, y, nbytes, rows) in enumerate(boss["bands"]):
+                self.assertEqual(x % 2, 0)
+                self.assertEqual(y % bosses.BAND, 0)
+                self.assertLessEqual(x + 2 * nbytes, boss["width"] + 1)
+                self.assertEqual(boss["images"][index][1:3], (nbytes, rows))
+            self.assertEqual(sum(b[2] * b[3] for b in boss["bands"]), strips)
+            # Each part has eight frames in the file, and two images on one slot.
+            self.assertEqual(sum(boss["frame_bytes"]), slots)
+            end = 4 + bosses.RECORD + strips
+            for part, (x, y, nbytes, rows, hit) in enumerate(boss["parts"]):
+                self.assertEqual(x % 2, 0)
+                self.assertEqual(boss["frames_at"][part], end)
+                self.assertEqual(boss["frame_bytes"][part], nbytes * rows)
+                end += 8 * nbytes * rows
+                first, second = boss["images"][bosses.BANDS + 2 * part:bosses.BANDS + 2 * part + 2]
+                self.assertEqual(first, second)
+                self.assertGreaterEqual(first[0], strips)
+            self.assertEqual(end, len(data))
+            # Two boss colors, twelve shared ones, and nothing in the animated slot 15.
+            self.assertEqual(len(boss["slots"]), 2)
+            self.assertTrue(set(boss["table"].values()) <= set(range(1, 15)))
+
+    def test_pack_places_art_after_the_boss_overlay_and_checks_its_fit(self):
+        symbols = {"__BOSS_START__": 0x9000, "__BOSS_LAST__": 0x9800, "__BOSS_SIZE__": 0x1000,
+                   "__TITLE_START__": 0x9000, "__TITLE_LAST__": 0x9100, "__TITLE_SIZE__": 0x1000}
+        art_file = struct.pack("<HH", 0x500, 0x100) + bytes(0x700)
+        data = starfall_pack.build([("TITLE", "TITLE", False, b"T" * 16),
+                                    ("MANTA", "BOSS", True, art_file)], symbols)
+        self.assertEqual(data[:4], b"SF\x02\x00")
+        self.assertEqual(struct.unpack_from("<IHH", data, 4), (20, 16, 0x9000))
+        self.assertEqual(struct.unpack_from("<IHH", data, 12), (36, len(art_file), 0x9800))
+        too_big = struct.pack("<HH", 0x780, 0x100) + bytes(8)
+        with self.assertRaises(SystemExit):
+            starfall_pack.build([("MANTA", "BOSS", True, too_big)], symbols)
 
 
 if __name__ == "__main__":

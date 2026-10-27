@@ -5,9 +5,9 @@ offline asset tools and simple builds. The builds make ProDOS applications
 and disk images. The game owns its loop.
 
 [STARFALL](../examples/starfall/README.md) is the showcase game. It has one
-endless vertically scrolling survival level, five enemy behaviors, bounded
-projectile pools, CC0 sprites, shared music, effects and speech, and CPU
-graphics. It uses the same existing-firmware boundary as the library.
+endless vertically scrolling survival level, five enemy behaviors, five
+bosses, bounded projectile pools, CC0 sprites, shared music, effects and
+speech, CPU graphics and code overlays from a resource pack. It uses the same existing-firmware boundary as the library.
 [The starter](../examples/starter/README.md) is a small game to copy. The
 developer reference is [docs/index.html](../docs/index.html).
 

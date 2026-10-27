@@ -1,10 +1,13 @@
 #include "game.h"
+#include "starfall_bosses.h"
 #include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
 #define G sf_state
+/* The boss record that boss.c keeps for the boss of the sector. */
+extern sf_boss_art sf_boss;
 
 static void quiet(void)
 {
@@ -64,6 +67,8 @@ static void test_start_movement_and_restart(void)
     /* The ROM-boot check reads and writes these fields by offset. */
     assert(offsetof(sf_game,tick)==0&&offsetof(sf_game,hull)==16&&offsetof(sf_game,chain)==28);
     assert(offsetof(sf_game,chain_clock)==29&&offsetof(sf_game,overdrive)==34);
+    assert(offsetof(sf_game,sector_clock)==12&&offsetof(sf_game,bombs)==17);
+    assert(offsetof(sf_game,invulnerable)==19&&offsetof(sf_game,sector)==22);
     puts("start, movement bounds and deterministic restart: pass");
 }
 
@@ -308,20 +313,220 @@ static void test_sectors(void)
     quiet();G.sector_clock=SF_SECTOR_TICKS-2;
     assert(!(sf_step(0)&SF_EVENT_SECTOR)&&!G.sector);
     events=sf_step(0);
-    assert((events&SF_EVENT_SECTOR)&&G.sector==1&&G.level==SF_LEVELS_PER_SECTOR);
+    assert((events&SF_EVENT_SECTOR)&&G.sector==1&&G.level==0);
     assert(G.score==100&&G.spawn_clock>=75&&!G.sector_clock);
-    /* Two levels a sector: the eighth sector plays level 14, the ninth the last. */
-    G.sector=6;G.sector_clock=SF_SECTOR_TICKS-1;sf_step(0);assert(G.sector==7&&G.level==14);
-    G.sector_clock=SF_SECTOR_TICKS-1;sf_step(0);assert(G.sector==8&&G.level==SF_LAST_LEVEL);
-    G.sector=SF_LAST_LEVEL;G.sector_clock=SF_SECTOR_TICKS-1;sf_step(0);
-    assert(G.sector==SF_LAST_LEVEL+1&&G.level==SF_LAST_LEVEL);
+    /* Three levels each four sectors: the twentieth sector plays level 14 and
+     * the next, after the fourth boss, the last. No bosses here. */
+    G.bosses=SF_BOSS_COUNT;
+    G.sector=6;G.sector_clock=SF_SECTOR_TICKS-1;sf_step(0);assert(G.sector==7&&G.level==5);
+    G.sector=18;G.sector_clock=SF_SECTOR_TICKS-1;sf_step(0);assert(G.sector==19&&G.level==14);
+    G.sector_clock=SF_SECTOR_TICKS-1;sf_step(0);assert(G.sector==20&&G.level==SF_LAST_LEVEL);
     G.sector=98;G.sector_clock=SF_SECTOR_TICKS-1;sf_step(0);
     assert(G.sector==98&&G.level==SF_LAST_LEVEL);
     quiet();G.spawn_clock=1;sf_step(0);assert(G.spawn_clock==53);
     quiet();G.level=13;G.spawn_clock=1;sf_step(0);assert(G.spawn_clock==22);
     quiet();G.level=14;G.spawn_clock=1;sf_step(0);assert(G.spawn_clock==19);
     quiet();G.level=SF_LAST_LEVEL;G.spawn_clock=1;sf_step(0);assert(G.spawn_clock==19);
-    puts("24-second sectors of two levels, bonuses, breathers and spawn pacing: pass");
+    puts("24-second sectors, a ramp to the last level after the fourth boss, bonuses, breathers and spawn pacing: pass");
+}
+
+static uint8_t boss_top(void) { return (uint8_t)(G.boss_y-sf_boss.height); }
+static uint8_t muzzle_x(unsigned part)
+{ return (uint8_t)(G.boss_x+sf_boss.hit_x[part]+sf_boss.hit_w[part]/2); }
+static void clear_shots(void)
+{
+    memset(G.bullet_active,0,sizeof(G.bullet_active));
+    memset(G.shot_active,0,sizeof(G.shot_active));
+}
+/* End the sector before boss n (1..5) and step until it fights. */
+static void boss_fight(unsigned n)
+{
+    uint16_t events;
+    quiet();G.bosses=(uint8_t)(n-1);G.sector=(uint8_t)(SF_BOSS_EVERY*n-2);
+    G.sector_clock=SF_SECTOR_TICKS-1;G.invulnerable=255;
+    events=sf_step(0);
+    assert((events&SF_EVENT_BOSS)&&(events&SF_EVENT_SECTOR)&&G.boss==n);
+    assert(G.sector==SF_BOSS_EVERY*n-1&&!G.sector_clock);
+    while(G.boss_phase!=SF_BOSS_FIGHT)sf_step(0);
+    clear_shots();G.invulnerable=0;
+}
+
+static void test_bosses(void)
+{
+    static const uint16_t full[SF_BOSS_COUNT]={140,168,196,224,264};
+    uint16_t events;
+    unsigned i,x,y,steps,before;
+    /* Sector 5 is the first boss's. The boss enters from the top for its
+     * height and eight lines more, and the sector has no clock. */
+    quiet();G.sector=3;G.sector_clock=SF_SECTOR_TICKS-1;
+    events=sf_step(0);
+    assert((events&SF_EVENT_BOSS)&&(events&SF_EVENT_SECTOR)&&G.boss==1&&G.sector==4);
+    sf_step(0);
+    assert(G.boss_phase==SF_BOSS_ENTER&&G.boss_y==SF_TOP&&G.boss_full==140);
+    assert(G.part_hp[0]==40&&G.part_hp[1]==40&&G.part_hp[2]==60&&!(G.boss_x&1));
+    for(steps=0;G.boss_phase==SF_BOSS_ENTER;++steps)sf_step(0);
+    assert(steps==sf_boss.height+8u&&G.boss_y==SF_TOP+sf_boss.height+8u&&!G.sector_clock);
+    for(i=1;i<=SF_BOSS_COUNT;++i){boss_fight(i);assert(G.boss_full==full[i-1]);}
+
+    /* Manta's wing laser: three 12-line segments 16 lines apart, straight
+     * down at eleven lines a step. A segment reaches ten lines from the core;
+     * an orb only four. */
+    boss_fight(1);G.part_fire[0]=0;G.part_fire[1]=G.part_fire[2]=200;
+    sf_step(0);
+    assert(active(G.bullet_active,SF_ENEMY_BULLETS)==3);
+    for(i=0;i<3;++i)
+        assert(G.bullet_active[i]==SF_SHOT_LASER&&G.bullet_dy[i]==11&&!G.bullet_dx[i]&&G.bullet_x[i]==muzzle_x(0));
+    assert(G.bullet_y[1]==G.bullet_y[0]+16&&G.bullet_y[2]==G.bullet_y[1]+16);
+    clear_shots();G.bullet_active[0]=SF_SHOT_LASER;G.bullet_x[0]=G.ship_x;
+    G.bullet_y[0]=(uint8_t)(G.ship_y-18);G.bullet_dx[0]=0;G.bullet_dy[0]=8;
+    assert(sf_step(0)&SF_EVENT_HURT);
+    clear_shots();G.invulnerable=0;incoming(0);G.bullet_y[0]=(uint8_t)(G.ship_y-10);
+    G.bullet_dy[0]=2;assert(!(sf_step(0)&SF_EVENT_HURT));
+
+    /* Shots: an emplacement takes damage, the hull stops a shot, a gap
+     * beside a strip lets it through. The boss moves after the shots. */
+    boss_fight(1);
+    x=muzzle_x(2);y=(uint8_t)(boss_top()+sf_boss.hit_y[2]+sf_boss.hit_h[2]/2);
+    shot(x,y+6,1);events=sf_step(0);
+    assert(G.part_hp[2]==59&&!G.shot_active[0]&&(events&SF_EVENT_HIT));
+    clear_shots();
+    x=(uint8_t)(G.boss_x+sf_boss.band_x[1]+1);y=(uint8_t)(boss_top()+9);
+    shot(x,y+6,1);sf_step(0);
+    assert(!G.shot_active[0]&&G.part_hp[0]==40&&G.part_hp[1]==40&&G.part_hp[2]==59);
+    clear_shots();x=(uint8_t)(G.boss_x+sf_boss.band_x[1]-4);
+    shot(x,y+6,1);sf_step(0);assert(G.shot_active[0]);
+    /* Below an emplacement, the hull lets a shot through to it. */
+    clear_shots();x=muzzle_x(2);y=(uint8_t)(boss_top()+sf_boss.height-1);
+    shot(x,y+6,1);sf_step(0);
+    assert(G.shot_active[0]&&G.part_hp[2]==59);
+    for(i=0;i<4&&G.shot_active[0];++i)sf_step(0);
+    assert(!G.shot_active[0]&&G.part_hp[2]==58);
+
+    /* A bomb takes seven from each emplacement. */
+    boss_fight(2);G.bombs=1;sf_step(SF_IN_BOMB);
+    assert(G.part_hp[0]==41&&G.part_hp[1]==41&&G.part_hp[2]==65&&!G.bombs);
+
+    /* The hull hurts the ship's core. */
+    boss_fight(1);G.ship_x=(uint8_t)(G.boss_x+sf_boss.band_x[5]+12);G.ship_y=(uint8_t)(boss_top()+44);
+    assert(sf_step(0)&SF_EVENT_HURT);
+
+    /* Destroyed emplacements drop pickups and score; when the last falls,
+     * the boss burns for 75 steps and the next sector starts with its bonus
+     * and the boss's. */
+    boss_fight(1);G.invulnerable=255;G.part_fire[0]=G.part_fire[1]=G.part_fire[2]=255;
+    before=(unsigned)G.score;G.part_hp[2]=1;
+    shot(muzzle_x(2),(uint8_t)(boss_top()+sf_boss.hit_y[2]+sf_boss.hit_h[2]/2+6),1);
+    events=sf_step(0);
+    assert(!G.part_hp[2]&&(events&SF_EVENT_BIG)&&active(G.pickup_active,SF_PICKUPS)==1);
+    assert(G.score>=before+500&&G.boss_phase==SF_BOSS_FIGHT);
+    G.part_hp[0]=G.part_hp[1]=1;G.bombs=1;sf_step(SF_IN_BOMB);
+    assert(G.boss_phase==SF_BOSS_DYING&&G.boss_clock==74);
+    before=(unsigned)G.score;
+    for(steps=1;!((events=sf_step(0))&SF_EVENT_BOSS_DOWN);++steps)assert(G.boss==1);
+    assert(steps==74&&(events&SF_EVENT_SECTOR)&&!G.boss&&G.bosses==1&&G.sector==5&&G.level==3);
+    assert(G.score>=before+2000+500);
+
+    /* The other weapons: aimed orbs, needle streams, slow mines, missiles
+     * that dive from the pods, and fans. */
+    boss_fight(2);G.part_fire[0]=0;G.part_fire[1]=G.part_fire[2]=200;sf_step(0);
+    assert(active(G.bullet_active,SF_ENEMY_BULLETS)==1&&G.bullet_active[0]==SF_SHOT_ORB&&G.bullet_dy[0]==4);
+    boss_fight(3);G.part_fire[0]=0;G.part_fire[1]=G.part_fire[2]=200;sf_step(0);
+    assert(G.bullet_active[0]==SF_SHOT_NEEDLE&&G.bullet_dy[0]==6&&G.bullet_x[0]==muzzle_x(0));
+    clear_shots();G.part_fire[2]=0;G.part_fire[0]=200;sf_step(0);
+    assert(G.bullet_active[0]==SF_SHOT_ORB&&(G.bullet_dy[0]==1||G.bullet_dy[0]==2));
+    boss_fight(4);G.part_fire[0]=0;G.part_fire[1]=G.part_fire[2]=200;
+    memset(G.enemy_active,0,sizeof(G.enemy_active));sf_step(0);
+    assert(G.enemy_active[0]&&G.enemy_kind[0]==SF_DART);
+    assert(G.enemy_y[0]==(uint8_t)(boss_top()+sf_boss.hit_y[0]+sf_boss.hit_h[0]));
+    boss_fight(5);G.part_fire[0]=0;G.part_fire[1]=G.part_fire[2]=200;sf_step(0);
+    assert(active(G.bullet_active,SF_ENEMY_BULLETS)==5&&G.bullet_active[0]==SF_SHOT_FAN&&G.bullet_dy[0]==3);
+
+    /* The railgun charges for 40 steps with its column shown and the boss
+     * still, then fires a slug at 34 lines a step. The slug hits a core on
+     * its path between two positions; a core six pixels aside is safe. */
+    for(i=0;i<2;++i) {
+        boss_fight(5);G.part_fire[0]=G.part_fire[1]=255;G.part_fire[2]=0;
+        sf_step(0);
+        assert(G.rail_clock==40&&G.rail_x==(muzzle_x(2)&~1));
+        x=G.boss_x;G.ship_x=(uint8_t)(G.rail_x+(i?6:0));
+        for(steps=0;G.rail_clock;++steps){sf_step(0);assert(G.boss_x==x);}
+        assert(steps==40&&G.bullet_active[0]==SF_SHOT_RAIL&&G.bullet_dy[0]==34);
+        for(events=0,steps=0;steps<8&&G.bullet_active[0];++steps)events|=sf_step(0);
+        assert(i?!(events&SF_EVENT_HURT):(events&SF_EVENT_HURT)!=0);
+    }
+
+    /* Boss sectors bring a line of three scouts each five seconds, and each
+     * third kill drops a pickup. */
+    boss_fight(1);G.spawn_clock=1;sf_step(0);
+    assert(active(G.enemy_active,SF_ENEMIES)==3&&G.spawn_clock==150);
+    boss_fight(1);G.part_fire[0]=G.part_fire[1]=G.part_fire[2]=255;
+    for(i=0;i<3;++i) {
+        memset(G.enemy_active,0,sizeof(G.enemy_active));target(SF_SCOUT,1,200,170);
+        shot(200,176,1);sf_step(0);
+        assert(active(G.pickup_active,SF_PICKUPS)==(i==2));
+    }
+
+    /* After the fifth boss, sectors follow each other without bosses. */
+    quiet();G.bosses=SF_BOSS_COUNT;G.sector=29;G.sector_clock=SF_SECTOR_TICKS-1;
+    events=sf_step(0);
+    assert((events&SF_EVENT_SECTOR)&&!(events&SF_EVENT_BOSS)&&!G.boss&&G.sector==30);
+    /* The fourth boss's sector, 20, plays level 14; the sector after it
+     * plays the last level. */
+    quiet();G.bosses=3;G.sector=18;G.sector_clock=SF_SECTOR_TICKS-1;
+    assert(sf_step(0)&SF_EVENT_BOSS);assert(G.boss==4&&G.sector==19&&G.level==14);
+    G.invulnerable=255;sf_step(0);G.part_hp[0]=G.part_hp[1]=G.part_hp[2]=0;G.boss_phase=SF_BOSS_DYING;
+    G.boss_clock=1;sf_step(0);assert(!G.boss&&G.bosses==4&&G.sector==20&&G.level==SF_LAST_LEVEL);
+    /* The title's cheat: the first step enters the chosen sector, with its
+     * boss when it has one, and the ship has everything. */
+    for(i=1;i<=99;++i) {
+        quiet();sf_begin((uint8_t)i);
+        assert(G.weapon==SF_MAX_WEAPON&&G.wing_active[0]&&G.wing_active[1]&&G.shield&&G.bombs==SF_MAX_BOMBS);
+        sf_step(0);
+        assert(G.sector==i-1&&G.hull==SF_MAX_HULL);
+        assert(G.boss==(i%5||i>25?0:i/5)&&G.bosses==(i>25?5:(i-1)/5));
+        assert(G.level==(i>20?SF_LAST_LEVEL:(i-1)*3/4));
+    }
+    puts("boss sectors, entry, lasers, railgun, hull, emplacements, bombs, drops and light waves: pass");
+}
+
+/* An invulnerable ship with the widest gun and both wingmen sits below an
+ * intact emplacement of each boss in turn. Two copies run the same steps. */
+static void test_boss_marathon(void)
+{
+    static sf_game a,b;
+    unsigned i,j,start=0,longest=0,part,target_x;
+    uint16_t ea,eb;
+    uint8_t input=0;
+    quiet();G.sector=SF_BOSS_EVERY-2;G.sector_clock=SF_SECTOR_TICKS-1;
+    G.weapon=SF_MAX_WEAPON;G.wing_active[0]=G.wing_active[1]=1;a=G;b=G;
+    for(i=0;i<60000&&a.bosses<SF_BOSS_COUNT;++i) {
+        G=a;G.invulnerable=255;G.weapon=SF_MAX_WEAPON;G.wing_active[0]=G.wing_active[1]=1;
+        ea=sf_step(input);a=G;
+        G=b;G.invulnerable=255;G.weapon=SF_MAX_WEAPON;G.wing_active[0]=G.wing_active[1]=1;
+        eb=sf_step(input);b=G;
+        assert(ea==eb&&!memcmp(&a,&b,sizeof(sf_game)));
+        for(j=0;j<SF_ENEMY_BULLETS;++j)if(G.bullet_active[j])
+            assert(G.bullet_active[j]<=SF_SHOT_RAIL&&G.bullet_x[j]<SF_WIDTH);
+        assert(active(G.enemy_active,SF_ENEMIES)<=SF_ENEMIES&&G.level<=SF_LAST_LEVEL);
+        if(ea&SF_EVENT_BOSS)start=i;
+        if(ea&SF_EVENT_BOSS_DOWN) {
+            printf("boss %u down after %u s\n",(unsigned)a.bosses,(i-start)/30);
+            if(i-start>longest)longest=i-start;
+            /* The next boss comes after five sectors; skip to it. */
+            G=a;G.sector=(uint8_t)(SF_BOSS_EVERY*(G.bosses+1)-2);G.sector_clock=SF_SECTOR_TICKS-1;a=b=G;
+        }
+        input=0;
+        if(G.boss&&G.boss_phase==SF_BOSS_FIGHT) {
+            for(part=0;part<3&&!G.part_hp[part];++part){}
+            if(part<3) {
+                target_x=muzzle_x(part);
+                if(G.ship_x+2u<target_x)input=SF_IN_RIGHT;
+                else if(G.ship_x>target_x+2u)input=SF_IN_LEFT;
+            }
+        }
+    }
+    assert(a.bosses==SF_BOSS_COUNT&&longest<120*30);
+    printf("five bosses destroyed in %u deterministic steps, the longest in %u s: pass\n",i,longest/30);
 }
 
 /* Trigger many waves at one level and report the enemy kinds they added.
@@ -376,7 +581,7 @@ static void test_enemy_roster_unlocks_slowly(void)
 }
 
 /* Heavies need level 4, first reached in this zero-based sector. */
-#define HEAVY_SECTOR ((4+SF_LEVELS_PER_SECTOR-1)/SF_LEVELS_PER_SECTOR)
+#define HEAVY_SECTOR 6
 static void test_determinism_and_pool_limits(void)
 {
     static sf_game a,b;
@@ -384,7 +589,8 @@ static void test_determinism_and_pool_limits(void)
     unsigned wing_ticks=0,drive_ticks=0;
     uint8_t input;
     uint16_t ea,eb;
-    sf_new(77);a=G;b=G;
+    /* Normal sectors only; test_boss_marathon covers the bosses. */
+    sf_new(77);G.bosses=SF_BOSS_COUNT;a=G;b=G;
     for(i=0;i<20000;++i) {
         unsigned enemies=0,shots;
         input=(i/90)&1?SF_IN_LEFT:SF_IN_RIGHT;
@@ -485,7 +691,8 @@ static void test_reaction_bot(void)
     printf("reaction bot lasts %u s at least, %u s on average over sixteen seeds; "
            "%.2f hits a minute, %.2f in the first three\n",least/30,total/480,
            hits*1800.0/total,early/16.0);
-    /* Two levels a sector roughly halved the average from 399 s. */
+    /* The ramp reaches its last level after the fourth boss. The bot does
+     * not aim at bosses, and it averages about seven minutes. */
     assert(total/480>=120&&total/480<=900);
     puts("an active player model is challenged within minutes: pass");
 }
@@ -511,6 +718,7 @@ int main(void)
     test_start_movement_and_restart();test_autofire();
     test_hits_shield_ramming_and_game_over();test_damage_chain_score_and_pickups();
     test_bombs();test_wingmen_and_overdrive();test_five_enemy_behaviors();test_sectors();
+    test_bosses();test_boss_marathon();
     test_enemy_roster_unlocks_slowly();test_determinism_and_pool_limits();
     test_passive_survival();test_reaction_bot();
     printf("STARFALL portable core: all checks passed; state %u bytes\n",

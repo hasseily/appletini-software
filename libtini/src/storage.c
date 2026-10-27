@@ -1,5 +1,7 @@
 #include "internal.h"
 #include "libtini/storage.h"
+/* File code is in TIFILES, which a game layout can overlay. */
+#pragma code-name ("TIFILES")
 /* The aligned 1 KiB ProDOS I/O buffer, from the linker layout. A layout that
  * gives that memory to the program leaves it out, so no file call links. */
 extern uint8_t ti_file_buffer;

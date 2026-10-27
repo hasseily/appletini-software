@@ -37,7 +37,7 @@
   <li>The build reads and checks all <code>examples/*/game.json</code> and <code>games/*/game.json</code> files before it builds.</li>
   <li>It runs the <code>generate</code> steps of the selected games. Then it compiles the score and phrases of the audio demo.</li>
   <li>It compiles all <code>src/*.c</code> files except the diagnostic. It assembles all <code>src/target/*.s</code> files except the startup. It puts them in the <code>libtini.lib</code> archive.</li>
-  <li>It links the diagnostic, the audio demo, each game and the test programs. Each link uses the startup object, the objects of the program, <code>libtini.lib</code> and the cc65 <code>none.lib</code>.</li>
+  <li>It links the diagnostic, the audio demo, each game and the test programs. Each link uses the startup object, the objects of the program, <code>libtini.lib</code> and the cc65 <code>none.lib</code>. After it links a game, it runs the <code>package</code> steps of that game.</li>
   <li>It checks each linked layout. The SYS starts at $2000. Zero page stays in $80-$9F. <code>NEARBSS</code> stays in the near arena. Low segments stay in the readable low range. No other segment is outside the application area.</li>
   <li>It writes the ProDOS disks, <code>layout.json</code>, <code>memory.json</code> and <code>manifest.json</code>. It prints one memory line for each game.</li>
 </ol>
@@ -75,6 +75,7 @@ ld65 -C CONFIG -o NAME.system -m NAME.map -Ln NAME.lbl --dbgfile NAME.dbg startu
 <tr><td><code>cflags</code></td><td>More cc65 options, for example <code>--static-locals</code> for foreground code.</td></tr>
 <tr><td><code>private</code></td><td><code>false</code> removes the game from <code>--private</code> builds. The default is <code>true</code>.</td></tr>
 <tr><td><code>generate</code></td><td>Commands that run in sequence before the compiler. See below.</td></tr>
+<tr><td><code>package</code></td><td>Commands that run in sequence after the link of the game and before its disk. They have the same keys as <code>generate</code>. See below.</td></tr>
 <tr><td><code>disk</code></td><td>A bootable ProDOS disk: <code>volume</code> (default: the name in capitals), <code>system</code> (default: <code>NAME.SYSTEM</code>), <code>blocks</code> (default: 1600, an 800 KiB disk) and <code>files</code>.</td></tr>
 </table></div>
 <p>The build stops for unknown keys, missing sources or a missing layout file.</p>
@@ -83,6 +84,29 @@ ld65 -C CONFIG -o NAME.system -m NAME.map -Ln NAME.lbl --dbgfile NAME.dbg startu
 <p>Each step is <code>{"command": [...], "inputs": [...], "outputs": [...]}</code>. If the first element of a command ends in <code>.py</code>, the build runs it with its own Python.</p>
 <p><code>{root}</code> is the libtini folder, <code>{game}</code> is the folder of the manifest, and <code>{build}</code> is the build folder. Other relative paths in <code>inputs</code>, <code>outputs</code> and disk files are relative to the manifest.</p>
 <p>The build puts the hashes of the inputs into <code>build/manifest.json</code>. For a folder, it uses all files in the folder. It records the outputs as build outputs. The build folder and the game folder are on the include path. Thus you include a generated header by its name only.</p>
+
+<h3 id="package">Package steps</h3>
+<p>Package steps have the same form and placeholders as generate steps. They run after the link, so they can read <code>build/NAME.system</code>, its label file and the overlay files of its layout. A layout writes an overlay file for each memory area with <code>file = "%O.ext"</code>, next to the program, for example <code>build/starfall.system.bos</code>. The build deletes the old overlay files of a game before it links the game, and records the new ones as outputs.</p>
+<p>STARFALL has one package step. <code>tools/starfall_pack.py</code> puts its overlays and the boss art into <code>build/starfall.pak</code>, and the disk gets that file as <code>STARFALL.PAK</code>:</p>
+<pre><code>"package": [
+  {
+    "command": ["{root}/tools/starfall_pack.py", "--labels", "{build}/starfall.lbl",
+                "--output", "{build}/starfall.pak", "TITLE={build}/starfall.system.tit", ...],
+    "inputs": ["{root}/tools/starfall_pack.py", "{root}/tools/assets.py"],
+    "outputs": ["{build}/starfall.pak"]
+  }
+],
+"disk": {"volume": "STARFALL", "system": "STARFALL.SYSTEM", "blocks": 1600,
+         "files": [{"name": "STARFALL.PAK", "path": "{build}/starfall.pak"}]}</code></pre>
+
+<h3 id="segments">Setup and file segments</h3>
+<p>libtini puts code that most games use only while they start in two segments. The two shared layouts put them with the other code. A game layout can put them in an overlay window, if the game does not call them after the window holds other code.</p>
+<div class="table"><table>
+<tr><th>Segment</th><th>Contents</th></tr>
+<tr><td><code>TISETUP</code></td><td><code>ti_gfx_surface_create</code>, <code>ti_gfx_begin</code> and its AUX0 backup, <code>ti_audio_init</code>, <code>ti_speech_bind</code> and <code>ti_steps_begin</code>. <code>ti_init</code> is not in it, because a game calls it before it can load anything.</td></tr>
+<tr><td><code>TIFILES</code></td><td>All file and pack calls, and the MLI adapter.</td></tr>
+</table></div>
+<p>The 65C02 cannot run code from a RamWorks bank: with RAMRD on, all reads in $0200-$BFFF come from the bank, also the C stack and the variables. A game copies an overlay from a resource to a main-memory window with <code>ti_res_read</code>, then calls its code. <code>design/GAMES.md</code> describes the pattern, and STARFALL uses it.</p>
 
 <h3 id="disk-files">Extra disk files</h3>
 <p>Each entry of <code>disk.files</code> has a <code>name</code> and a maximum of one source:</p>

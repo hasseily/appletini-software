@@ -1,0 +1,93 @@
+{
+  "name": "Excalibur",
+  "description": "Sword cruiser",
+  "size": [
+    94,
+    77
+  ],
+  "frames": 4,
+  "frame_layout": "horizontal strip, left to right",
+  "suggested_fps": 8,
+  "facing": "down (toward the player)",
+  "body": {
+    "sheet": "body.png",
+    "frame_size": [
+      94,
+      77
+    ],
+    "offset": [
+      0,
+      0
+    ]
+  },
+  "parts": [
+    {
+      "id": "guard_gun_left",
+      "label": "Left guard turret",
+      "intact": "guard_gun_left_intact.png",
+      "destroyed": "guard_gun_left_destroyed.png",
+      "frame_size": [
+        14,
+        20
+      ],
+      "offset": [
+        12,
+        16
+      ],
+      "hitbox": [
+        12,
+        17,
+        14,
+        19
+      ]
+    },
+    {
+      "id": "guard_gun_right",
+      "label": "Right guard turret",
+      "intact": "guard_gun_right_intact.png",
+      "destroyed": "guard_gun_right_destroyed.png",
+      "frame_size": [
+        14,
+        20
+      ],
+      "offset": [
+        68,
+        16
+      ],
+      "hitbox": [
+        68,
+        17,
+        14,
+        19
+      ]
+    },
+    {
+      "id": "point_emitter",
+      "label": "Point emitter",
+      "intact": "point_emitter_intact.png",
+      "destroyed": "point_emitter_destroyed.png",
+      "frame_size": [
+        14,
+        17
+      ],
+      "offset": [
+        40,
+        57
+      ],
+      "hitbox": [
+        40,
+        58,
+        14,
+        16
+      ]
+    }
+  ],
+  "draw_order": [
+    "body",
+    "guard_gun_left",
+    "guard_gun_right",
+    "point_emitter"
+  ],
+  "palette": "../palette.hex",
+  "transparent_index": 0
+}

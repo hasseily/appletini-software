@@ -1,0 +1,93 @@
+{
+  "name": "Scarab",
+  "description": "Beetle gunship",
+  "size": [
+    78,
+    74
+  ],
+  "frames": 4,
+  "frame_layout": "horizontal strip, left to right",
+  "suggested_fps": 8,
+  "facing": "down (toward the player)",
+  "body": {
+    "sheet": "body.png",
+    "frame_size": [
+      78,
+      74
+    ],
+    "offset": [
+      0,
+      0
+    ]
+  },
+  "parts": [
+    {
+      "id": "mandible_left",
+      "label": "Left mandible gatling",
+      "intact": "mandible_left_intact.png",
+      "destroyed": "mandible_left_destroyed.png",
+      "frame_size": [
+        14,
+        22
+      ],
+      "offset": [
+        18,
+        52
+      ],
+      "hitbox": [
+        18,
+        53,
+        14,
+        21
+      ]
+    },
+    {
+      "id": "mandible_right",
+      "label": "Right mandible gatling",
+      "intact": "mandible_right_intact.png",
+      "destroyed": "mandible_right_destroyed.png",
+      "frame_size": [
+        14,
+        22
+      ],
+      "offset": [
+        46,
+        52
+      ],
+      "hitbox": [
+        46,
+        53,
+        14,
+        21
+      ]
+    },
+    {
+      "id": "mine_layer",
+      "label": "Mine layer",
+      "intact": "mine_layer_intact.png",
+      "destroyed": "mine_layer_destroyed.png",
+      "frame_size": [
+        16,
+        17
+      ],
+      "offset": [
+        31,
+        23
+      ],
+      "hitbox": [
+        31,
+        24,
+        16,
+        16
+      ]
+    }
+  ],
+  "draw_order": [
+    "body",
+    "mandible_left",
+    "mandible_right",
+    "mine_layer"
+  ],
+  "palette": "../palette.hex",
+  "transparent_index": 0
+}

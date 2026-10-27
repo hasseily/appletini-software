@@ -45,6 +45,7 @@ uint8_t ti_gfx_clip(const ti_surface *s, ti_rect *r)
     return clip_axis(&r->x, &r->width, s->width) && clip_axis(&r->y, &r->height, s->height);
 }
 
+#pragma code-name (push, "TISETUP")
 ti_error ti_gfx_surface_create(ti_surface *s, uint16_t width, uint16_t height)
 {
     ti_error e;
@@ -56,6 +57,7 @@ ti_error ti_gfx_surface_create(ti_surface *s, uint16_t width, uint16_t height)
     if (e) s->width = s->height = s->stride = 0;
     return e;
 }
+#pragma code-name (pop)
 
 ti_error ti_gfx_surface_free(ti_surface *s)
 {

@@ -40,8 +40,8 @@ python tools/check.py --cc65-home D:/Repos/cc65 --cc C:/msys64/ucrt64/bin/gcc.ex
 <tr><td>host-assets</td><td><code>tests/test_graphics_tools.py</code></td><td>Image, font, map and pack conversion</td></tr>
 <tr><td>host-speech</td><td><code>tests/test_speech.py</code></td><td>All numbers 0-9999, pronunciations, unknown words, generated identifiers</td></tr>
 <tr><td>host-music</td><td><code>tests/test_music.py</code></td><td>The two music compilers and the MIDI arranger</td></tr>
-<tr><td>host-starfall-assets</td><td><code>tests/test_starfall_assets.py</code></td><td>The archive hashes, packed cells and phrases of STARFALL</td></tr>
-<tr><td>host-starfall</td><td><code>tests/test_starfall.py</code></td><td>The simulation rules of STARFALL and long runs</td></tr>
+<tr><td>host-starfall-assets</td><td><code>tests/test_starfall_assets.py</code></td><td>The archive hashes, packed cells and phrases of STARFALL, and its boss art</td></tr>
+<tr><td>host-starfall</td><td><code>tests/test_starfall.py</code></td><td>The simulation rules of STARFALL, its bosses and the overlay rule, and long runs</td></tr>
 <tr><td>host-input</td><td><code>tests/test_input.py</code></td><td>Stick thresholds and calibration, and fixed-step calculation</td></tr>
 <tr><td>cpu-scene</td><td><code>tests/scene_validate.py</code></td><td>Each scene draw, compared with an independent rendering</td></tr>
 <tr><td>host-volumes</td><td><code>tests/test_disk_release.py</code></td><td>ProDOS volume limits and corruption checks</td></tr>
@@ -56,7 +56,7 @@ python tools/check.py --cc65-home D:/Repos/cc65 --cc C:/msys64/ucrt64/bin/gcc.ex
 <tr><td>native-benchmarks-boot</td><td><code>tools/benchmark.py --boot-roms</code></td><td>The benchmarks after a ProDOS boot, with AMEM</td></tr>
 <tr><td>boot-audio</td><td><code>tests/audio_native_validate.py</code></td><td>The booted audio demo, in the two personalities and profiles</td></tr>
 <tr><td>boot-starter</td><td><code>tests/starter_native_validate.py</code></td><td>The starter, controlled by held keys and a stick</td></tr>
-<tr><td>boot-starfall, boot-starfall-phasor</td><td><code>tests/starfall_native_validate.py</code></td><td>STARFALL, played to the end with each card</td></tr>
+<tr><td>boot-starfall, boot-starfall-phasor</td><td><code>tests/starfall_native_validate.py</code></td><td>STARFALL, played to the end with each card, with a boss sector</td></tr>
 </table></div>
 <p>Each script can also run alone. See <code>tests/README.md</code>. The browser player has its own comparison check, <code>tests/web_validate.py</code>. The <a href="browser.html#evidence">browser player</a> page describes it.</p>
 

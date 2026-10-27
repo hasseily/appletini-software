@@ -27,12 +27,12 @@ game, and `build/memory.json` records them for every program. See
 
 | Region | `cfg/libtini.cfg`: diagnostic, tests, starter | `cfg/game.cfg`: full game | STARFALL layout |
 | --- | --- | --- | --- |
-| Main code and state | $2000-$9FFF | $2000-$AEFF | $2000-$B3FF |
+| Main code and state | $2000-$9FFF | $2000-$AEFF | $2000-$BA7F, with an overlay window |
 | Guard | $AF00-$AFFF | $AF00-$AFFF | none |
-| C software stack | $A000-$A7FF, top $A800 | $B700-$BEFF, top $BF00 | same as `game.cfg` |
-| Private transfer stage | $A800-$A87F | $B400-$B47F | same as `game.cfg` |
-| Caller near arena, NEARBSS | $A900-$AEFF, 1536 bytes | $B480-$B6FF, 640 bytes | same as `game.cfg` |
-| ProDOS aligned file buffer, `_ti_file_buffer` | $B000-$B3FF, 1 KiB | same | none: no file calls link |
+| C software stack | $A000-$A7FF, top $A800 | $B700-$BEFF, top $BF00 | $BE00-$BEFF, top $BF00 |
+| Private transfer stage | $A800-$A87F | $B400-$B47F | $BA80-$BAFF |
+| Caller near arena, NEARBSS | $A900-$AEFF, 1536 bytes | $B480-$B6FF, 640 bytes | $BB00-$BDFF, 768 bytes |
+| ProDOS aligned file buffer, `_ti_file_buffer` | $B000-$B3FF, 1 KiB | same | 1 KiB in the scene storage, before the scene starts |
 | Other reserved space | $A880-$A8FF, $B400-$BEFF | none | none |
 
 OSSTATE contains the launch flags, the saved zero page and the trampoline
@@ -63,9 +63,10 @@ application.
 
 The entry code of startup, up to the BSS clear, is in the ONCE segment. The
 full-game layout puts ONCE directly after DATA, where BSS starts. The ONCE
-code finishes before `zerobss` uses those bytes again. In STARFALL this gives
-228 bytes back to BSS. The code that clears BSS, starts C and controls the
-exit is in STARTUP.
+code finishes before `zerobss` uses those bytes again, which gives 228 bytes
+back to BSS. STARFALL's layout puts ONCE after its loader, in the overlay
+window. The code that clears BSS, starts C and controls the exit is in
+STARTUP.
 
 The full-game layout has little free space with the optional AMEM build. Keep
 the linker checks enabled when you extend it. Measure the two stacks when you
@@ -73,30 +74,47 @@ add foreground depth or IRQ nesting.
 
 ## STARFALL
 
-STARFALL uses its own copy of `cfg/game.cfg`,
+STARFALL uses its own layout,
 [`examples/starfall/starfall.cfg`](../examples/starfall/starfall.cfg). It
-makes no file calls, so the guard page and the file buffer are part of WORK,
-which ends at $B3FF.
+keeps code that it does not use all the time in RamWorks and copies it to an
+overlay window to run it. See [GAMES.md](GAMES.md#overlays).
 
-The 547-byte game state, the star columns, the animated palette and two text
-buffers are NEARBSS variables at $B480. They use 639 of the 640 bytes. The
-112-sprite scene list (896 bytes) and the 960-byte eight-line scene strip are
-in static BSS, with 197 bytes of library scene state.
+| MAIN range | Use |
+| --- | --- |
+| $0800-$1FFF | Sprite cells, speech, song, font, sound table; the song player, text and row-copy code, `animate`, `telemetry` and `render` |
+| $2000 to the window | Resident code and data |
+| The window, to $AC2F | One overlay at a time; at load time, `TIFILES` and the loader |
+| $AC30-$BA7F | The scene storage, then BSS |
+| $BA80-$BAFF | Transfer stage |
+| $BB00-$BDFF | Near arena: the 566-byte game state, the variables of `game.c`, the star columns, the animated palette, text buffers, the boss's name and colors and the HUD's values |
+| $BE00-$BEFF | C stack. STARFALL uses less than 100 bytes of it |
 
-The 320x200 packed interface canvas is behind a banked handle. The 2,048
-bytes of sprite cells, the speech phrases, the 1,020-byte song and the sound
-table are near read-only constants in low MAIN. Most of the song player, the
-text glyph loop, the publication row copy and the backdrop option of the
-title screen are there too.
+The build prints the bounds of each area. The window starts after the
+resident code and data, at about $9600, and holds about 5.6 KiB.
 
-The other tables and strings of the example follow its code. STARFALL has no
-optional AMEM build. 88 bytes of low MAIN and 1,110 bytes below $B400 are
-free.
+| Overlay | Contents | In the window |
+| --- | --- | --- |
+| Title | The title screen, its cheat, the launch and `TISETUP` | From the load until the launch |
+| Panels | The pause, clock-gap, game-over and missing-audio panels | In a pause and after the ship is lost |
+| Play | The waves of normal sectors, and the cheat's start | In normal sectors |
+| Boss | The bosses and their drawing, with the record and art of one boss | In boss sectors |
 
-STARFALL grants RamWorks selectors 1-3 for the canvas, the AUX0 display
+`STARFALL.PAK` holds the four overlays and the art of the five bosses, 37,175
+bytes in one resource. The boss overlay's variables follow its code, and the
+art of the boss follows them: the body strips, then one frame slot for each
+weapon. The other boss frames stay in the resource. The game copies a frame
+to its slot when the animation changes it, about 0.2 ms for each copy.
+
+Startup loads the pack before graphics start, so the file calls need no
+storage loan. The ProDOS file buffer is the first page-aligned 1 KiB of the
+1,856 bytes of scene storage, which no code uses before `ti_scene_begin`.
+After the load, STARFALL makes no file calls.
+
+The 320x200 packed interface canvas is behind a banked handle. STARFALL
+grants RamWorks selectors 1-3 for the pack, the canvas, the AUX0 display
 backup and the temporary storage loan for ProDOS and the IRQ handler. The
-peak of these three allocations is 97,536 bytes, 256 bytes more than two
-resource banks. The game needs no extra framebuffer and no sprite hardware.
+peak of these allocations is 134,711 bytes of the 145,920. The game needs no
+extra framebuffer and no sprite hardware.
 
 During play, a libtini sprite scene composes the changed blocks in near
 memory, eight lines at a time. It publishes them with normal CPU writes,

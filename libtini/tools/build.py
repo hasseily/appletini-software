@@ -23,7 +23,8 @@ ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build"
 OBJECT_EPOCH = 1792454400  # 2026-10-20 00:00 UTC, not the build clock.
 SDK_PROGRAMS = ("libtini", "audio_demo", "test_target", "test_graphics", "test_audio", "test_storage")
-GAME_KEYS = {"name", "title", "sources", "assembly", "config", "cflags", "generate", "disk", "private"}
+GAME_KEYS = {"name", "title", "sources", "assembly", "config", "cflags", "generate", "package", "disk",
+             "private"}
 STEP_KEYS = {"command", "inputs", "outputs"}
 DISK_KEYS = {"volume", "system", "blocks", "files"}
 FILE_KEYS = {"name", "path", "program", "type", "aux"}
@@ -288,10 +289,11 @@ def load_games():
             raise SystemExit(where + ": config must be a path")
         if not isinstance(game.get("private", True), bool):
             raise SystemExit(where + ": private must be true or false")
-        for step in game.get("generate", []):
-            if not isinstance(step, dict) or set(step) - STEP_KEYS or not strings(step.get("command")) \
-                    or not step["command"] or not all(strings(step.get(key, [])) for key in ("inputs", "outputs")):
-                raise SystemExit(where + ": generate steps need a command list and optional inputs and outputs")
+        for key in ("generate", "package"):
+            for step in game.get(key, []):
+                if not isinstance(step, dict) or set(step) - STEP_KEYS or not strings(step.get("command")) \
+                        or not step["command"] or not all(strings(step.get(item, [])) for item in ("inputs", "outputs")):
+                    raise SystemExit(where + ": " + key + " steps need a command list and optional inputs and outputs")
         disk = game.get("disk")
         if disk is not None:
             if not isinstance(disk, dict) or set(disk) - DISK_KEYS:
@@ -338,13 +340,16 @@ def main():
     inputs = []
     objects = []
     generated = []
-    for game in selected:
-        inputs.append(game["manifest"])
-        for step in game.get("generate", []):
+    def run_steps(game, key):
+        for step in game.get(key, []):
             command = [expand(item, game) for item in step["command"]]
             run([sys.executable, *command] if command[0].endswith(".py") else command)
             inputs.extend(files_under(resolve(item, game) for item in step.get("inputs", [])))
             generated.extend(resolve(item, game) for item in step.get("outputs", []))
+
+    for game in selected:
+        inputs.append(game["manifest"])
+        run_steps(game, "generate")
     if (ROOT / "assets/music.json").exists():
         run([sys.executable, ROOT / "tools/music.py", ROOT / "assets/music.json",
              "--output", BUILD / "audio_music.h", "--symbol", "ti_demo_music",
@@ -413,13 +418,16 @@ def main():
             extras.append(extra)
         program = BUILD / (stem + ".system")
         map_file, labels_file, debug = (BUILD / (stem + suffix) for suffix in (".map", ".lbl", ".dbg"))
+        # A layout can link overlays into files of their own, named after the program.
+        for old in BUILD.glob(stem + ".system.*"):
+            old.unlink()
         link([tools["ld65"], "-C", config, "-o", rel(program),
               "-m", rel(map_file), "-Ln", rel(labels_file), "--dbgfile", rel(debug),
               rel(startup), rel(obj), *map(rel, extras), rel(archive), tools["runtime"]], stem)
         labels = read_labels(labels_file)
         layouts[stem] = layout_summary(map_file, labels)
         memory[stem] = memory_report(labels)
-        outputs.extend((program, map_file, labels_file, debug))
+        outputs.extend((program, map_file, labels_file, debug, *sorted(BUILD.glob(stem + ".system.*"))))
         return program
 
     def build_game(game):
@@ -433,8 +441,11 @@ def main():
         # Python caches are not sources; the release export omits them too.
         inputs.extend(path for path in directory.rglob("*") if path.is_file() and
                       "__pycache__" not in path.parts and path.suffix not in (".pyc", ".pyo"))
-        return link_program(sources[0], game["name"], extra_c=sources[1:], extra_asm=assembly,
-                            config=rel(config), includes=[directory], flags=game.get("cflags", []))
+        program = link_program(sources[0], game["name"], extra_c=sources[1:], extra_asm=assembly,
+                               config=rel(config), includes=[directory], flags=game.get("cflags", []))
+        # Package steps use the linked program and its overlays, before any disk is made.
+        run_steps(game, "package")
+        return program
 
     diagnostic = link_program(ROOT / "src/diag.c", "libtini")
     programs = {"libtini": diagnostic}

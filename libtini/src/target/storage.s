@@ -3,7 +3,7 @@
 .setcpu "65C02"
 .export _ti_mli_call
 .import _ti_mli_command, _ti_mli_params
-.segment "CODE"
+.segment "TIFILES"
 _ti_mli_call:
         lda _ti_mli_command
         sta command

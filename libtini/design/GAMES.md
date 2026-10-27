@@ -12,7 +12,7 @@ game needs no change to the build script of the SDK.
 {
   "name": "starfall",
   "title": "STARFALL",
-  "sources": ["main.c", "game.c"],
+  "sources": ["main.c", "game.c", "boss.c"],
   "config": "examples/starfall/starfall.cfg",
   "private": false,
   "cflags": ["--static-locals"],
@@ -24,7 +24,16 @@ game needs no change to the build script of the SDK.
       "outputs": ["{build}/starfall_speech.h"]
     }
   ],
-  "disk": {"volume": "STARFALL", "system": "STARFALL.SYSTEM", "blocks": 1600}
+  "package": [
+    {
+      "command": ["{root}/tools/starfall_pack.py", "--labels", "{build}/starfall.lbl",
+                  "--output", "{build}/starfall.pak", "TITLE={build}/starfall.system.tit"],
+      "inputs": ["{root}/tools/starfall_pack.py", "{root}/tools/assets.py"],
+      "outputs": ["{build}/starfall.pak"]
+    }
+  ],
+  "disk": {"volume": "STARFALL", "system": "STARFALL.SYSTEM", "blocks": 1600,
+           "files": [{"name": "STARFALL.PAK", "path": "{build}/starfall.pak"}]}
 }
 ```
 
@@ -38,9 +47,10 @@ game needs no change to the build script of the SDK.
 | `cflags` | More cc65 options, for example `--static-locals` for foreground-only code |
 | `private` | `false` removes the game from `--private` builds, which add the optional AMEM transport. The default is `true` |
 | `generate` | Commands that run before compilation, in order. A command that ends in `.py` runs with the Python of the build. The build records the hashes of the `inputs` in `build/manifest.json`; a directory counts every file under it. The build records the `outputs` as build outputs |
+| `package` | Commands that run after the link and before the disk, in order, with the same keys as `generate`. They can use the program, its label file and the overlay files of its layout |
 | `disk` | A bootable ProDOS image: `volume`, the `system` file name (default `NAME.SYSTEM`), `blocks` (default 1600) and `files` |
 
-In `generate`, `{root}`, `{game}` and `{build}` expand to the libtini folder,
+In `generate` and `package`, `{root}`, `{game}` and `{build}` expand to the libtini folder,
 the directory of the manifest and the build directory. Other relative paths
 in `inputs`, `outputs` and disk files are relative to the manifest. The build
 directory and the game directory are on the include path.
@@ -61,7 +71,7 @@ python tools/build.py --cc65-home D:/Repos/cc65 --game starter
 that its disk lists. Each build ends with one memory line for each game:
 
 ```text
-starfall memory: LOW $0800-$1FFF 88 free; IMAGE $2000-$BEFF 1032 free; WORK $A26C-$B3FF 1110 free; NEAR $B480-$B6FF 1 free
+starfall memory: LOW $0800-$1FFF 8 free; IMAGE $2000-$AC2F 5646 free; BOSS $9622-$AC2F 3013 free; FILES $9622-$AC2F 2741 free; PANELS $9622-$AC2F 4762 free; PLAY $9622-$AC2F 4821 free; TITLE $9622-$AC2F 2564 free; TAIL $A17B-$BEFF 1193 free; WORK $AC30-$BA7F 10 free; NEAR $BB00-$BDFF 9 free
 ```
 
 Each entry is a linker memory area. `build/memory.json` holds the same
@@ -85,14 +95,45 @@ back. See [MEMORY_MAP.md](MEMORY_MAP.md).
 
 A game can use its own layout, a copy of one of the two, and keep the memory
 that it does not use from the library. File calls need the 1 KiB ProDOS
-buffer at `_ti_file_buffer`, which is $B000 in the two shared layouts.
+buffer at `_ti_file_buffer`, which is $B000 in the two shared layouts. A
+layout that leaves the symbol out gets that memory, and a file call does not
+link.
 
-STARFALL makes no file calls. Its layout,
-[`examples/starfall/starfall.cfg`](../examples/starfall/starfall.cfg), does
-not define the symbol. It puts the end of WORK and of public near memory,
-`_ti_memory_end`, at $B400 instead of $AF00. Thus the guard page and the
-buffer give the game 1,280 bytes. A file call with that layout fails to link,
-so ProDOS cannot write over the game.
+Two library segments hold code that most games use only while they start:
+
+| Segment | Contents |
+| --- | --- |
+| `TISETUP` | `ti_gfx_surface_create`, `ti_gfx_begin` and its AUX0 backup, `ti_audio_init`, `ti_speech_bind` and `ti_steps_begin` |
+| `TIFILES` | All file and pack calls, and the MLI adapter |
+
+The two shared layouts put them with the code. A game layout can put them in
+an overlay window instead, if the game does not call them after that window
+holds other code. `ti_init` is not in `TISETUP`: a game calls it before it
+can load anything.
+
+### Overlays
+
+The 65C02 cannot run code from a RamWorks bank. With RAMRD on, all reads in
+$0200-$BFFF come from the bank, also the C stack and the game's variables.
+Thus a game that keeps code in banks copies it to a main-memory window and
+runs it there. In an ld65 layout, each overlay is a memory area at the window
+address with a file of its own, `file = "%O.ext"`. The build writes these
+files next to the program, and a `package` step can put them in a resource
+pack. The game loads the pack into a bank with `ti_pack_load` and copies an
+overlay to the window with `ti_res_read` before it calls the overlay's code.
+
+The window must be in public near memory, after `_ti_writable_start`.
+Variables of overlay code with `--static-locals` can be in a BSS segment of
+the overlay's memory area. They do not start at zero.
+
+STARFALL uses this design. Its layout,
+[`examples/starfall/starfall.cfg`](../examples/starfall/starfall.cfg), has a
+window after the resident code and five overlays: the title screen and launch
+with `TISETUP`, the pause and game-over panels, the wave code of normal
+sectors, and the boss code with the art of one boss. At load time the window
+holds `TIFILES` and the loader. Its file buffer is the scene storage, which
+is idle until `ti_scene_begin`. See
+[MEMORY_MAP.md](MEMORY_MAP.md#starfall).
 
 Variables in the `NEARBSS` segment are in the caller near arena, outside the
 main memory area:

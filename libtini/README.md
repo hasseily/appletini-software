@@ -15,10 +15,12 @@ contract. The [design/](design/) folder contains the development plan, the
 design notes and the measurements as Markdown.
 
 [STARFALL](examples/starfall/README.md) is the example game. It is a vertical
-shooter with one endless level, five enemy types, automatic fire, four weapon
-levels, wingmen, overdrive, chain scores, shields, repairs, bombs, music and
-spoken callouts. It uses public-domain Kenney sprites and an eight-voice
-arrangement of a free doranarasi MIDI demo.
+shooter with one endless level, five enemy types, five bosses, automatic fire,
+four weapon levels, wingmen, overdrive, chain scores, shields, repairs, bombs,
+music and spoken callouts. It uses public-domain Kenney sprites, original boss
+art and an eight-voice arrangement of a free doranarasi MIDI demo. It keeps
+its title screen, panels, wave code, boss code and boss art in RamWorks and
+copies each part to an overlay window when it needs it.
 
 Boot `build/starfall.po`. Push Return or a joystick button to start with the
 Mockingboard, or push P to select the Phasor. Hold WASD or the arrow keys to

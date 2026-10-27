@@ -19,6 +19,7 @@ ti_tick_source ti_gfx_publish_clock;
 
 static void cleanup(void) { ti_gfx_end(); }
 
+#pragma code-name (push, "TISETUP")
 ti_error ti_gfx_begin(const uint16_t *palette)
 {
     uint16_t offset;
@@ -34,6 +35,7 @@ ti_error ti_gfx_begin(const uint16_t *palette)
     for (offset = 0x9D00; offset < 0x9E00; offset += 128) ti_diag_video_write(offset, ti_gfx_row, 128);
     return ti_gfx_palette(palette);
 }
+#pragma code-name (pop)
 
 ti_error ti_gfx_palette(const uint16_t *palette)
 {

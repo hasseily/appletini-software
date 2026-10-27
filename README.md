@@ -78,7 +78,7 @@ pages: open `libtini/docs/index.html` in a browser.
   this repository.
 - [STARFALL](libtini/examples/starfall/README.md): libtini's example game, a
   vertical scrolling survival shooter in Super Hi-Res with five enemy types,
-  four weapon levels, wingmen, bombs, an eight-track arrangement of a
+  five bosses, four weapon levels, wingmen, bombs, an eight-track arrangement of a
   doranarasi MIDI demo (all eight on a Phasor, three on a Mockingboard),
   SSI-263 callouts and joystick or keyboard control, at 33 MHz or TURBO.
   Written in C with cc65.

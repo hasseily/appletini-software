@@ -13,11 +13,15 @@
 #define SF_FX 12
 #define SF_PICKUPS 3
 #define SF_WINGMEN 2
-/* A sector lasts 24 seconds and raises the difficulty two levels. Pressure
- * stops rising at the last level, from the ninth sector. */
+/* A sector lasts 24 seconds. Sectors 5, 10, 15, 20 and 25 are boss sectors;
+ * each one ends when its boss is destroyed. Later sectors have no bosses.
+ * The difficulty rises three levels each four sectors and is at its last
+ * level from sector 21, after the fourth boss. */
 #define SF_SECTOR_TICKS 720
-#define SF_LEVELS_PER_SECTOR 2
 #define SF_LAST_LEVEL 15
+#define SF_RAMP_SECTORS 20
+#define SF_BOSS_EVERY 5
+#define SF_BOSS_COUNT 5
 #define SF_MAX_HULL 3
 #define SF_MAX_BOMBS 5
 #define SF_MAX_WEAPON 3
@@ -44,6 +48,8 @@
 #define SF_EVENT_WINGMAN_LOST 2048
 /* The kill multiplier reached its top, x8: overdrive with fifteen chained kills. */
 #define SF_EVENT_TOP_CHAIN 4096
+#define SF_EVENT_BOSS 8192       /* a boss arrives */
+#define SF_EVENT_BOSS_DOWN 16384 /* a boss is destroyed */
 #define SF_SCOUT 0
 #define SF_DART 1
 #define SF_GUNSHIP 2
@@ -60,6 +66,13 @@
 #define SF_SHOT_ORB 1
 #define SF_SHOT_FAN 2
 #define SF_SHOT_NEEDLE 3
+/* Boss shots: a 2x12 laser segment, and a 4x40 railgun slug. */
+#define SF_SHOT_LASER 4
+#define SF_SHOT_RAIL 5
+/* Boss phases. Phase 0 is the first step of a boss sector. */
+#define SF_BOSS_ENTER 1
+#define SF_BOSS_FIGHT 2
+#define SF_BOSS_DYING 3
 #define SF_FX_BLAST 0
 #define SF_FX_BIG 1
 #define SF_FX_SPARK 2
@@ -71,8 +84,8 @@ typedef struct sf_game {
     uint16_t rng,kills,sector_clock;
     uint8_t ship_x,ship_y;
     uint8_t hull,bombs,weapon,invulnerable,shield,game_over;
-    uint8_t sector;     /* zero-based, shown as SECTOR 01.. */
-    uint8_t level;      /* difficulty, min(sector * SF_LEVELS_PER_SECTOR, SF_LAST_LEVEL) */
+    uint8_t sector;     /* zero-based normal sectors, shown as SECTOR 01.. */
+    uint8_t level;      /* difficulty, from the sector */
     uint8_t fire_clock,previous_input,spawn_clock,second;
     uint8_t chain,chain_clock,drop_count,drops,warned,last_pickup;
     uint8_t overdrive;  /* ticks left */
@@ -93,12 +106,53 @@ typedef struct sf_game {
     uint8_t pickup_kind[SF_PICKUPS];
     /* Wingmen trail the ship on fixed sides: 0 left, 1 right. */
     uint8_t wing_active[SF_WINGMEN],wing_x[SF_WINGMEN],wing_y[SF_WINGMEN];
+    /* Last, so that the fields above keep their offsets. */
+    uint16_t seconds;   /* of play */
+    /* The boss of this sector, 1..5, or 0; and how many are destroyed. */
+    uint8_t boss,bosses,boss_phase,boss_clock;
+    uint8_t boss_x,boss_y;  /* left edge, even; bottom edge */
+    int8_t boss_dx;
+    uint8_t part_hp[3],part_fire[3];
+    uint16_t boss_full;     /* the strength of its three parts at the start */
+    uint8_t rail_x,rail_clock; /* the column a railgun aims at, and ticks to its shot */
 } sf_game;
 
 /* The single simulation state. Copy it to keep or compare snapshots. On the
  * 65C02 it lives in the caller near arena's NEARBSS, outside main BSS. */
 extern sf_game sf_state;
 void sf_new(uint16_t seed);
+/* On the 65C02, boss code is an overlay and the wave code is another. The
+ * game copies the boss overlay to the window before each step that starts
+ * with a boss, and the wave overlay before the others. The host checks that
+ * each step uses only the code of its overlay. */
+#ifdef __CC65__
+#define SF_OVERLAY(boss)
+#else
+#include <assert.h>
+extern uint8_t sf_overlay_boss;
+#define SF_OVERLAY(boss) assert(sf_overlay_boss==(boss))
+#endif
+/* Shared by the game and the boss overlay. */
+extern uint16_t sf_events;
+extern uint8_t sf_muzzle_x,sf_muzzle_y,sf_muzzle_style;
+uint8_t sf_random(void);
+void sf_effect(uint8_t x,uint8_t y,uint8_t kind);
+void sf_enemy_shot(int8_t dx,int8_t dy);
+void sf_aimed(int8_t speed);
+void sf_pickup(uint8_t x,uint8_t y,uint8_t kind);
+uint8_t sf_spawn(uint8_t kind,uint8_t x,uint8_t phase);
+void sf_hurt(void);
+void sf_next_sector(void);
+/* The wave overlay: start the run at sector n, for the title's cheat. Call
+ * it after sf_new and before the first step. */
+void sf_begin(uint8_t n);
+uint8_t sf_drop(void);
+/* The boss overlay: a step, a player shot (nonzero when the boss stops it),
+ * a bomb and the ship against the hull. */
+void sf_boss_step(void);
+uint8_t sf_boss_hit(uint8_t x,uint8_t y,uint8_t power);
+void sf_boss_bomb(void);
+void sf_boss_ram(void);
 /* BOMB is edge triggered; direction flags may be combined. Auto-fire is on. */
 uint16_t sf_step(uint8_t input);
 /* Kill score multiplier: the chain gives 1..4, doubled in overdrive. */
