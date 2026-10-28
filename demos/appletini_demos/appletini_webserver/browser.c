@@ -1,9 +1,8 @@
 /* A2LYNX -- lynx-style text browser for the Appletini demo disk.
  *
- * Plain-HTTP browsing over ip65 (the Appletini virtual Uthernet).
- * The modern web is HTTPS, which a 6502 cannot terminate, so the
- * homepage is the Appletini site. FrogFind remains the public proxy
- * used to simplify HTTPS sites for vintage machines.
+ * Direct HTTP/S through Appletini SmartPort; ip65 on older firmware.
+ * The ARM checks TLS certificates. FrogFind remains available for search
+ * and page simplification. The renderer stays on the Apple.
  *
  * Renderer: single-pass HTML-subset parser that compacts the response
  * buffer in place (output never outruns input), word-wraps at the
@@ -22,8 +21,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "appletini_net.h"
-#include "ip65_min.h"
+#include "appletini_http.h"
 
 #define BUF_CAP    10240U
 #define HREF_CAP   2048U
@@ -47,7 +45,7 @@
 #define KEY_RETURN 0x0D
 #define KEY_ESC    0x1B
 
-static char buf[BUF_CAP];           /* raw response, then rendered text */
+static char buf[BUF_CAP+1U];           /* raw response, then rendered text */
 static char href_pool[HREF_CAP];
 static uint16_t href_used;
 
@@ -72,6 +70,7 @@ static char scratch[URL_CAP];
 static char history[HIST_MAX][URL_CAP];
 static uint8_t hist_count;
 
+static uint8_t direct_http, page_cut, plain_page;
 static uint16_t top_line;
 static uint8_t sel_link;
 
@@ -193,7 +192,7 @@ static uint8_t resolve_url(const char *href)
         starts_with_ci(href, "javascript:")) {
         return 0;
     }
-    if (starts_with_ci(href, "https://")) {
+    if (starts_with_ci(href, "https://") && !direct_http) {
         /* The 6502 cannot do TLS: route through the FrogFind proxy. */
         if (href == new_url) {
             return 1;               /* self-resolve: keep as typed */
@@ -208,7 +207,7 @@ static uint8_t resolve_url(const char *href)
         new_url[n] = '\0';
         return 1;
     }
-    if (starts_with_ci(href, "http://")) {
+    if (starts_with_ci(href, "http://") || starts_with_ci(href, "https://")) {
         if (href != new_url) {
             while (*href != '\0' && *href != '#' && n < URL_CAP - 1U) {
                 new_url[n] = *href;
@@ -220,15 +219,15 @@ static uint8_t resolve_url(const char *href)
         return 1;
     }
     if (href[0] == '/' && href[1] == '/') {
-        strcpy(scratch, "http:");
-        strncat(scratch, href, URL_CAP - 7U);
+        strcpy(scratch, starts_with_ci(cur_url,"https://") ? "https:" : "http:");
+        strncat(scratch, href, URL_CAP - strlen(scratch) - 1U);
         strcpy(new_url, scratch);
         goto strip_fragment;
     }
 
     /* Relative to the current URL. base = scheme://host */
     base = cur_url;
-    path = strchr(base + 7, '/');       /* past "http://" */
+    path = strchr(base + (starts_with_ci(base,"https://") ? 8 : 7), '/');       /* past "http://" */
     if (href[0] == '/') {
         /* host-absolute: keep scheme://host only */
         if (path == NULL) {
@@ -237,7 +236,7 @@ static uint8_t resolve_url(const char *href)
         n = (uint16_t)(path - base);
     } else {
         /* directory-relative: keep through the last '/' of the path */
-        last_slash = strrchr(base + 7, '/');
+        last_slash = strrchr(base + (starts_with_ci(base,"https://") ? 8 : 7), '/');
         if (last_slash == NULL) {
             n = (uint16_t)strlen(base);
         } else {
@@ -249,7 +248,7 @@ static uint8_t resolve_url(const char *href)
     }
     /* href may alias new_url or href_pool: stage through scratch */
     memcpy(scratch, base, n);
-    if (href[0] != '/' && strchr(base + 7, '/') == NULL) {
+    if (href[0] != '/' && strchr(base + (starts_with_ci(base,"https://") ? 8 : 7), '/') == NULL) {
         scratch[n] = '/';
         ++n;
     }
@@ -270,107 +269,6 @@ strip_fragment:
 /* ------------------------------------------------------------------ */
 /* HTTP: de-chunk and find the body                                    */
 /* ------------------------------------------------------------------ */
-
-static uint16_t find_body(uint16_t total, uint16_t *body_at)
-{
-    char *p = strstr(buf, "\r\n\r\n");
-    uint16_t body;
-    uint16_t len;
-    uint8_t chunked = 0;
-    char *h;
-
-    if (p == NULL) {
-        *body_at = 0;
-        return total;
-    }
-    body = (uint16_t)(p - buf) + 4U;
-    len = (uint16_t)(total - body);
-
-    *p = '\0';                          /* terminate headers for search */
-    for (h = buf; *h != '\0'; ++h) {
-        if (*h == '\n' && starts_with_ci(h + 1, "transfer-encoding:") &&
-            (strstr(h + 1, "hunked") != NULL)) {
-            chunked = 1;
-            break;
-        }
-    }
-
-    if (chunked) {
-        /* Collapse chunk framing in place. */
-        uint16_t src = body;
-        uint16_t dst = body;
-        uint16_t chunk;
-        char c;
-
-        while (src < total) {
-            chunk = 0;
-            while (src < total && buf[src] != '\r' && buf[src] != '\n') {
-                c = buf[src];
-                ++src;
-                if (c >= '0' && c <= '9') {
-                    chunk = (uint16_t)(chunk << 4) + (uint16_t)(c - '0');
-                } else if (c >= 'a' && c <= 'f') {
-                    chunk = (uint16_t)(chunk << 4) +
-                            (uint16_t)(c - 'a' + 10);
-                } else if (c >= 'A' && c <= 'F') {
-                    chunk = (uint16_t)(chunk << 4) +
-                            (uint16_t)(c - 'A' + 10);
-                }
-            }
-            if (src < total && buf[src] == '\r') {
-                ++src;
-            }
-            if (src < total && buf[src] == '\n') {
-                ++src;
-            }
-            if (chunk == 0U) {
-                break;
-            }
-            while (chunk != 0U && src < total) {
-                buf[dst] = buf[src];
-                ++dst;
-                ++src;
-                --chunk;
-            }
-            if (src < total && buf[src] == '\r') {
-                ++src;
-            }
-            if (src < total && buf[src] == '\n') {
-                ++src;
-            }
-        }
-        len = (uint16_t)(dst - body);
-    }
-
-    *body_at = body;
-    return len;
-}
-
-/* Copy a redirect Location header into new_url; returns 0 if none.
- * Only valid after find_body() terminated the header block. */
-static uint8_t find_location(void)
-{
-    char *h;
-    uint16_t n = 0;
-
-    for (h = buf; *h != '\0'; ++h) {
-        if (*h == '\n' && starts_with_ci(h + 1, "location:")) {
-            h += 10;
-            while (*h == ' ') {
-                ++h;
-            }
-            while (*h != '\0' && *h != '\r' && *h != '\n' &&
-                   n < URL_CAP - 1U) {
-                new_url[n] = *h;
-                ++n;
-                ++h;
-            }
-            new_url[n] = '\0';
-            return n != 0U;
-        }
-    }
-    return 0;
-}
 
 /* ------------------------------------------------------------------ */
 /* HTML-subset renderer: compacts buf[body..body+len) to buf[0..)      */
@@ -648,9 +546,9 @@ static void render(uint16_t body, uint16_t len)
 
     while (src < end && out_pos < (uint16_t)(BUF_CAP - 4U)) {
         c = buf[src];
-        if (c == '<') {
+        if (c == '<' && !plain_page) {
             src += tag(&buf[src], (uint16_t)(end - src));
-        } else if (c == '&') {
+        } else if (c == '&' && !plain_page) {
             src += entity(&buf[src], (uint16_t)(end - src));
         } else if (c == '\r' || c == '\n' || c == '\t') {
             emit_char(' ');
@@ -763,7 +661,7 @@ static void draw_page(void)
             cclear((uint8_t)(SCREEN_W - x));
         }
     }
-    status_line(cur_url, "^V:LINK RET:GO B:BACK G:URL S:FIND Q:QUIT");
+    status_line(cur_url, page_cut ? "PAGE CUT AT 10 KIB; G:URL B:BACK Q:QUIT" : "^V:LINK RET:GO B:BACK G:URL S:FIND Q:QUIT");
 }
 
 static void scroll_to_link(void)
@@ -785,54 +683,16 @@ static void scroll_to_link(void)
 static void load_page(void)
 {
     uint16_t total;
-    uint16_t body;
-    uint16_t len;
-    uint8_t redirects;
-
-    for (redirects = 0; redirects < 5U; ++redirects) {
-        status_line("LOADING: ", cur_url);
-        total = url_download(cur_url, (const uint8_t *)buf, BUF_CAP - 1U);
-        if (total == 0U) {
-            strcpy(buf, "REQUEST FAILED: ");
-            strcat(buf, ip65_strerror(ip65_error));
-            strcat(buf, "\nPRESS G FOR A NEW URL, B FOR BACK, "
-                        "H FOR HOME.");
-            text_len = (uint16_t)strlen(buf);
-            link_count = 0;
-            index_lines();
-            top_line = 0;
-            sel_link = 0;
-            clrscr();
-            draw_page();
-            return;
-        }
-        if (total >= BUF_CAP - 1U) {
-            total = BUF_CAP - 1U;
-        }
-        buf[total] = '\0';
-
-        /* 3xx? terminate headers, then chase Location */
-        if (total > 12U && buf[9] == '3') {
-            char *hdr_end = strstr(buf, "\r\n\r\n");
-            if (hdr_end != NULL) {
-                *hdr_end = '\0';
-            }
-            if (find_location() && resolve_url(new_url)) {
-                strcpy(cur_url, new_url);
-                continue;
-            }
-        }
-        break;
+    page_cut=plain_page=0;
+    status_line("LOADING HTTPS/HTTP: ",cur_url);
+    if(appletini_http_fetch(cur_url,buf,BUF_CAP,&total,&page_cut,&plain_page)) {
+        render(0,total);index_lines();top_line=0;sel_link=0;scroll_to_link();
+        clrscr();draw_page();return;
     }
-
-    len = find_body(total, &body);
-    render(body, len);
-    index_lines();
-    top_line = 0;
-    sel_link = 0;
-    scroll_to_link();
-    clrscr();
-    draw_page();
+    strcpy(buf,"REQUEST FAILED: ");strcat(buf,appletini_http_error());
+    strcat(buf,"\nPRESS G FOR A NEW URL, B FOR BACK, H FOR HOME.");
+    text_len=strlen(buf);link_count=0;index_lines();top_line=0;sel_link=0;
+    clrscr();draw_page();
 }
 
 static void push_history(void)
@@ -867,7 +727,6 @@ static void exit_to_menu(void)
 
 int main(void)
 {
-    uint8_t status;
     char c;
     uint8_t i;
 
@@ -875,16 +734,14 @@ int main(void)
     clrscr();
     cputs("A2LYNX - APPLETINI TEXT BROWSER\r\n\r\n");
 
-    status = appletini_network_init();
-    if (status != APPLETINI_NET_OK) {
-        cputs(appletini_network_error(status));
-        cputs("\r\nPRESS ANY KEY\r\n");
-        (void)cgetc();
-        exit_to_menu();
-        return 1;
+    direct_http=appletini_http_probe();
+    if(!direct_http) {
+        exec("A2LEGACY.SYSTEM", "");
+        cputs("OLDER FIRMWARE: INSTALL A2LEGACY.SYSTEM\r\nPRESS ANY KEY\r\n");
+        (void)cgetc();exit_to_menu();return 1;
     }
 
-    strcpy(cur_url, HOME_URL);
+    strcpy(cur_url, direct_http ? "https://appletini.org" : HOME_URL);
     load_page();
 
     for (;;) {

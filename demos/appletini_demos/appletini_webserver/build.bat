@@ -15,7 +15,9 @@ if not exist build mkdir build
 
 call :build A2WEBSRV webserver.c
 if errorlevel 1 exit /b 1
-call :build A2BROWSE browser.c
+call :build A2LEGACY browser_legacy.c
+if errorlevel 1 exit /b 1
+call :browser
 if errorlevel 1 exit /b 1
 call :build A2IMG a2img.c a2img_net.s
 if errorlevel 1 exit /b 1
@@ -30,4 +32,10 @@ cl65 -t apple2 --cpu 6502 -Oirs --warnings-as-errors ^
     -l build\%1.lst ^
     -o build\%1.SYSTEM ^
     %2 %3 appletini_net.c appletini_timer.s ip65\ip65_web.lib
+exit /b %errorlevel%
+
+:browser
+cl65 -t apple2 --cpu 6502 -Oirs --warnings-as-errors -C apple2-system.cfg -I http_client ^
+    -m build\A2BROWSE.map -Ln build\A2BROWSE.lbl -o build\A2BROWSE.SYSTEM ^
+    browser.c appletini_http.c http_client\net.c http_client\net.s
 exit /b %errorlevel%

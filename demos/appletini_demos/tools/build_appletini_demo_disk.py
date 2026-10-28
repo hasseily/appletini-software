@@ -57,6 +57,7 @@ WEB_DIR = SOFTWARE / "appletini_webserver"
 WEB_BUILD_SCRIPT = "build.bat" if os.name == "nt" else "build.sh"
 WEB_APP = WEB_DIR / "build" / "A2WEBSRV.SYSTEM"
 BROWSER_APP = WEB_DIR / "build" / "A2BROWSE.SYSTEM"
+LEGACY_BROWSER_APP = WEB_DIR / "build" / "A2LEGACY.SYSTEM"
 IMG_APP = WEB_DIR / "build" / "A2IMG.SYSTEM"
 MUSIC_DIR = REPO.parents[1] / "music" / "house_of_the_rising_sun"
 MUSIC_PLAYER = MUSIC_DIR / "player"
@@ -485,7 +486,7 @@ def main() -> int:
         print(f"WARNING: could not run {WEB_BUILD_SCRIPT}: {error}",
               file=sys.stderr)
         web_build_failed = True
-    missing_apps = [path for path in (WEB_APP, BROWSER_APP, IMG_APP)
+    missing_apps = [path for path in (WEB_APP, BROWSER_APP, LEGACY_BROWSER_APP, IMG_APP)
                     if not path.is_file()]
     if web_build_failed:
         if missing_apps:
@@ -550,6 +551,7 @@ def main() -> int:
            stdin=WEB_APP.read_bytes())
         ac("-as", str(TEMP_OUTPUT), "A2BROWSE.SYSTEM",
            stdin=BROWSER_APP.read_bytes())
+        ac("-as", str(TEMP_OUTPUT), "A2LEGACY.SYSTEM", stdin=LEGACY_BROWSER_APP.read_bytes())
         ac("-as", str(TEMP_OUTPUT), "A2IMG.SYSTEM",
            stdin=IMG_APP.read_bytes())
         ssdemo = ac("-g", str(SSDEMO_DISK), "SSDEMO", capture=True)
@@ -591,7 +593,7 @@ def main() -> int:
             "utf-8", errors="replace")
         for name in ("PRODOS", "BASIC.SYSTEM", "STARTUP", "MANDELBROT",
                      "WAVE.ANIMATION", "WAVE.CODE",
-                     "A2WEBSRV.SYSTEM", "A2BROWSE.SYSTEM", "A2IMG.SYSTEM", "SSDEMO",
+                     "A2WEBSRV.SYSTEM", "A2BROWSE.SYSTEM", "A2LEGACY.SYSTEM", "A2IMG.SYSTEM", "SSDEMO",
                      "BORDERDEMO", "LAUNCHER", "SPEEDRACE",
                      "RASTERDEMO", "TEXTOVERLAY", "A2IMGVIEW", "MSDOS.BRIDGE",
                      "MSDOS.HDD", "IO.SYS", "MSDOS.SYS",

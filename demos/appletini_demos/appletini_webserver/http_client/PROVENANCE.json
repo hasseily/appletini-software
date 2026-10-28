@@ -1,0 +1,15 @@
+{
+  "source": "libtini (MIT)",
+  "input_sha256": {
+    "src/net.c": "57b736666564fda964f31498cd24b028df2bbeeaadaafbc13e1b160291705773",
+    "src/target/net.s": "47bb6fe4056cbf153e1103c44581175ad9f01c61d2189e38154dda36be15549b",
+    "src/target/private_state.s": "65f7cf77339a0cb9fc5a1fb9e5d6241e597b747f4aff1f745d1c1fa1d865386e",
+    "include/libtini/net.h": "6fa3232775c60fc639bfa7cf046a7542e693fbd06a626b033bc212e25e3b5bb6",
+    "include/libtini/types.h": "01e647403fc225da216feeb1bddab052aa38386bf0bbcc33e0f5e138461b744f"
+  },
+  "changes": [
+    "Place code and scratch in CODE/BSS",
+    "Inline the single-client resident poison flag",
+    "Replace STZ/BRA with 6502 instructions"
+  ]
+}
