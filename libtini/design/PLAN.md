@@ -7,18 +7,18 @@ and disk images. The game owns its loop.
 [STARFALL](../examples/starfall/README.md) is the showcase game. It has one
 endless vertically scrolling survival level, five enemy behaviors, five
 bosses, bounded projectile pools, CC0 sprites, shared music, effects and
-speech, CPU graphics and code overlays from a resource pack. It uses the same existing-firmware boundary as the library.
+speech, CPU graphics and code overlays from a resource pack. Its graphics and audio use the existing interfaces. Its optional rankings panel probes the new HTTP service.
 [The starter](../examples/starter/README.md) is a small game to copy. The
 developer reference is [docs/index.html](../docs/index.html).
 
 ## Agreed boundaries
 
-1. Use only the hardware interfaces and services of existing firmware. Do not use proposed graphics commands, ARM drawing services or FPGA additions.
+1. Core graphics and audio use the existing interfaces. Optional HTTP/S probes the F1.3.3 ARM service. Do not use proposed graphics commands, ARM drawing services or FPGA additions.
 2. Private SmartPort extensions are optional. The SDK has a CPU-only build without private transport code.
 3. Exclude SuperSprite. Keep slot 7 for SmartPort storage. Do not swap slots during game launch or play.
 4. Include simple speech in the first release.
 5. Support 33 MHz and TURBO. Game speed and audio speed are the same in the two modes.
-6. Keep the SDK self-contained. Do not change Appletini firmware or other repositories.
+6. Keep SDK builds self-contained. Build the optional HTTP firmware in its own repository. Offline programs do not require it.
 
 The firmware baseline is Appletini F1.3.2. Packaged examples name this
 firmware. Capability checks report the available services and the configured
@@ -37,7 +37,7 @@ cards.
 | Storage | ProDOS files, resource packs, buffered asset loads and saved games |
 | Tools | Asset conversion, music and MIDI arrangement, speech compilation, a starter project, disk packaging, previews, diagnostics, benchmarks, a function profiler and a browser player |
 
-Networking is a later optional module. More video modes and experimental 3D
+HTTP/S and JSON form an optional module that probes the ARM service. More video modes and experimental 3D
 are later modules too.
 
 ## Public API and project builds
@@ -272,8 +272,9 @@ The release passes these checks:
 
 ## Later modules
 
-Uthernet networking with bounded polling is a later optional module. It uses
-the existing interface patterns.
+The HTTP/S module has start, poll, read, cancel and JSON Pointer calls.
+A later hardware-socket module can expose Uthernet directly. Real-time co-op
+is outside the current module.
 
 A later 3D module can have fixed-point transforms, projection, clipping,
 wireframes, flat-shaded triangles and raycasting, with separate examples and

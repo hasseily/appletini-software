@@ -3,6 +3,7 @@
 // machine, runs whole video frames paced by the audio clock (or the wall clock
 // without audio), draws each SHR frame and sends keyboard and gamepad input.
 import createPlayer from './player.js';
+import {createLeaderboard} from './leaderboard.js';
 
 const $ = id => document.getElementById(id);
 // Frames arrive as 640x200 and are drawn with doubled rows on the 640x400
@@ -18,7 +19,7 @@ const SPEECH_GAIN = 2;
 const RESULTS = {3: 'halted', 4: 'stopped', 5: 'quit'};
 const NAMED = {Enter: 13, Escape: 27, Backspace: 127, Delete: 127, Tab: 9,
                ArrowLeft: 8, ArrowRight: 21, ArrowUp: 11, ArrowDown: 10};
-let M, api, game, files;
+let M, api, game, files, leaderboard;
 const bootFiles = {};
 let audio = null, feed = null, gain = null, speech = null, epoch = 0;
 let running = false, sent = 0, consumed = 0, debt = 0, last = 0, frameSeconds = 1 / 60;
@@ -64,6 +65,7 @@ async function load() {
     error: f('tw_error', 'string', []),
     halt: f('tw_halt', 'string', []),
     get: f('tw_get', 'number', ['string']),
+    read: f('tw_read', 'number', ['number','number','number','number']),
     input: f('tw_input', 'number', ['string', 'number', 'number']),
     audioFrames: f('tw_audio_frames', 'number', []),
     audioData: f('tw_audio_data', 'number', []),
@@ -74,6 +76,9 @@ async function load() {
     speechRender: f('tw_speech_render', null, ['number', 'number', 'number', 'number']),
     screen: f('tw_screen', 'number', []),
   };
+  leaderboard=createLeaderboard((address,length)=>{
+    const p=api.read(0,0,address,length);return M.HEAPU8.slice(p,p+length);
+  },game.leaderboard,document.querySelector('main'));
   document.title = game.title;
   if (game.download) {
     $('download').href = game.download.path;
@@ -101,6 +106,7 @@ function withBytes(bytes, use) {
 // its --disk --system launch: every file except PRODOS through the MLI
 // stand-in, then the SYSTEM program at $2000.
 function boot(turbo) {
+  leaderboard?.reset();
   if (game.boot) {
     M.FS.writeFile('/apple2e.rom', bootFiles['apple2e.rom']);
     M.FS.writeFile('/disk.po', bootFiles['disk.po']);
@@ -390,6 +396,7 @@ function frame(now) {
     if (done < 0) return fail(api.error());
     pushAudio();
     draw();
+    leaderboard?.poll();
     speedFrames += done;
     if (done < frames) return finish();
   }
@@ -423,6 +430,7 @@ canvas.addEventListener('keydown', event => {
   if (key === null) return;
   event.preventDefault();
   if (event.repeat) return;
+  if(key===78&&leaderboard?.open()){releaseKeys();return;}
   guestKeys.add(event.code);
   api.input('hold', key, 0);
 });

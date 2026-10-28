@@ -37,7 +37,7 @@ C_SOURCES += [CORE / name for name in ("a2vm.c", "cost.c", "prodos.c", "cpu65c02
 CXX_SOURCES = [WEB / "player.cpp"]
 CXX_SOURCES += [SPEECH / "reference" / name for name in
                 ("native_control.cpp", "native_source.cpp", "prototype_tract.cpp")]
-PAGE = ("index.html", "main.js", "speech.js", "worklet.js")
+PAGE = ("index.html", "main.js", "leaderboard.js", "speech.js", "worklet.js")
 EXPORTS = ("tw_create", "tw_volume", "tw_file", "tw_launch", "tw_boot", "tw_run", "tw_result",
            "tw_error",
            "tw_halt", "tw_get", "tw_input", "tw_read", "tw_audio_frames", "tw_audio_data",
@@ -129,6 +129,9 @@ def pack_game(game, target, boot_roms=boot_roms.DEFAULT, download=False):
     the Apple ROM and the disk's ProDOS. With download, the whole disk is also
     offered as <game>.po, and a boot uses that same file.
     """
+    target=Path(target).resolve()
+    if not target.is_relative_to(OUT.resolve()) or target==OUT.resolve():
+        raise SystemExit('Game output must be inside build/web/<game>')
     found = [d / game / "game.json" for d in (ROOT / "games", ROOT / "examples")
              if (d / game / "game.json").is_file()]
     if len(found) != 1:
@@ -152,6 +155,13 @@ def pack_game(game, target, boot_roms=boot_roms.DEFAULT, download=False):
     (target / "game.bin").write_bytes(blob)
     record = {"title": manifest.get("title", game.upper()), "volume": volume, "system": system,
               "disk_sha256": digest(disk), "files": records}
+    if game == "starfall":
+        labels={}
+        for line in (ROOT/"build/starfall.lbl").read_text().splitlines():
+            fields=line.split()
+            if len(fields)>=3 and fields[0]=="al":labels[fields[2].lstrip(".")]=int(fields[1],16)
+        record["leaderboard"]={"endpoint":"/leaderboards/starfall","version":"1.0-net1",
+            "state_address":labels["_sf_state"],"mode_address":labels["_sf_mode"],"stage_address":labels["_sf_stage"]}
     boot = target / "boot"
     if boot.exists():
         shutil.rmtree(boot)

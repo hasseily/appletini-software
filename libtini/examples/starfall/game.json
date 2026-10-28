@@ -1,47 +1,129 @@
 {
   "name": "starfall",
   "title": "STARFALL",
-  "sources": ["main.c", "game.c", "boss.c"],
+  "sources": [
+    "main.c",
+    "game.c",
+    "boss.c",
+    "network.c"
+  ],
   "config": "examples/starfall/starfall.cfg",
   "private": false,
-  "cflags": ["--static-locals"],
+  "cflags": [
+    "--static-locals"
+  ],
   "generate": [
     {
-      "command": ["{root}/tools/starfall_assets.py", "--header", "{build}/starfall_assets.h"],
-      "inputs": ["{root}/tools/starfall_assets.py", "{root}/assets/starfall"],
-      "outputs": ["{build}/starfall_assets.h"]
+      "command": [
+        "{root}/tools/starfall_assets.py",
+        "--header",
+        "{build}/starfall_assets.h"
+      ],
+      "inputs": [
+        "{root}/tools/starfall_assets.py",
+        "{root}/assets/starfall"
+      ],
+      "outputs": [
+        "{build}/starfall_assets.h"
+      ]
     },
     {
-      "command": ["{root}/tools/starfall_bosses.py", "--header", "{build}/starfall_bosses.h", "--art", "{build}"],
-      "inputs": ["{root}/tools/starfall_bosses.py", "{root}/assets/starfall/bosses"],
-      "outputs": ["{build}/starfall_bosses.h", "{build}/starfall_boss1.bin", "{build}/starfall_boss2.bin",
-                  "{build}/starfall_boss3.bin", "{build}/starfall_boss4.bin", "{build}/starfall_boss5.bin"]
+      "command": [
+        "{root}/tools/starfall_bosses.py",
+        "--header",
+        "{build}/starfall_bosses.h",
+        "--art",
+        "{build}"
+      ],
+      "inputs": [
+        "{root}/tools/starfall_bosses.py",
+        "{root}/assets/starfall/bosses"
+      ],
+      "outputs": [
+        "{build}/starfall_bosses.h",
+        "{build}/starfall_boss1.bin",
+        "{build}/starfall_boss2.bin",
+        "{build}/starfall_boss3.bin",
+        "{build}/starfall_boss4.bin",
+        "{build}/starfall_boss5.bin"
+      ]
     },
     {
-      "command": ["{root}/tools/speech.py", "{game}/speech.json", "--output", "{build}/starfall_speech.h",
-                  "--symbol", "sf_speech", "--no-numbers"],
-      "inputs": ["{root}/tools/speech.py", "speech.json"],
-      "outputs": ["{build}/starfall_speech.h"]
+      "command": [
+        "{root}/tools/speech.py",
+        "{game}/speech.json",
+        "--output",
+        "{build}/starfall_speech.h",
+        "--symbol",
+        "sf_speech",
+        "--no-numbers"
+      ],
+      "inputs": [
+        "{root}/tools/speech.py",
+        "speech.json"
+      ],
+      "outputs": [
+        "{build}/starfall_speech.h"
+      ]
     },
     {
-      "command": ["{root}/tools/music.py", "{root}/assets/starfall/music/song.json", "--output",
-                  "{build}/starfall_music.h", "--symbol", "sf_song", "--report", "{build}/starfall_music.json"],
-      "inputs": ["{root}/tools/music.py", "{root}/assets/starfall/music/song.json"],
-      "outputs": ["{build}/starfall_music.h", "{build}/starfall_music.json"]
+      "command": [
+        "{root}/tools/music.py",
+        "{root}/assets/starfall/music/song.json",
+        "--output",
+        "{build}/starfall_music.h",
+        "--symbol",
+        "sf_song",
+        "--report",
+        "{build}/starfall_music.json"
+      ],
+      "inputs": [
+        "{root}/tools/music.py",
+        "{root}/assets/starfall/music/song.json"
+      ],
+      "outputs": [
+        "{build}/starfall_music.h",
+        "{build}/starfall_music.json"
+      ]
     }
   ],
   "package": [
     {
-      "command": ["{root}/tools/starfall_pack.py", "--labels", "{build}/starfall.lbl",
-                  "--output", "{build}/starfall.pak", "TITLE={build}/starfall.system.tit",
-                  "PANELS={build}/starfall.system.pnl", "PLAY={build}/starfall.system.ply",
-                  "BOSS={build}/starfall.system.bos", "MANTA@BOSS={build}/starfall_boss1.bin",
-                  "EXCALIBUR@BOSS={build}/starfall_boss2.bin", "SCARAB@BOSS={build}/starfall_boss3.bin",
-                  "COMET@BOSS={build}/starfall_boss4.bin", "BULWARK@BOSS={build}/starfall_boss5.bin"],
-      "inputs": ["{root}/tools/starfall_pack.py", "{root}/tools/assets.py"],
-      "outputs": ["{build}/starfall.pak"]
+      "command": [
+        "{root}/tools/starfall_pack.py",
+        "--labels",
+        "{build}/starfall.lbl",
+        "--output",
+        "{build}/starfall.pak",
+        "TITLE={build}/starfall.system.tit",
+        "PANELS={build}/starfall.system.pnl",
+        "PLAY={build}/starfall.system.ply",
+        "BOSS={build}/starfall.system.bos",
+        "MANTA@BOSS={build}/starfall_boss1.bin",
+        "EXCALIBUR@BOSS={build}/starfall_boss2.bin",
+        "SCARAB@BOSS={build}/starfall_boss3.bin",
+        "COMET@BOSS={build}/starfall_boss4.bin",
+        "BULWARK@BOSS={build}/starfall_boss5.bin",
+        "NETWORK={build}/starfall.system.net"
+      ],
+      "inputs": [
+        "{root}/tools/starfall_pack.py",
+        "{root}/tools/assets.py"
+      ],
+      "outputs": [
+        "{build}/starfall.pak"
+      ]
     }
   ],
-  "disk": {"volume": "STARFALL", "system": "STARFALL.SYSTEM", "blocks": 1600,
-           "files": [{"name": "STARFALL.PAK", "path": "{build}/starfall.pak"}]}
+  "disk": {
+    "volume": "STARFALL",
+    "system": "STARFALL.SYSTEM",
+    "blocks": 1600,
+    "files": [
+      {
+        "name": "STARFALL.PAK",
+        "path": "{build}/starfall.pak"
+      }
+    ]
+  }
 }

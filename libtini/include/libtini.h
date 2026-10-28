@@ -9,4 +9,5 @@
 #include "libtini/input.h"
 #include "libtini/storage.h"
 #include "libtini/amem.h"
+#include "libtini/net.h"
 #endif

@@ -194,6 +194,23 @@ static void test_bombs(void)
     assert(G.bombs==1&&!G.enemy_active[0]);
     sf_step(0);sf_step(SF_IN_BOMB);assert(!G.bombs);
     sf_step(0);assert(!(sf_step(SF_IN_BOMB)&SF_EVENT_BOMB));
+    /* Below capacity, a pickup replenishes without firing. */
+    quiet();G.bombs=SF_MAX_BOMBS-1;drop_at_ship(SF_BOMB);events=sf_step(0);
+    assert((events&SF_EVENT_PICKUP)&&!(events&SF_EVENT_BOMB)&&G.bombs==SF_MAX_BOMBS);
+    /* At capacity it fires, clears shots and damages enemies. */
+    target(SF_HEAVY,10,100,38);G.bullet_active[0]=SF_SHOT_FAN;
+    G.bullet_x[0]=30;G.bullet_y[0]=100;G.bullet_dy[0]=1;
+    drop_at_ship(SF_BOMB);events=sf_step(0);
+    assert((events&SF_EVENT_PICKUP)&&(events&SF_EVENT_BOMB)&&G.bombs==SF_MAX_BOMBS);
+    assert(G.enemy_hp[0]==3&&!active(G.bullet_active,SF_ENEMY_BULLETS)&&G.invulnerable==45);
+    /* A manual bomb in the same step makes room; the pickup refills it. */
+    quiet();G.bombs=SF_MAX_BOMBS;target(SF_HEAVY,20,100,38);
+    drop_at_ship(SF_BOMB);events=sf_step(SF_IN_BOMB);
+    assert((events&SF_EVENT_BOMB)&&G.bombs==SF_MAX_BOMBS&&G.enemy_hp[0]==13);
+    /* A boss is scheduled after the tick chose PLAY; do not call BOSS yet. */
+    quiet();G.bombs=SF_MAX_BOMBS;G.sector=3;G.sector_clock=SF_SECTOR_TICKS-1;
+    drop_at_ship(SF_BOMB);events=sf_step(0);
+    assert((events&SF_EVENT_BOMB)&&G.boss==1&&!G.boss_phase&&G.bombs==SF_MAX_BOMBS);
     puts("limited bombs, edge triggering, bullet clearing and heavy damage: pass");
 }
 
@@ -405,6 +422,9 @@ static void test_bosses(void)
     /* A bomb takes seven from each emplacement. */
     boss_fight(2);G.bombs=1;sf_step(SF_IN_BOMB);
     assert(G.part_hp[0]==41&&G.part_hp[1]==41&&G.part_hp[2]==65&&!G.bombs);
+    boss_fight(2);G.bombs=SF_MAX_BOMBS;drop_at_ship(SF_BOMB);events=sf_step(0);
+    assert((events&SF_EVENT_PICKUP)&&(events&SF_EVENT_BOMB)&&G.bombs==SF_MAX_BOMBS);
+    assert(G.part_hp[0]==41&&G.part_hp[1]==41&&G.part_hp[2]==65);
 
     /* The hull hurts the ship's core. */
     boss_fight(1);G.ship_x=(uint8_t)(G.boss_x+sf_boss.band_x[5]+12);G.ship_y=(uint8_t)(boss_top()+44);

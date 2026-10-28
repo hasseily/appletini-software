@@ -90,7 +90,7 @@ class Controller(Apple2Memory):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--cc65-home',required=True);a=p.parse_args()
-    out,program,labels=build_target('amem',a.cc65_home,['src/memory.c','src/memory_copy.c','src/timing.c','src/timing_gap.c','src/amem.c','tests/amem_target.c'],['src/target/memory.s','src/target/hardware.s','src/optional/amem_transport.s'],True)
+    out,program,labels=build_target('amem',a.cc65_home,['src/memory.c','src/memory_copy.c','src/timing.c','src/timing_gap.c','src/amem.c','tests/amem_target.c'],['src/target/memory.s','src/target/hardware.s','src/target/private_state.s','src/optional/amem_transport.s'],True)
     evidence=[]
     for mode in (0,1,2,3,4,5,6,8,9,11,12):
         model=Controller(mode);run=CpuRun(program,labels,model);run.mode=mode

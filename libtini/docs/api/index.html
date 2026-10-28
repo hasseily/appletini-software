@@ -76,6 +76,15 @@
 <tr><td><a href="audio.html#ti_music_stop"><code>ti_music_stop</code></a></td><td>audio.h</td><td>Stop music</td></tr>
 <tr><td><a href="memory.html#ti_near_fill"><code>ti_near_fill</code></a></td><td>memory.h</td><td>Checked fill in near memory</td></tr>
 <tr><td><a href="memory.html#ti_near_move"><code>ti_near_move</code></a></td><td>memory.h</td><td>Checked move in near memory</td></tr>
+<tr><td><a href="net.html#ti_net_available"><code>ti_net_available</code></a></td><td>net.h</td><td>Report whether the probe passed and the client remains usable</td></tr>
+<tr><td><a href="net.html#ti_net_cancel"><code>ti_net_cancel</code></a></td><td>net.h</td><td>Discard the current response and queue socket cleanup</td></tr>
+<tr><td><a href="net.html#ti_net_json"><code>ti_net_json</code></a></td><td>net.h</td><td>Select a value in a retained JSON body with JSON Pointer</td></tr>
+<tr><td><a href="net.html#ti_net_last_error"><code>ti_net_last_error</code></a></td><td>net.h</td><td>Get the last SmartPort status byte</td></tr>
+<tr><td><a href="net.html#ti_net_poll"><code>ti_net_poll</code></a></td><td>net.h</td><td>Borrow 64 writable MAIN bytes and get the current state</td></tr>
+<tr><td><a href="net.html#ti_net_probe"><code>ti_net_probe</code></a></td><td>net.h</td><td>Identify the slot-7 ROM and HTTP service</td></tr>
+<tr><td><a href="net.html#ti_net_read"><code>ti_net_read</code></a></td><td>net.h</td><td>Read BODY, VALUE, URL or CONTENT_TYPE</td></tr>
+<tr><td><a href="net.html#ti_net_start"><code>ti_net_start</code></a></td><td>net.h</td><td>Copy one method, URL, header string and body into the service</td></tr>
+<tr><td><a href="net.html#ti_net_via_hz"><code>ti_net_via_hz</code></a></td><td>net.h</td><td>Get the selected ONE//e profile clock from the last descriptor</td></tr>
 <tr><td><a href="storage.html#ti_pack_load"><code>ti_pack_load</code></a></td><td>storage.h</td><td>Load a pack entry into a resource</td></tr>
 <tr><td><a href="memory.html#ti_res_alloc"><code>ti_res_alloc</code></a></td><td>memory.h</td><td>Allocate a banked resource</td></tr>
 <tr><td><a href="memory.html#ti_res_copy"><code>ti_res_copy</code></a></td><td>memory.h</td><td>Copy between or within resources</td></tr>
@@ -132,7 +141,7 @@
 <tr><td><a href="timing.html#ti_time_sample"><code>ti_time_sample</code></a></td><td>timing.h</td><td>Elapsed ticks and display edges</td></tr>
 </table></div>
 
-<footer class="page-foot">Headers are in <code>include/</code>: <code>libtini.h</code> and <code>libtini/{types,memory,timing,graphics,scene,audio,input,storage,amem}.h</code>.</footer>
+<footer class="page-foot">Headers are in <code>include/</code>: <code>libtini.h</code> and <code>libtini/{types,memory,timing,graphics,scene,audio,input,storage,net,amem}.h</code>.</footer>
 </main>
 </div>
 </body>

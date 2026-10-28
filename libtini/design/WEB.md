@@ -129,3 +129,17 @@ TURBO has little margin on a slower computer, and the page shows the live
 speed. About one third of the machine time goes to the event service for
 each instruction, the speech register hook included, which is machine code
 from the emulator. The results are in `build/web/validation.json`.
+
+## STARFALL leaderboard
+
+The STARFALL manifest includes the final-state, mode and stage addresses
+from its label file, the game version and the leaderboard endpoint.
+`leaderboard.js` reads the final game-over state through `tw_read`. It does
+not depend on the emulated ARM network service. Browser fetch uses HTTPS
+at the site's origin and always submits platform `web`.
+
+The page freezes one POST body after it gets a server run ID. A failed
+reply can be retried with that same body. Starting a new game clears the
+pending submission. Other games have no leaderboard metadata or panel.
+Run `node tests/web_leaderboard.test.mjs` for the platform, name, snapshot
+and retry checks.

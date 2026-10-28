@@ -1,5 +1,6 @@
 #include "libtini.h"
 #include "game.h"
+#include "network.h"
 #include "starfall_assets.h"
 #include "starfall_speech.h"
 #include "starfall_music.h"
@@ -82,6 +83,8 @@ static ti_image images[SF_IMG_COUNT]={
  * game.c, then star columns, the animated palette, two text buffers and the
  * boss's name and colors. */
 #pragma bss-name (push, "NEARBSS")
+uint8_t sf_online_saved;
+static uint32_t sf_via_hz;
 static uint8_t star_x[32];
 static uint16_t palette[16];
 static char scratch[12], banner[20];
@@ -123,14 +126,14 @@ static const char *const words[]={"ENDLESS SURVIVAL","READY","POWER UP!","ALL CL
 /* The step the game is in, shown when it stops for the first error the
  * library kept: 1 memory, 2 data file, 3 canvas, 4 video, 5 scene, 6 title,
  * 7 play. Each step is checked before the next begins. */
-static uint8_t sf_stage;
+uint8_t sf_stage;
 /* STARFALL.PAK has one entry, DATA: "SF", the overlay count, a zero, then
  * the offset, length and run address of each overlay, in the order below.
  * The overlays stay in that banked resource. window() copies one to the
  * window at the start of the free memory, where it runs.
  * tools/starfall_pack.py writes the file from the linked overlays. */
 enum { SF_OVL_TITLE, SF_OVL_PANELS, SF_OVL_PLAY, SF_OVL_BOSS, SF_OVL_ART,
-    SF_OVL_COUNT=SF_OVL_ART+SF_BOSSES };
+    SF_OVL_NET=SF_OVL_ART+SF_BOSSES, SF_OVL_COUNT };
 typedef struct packed { uint32_t offset; uint16_t length; uint8_t *run; } packed;
 static ti_handle pack;
 static packed overlays[SF_OVL_COUNT];
@@ -174,17 +177,17 @@ static void service(void)
 }
 /* The playfield below the caption bar; audio is serviced while it draws. */
 static const ti_scene_config scene={0,16,240,184,images,SF_IMG_COUNT,0,service};
-static void rect(int16_t x,int16_t y,uint16_t w,uint16_t h,uint8_t c)
+void rect(int16_t x,int16_t y,uint16_t w,uint16_t h,uint8_t c)
 { if(!ti_error_first())ti_error_keep(ti_gfx_rect(&canvas,x,y,w,h,c)); }
-static void text(int16_t x,int16_t y,const char *s,uint8_t c)
+void text(int16_t x,int16_t y,const char *s,uint8_t c)
 { if(!ti_error_first())ti_error_keep(ti_gfx_text(&canvas,x,y,s,c)); }
-static void present(int16_t x,int16_t y,uint16_t w,uint16_t h)
+void present(int16_t x,int16_t y,uint16_t w,uint16_t h)
 {
     ti_rect r;r.x=x;r.y=y;r.width=w;r.height=h;
     if(!ti_error_first())ti_error_keep(ti_gfx_present(&canvas,&r,0));
     service();
 }
-static void number(int16_t x,int16_t y,uint32_t value,uint8_t n,uint8_t color)
+void number(int16_t x,int16_t y,uint32_t value,uint8_t n,uint8_t color)
 {
     char s[11];
     text(x,y,ti_digits(s,value,n),color);
@@ -474,7 +477,7 @@ static ti_error start(uint8_t personality)
     ti_audio_config config;ti_error e;
     /* Every voice: 12 on a Phasor, 6 on a Mockingboard or a Phasor that
      * the driver found answering as one. */
-    config.personality=personality;config.speech=1;config.ducking=1;config.via_hz=0;config.voices=0;
+    config.personality=personality;config.speech=1;config.ducking=1;config.via_hz=sf_via_hz;config.voices=0;
     e=ti_audio_init(&config);
     if(e)return e;
     music_voices=ti_audio_voices()==12?255:3;
@@ -493,13 +496,16 @@ static uint8_t say(uint8_t id,uint8_t priority)
     if(ti_speech_say(id,priority)!=TI_OK)return 0;
     caption(id+1);return 1;
 }
+#pragma code-name (push, "TITLE")
 static void restart(void)
 {
+    sf_online_saved=0;
     sf_new(0x5A17);sf_enemy_types_seen=sf_enemy_peak=sf_bullet_peak=0;
     sf_caption=0;flash=shake=0;warp_due=warp;ti_stick_recalibrate();
     sf_mode=1;telemetry();frame();render();reset_clock();begin_music();
     ti_speech_stop();say(SAY_READY,TI_SPEECH_INTERRUPT|2);
 }
+#pragma code-name (pop)
 static void resume(void)
 { sf_mode=1;ti_stick_recalibrate();frame();render();reset_clock();begin_music(); }
 static void sector_banner(void)
@@ -582,7 +588,7 @@ static void game_over(void)
 {
     static const line over_lines[]={{26,62,white,"SHIP LOST"},{26,78,dim,"SCORE"},
         {26,90,dim,"SECTOR"},{110,90,dim,"KILLS"},{26,122,amber,"ENTER / FIRE: TRY AGAIN"},
-        {26,134,dim,"Q: QUIT"}};
+        {26,134,dim,"N: ONLINE RANKS  Q: QUIT"}};
     uint8_t record=best_score&&G.score>best_score;
     sf_mode=2;over_at=ti_audio_ticks();flash=0;animate();
     ti_music_stop();ti_speech_stop();say(SAY_OVER,TI_SPEECH_INTERRUPT|3);
@@ -626,6 +632,9 @@ static void boss_art(void)
 static void boss_objects(void)
 {
     int16_t x=G.boss_x,top=(int16_t)G.boss_y-sf_boss.height;
+    /* A sector can change after this tick chose PLAY. The new boss has
+     * not had its first BOSS step yet; its position and parts are stale. */
+    if(!G.boss_phase)return;
     for(i=0;i<sf_boss.bands;++i)add(x+sf_boss.band_x[i],top+sf_boss.band_y[i],SF_IMG_BOSS+i,0);
     /* Eight frames a second: intact, or destroyed. */
     for(i=0;i<SF_BOSS_PARTS;++i) {
@@ -676,6 +685,21 @@ static void held_direction(void)
     else if(!tapped)direction=0;
     tapped=0;
 }
+/* Setup runs only with the title overlay selected. Keep its one-time
+ * work out of the resident area so every boss and the network overlay fit. */
+#pragma code-name (push, "TITLE")
+static void setup(void)
+{
+    uint8_t i;
+    for(i=0;i<32;++i)star_x[i]=(uint8_t)(6+(i*73U)%226);
+    memcpy(palette,sf_palette,sizeof(sf_palette));
+    sf_stage=3;if(ti_error_keep(ti_gfx_surface_create(&canvas,320,200)))return;
+    sf_stage=4;if(ti_error_keep(ti_gfx_begin(sf_palette)))return;
+    sf_stage=5;if(ti_error_keep(ti_scene_begin(&scene)))return;
+    sf_stage=6;title();telemetry();
+}
+#pragma code-name (pop)
+
 int main(void)
 {
     uint8_t ticks,input,pressed,i;uint16_t events;
@@ -683,13 +707,8 @@ int main(void)
      * storage loan need more than two 48,640-byte resource banks. */
     sf_stage=1;if(ti_error_keep(ti_init(1,3)))goto done;
     /* Before graphics, so the file calls need no storage loan. */
-    sf_stage=2;load();window(SF_OVL_TITLE);if(ti_error_first())goto done;
-    for(i=0;i<32;++i)star_x[i]=(uint8_t)(6+(i*73U)%226);
-    memcpy(palette,sf_palette,sizeof(sf_palette));
-    sf_stage=3;if(ti_error_keep(ti_gfx_surface_create(&canvas,320,200)))goto done;
-    sf_stage=4;if(ti_error_keep(ti_gfx_begin(sf_palette)))goto done;
-    sf_stage=5;if(ti_error_keep(ti_scene_begin(&scene)))goto done;
-    sf_stage=6;title();telemetry();
+    sf_stage=2;load();window(SF_OVL_NET);sf_via_hz=sf_online_clock();window(SF_OVL_TITLE);if(ti_error_first())goto done;
+    setup();if(ti_error_first())goto done;
     for(;;) {
         if(ti_error_first())goto done;
         sf_stage=7;
@@ -701,6 +720,7 @@ int main(void)
         while(ti_input_key(&key)==TI_OK) {
             if(key>='a'&&key<='z')key-=32;
             if(key=='Q')goto done;
+            if(sf_mode==2&&key=='N'){window(SF_OVL_NET);if(sf_online_panel())goto done;window(SF_OVL_PANELS);game_over();continue;}
             if(sf_mode==0) {
                 if(key=='B'){backdrop^=1;option();}
                 else if(key=='M'||key=='P'||key==13) {
@@ -709,7 +729,7 @@ int main(void)
                 else cheat(key);
                 continue;
             }
-            if(key=='R'||(sf_mode==2&&key==13)){restart();continue;}
+            if(key=='R'||(sf_mode==2&&key==13)){window(SF_OVL_TITLE);restart();continue;}
             if(sf_mode==2)continue;
             if(key=='P'||key==27||(sf_mode==3&&key==13)) {
                 if(sf_mode==3){play_window();resume();}
@@ -724,7 +744,7 @@ int main(void)
         if(pressed) {
             if(sf_mode==0){if(start(TI_AUDIO_MOCKINGBOARD)){window(SF_OVL_PANELS);no_audio();}}
             /* A fire button held through the crash cannot skip this panel. */
-            else if(sf_mode==2){if(ti_audio_ticks()-over_at>100)restart();}
+            else if(sf_mode==2){if(ti_audio_ticks()-over_at>100){window(SF_OVL_TITLE);restart();}}
             else if(sf_mode==3){play_window();resume();}
             else bomb=SF_IN_BOMB;
         }

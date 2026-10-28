@@ -38,6 +38,8 @@ def main():
         ("native-graphics", ["tests/graphics_validate.py", *common, *compiler]),
         ("cpu-audio", ["tests/audio_validate.py"]),
         ("target-storage", ["tests/storage_validate.py", *common, *compiler]),
+        ("target-net", ["tests/net_validate.py", *common]),
+        ("target-private-fifo", ["tests/private_fifo_validate.py", *common]),
         ("target-amem", ["tests/amem_validate.py", *common]),
         ("native-benchmarks-direct", ["tools/benchmark.py", *common, *compiler, "--private", "--direct-launch",
                                       "--output", "build/benchmark/direct-results.json"]),
@@ -47,7 +49,8 @@ def main():
                                                 "--repeat", "2",
                                                 "--output", "build/benchmark/results.json"]),
                      ("boot-audio", ["tests/audio_native_validate.py", *compiler])]
-        commands += [("boot-starter", ["tests/starter_native_validate.py", *compiler]),
+        commands += [("boot-starfall-arrival", ["tests/starfall_arrival_validate.py"]),
+                     ("boot-starter", ["tests/starter_native_validate.py", *compiler]),
                      ("boot-starfall", ["tests/starfall_native_validate.py", *compiler]),
                      ("boot-starfall-phasor", ["tests/starfall_native_validate.py", *compiler, "--phasor"])]
     output = ROOT / "build/checks"

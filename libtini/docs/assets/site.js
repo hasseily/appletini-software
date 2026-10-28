@@ -33,6 +33,7 @@
       ["api/speech.html", "Speech", "speech"],
       ["api/input.html", "Input", "input"],
       ["api/storage.html", "Storage", "storage"],
+      ["api/net.html", "HTTP/S and JSON", "net"],
       ["api/amem.html", "Optional AMEM", "amem"]
     ]],
     ["Reference", [
@@ -57,9 +58,11 @@
     "api/speech.html": "ti_phrase ti_speech_bank ti_speech_bind ti_speech_say ti_speech_number ti_speech_busy ti_speech_stop ti_speech_voice TI_SPEECH_QUEUE TI_SPEECH_INTERRUPT",
     "api/input.html": "ti_joystick ti_input_poll ti_input_key ti_input_buttons ti_input_held ti_joystick_read ti_stick_read ti_stick_recalibrate ti_mouse_read ti_input_reset TI_STICK_UP TI_STICK_DOWN TI_STICK_LEFT TI_STICK_RIGHT TI_STICK_ABSENT",
     "api/storage.html": "ti_file_read ti_file_write ti_file_last_error ti_pack_load",
+    "api/net.html": "ti_net_probe ti_net_start ti_net_poll ti_net_read ti_net_json ti_net_cancel ti_net_available ti_net_last_error ti_net_via_hz ti_net_request ti_net_status ti_net_chunk TI_NET_RESULT_NETWORK_NOT_READY",
     "api/amem.html": "ti_amem_enable ti_amem_disable ti_amem_available ti_amem_last_error"
   };
   var CONSTANT_ANCHORS = {
+    TI_NET_RESULT_NETWORK_NOT_READY: "results",
     TI_GFX_WIDTH: "constants", TI_GFX_HEIGHT: "constants", TI_GFX_OPAQUE: "constants",
     TI_GFX_CLOCK_VALID: "constants", TI_GFX_OVERRUN: "constants", TI_GFX_EDGE_GAP: "constants",
     TI_RESOURCE_SLOTS: "constants", TI_BANK_BYTES: "constants", TI_TRANSFER_BYTES: "constants",

@@ -1,0 +1,6 @@
+{
+  "name": "net_check",
+  "title": "HTTP/S AND JSON",
+  "sources": ["main.c"],
+  "disk": {"volume": "NETCHECK", "system": "NETCHECK.SYSTEM", "blocks": 280}
+}

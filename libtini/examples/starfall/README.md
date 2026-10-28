@@ -419,3 +419,26 @@ python tests/starfall_native_validate.py --cc C:/msys64/ucrt64/bin/gcc.exe --pha
 | `starfall_native_validate.py` | ProDOS boots with each card: held and tapped keys, joystick movement from an off-center rest, a boss sector with MANTA and its rate, the playfield against the reference, and the AY voices of song and effects |
 
 [Checks](../../docs/reference/testing.html) gives all libtini checks.
+
+At the bomb limit, collecting another bomb fires it at once and keeps the
+reserve full. Below the limit, a pickup adds one bomb.
+
+## Online rankings
+
+On game over, press N. Type a public name of 1 to 12 characters and press
+Return to submit. Tab reads the top ten. Esc returns to the game-over
+screen. Q types Q during name entry; it quits outside that entry.
+
+The card sends `platform: "appletini"`. Reopening the panel retries the same
+run ID, name and score. A new game permits a new submission. The server
+ranks each public name by its best score across platforms. A network
+failure leaves offline play available.
+
+The browser page has a name field and Submit run below the display. It
+reads the final score from the running game and sends `platform: "web"`.
+Its retries keep the same ID and body. Names and scores are public.
+
+`tests/starfall_arrival_validate.py` checks the Excalibur transition with
+explicit model state writes. It checks the actual 65C02 sprite list at
+33 MHz and TURBO. A phase-zero boss has no sprites; its first visible
+position comes from the entry step.

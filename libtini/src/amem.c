@@ -13,7 +13,9 @@
 uint8_t ti_amem_saved_p, ti_amem_saved_cx;
 void ti_amem_lock(void);
 void ti_amem_unlock(void);
-static uint8_t status[32], packet[26], active, poisoned, last_error;
+extern uint8_t ti_private_poisoned;
+#define poisoned ti_private_poisoned
+static uint8_t status[32], packet[26], active, last_error;
 
 static uint8_t receive(void) { uint8_t v = FIFO; POP = 0; return v; }
 /* The slot-7 ROM waits for the controller without a limit; the ARM answers

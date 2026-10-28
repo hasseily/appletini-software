@@ -40,7 +40,7 @@ def build(home,private):
         obj=out/('benchmark_'+Path(name).stem+'.o')
         build_tools.compile_c(ROOT/name,obj,sdk,tools,private);objects.append(obj)
     assembly=['src/target/memory.s','src/target/hardware.s','src/target/surface.s','src/target/publish.s']
-    if private:assembly.append('src/optional/amem_transport.s')
+    if private:assembly+=['src/target/private_state.s','src/optional/amem_transport.s']
     for name in assembly:
         obj=out/('benchmark_asm_'+Path(name).stem+'.o')
         build_tools.assemble(ROOT/name,obj,sdk,tools);objects.append(obj)

@@ -85,8 +85,9 @@ archive does not contain FPGA/ARM firmware or host compiler binaries.
 
 # Run
 
-The firmware is **Appletini F1.3.2**. You do not have to rebuild or flash
-firmware, or change slots.
+Core graphics, audio and offline games run on **Appletini F1.3.2**.
+The optional HTTP/S and JSON API and STARFALL leaderboard require
+**F1.3.3** and its per-board HTTPS setup. Keep the same slot assignments.
 
 Enable RamWorks. Give selectors **1-3** to STARFALL and the starter, and
 selectors 1-2 to the diagnostic. No RAM disk or driver can use these banks.
@@ -151,3 +152,8 @@ because it links the GPL-3.0 development emulator of this repository. Its
 files contain SPDX notices. The bundled assets and the installed tools keep
 their own terms: see [dependencies and licenses](tools/DEPENDENCIES.md) and
 each asset folder.
+
+The optional [HTTP/S and JSON API](docs/api/net.html) probes the new ARM
+network service. The core SDK and offline games keep their existing-firmware
+paths. Build `net_check` for a repeated POST, stream and JSON example.
+STARFALL uses the service only from its game-over rankings panel.

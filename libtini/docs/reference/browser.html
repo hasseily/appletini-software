@@ -48,6 +48,8 @@
   <li>On iOS, the page starts audio in the Play tap and asks for the playback audio session. Thus sound plays when the silent switch is on. The status line shows "tap for sound" while sound is off.</li>
 </ul>
 
+<h2 id="leaderboard">STARFALL rankings</h2>
+<p>After game over, use the public name field and Submit run below the display. The page reads the score from the running game and always sends platform <code>web</code>. Top 10 shows the shared rankings. A retry keeps the same run ID and body. Starting a new game clears that submission. Names and scores are public. The card version uses platform <code>appletini</code>.</p>
 <h2 id="publish">Publish a game page</h2>
 <p>Copy <code>build/web/GAME/</code> to a static host that serves HTTPS. The page sets its base URL from its own location, so it works at all paths. Each package contains <code>COPYING.txt</code> and <code>source.zip</code>. <code>source.zip</code> is the Corresponding Source of the player, with its build record.</p>
 <p class="note warn">The player links the GPL-3.0 emulator and speech code of the repository. Thus the player and its files in <code>tools/web/</code> are GPL-3.0-only. The library is MIT. A published copy must offer its source, and the package does this. The default package contains the Apple ROM and ProDOS. A direct-launch package with <code>--download-disk</code> also contains ProDOS. Publish it only if you have the right to distribute them.</p>

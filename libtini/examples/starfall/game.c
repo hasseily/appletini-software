@@ -124,7 +124,7 @@ void sf_hurt(void)
     if(!G.hull){G.game_over=1;sf_events|=SF_EVENT_OVER;}
 }
 
-static void bomb(uint8_t boss)
+static void bomb(void)
 {
     uint8_t i;
     if(!G.bombs)return;
@@ -135,7 +135,7 @@ static void bomb(uint8_t boss)
         if(G.enemy_hp[i]<=7)destroy(i);
         else G.enemy_hp[i]-=7;
     }
-    if(boss)sf_boss_bomb();
+    if(G.boss&&G.boss_phase==SF_BOSS_FIGHT)sf_boss_bomb();
 }
 
 /* The new enemy's slot, or SF_ENEMIES when every slot is in use. */
@@ -349,7 +349,9 @@ static void collect(uint8_t kind)
         break;
     default:
         if(G.bombs<SF_MAX_BOMBS){++G.bombs;return;}
-        break;
+        /* Use the pickup at once, keeping the full reserve. The active
+         * overlay can still be PLAY on a boss sector's transition step. */
+        bomb();++G.bombs;return;
     }
     G.score+=200; /* already at the maximum */
 }
@@ -459,7 +461,7 @@ uint16_t sf_step(uint8_t input)
     if(G.ship_x>SF_WIDTH-8)G.ship_x=SF_WIDTH-8;
     if(G.ship_y<SF_TOP+10)G.ship_y=SF_TOP+10;
     if(G.ship_y>SF_BOTTOM-9)G.ship_y=SF_BOTTOM-9;
-    if((input&SF_IN_BOMB)&&!(G.previous_input&SF_IN_BOMB))bomb(boss);
+    if((input&SF_IN_BOMB)&&!(G.previous_input&SF_IN_BOMB))bomb();
     G.previous_input=input;
     move_wingmen();
     move_enemies();

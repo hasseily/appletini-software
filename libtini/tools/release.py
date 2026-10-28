@@ -12,7 +12,7 @@ import zipfile
 import boot_roms
 
 ROOT = Path(__file__).resolve().parents[1]
-DIRECTORIES = ("assets", "cfg", "design", "docs", "examples", "games", "include", "src", "tests", "tools")
+DIRECTORIES = ("assets", "cfg", "design", "docs", "examples", "games", "include", "src", "tests", "tools", "services")
 
 
 def digest(path):
@@ -66,7 +66,8 @@ def main():
     selected = source_files()
     evidence = {"source_files": len(selected), "source_sha256": {
         path.relative_to(ROOT).as_posix(): digest(path) for path in selected},
-        "board_tested": False, "firmware_baseline": "F1.3.2 73de6fe03c31ad6f8ebfce3328704761fcd8c5a2"}
+        "automated_checks_are_board_evidence": False, "firmware_baseline": "F1.3.2 core; F1.3.3 optional networking",
+        "board_report": "https://github.com/hasseily/appletini-one/blob/main/README_RSA_STRESS_CHECKPOINT.md"}
     prior_isolation = ROOT / "build/selfcontained-check.json"
     if not args.verify_isolation and prior_isolation.exists():
         previous = json.loads(prior_isolation.read_text())
@@ -124,6 +125,7 @@ def main():
             entries.append((prefix + "/" + source.name, source.read_bytes()))
     for name in ("native/validation.json", "graphics/validation.json", "audio/validation.json",
                  "audio_native/validation.json", "storage/validation.json", "amem/validation.json",
+                 "net/validation.json", "private_fifo/validation.json", "starfall/arrival/validation.json",
                  "starter-check.json", "selfcontained-check.json",
                  "starfall/native-ui/validation.json", "starfall/native-ui-phasor/validation.json",
                  "checks/validation.json", "benchmark/results.json",
@@ -145,7 +147,7 @@ def main():
                     b"The source includes the enhanced //e and slot-7 boot ROMs with their notices.\n"
                     b"No FPGA/ARM firmware or host compiler binaries are included.\n"
                     b"Check ProDOS distribution terms before sharing disks. Source-only archive omits OS bytes.\n"
-                    b"Physical board validation remains pending; read docs/reference/testing.html.\n"))
+                    b"Read docs/reference/testing.html for scoped board, host and emulator evidence.\n"))
     archive(destination / "libtini-local-release.zip", entries)
     evidence["archives"] = {path.name: {"bytes": path.stat().st_size, "sha256": digest(path)}
                             for path in sorted(destination.glob("libtini-*.zip"))}
