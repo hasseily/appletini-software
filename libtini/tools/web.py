@@ -121,7 +121,7 @@ def build_player(emsdk, rebuild=False):
     return player
 
 
-def pack_game(game, target, boot_roms=boot_roms.DEFAULT, download=False):
+def pack_game(game, target, boot_roms=boot_roms.DEFAULT, download=False, itch=False):
     """Write the game's ProDOS files, except PRODOS itself, as game.json and game.bin.
 
     With boot_roms, also copy the whole disk and the installed //e ROM and
@@ -155,12 +155,15 @@ def pack_game(game, target, boot_roms=boot_roms.DEFAULT, download=False):
     (target / "game.bin").write_bytes(blob)
     record = {"title": manifest.get("title", game.upper()), "volume": volume, "system": system,
               "disk_sha256": digest(disk), "files": records}
+    if itch:
+        record["profile"] = "turbo-f122"
     if game == "starfall":
         labels={}
         for line in (ROOT/"build/starfall.lbl").read_text().splitlines():
             fields=line.split()
             if len(fields)>=3 and fields[0]=="al":labels[fields[2].lstrip(".")]=int(fields[1],16)
-        record["leaderboard"]={"endpoint":"/leaderboards/starfall","version":"1.0-net1",
+        endpoint = "https://appletini.org/leaderboards/starfall" if itch else "/leaderboards/starfall"
+        record["leaderboard"]={"endpoint":endpoint,"version":"1.0-net1",
             "state_address":labels["_sf_state"],"mode_address":labels["_sf_mode"],"stage_address":labels["_sf_stage"]}
     boot = target / "boot"
     if boot.exists():
@@ -223,6 +226,40 @@ def source_archive(player, target):
             add(path.relative_to(REPO).as_posix(), path.read_bytes())
 
 
+def itch_archive(game, target):
+    """Package only the published player files, with index.html at the ZIP root."""
+    target = Path(target).resolve()
+    record = json.loads((target / "game.json").read_text())
+    names = set(PAGE) | {"player.js", "player.wasm", "COPYING.txt", "source.zip",
+                         "game.json", "game.bin"}
+    if record.get("boot"):
+        names.add("boot/NOTICES.txt")
+        names.update(entry["path"] for entry in record["boot"].values())
+    if record.get("download"):
+        names.add(record["download"]["path"])
+    entries = []
+    for name in sorted(names):
+        path = target / name
+        if (not path.resolve().is_relative_to(target) or path.is_symlink() or
+                any(parent.is_symlink() or (hasattr(parent, "is_junction") and parent.is_junction())
+                    for parent in (path, *path.parents) if parent.is_relative_to(target))):
+            raise SystemExit("ZIP input must be a regular project file: " + name)
+        if not path.is_file() or len(name) > 240 or path.stat().st_size > 200_000_000:
+            raise SystemExit("Missing or oversized itch.io ZIP input: " + name)
+        entries.append((name, path.read_bytes()))
+    if len(entries) > 1000 or sum(len(data) for _, data in entries) > 500_000_000:
+        raise SystemExit("Package exceeds the itch.io extracted-file limits")
+    destination = ROOT / "dist" / (game.upper() + "-itch.zip")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        for name, data in entries:
+            info = zipfile.ZipInfo(name, date_time=(2026, 10, 20, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o100644 << 16
+            archive.writestr(info, data)
+    return destination
+
+
 def serve(directory, port):
     """Serve a built player on this computer only, with the browser's MIME types."""
     from functools import partial
@@ -252,6 +289,8 @@ def main():
     boot_roms.add_arguments(parser)
     parser.add_argument("--download-disk", action="store_true",
                         help="also offer the whole game disk, with its ProDOS, as <game>.po")
+    parser.add_argument("--itch", action="store_true",
+                        help="also create dist/GAME-itch.zip with an absolute STARFALL leaderboard URL")
     parser.add_argument("--serve", type=int, metavar="PORT",
                         help="after building, serve the page on http://localhost:PORT/")
     args = parser.parse_args()
@@ -266,7 +305,9 @@ def main():
         shutil.copy2(WEB / name, target / name)
     shutil.copy2(FRONT / "LICENSE", target / "COPYING.txt")
     source_archive(player, target)
-    pack_game(args.game, target, args.boot_roms, args.download_disk)
+    pack_game(args.game, target, args.boot_roms, args.download_disk, args.itch)
+    if args.itch:
+        print(itch_archive(args.game, target), flush=True)
     print(target, flush=True)
     if args.serve is not None:
         serve(target, args.serve)

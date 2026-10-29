@@ -437,6 +437,8 @@ failure leaves offline play available.
 The browser page has a name field and Submit run below the display. It
 reads the final score from the running game and sends `platform: "web"`.
 Its retries keep the same ID and body. Names and scores are public.
+After game over, push N to exit fullscreen, scroll to the rankings and
+put the cursor in the public name field.
 
 `tests/starfall_arrival_validate.py` checks the Excalibur transition with
 explicit model state writes. It checks the actual 65C02 sprite list at

@@ -35,6 +35,7 @@ button:hover,select:hover,.button:hover{border-color:var(--dim)}
 #play,#restart{background:var(--accent);color:#1a1205;border-color:var(--accent);font-weight:600;padding:10px 28px}
 .bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 label{display:flex;align-items:center;gap:8px;color:var(--dim)}
+#speed[hidden]{display:none}
 input[type=range]{width:110px}
 .help{margin-top:14px;color:var(--dim);font-size:14px}
 .help kbd{font:12px ui-monospace,monospace;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
@@ -88,7 +89,7 @@ footer a{color:var(--dim)}
   <div class="screen" id="frame">
     <canvas id="screen" width="640" height="400" tabindex="0" aria-label="Emulated Appletini SHR display"></canvas>
     <div class="overlay" id="start">
-      <label>Speed <select id="profile">
+      <label id="speed">Speed <select id="profile">
         <option value="0">33 MHz</option>
         <option value="1">TURBO (~75MHz)</option>
       </select></label>

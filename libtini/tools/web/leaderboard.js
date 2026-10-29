@@ -47,7 +47,7 @@ export function createLeaderboard(read, info, parent) {
   parent.append(box);
   const form=box.querySelector('form'),name=form.elements.name,submit=form.querySelector('[type=submit]');
   const message=box.querySelector('.score-status'),rows=box.querySelector('.scores');
-  let current=null,ended=false,busy=false,generation=0;
+  let current=null,ended=false,busy=false,opening=false,generation=0;
   function reset() { generation++;current=null;ended=false;busy=false;name.disabled=false;submit.disabled=true;message.textContent='Finish a run to submit your score.'; }
   function poll() {
     const run=snapshot(read,info);
@@ -55,6 +55,18 @@ export function createLeaderboard(read, info, parent) {
     if (ended) return;
     ended=true;current=new Submission(run,info.endpoint);submit.disabled=false;
     message.textContent='Final score: '+run.score+'. Enter a name, then submit.';
+  }
+  async function reveal(stamp) {
+    try {
+      // Only the game container is fullscreen; the score form is outside it.
+      if(document.fullscreenElement)await document.exitFullscreen();
+      await new Promise(resolve=>requestAnimationFrame(resolve));
+      if(!ended||stamp!==generation)return;
+      box.scrollIntoView({block:'center',behavior:'instant'});
+      name.focus({preventScroll:true});
+    } catch {
+      if(ended&&stamp===generation)message.textContent='Exit fullscreen, then press N to enter your name.';
+    } finally {opening=false;}
   }
   form.addEventListener('submit',async event=>{
     event.preventDefault();if (!current||busy)return;
@@ -76,5 +88,9 @@ export function createLeaderboard(read, info, parent) {
       rows.replaceChildren(table);
     } catch(error) { rows.textContent=error.message; }
   };
-  return {poll,reset,open(){if(!ended)return false;box.scrollIntoView({block:'center'});name.focus();return true;}};
+  return {poll,reset,open(){
+    if(!ended)return false;
+    if(!opening){opening=true;void reveal(generation);}
+    return true;
+  }};
 }

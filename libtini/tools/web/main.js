@@ -44,6 +44,10 @@ async function load() {
   const [manifest, blob, module] = await Promise.all([
     fetch('game.json').then(r => r.json()), bytes('game.bin'), createPlayer()]);
   game = manifest;
+  if (game.profile === 'turbo-f122') {
+    $('profile').value = '1';
+    $('speed').hidden = true;
+  }
   files = blob;
   M = module;
   if (game.boot) {

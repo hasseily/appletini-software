@@ -61,6 +61,17 @@ hosts.
 Every package contains `COPYING.txt` and `source.zip`, the Corresponding
 Source of the player with its build record, which the GPL-3.0 requires.
 
+For itch.io, add `--itch` to the build command. The tool makes
+`dist/STARFALL-itch.zip` with `index.html` at its root. It includes only the
+player's runtime files, boot inputs, notices and source archive. It checks
+the itch.io file count, path length and extracted-size limits. Add
+`--download-disk` to include the disk download too. The STARFALL ranking URL
+is `https://appletini.org/leaderboards/starfall` in this package. The ranking
+service must permit cross-origin GET and JSON POST requests from itch.io.
+The itch.io package sets `profile` to `turbo-f122` in `game.json`. The page
+selects TURBO and hides the speed selector. The Play button starts sound
+through the browser's required user gesture.
+
 ## How it works
 
 - `tools/web/player.cpp` wraps the development machine. It runs whole NTSC
@@ -141,5 +152,8 @@ at the site's origin and always submits platform `web`.
 The page freezes one POST body after it gets a server run ID. A failed
 reply can be retried with that same body. Starting a new game clears the
 pending submission. Other games have no leaderboard metadata or panel.
+After game over, N opens the browser rankings. The page waits for fullscreen
+to close and for the next layout frame before it scrolls to the panel and
+focuses the name field. A reset cancels a pending focus change.
 Run `node tests/web_leaderboard.test.mjs` for the platform, name, snapshot
 and retry checks.

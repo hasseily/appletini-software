@@ -31,6 +31,7 @@
 <tr><td><code>--boot-roms DIR</code></td><td>Override the bundled ROM directory. The default is <code>libtini/build-inputs/native-roms/</code>, independent of the working directory. Boot all of the disk through the enhanced //e ROM and slot-7 SmartPort firmware. The package then contains the Apple ROM and the ProDOS of the disk.</td></tr>
 <tr><td><code>--direct-launch</code></td><td>Use the ProDOS MLI stand-in without ROM boot.</td></tr>
 <tr><td><code>--download-disk</code></td><td>Also offer the disk, with its ProDOS, as <code>GAME.po</code> next to the page.</td></tr>
+<tr><td><code>--itch</code></td><td>Also make <code>dist/GAME-itch.zip</code> for itch.io. The player uses TURBO and hides the speed selector. STARFALL uses the full HTTPS address of its ranking service.</td></tr>
 <tr><td><code>--serve PORT</code></td><td>After the build, serve the page on <code>http://localhost:PORT/</code>.</td></tr>
 <tr><td><code>--rebuild</code></td><td>Build the WebAssembly player again.</td></tr>
 </table></div>
@@ -49,9 +50,10 @@
 </ul>
 
 <h2 id="leaderboard">STARFALL rankings</h2>
-<p>After game over, use the public name field and Submit run below the display. The page reads the score from the running game and always sends platform <code>web</code>. Top 10 shows the shared rankings. A retry keeps the same run ID and body. Starting a new game clears that submission. Names and scores are public. The card version uses platform <code>appletini</code>.</p>
+<p>After game over, push N to open the public name field below the display. The page exits fullscreen, scrolls to the rankings and puts the cursor in the name field. Use Submit run to send the score. The page reads the score from the running game and always sends platform <code>web</code>. Top 10 shows the shared rankings. A retry keeps the same run ID and body. Starting a new game clears that submission. Names and scores are public. The card version uses platform <code>appletini</code>.</p>
 <h2 id="publish">Publish a game page</h2>
 <p>Copy <code>build/web/GAME/</code> to a static host that serves HTTPS. The page sets its base URL from its own location, so it works at all paths. Each package contains <code>COPYING.txt</code> and <code>source.zip</code>. <code>source.zip</code> is the Corresponding Source of the player, with its build record.</p>
+<p>For itch.io, add <code>--itch</code> to the build command. Upload <code>dist/STARFALL-itch.zip</code> and select "This file will be played in the browser". The ZIP has <code>index.html</code> at its root. It contains the player, game data, boot inputs, notices and player source. Local file paths are relative and case-sensitive. The tool checks the itch.io file count, path length and size limits. The ranking service must permit cross-origin GET and JSON POST requests for scores to work on itch.io.</p>
 <p class="note warn">The player links the GPL-3.0 emulator and speech code of the repository. Thus the player and its files in <code>tools/web/</code> are GPL-3.0-only. The library is MIT. A published copy must offer its source, and the package does this. The default package contains the Apple ROM and ProDOS. A direct-launch package with <code>--download-disk</code> also contains ProDOS. Publish it only if you have the right to distribute them.</p>
 
 <h2 id="evidence">The comparison check</h2>
