@@ -67,7 +67,7 @@ async function scores(env) {
   return rows.results.map(r=>({...r,submitted_at:new Date(r.submitted_at*1000).toISOString()}));
 }
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-export async function handleStarfall(request,env) {
+async function handleRoute(request,env) {
   const url=new URL(request.url);
   if(url.pathname!==BASE&&!url.pathname.startsWith(BASE+'/'))return null;
   try {
@@ -87,5 +87,20 @@ ${rows.map(r=>`<tr><td>${r.rank}</td><td>${escape(r.name)}</td><td>${r.score}</t
     }
     return json({error:'Not found'},404);
   } catch {return json({error:'Ranking service unavailable; continue offline'},503);}
+}
+export async function handleStarfall(request,env) {
+  const path=new URL(request.url).pathname;
+  if(!path.startsWith(BASE+'/api/'))return handleRoute(request,env);
+  // Public, uncredentialed scores can be read and submitted by an itch.io player.
+  const headers=new Headers({
+    'Access-Control-Allow-Origin':'*',
+    'Access-Control-Allow-Methods':'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers':'Content-Type',
+    'Access-Control-Max-Age':'3600',
+  });
+  if(request.method==='OPTIONS')return new Response(null,{status:204,headers});
+  const response=await handleRoute(request,env);
+  for(const [name,value] of response.headers)headers.set(name,value);
+  return new Response(response.body,{status:response.status,headers});
 }
 export default {async fetch(request,env){return await handleStarfall(request,env) || json({error:'Not found'},404);}};

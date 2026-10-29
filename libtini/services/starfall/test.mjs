@@ -40,6 +40,29 @@ r=await request(BASE);assert.equal(r.status,200);assert.match(r.headers.get('Con
 assert.match(await r.text(),/STARFALL leaderboard/);
 r=await request(BASE+'/api/runs','PUT',run());assert.equal(r.status,405);
 assert.equal(await request('/unrelated'),null);
+const origin='https://html.itch.zone';
+r=await handleStarfall(new Request('https://appletini.org'+BASE+'/api/runs',{
+  method:'OPTIONS',headers:{Origin:origin,'Access-Control-Request-Method':'POST',
+    'Access-Control-Request-Headers':'content-type'},
+}),{});
+assert.equal(r.status,204);assert.equal(await r.text(),'');
+assert.equal(r.headers.get('Access-Control-Allow-Origin'),'*');
+assert.match(r.headers.get('Access-Control-Allow-Methods'),/POST/);
+assert.equal(r.headers.get('Access-Control-Allow-Headers'),'Content-Type');
+assert.equal(r.headers.has('Access-Control-Allow-Credentials'),false);
+for(const [path,method,body,status] of [
+  [BASE+'/api/run-id','GET',undefined,200],
+  [BASE+'/api/ladder','GET',undefined,200],
+  [BASE+'/api/runs','POST',run('ITCH',1600,'web'),200],
+  [BASE+'/api/runs','POST',{},400],
+  [BASE+'/api/missing','GET',undefined,404],
+]) {
+  r=await handleStarfall(new Request('https://appletini.org'+path,{method,
+    headers:{Origin:origin,'Content-Type':'application/json','CF-Connecting-IP':'192.0.2.60'},
+    body:body===undefined?undefined:JSON.stringify(body)}),env);
+  assert.equal(r.status,status);assert.equal(r.headers.get('Access-Control-Allow-Origin'),'*');
+}
+r=await request(BASE);assert.equal(r.headers.has('Access-Control-Allow-Origin'),false);
 for(let i=0;i<12;++i){r=await request(BASE+'/api/runs','POST',run('RATE',i),'192.0.2.50');assert.equal(r.status,200);}
 r=await request(BASE+'/api/runs','POST',run('RATE',13),'192.0.2.50');assert.equal(r.status,429);
 for(let i=0;i<120;++i){r=await request(BASE+'/api/run-id','GET',undefined,'192.0.2.51');assert.equal(r.status,200);}
@@ -48,4 +71,4 @@ const old=new DatabaseSync(':memory:');
 old.exec(`CREATE TABLE starfall_runs(run_id TEXT PRIMARY KEY); INSERT INTO starfall_runs(run_id) VALUES ('legacy')`);
 old.exec(readFileSync(new URL('./migrate_platform.sql',import.meta.url),'utf8'));
 assert.equal(old.prepare('SELECT platform FROM starfall_runs').get().platform,'unknown');old.close();
-console.log('PASS platform validation/storage/idempotency/ladder and migration; actual SQLite schema and Worker: validation, idempotency, UTC, best-per-player ranks, HTML and rate limits');
+console.log('PASS cross-origin preflight and API responses, platform validation/storage/idempotency/ladder and migration; actual SQLite schema and Worker: validation, idempotency, UTC, best-per-player ranks, HTML and rate limits');

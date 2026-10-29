@@ -19,6 +19,12 @@ uppercase ASCII letters, digits, spaces, dots, underscores or hyphens.
 No game client holds a secret. These are public, unverified scores: limits
 and rate checks reduce simple abuse; they do not prove a human played.
 
+The API permits uncredentialed cross-origin GET and JSON POST requests.
+OPTIONS answers the browser preflight without a database call. API replies,
+including errors, set `Access-Control-Allow-Origin: *`. The HTML page does
+not set this header. Deploy this service version before using scores from
+an itch.io package. No database migration is needed for this header change.
+
 Limits: 768 request bytes, score 0..9999999, sector 1..256, kills 0..999999,
 12 submissions and 120 reads per minute per IP. Rate keys use an IP hash
 and expire after a day. No IP is stored with a score. Names are public and
