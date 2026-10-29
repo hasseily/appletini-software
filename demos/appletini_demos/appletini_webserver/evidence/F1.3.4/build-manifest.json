@@ -1,0 +1,54 @@
+{
+  "entry": "0x2000",
+  "payload_entry": "0x6000",
+  "payload_bytes": 11473,
+  "sys_bytes": 11529,
+  "resident_end": "0x7fa3",
+  "overlay_address": "0x8b00",
+  "files": {
+    "A2MONO.SYSTEM": {
+      "bytes": 11587,
+      "sha256": "2d25dd1a7e48da10739873a56497b84ad0c30318e52a06856dd60c1d2d4e3e2a"
+    },
+    "MONO.WEB": {
+      "bytes": 10734,
+      "sha256": "472b9e7a7b8302e822d5cfcf4b4dc654e395855be5ae2e37c0cb7c2669dc4003"
+    },
+    "MONO.GIF": {
+      "bytes": 4716,
+      "sha256": "4485ba2ffae081f6195b9ffaa89d0cb863bea83394486576a1afa56f0c39cd86"
+    },
+    "MONO.PNG": {
+      "bytes": 8447,
+      "sha256": "786d2999a39443b97ac722da3bec0a39e29c1400d7d2c3def74b3fc89b3c16ff"
+    },
+    "MONO.JPG": {
+      "bytes": 11176,
+      "sha256": "93ad5d116a91a86eaf9a023d4cbbfc3627a565be3fa04e87d3fa7fe729d88213"
+    },
+    "MONO.NET": {
+      "bytes": 6101,
+      "sha256": "d6b4365581c7840a3ebf3d719b264c4c60e8615bebd52b2d22f87f6e134d58c1"
+    },
+    "HTTPS/ATNETCA.PEM": {
+      "bytes": 37359,
+      "sha256": "8f305ef87b0fc03cb11f0f8ec2d3372c811940e52894f847d3bf4efd2c9cc94c"
+    },
+    "HTTPS/roots.json": {
+      "bytes": 6987,
+      "sha256": "e435356d7eec3c5ffe3692dcfd5212e1e66804018e8b2c841782455c215e002d"
+    },
+    "HTTPS/LICENSE-roots.txt": {
+      "bytes": 16726,
+      "sha256": "3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04"
+    },
+    "HTTPS/README.md": {
+      "bytes": 1654,
+      "sha256": "d3ad379d7b88da6199fafdae1f037d896cc2030f65eef4fe66150786c388294c"
+    },
+    "A2MONO.po": {
+      "bytes": 819200,
+      "sha256": "e59f3684594f4ba264593b8e8145bf2caa8af795b86ddcb373cfb4dccef62a4e"
+    }
+  }
+}

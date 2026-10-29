@@ -1,0 +1,149 @@
+{
+  "model": "actual NMOS6502 + mocked ProDOS/native HTTP FIFO",
+  "board_evidence": false,
+  "old_open_policy": {
+    "old_open_0400_error": "0x56",
+    "instructions": 178647
+  },
+  "program_sha256": "91c65defeb969bd2073a98fd0abac763e4893f4a4592e3a771f11b25986d7035",
+  "cases": [
+    {
+      "case": "manual-lazy-images-and-redirects",
+      "requests": [
+        "https://fixture.test/start",
+        "https://fixture.test/docs/one.gif",
+        "https://fixture.test/two.gif",
+        "https://fixture.test/two.gif",
+        "https://fixture.test/three.gif",
+        "https://fixture.test/docs/one.gif",
+        "https://fixture.test/two.gif",
+        "https://fixture.test/docs/next.html"
+      ],
+      "captures": [
+        {
+          "name": "reader-images-off",
+          "sha256": "95c6a723ed72e43ea1238928ddc21fd564a404a333ecfbbdd2a70c492785adad",
+          "instructions": 5564103,
+          "cycles": 19217156,
+          "requests": [
+            "https://fixture.test/start"
+          ]
+        },
+        {
+          "name": "reader-scroll-off",
+          "sha256": "95c6a723ed72e43ea1238928ddc21fd564a404a333ecfbbdd2a70c492785adad",
+          "instructions": 5564160,
+          "cycles": 19217339,
+          "requests": [
+            "https://fixture.test/start"
+          ]
+        },
+        {
+          "name": "reader-images-on",
+          "sha256": "bc58d6439ef7bc52956703ffa1c24884209331fb481aa529979f086b87efef9a",
+          "instructions": 7855390,
+          "cycles": 27337576,
+          "requests": [
+            "https://fixture.test/start",
+            "https://fixture.test/docs/one.gif",
+            "https://fixture.test/two.gif"
+          ]
+        },
+        {
+          "name": "reader-lazy-scroll",
+          "sha256": "cb9ad0e9c8f79fecd07c91dd21795b944772535d2a86aa493b6d3316ff422225",
+          "instructions": 10014147,
+          "cycles": 35017737,
+          "requests": [
+            "https://fixture.test/start",
+            "https://fixture.test/docs/one.gif",
+            "https://fixture.test/two.gif",
+            "https://fixture.test/two.gif",
+            "https://fixture.test/three.gif"
+          ]
+        },
+        {
+          "name": "reader-next-off",
+          "sha256": "a95adc3d1741c91bf399a26cc99db97e3d8610670baca2d74037e8bcc7798e94",
+          "instructions": 13371400,
+          "cycles": 46903891,
+          "requests": [
+            "https://fixture.test/start",
+            "https://fixture.test/docs/one.gif",
+            "https://fixture.test/two.gif",
+            "https://fixture.test/two.gif",
+            "https://fixture.test/three.gif",
+            "https://fixture.test/docs/one.gif",
+            "https://fixture.test/two.gif",
+            "https://fixture.test/docs/next.html"
+          ]
+        }
+      ],
+      "instructions": 13371589,
+      "cycles": 46904541
+    },
+    {
+      "case": "white-body-glyphs-on-black",
+      "requests": [
+        "https://fixture.test/theme"
+      ],
+      "captures": [
+        {
+          "name": "reader-body-theme",
+          "sha256": "d84897858e7afef6926b842dd1a3258571f91e8ec61aa84fabdc56e4e244ea6e",
+          "instructions": 5338157,
+          "cycles": 18432470,
+          "requests": [
+            "https://fixture.test/theme"
+          ]
+        }
+      ],
+      "instructions": 5338346,
+      "cycles": 18433120
+    },
+    {
+      "case": "large-html",
+      "requests": [
+        "https://fixture.test/large",
+        "https://fixture.test/large/after40k.gif",
+        "https://fixture.test/large/after40k.html"
+      ],
+      "captures": [
+        {
+          "name": "large-html",
+          "sha256": "5ef79251da88da69711d38ad73192e287b6fd234181c7a081dd6ff92d0e341aa",
+          "instructions": 23695157,
+          "cycles": 84378543,
+          "requests": [
+            "https://fixture.test/large"
+          ]
+        }
+      ],
+      "instructions": 38836312,
+      "cycles": 138593482,
+      "html_input_bytes": 41142,
+      "document_capacity": 65535
+    },
+    {
+      "case": "8k-fallback",
+      "requests": [
+        "https://fixture.test/large"
+      ],
+      "captures": [
+        {
+          "name": "fallback-html",
+          "sha256": "40f4c721a0f24329f9e3c22985d3d00ff01b23e98c3863e31dc527f9144ccf9c",
+          "instructions": 8962304,
+          "cycles": 31453179,
+          "requests": [
+            "https://fixture.test/large"
+          ]
+        }
+      ],
+      "instructions": 8962493,
+      "cycles": 31453829,
+      "html_input_bytes": 41142,
+      "document_capacity": 8192
+    }
+  ]
+}

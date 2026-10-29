@@ -1,0 +1,243 @@
+{
+  "model": "actual NMOS6502 browser; mocked ProDOS and native HTTP FIFO",
+  "board_evidence": false,
+  "startup_instructions": 1265823,
+  "strict_mli_policy": {
+    "old_open_0400_error": "0x56",
+    "instructions": 170757
+  },
+  "io_buffer_poisoned": true,
+  "program_sha256": "7492df155d095c0834f775f03be0743042f058afbf1b6fd5e4df12bdc0631e52",
+  "startup_cycles": 4456922,
+  "empty_prefix_initialized": true,
+  "cases": [
+    {
+      "case": "mixed-images-navigation",
+      "instructions": 44626304,
+      "cycles": 155486716,
+      "requests": [
+        "https://fixture.test/start",
+        "https://fixture.test/docs/checker.gif",
+        "https://fixture.test/images/tile.png",
+        "https://fixture.test/docs/other.html",
+        "https://fixture.test/docs/index.html",
+        "https://fixture.test/docs/next.html",
+        "https://fixture.test/docs/index.html",
+        "https://fixture.test/docs/checker.gif",
+        "https://fixture.test/images/tile.png",
+        "https://fixture.test/images/tile.png",
+        "https://fixture.test/tile.jpg",
+        "https://fixture.test/docs/checker.gif",
+        "https://fixture.test/images/tile.png",
+        "https://fixture.test/docs/index.html"
+      ],
+      "captures": [
+        {
+          "name": "integration-demo",
+          "sha256": "537f64171266558173ef1ab076e4b9d0ace7b16c46ef27439a2bca6c5c7c9c32",
+          "instructions": 1265823,
+          "cycles": 4456922,
+          "requests": []
+        },
+        {
+          "name": "mixed-top",
+          "sha256": "5be71c31d6f18bcac9f6471d1871b7838f2366e849e544a701d35165e050ccec",
+          "instructions": 5146996,
+          "cycles": 17791083,
+          "requests": [
+            "https://fixture.test/start"
+          ]
+        },
+        {
+          "name": "mixed-before-scroll",
+          "sha256": "5be71c31d6f18bcac9f6471d1871b7838f2366e849e544a701d35165e050ccec",
+          "instructions": 19411706,
+          "cycles": 67570765,
+          "requests": [
+            "https://fixture.test/start",
+            "https://fixture.test/docs/checker.gif",
+            "https://fixture.test/images/tile.png",
+            "https://fixture.test/docs/other.html",
+            "https://fixture.test/docs/index.html",
+            "https://fixture.test/docs/next.html",
+            "https://fixture.test/docs/index.html"
+          ]
+        },
+        {
+          "name": "mixed-scrolled",
+          "sha256": "bb1679e1d4c62cee1d4116d32646e378290bcfc2b1c53877e454e019de7e40f8",
+          "instructions": 36027299,
+          "cycles": 125581168,
+          "requests": [
+            "https://fixture.test/start",
+            "https://fixture.test/docs/checker.gif",
+            "https://fixture.test/images/tile.png",
+            "https://fixture.test/docs/other.html",
+            "https://fixture.test/docs/index.html",
+            "https://fixture.test/docs/next.html",
+            "https://fixture.test/docs/index.html",
+            "https://fixture.test/docs/checker.gif",
+            "https://fixture.test/images/tile.png",
+            "https://fixture.test/images/tile.png",
+            "https://fixture.test/tile.jpg"
+          ]
+        },
+        {
+          "name": "mixed-reloaded",
+          "sha256": "5be71c31d6f18bcac9f6471d1871b7838f2366e849e544a701d35165e050ccec",
+          "instructions": 45891938,
+          "cycles": 159942988,
+          "requests": [
+            "https://fixture.test/start",
+            "https://fixture.test/docs/checker.gif",
+            "https://fixture.test/images/tile.png",
+            "https://fixture.test/docs/other.html",
+            "https://fixture.test/docs/index.html",
+            "https://fixture.test/docs/next.html",
+            "https://fixture.test/docs/index.html",
+            "https://fixture.test/docs/checker.gif",
+            "https://fixture.test/images/tile.png",
+            "https://fixture.test/images/tile.png",
+            "https://fixture.test/tile.jpg",
+            "https://fixture.test/docs/checker.gif",
+            "https://fixture.test/images/tile.png",
+            "https://fixture.test/docs/index.html"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "missing-png-overlay",
+      "instructions": 4467505,
+      "cycles": 15458271,
+      "requests": [
+        "https://fixture.test/png",
+        "https://fixture.test/images/tile.png"
+      ],
+      "captures": [
+        {
+          "name": "missing-png-overlay",
+          "sha256": "ab3139dd68a7174739a7dc63f9475bcff5203247af4804c6971a1270438832ff",
+          "instructions": 5733139,
+          "cycles": 19914543,
+          "requests": [
+            "https://fixture.test/png",
+            "https://fixture.test/images/tile.png"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "short-png-overlay",
+      "instructions": 4467528,
+      "cycles": 15458335,
+      "requests": [
+        "https://fixture.test/png",
+        "https://fixture.test/images/tile.png"
+      ],
+      "captures": [
+        {
+          "name": "short-png-overlay",
+          "sha256": "785458cb4a21a59c10590eba2ddedc3f61e86b362f1a9314a5286f2f12612776",
+          "instructions": 5733162,
+          "cycles": 19914607,
+          "requests": [
+            "https://fixture.test/png",
+            "https://fixture.test/images/tile.png"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "long-png-overlay",
+      "instructions": 4467528,
+      "cycles": 15458335,
+      "requests": [
+        "https://fixture.test/png",
+        "https://fixture.test/images/tile.png"
+      ],
+      "captures": [
+        {
+          "name": "long-png-overlay",
+          "sha256": "785458cb4a21a59c10590eba2ddedc3f61e86b362f1a9314a5286f2f12612776",
+          "instructions": 5733162,
+          "cycles": 19914607,
+          "requests": [
+            "https://fixture.test/png",
+            "https://fixture.test/images/tile.png"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "mouse-link",
+      "instructions": 1130911,
+      "cycles": 3991933,
+      "requests": [
+        "https://fixture.test/mouse",
+        "https://fixture.test/clicked"
+      ],
+      "captures": [
+        {
+          "name": "mouse-link",
+          "sha256": "35d9f6e27c7ea251bc92ffa35d01c2ae0ec59a293085d623953f7d44c214b4da",
+          "instructions": 5848766,
+          "cycles": 20299649,
+          "requests": [
+            "https://fixture.test/mouse",
+            "https://fixture.test/clicked"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "mouse-footer-quit",
+      "instructions": 6203,
+      "cycles": 20576,
+      "requests": [
+        "https://fixture.test/mouse"
+      ],
+      "captures": [
+        {
+          "name": "mouse-footer-quit",
+          "sha256": "9fc82d721d736eb534d6aa98d4d11ab9df5e2f4fd8b3ca30d11ae985259051c9"
+        }
+      ]
+    }
+  ],
+  "runtime_components": {
+    "A2MONO.bin": {
+      "bytes": 11529,
+      "sha256": "7492df155d095c0834f775f03be0743042f058afbf1b6fd5e4df12bdc0631e52"
+    },
+    "A2MONO.SYSTEM": {
+      "bytes": 11587,
+      "sha256": "067063bf59a749a4c589ac5760f68a76a50cbae7f9724d7dbc513979e7046d86"
+    },
+    "MONO.WEB": {
+      "bytes": 10734,
+      "sha256": "472b9e7a7b8302e822d5cfcf4b4dc654e395855be5ae2e37c0cb7c2669dc4003"
+    },
+    "MONO.NET": {
+      "bytes": 6029,
+      "sha256": "bb9d750b2b7c5469dd6d568fe481c4c0401a1ec914d5a838c2a2cad5f2ac4a05"
+    },
+    "MONO.GIF": {
+      "bytes": 4716,
+      "sha256": "4485ba2ffae081f6195b9ffaa89d0cb863bea83394486576a1afa56f0c39cd86"
+    },
+    "MONO.PNG": {
+      "bytes": 8447,
+      "sha256": "786d2999a39443b97ac722da3bec0a39e29c1400d7d2c3def74b3fc89b3c16ff"
+    },
+    "MONO.JPG": {
+      "bytes": 11176,
+      "sha256": "93ad5d116a91a86eaf9a023d4cbbfc3627a565be3fa04e87d3fa7fe729d88213"
+    },
+    "A2MONO.po": {
+      "bytes": 819200,
+      "sha256": "6b161bf364dba3c3e2a5b57cb4ddcd4314fffacb609b1a873045fc121f717984"
+    }
+  },
+  "validation_scope": "Exact7492safe snapshot. Final734de transport diagnostic delta has identical WEB/GIF/PNG/JPG; its NET behavior is verified separately."
+}

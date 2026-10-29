@@ -1,0 +1,397 @@
+{
+  "actual_6502": true,
+  "mocked_download_manager": true,
+  "board_evidence": false,
+  "program_sha256": "d0bdef52f5e2608c4aa61830e1650dd94857635a14050e41e327fd0c009ff471",
+  "transfer_bytes": 300000,
+  "cases": [
+    {
+      "case": "named",
+      "instructions": 862174,
+      "requests": [
+        {
+          "url": "https://fixture.test/page",
+          "flags": 2,
+          "hint": ""
+        },
+        {
+          "url": "https://fixture.test/force.txt",
+          "flags": 4,
+          "hint": "chosen.txt"
+        }
+      ],
+      "events": [
+        "path",
+        "cancel"
+      ],
+      "snapshots": [
+        {
+          "at": 1,
+          "status": "SAVED 0:/DOWNLOADS/RESULT,BIN",
+          "body": "DOWNLOAD SOURCE PAGE\n\n\n NAMED FILE\n\n\n BOOLEAN FILE\n\n\n AUTOMATIC ATTACHMENT\n\n\n FAIL FILE\n\n\n CANCEL FILE\n\n\n PLAIN DOCUMENT\n\n\n POISON FILE\n\n\n LONG FILENAME\n\n [IMAGE: I]\n\n\n END OF SOURCE PAGE",
+          "saved_card_error": 0,
+          "document_length": 646
+        }
+      ],
+      "overlay_io_after_poison": null
+    },
+    {
+      "case": "boolean",
+      "instructions": 2125970,
+      "requests": [
+        {
+          "url": "https://fixture.test/page",
+          "flags": 2,
+          "hint": ""
+        },
+        {
+          "url": "https://fixture.test/boolean.bin",
+          "flags": 4,
+          "hint": ""
+        }
+      ],
+      "events": [
+        "path",
+        "cancel"
+      ],
+      "snapshots": [
+        {
+          "at": 2,
+          "status": "SAVED 0:/DOWNLOADS/RESULT,BIN",
+          "body": "DOWNLOAD SOURCE PAGE\n\n\n NAMED FILE\n\n\n BOOLEAN FILE\n\n\n AUTOMATIC ATTACHMENT\n\n\n FAIL FILE\n\n\n CANCEL FILE\n\n\n PLAIN DOCUMENT\n\n\n POISON FILE\n\n\n LONG FILENAME\n\n [IMAGE: I]\n\n\n END OF SOURCE PAGE",
+          "saved_card_error": 0,
+          "document_length": 646
+        }
+      ],
+      "overlay_io_after_poison": null
+    },
+    {
+      "case": "automatic",
+      "instructions": 3271343,
+      "requests": [
+        {
+          "url": "https://fixture.test/page",
+          "flags": 2,
+          "hint": ""
+        },
+        {
+          "url": "https://fixture.test/auto.bin",
+          "flags": 2,
+          "hint": ""
+        }
+      ],
+      "events": [
+        "path",
+        "cancel"
+      ],
+      "snapshots": [
+        {
+          "at": 3,
+          "status": "SAVED 0:/DOWNLOADS/RESULT,BIN",
+          "body": "DOWNLOAD SOURCE PAGE\n\n\n NAMED FILE\n\n\n BOOLEAN FILE\n\n\n AUTOMATIC ATTACHMENT\n\n\n FAIL FILE\n\n\n CANCEL FILE\n\n\n PLAIN DOCUMENT\n\n\n POISON FILE\n\n\n LONG FILENAME\n\n [IMAGE: I]\n\n\n END OF SOURCE PAGE",
+          "saved_card_error": 0,
+          "document_length": 646
+        }
+      ],
+      "overlay_io_after_poison": null
+    },
+    {
+      "case": "failure",
+      "instructions": 4459480,
+      "requests": [
+        {
+          "url": "https://fixture.test/page",
+          "flags": 2,
+          "hint": ""
+        },
+        {
+          "url": "https://fixture.test/fail.bin",
+          "flags": 4,
+          "hint": ""
+        }
+      ],
+      "events": [
+        "cancel"
+      ],
+      "snapshots": [
+        {
+          "at": 4,
+          "status": "DOWNLOAD FAILED: -12",
+          "body": "DOWNLOAD SOURCE PAGE\n\n\n NAMED FILE\n\n\n BOOLEAN FILE\n\n\n AUTOMATIC ATTACHMENT\n\n\n FAIL FILE\n\n\n CANCEL FILE\n\n\n PLAIN DOCUMENT\n\n\n POISON FILE\n\n\n LONG FILENAME\n\n [IMAGE: I]\n\n\n END OF SOURCE PAGE",
+          "saved_card_error": 0,
+          "document_length": 646
+        }
+      ],
+      "overlay_io_after_poison": null
+    },
+    {
+      "case": "cancel",
+      "instructions": 5891746,
+      "requests": [
+        {
+          "url": "https://fixture.test/page",
+          "flags": 2,
+          "hint": ""
+        },
+        {
+          "url": "https://fixture.test/cancel.bin",
+          "flags": 4,
+          "hint": "cancel.dat"
+        }
+      ],
+      "events": [
+        "cancel"
+      ],
+      "snapshots": [
+        {
+          "at": 5,
+          "status": "DOWNLOAD CANCELLED",
+          "body": "DOWNLOAD SOURCE PAGE\n\n\n NAMED FILE\n\n\n BOOLEAN FILE\n\n\n AUTOMATIC ATTACHMENT\n\n\n FAIL FILE\n\n\n CANCEL FILE\n\n\n PLAIN DOCUMENT\n\n\n POISON FILE\n\n\n LONG FILENAME\n\n [IMAGE: I]\n\n\n END OF SOURCE PAGE",
+          "saved_card_error": 0,
+          "document_length": 646
+        }
+      ],
+      "overlay_io_after_poison": null
+    },
+    {
+      "case": "plain",
+      "instructions": 7335669,
+      "requests": [
+        {
+          "url": "https://fixture.test/page",
+          "flags": 2,
+          "hint": ""
+        },
+        {
+          "url": "https://fixture.test/normal.txt",
+          "flags": 2,
+          "hint": ""
+        }
+      ],
+      "events": [],
+      "snapshots": [
+        {
+          "at": 6,
+          "status": "IMAGES OFF | I LOADS",
+          "body": "PLAIN DOCUMENT",
+          "saved_card_error": 0,
+          "document_length": 14
+        }
+      ],
+      "overlay_io_after_poison": null
+    },
+    {
+      "case": "poison",
+      "instructions": 11262027,
+      "requests": [
+        {
+          "url": "https://fixture.test/page",
+          "flags": 2,
+          "hint": ""
+        },
+        {
+          "url": "https://fixture.test/poison.bin",
+          "flags": 4,
+          "hint": ""
+        }
+      ],
+      "events": [],
+      "snapshots": [
+        {
+          "at": 7,
+          "status": "HTTP DESCRIPTOR E9",
+          "body": "DOWNLOAD SOURCE PAGE\n\n\n NAMED FILE\n\n\n BOOLEAN FILE\n\n\n AUTOMATIC ATTACHMENT\n\n\n FAIL FILE\n\n\n CANCEL FILE\n\n\n PLAIN DOCUMENT\n\n\n POISON FILE\n\n\n LONG FILENAME\n\n [IMAGE: I]\n\n\n END OF SOURCE PAGE",
+          "saved_card_error": 103,
+          "document_length": 646
+        },
+        {
+          "at": 40,
+          "status": "HTTP FAULT: RESTART BROWSER",
+          "body": "DOWNLOAD SOURCE PAGE\n\n\n NAMED FILE\n\n\n BOOLEAN FILE\n\n\n AUTOMATIC ATTACHMENT\n\n\n FAIL FILE\n\n\n CANCEL FILE\n\n\n PLAIN DOCUMENT\n\n\n POISON FILE\n\n\n LONG FILENAME\n\n [IMAGE: I]\n\n\n END OF SOURCE PAGE",
+          "saved_card_error": 0,
+          "document_length": 646
+        }
+      ],
+      "overlay_io_after_poison": [
+        101
+      ]
+    },
+    {
+      "case": "image",
+      "instructions": 3650482,
+      "requests": [
+        {
+          "url": "https://fixture.test/page",
+          "flags": 2,
+          "hint": ""
+        },
+        {
+          "url": "https://fixture.test/inline.gif",
+          "flags": 0,
+          "hint": ""
+        }
+      ],
+      "events": [],
+      "snapshots": [
+        {
+          "at": 1,
+          "status": "IMAGE DECODED",
+          "body": "DOWNLOAD SOURCE PAGE\n\n\n NAMED FILE\n\n\n BOOLEAN FILE\n\n\n AUTOMATIC ATTACHMENT\n\n\n FAIL FILE\n\n\n CANCEL FILE\n\n\n PLAIN DOCUMENT\n\n\n POISON FILE\n\n\n LONG FILENAME\n\n ?????\n ?????\n ?????",
+          "saved_card_error": 0,
+          "document_length": 646
+        }
+      ],
+      "overlay_io_after_poison": null
+    },
+    {
+      "case": "old-firmware",
+      "instructions": 526015,
+      "requests": [
+        {
+          "url": "https://fixture.test/page",
+          "flags": 2,
+          "hint": ""
+        }
+      ],
+      "events": [],
+      "snapshots": [
+        {
+          "at": 1,
+          "status": "DOWNLOADS NEED UPDATED FIRMWARE",
+          "body": "DOWNLOAD SOURCE PAGE\n\n\n NAMED FILE\n\n\n BOOLEAN FILE\n\n\n AUTOMATIC ATTACHMENT\n\n\n FAIL FILE\n\n\n CANCEL FILE\n\n\n PLAIN DOCUMENT\n\n\n POISON FILE\n\n\n LONG FILENAME\n\n [IMAGE: I]\n\n\n END OF SOURCE PAGE",
+          "saved_card_error": 0,
+          "document_length": 646
+        }
+      ],
+      "overlay_io_after_poison": null
+    },
+    {
+      "case": "long-name",
+      "instructions": 9723120,
+      "requests": [
+        {
+          "url": "https://fixture.test/page",
+          "flags": 2,
+          "hint": ""
+        },
+        {
+          "url": "https://fixture.test/long.bin",
+          "flags": 4,
+          "hint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "events": [
+        "path",
+        "cancel"
+      ],
+      "snapshots": [
+        {
+          "at": 8,
+          "status": "SAVED 0:/DOWNLOADS/RESULT,BIN",
+          "body": "DOWNLOAD SOURCE PAGE\n\n\n NAMED FILE\n\n\n BOOLEAN FILE\n\n\n AUTOMATIC ATTACHMENT\n\n\n FAIL FILE\n\n\n CANCEL FILE\n\n\n PLAIN DOCUMENT\n\n\n POISON FILE\n\n\n LONG FILENAME\n\n [IMAGE: I]\n\n\n END OF SOURCE PAGE",
+          "saved_card_error": 0,
+          "document_length": 646
+        }
+      ],
+      "overlay_io_after_poison": null
+    },
+    {
+      "case": "tls-untrusted",
+      "instructions": 2943494,
+      "requests": [
+        {
+          "url": "https://fixture.test/page",
+          "flags": 2,
+          "hint": ""
+        },
+        {
+          "url": "https://fixture.test/auto.bin",
+          "flags": 2,
+          "hint": ""
+        }
+      ],
+      "events": [
+        "cancel"
+      ],
+      "snapshots": [
+        {
+          "at": 3,
+          "status": "TLS ISSUER UNTRUSTED; UPDATE CA BUNDLE",
+          "body": "DOWNLOAD SOURCE PAGE\n\n\n NAMED FILE\n\n\n BOOLEAN FILE\n\n\n AUTOMATIC ATTACHMENT\n\n\n FAIL FILE\n\n\n CANCEL FILE\n\n\n PLAIN DOCUMENT\n\n\n POISON FILE\n\n\n LONG FILENAME\n\n [IMAGE: I]\n\n\n END OF SOURCE PAGE",
+          "saved_card_error": 0,
+          "document_length": 646
+        }
+      ],
+      "overlay_io_after_poison": null
+    },
+    {
+      "case": "tls-generic",
+      "instructions": 2943380,
+      "requests": [
+        {
+          "url": "https://fixture.test/page",
+          "flags": 2,
+          "hint": ""
+        },
+        {
+          "url": "https://fixture.test/auto.bin",
+          "flags": 2,
+          "hint": ""
+        }
+      ],
+      "events": [
+        "cancel"
+      ],
+      "snapshots": [
+        {
+          "at": 3,
+          "status": "TLS CERTIFICATE VERIFICATION FAILED",
+          "body": "DOWNLOAD SOURCE PAGE\n\n\n NAMED FILE\n\n\n BOOLEAN FILE\n\n\n AUTOMATIC ATTACHMENT\n\n\n FAIL FILE\n\n\n CANCEL FILE\n\n\n PLAIN DOCUMENT\n\n\n POISON FILE\n\n\n LONG FILENAME\n\n [IMAGE: I]\n\n\n END OF SOURCE PAGE",
+          "saved_card_error": 0,
+          "document_length": 646
+        }
+      ],
+      "overlay_io_after_poison": null
+    },
+    {
+      "case": "dns-failed",
+      "instructions": 2942701,
+      "requests": [
+        {
+          "url": "https://fixture.test/page",
+          "flags": 2,
+          "hint": ""
+        },
+        {
+          "url": "https://fixture.test/auto.bin",
+          "flags": 2,
+          "hint": ""
+        }
+      ],
+      "events": [
+        "cancel"
+      ],
+      "snapshots": [
+        {
+          "at": 3,
+          "status": "DNS LOOKUP FAILED",
+          "body": "DOWNLOAD SOURCE PAGE\n\n\n NAMED FILE\n\n\n BOOLEAN FILE\n\n\n AUTOMATIC ATTACHMENT\n\n\n FAIL FILE\n\n\n CANCEL FILE\n\n\n PLAIN DOCUMENT\n\n\n POISON FILE\n\n\n LONG FILENAME\n\n [IMAGE: I]\n\n\n END OF SOURCE PAGE",
+          "saved_card_error": 0,
+          "document_length": 646
+        }
+      ],
+      "overlay_io_after_poison": null
+    },
+    {
+      "case": "cleanup-poison-then-local-image",
+      "instructions": 3810693,
+      "statuses": [
+        "HTTP DESCRIPTOR E9",
+        "HTTP FAULT: RESTART BROWSER"
+      ],
+      "overlay_io_after_poison": [
+        101
+      ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "board_evidence": true,
+  "firmware_candidate_sha256": "200ddc50df1ff68bd6dd94f2e8d9ba0b78246be19418a9e317adc452b0e34398",
+  "installed_flash_hash_verified": false,
+  "browser": "previous networkfix build, capture before sessionfix installation",
+  "displayed_error": "HTTP descriptor failed",
+  "client_generation_address": "0x1513",
+  "client_generation": 21,
+  "descriptor_magic": "ATNH",
+  "descriptor_generation": 1,
+  "descriptor_state": 1,
+  "transport_poisoned": false,
+  "transport_ready": true,
+  "arm_http_result": 0,
+  "arm_http_status": 200,
+  "tls_verify_flags": 0,
+  "cached_reset_sequence": 2,
+  "live_reset_sequence": 2,
+  "storage_busy": false,
+  "conclusion": "Confirmed client/server generation mismatch. Reset trigger not established.",
+  "repair": "Idle ARM session was CANCELLED (generation1,state5). Changed only Apple client generation byte from21 to1 through shadow debug port; firmware and SD files unchanged.",
+  "reload_test": "Injected one R key after RAM correction. Browser issued generation2 and received HTTP200/body bytes again; read-only UART observations."
+}

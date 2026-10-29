@@ -1,0 +1,246 @@
+{
+  "board_evidence": false,
+  "actual_6502": true,
+  "program_sha256": "d0bdef52f5e2608c4aa61830e1650dd94857635a14050e41e327fd0c009ff471",
+  "cases": [
+    {
+      "case": "timeout",
+      "requests": [
+        "https://fixture.test/fault"
+      ],
+      "controls": [
+        1
+      ],
+      "poll_returns": [
+        {
+          "ti_error": 9,
+          "raw_rc": 103,
+          "poisoned": 1
+        }
+      ],
+      "before_cancel": [
+        {
+          "raw_rc": 103,
+          "poisoned": 1
+        }
+      ],
+      "snapshots": [
+        {
+          "at": 28,
+          "text": "A2MONO\n [IMAGE: I]\n\n APPLETINI | EXAMPLE\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nHTTP DESCRIPTOR E9",
+          "poisoned": 1,
+          "raw_rc_after_cancel": 0,
+          "saved_api_error": 9,
+          "saved_card_error": 103
+        },
+        {
+          "at": 56,
+          "text": "A2MONO\n [IMAGE: I]\n\n APPLETINI | EXAMPLE\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nHTTP FAULT: RESTART BROWSER",
+          "poisoned": 1,
+          "raw_rc_after_cancel": 0,
+          "saved_api_error": 9,
+          "saved_card_error": 0
+        }
+      ],
+      "instructions": 5419693
+    },
+    {
+      "case": "oversize",
+      "requests": [
+        "https://fixture.test/fault"
+      ],
+      "controls": [
+        1
+      ],
+      "poll_returns": [
+        {
+          "ti_error": 9,
+          "raw_rc": 103,
+          "poisoned": 1
+        }
+      ],
+      "before_cancel": [
+        {
+          "raw_rc": 103,
+          "poisoned": 1
+        }
+      ],
+      "snapshots": [
+        {
+          "at": 28,
+          "text": "A2MONO\n [IMAGE: I]\n\n APPLETINI | EXAMPLE\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nHTTP DESCRIPTOR E9",
+          "poisoned": 1,
+          "raw_rc_after_cancel": 0,
+          "saved_api_error": 9,
+          "saved_card_error": 103
+        },
+        {
+          "at": 56,
+          "text": "A2MONO\n [IMAGE: I]\n\n APPLETINI | EXAMPLE\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nHTTP FAULT: RESTART BROWSER",
+          "poisoned": 1,
+          "raw_rc_after_cancel": 0,
+          "saved_api_error": 9,
+          "saved_card_error": 0
+        }
+      ],
+      "instructions": 5387805
+    },
+    {
+      "case": "generation",
+      "requests": [
+        "https://fixture.test/fault",
+        "https://fixture.test/later"
+      ],
+      "controls": [
+        1,
+        2,
+        1,
+        2
+      ],
+      "poll_returns": [
+        {
+          "ti_error": 5,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        }
+      ],
+      "before_cancel": [
+        {
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "raw_rc": 0,
+          "poisoned": 0
+        }
+      ],
+      "snapshots": [
+        {
+          "at": 28,
+          "text": "A2MONO\n [IMAGE: I]\n\n APPLETINI | EXAMPLE\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nHTTP DESCRIPTOR E5",
+          "poisoned": 0,
+          "raw_rc_after_cancel": 0,
+          "saved_api_error": 5,
+          "saved_card_error": 0
+        },
+        {
+          "at": 56,
+          "text": "LATER OK\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nIMAGES OFF | I LOADS",
+          "poisoned": 0,
+          "raw_rc_after_cancel": 0,
+          "saved_api_error": 0,
+          "saved_card_error": 0
+        }
+      ],
+      "instructions": 6264823
+    },
+    {
+      "case": "normal",
+      "requests": [
+        "https://fixture.test/fault",
+        "https://fixture.test/fault",
+        "https://fixture.test/later",
+        "https://fixture.test/later"
+      ],
+      "controls": [
+        1,
+        2,
+        1,
+        2,
+        1,
+        2,
+        1,
+        2
+      ],
+      "poll_returns": [
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        }
+      ],
+      "before_cancel": [
+        {
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "raw_rc": 0,
+          "poisoned": 0
+        }
+      ],
+      "snapshots": [
+        {
+          "at": 28,
+          "text": "FIRST OK\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nIMAGES OFF | I LOADS",
+          "poisoned": 0,
+          "raw_rc_after_cancel": 0,
+          "saved_api_error": 0,
+          "saved_card_error": 0
+        },
+        {
+          "at": 112,
+          "text": "LATER OK\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nIMAGES OFF | I LOADS",
+          "poisoned": 0,
+          "raw_rc_after_cancel": 0,
+          "saved_api_error": 0,
+          "saved_card_error": 0
+        }
+      ],
+      "instructions": 13687709
+    }
+  ]
+}

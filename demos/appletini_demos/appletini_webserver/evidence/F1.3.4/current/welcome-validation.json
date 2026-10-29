@@ -1,0 +1,44 @@
+{
+  "actual_6502": true,
+  "mocked_prodos_and_http": true,
+  "board_evidence": false,
+  "program_sha256": "91c65defeb969bd2073a98fd0abac763e4893f4a4592e3a771f11b25986d7035",
+  "visible_rows": 25,
+  "text": "A2MONO\n\n\n THE WEB, THROUGH AN APPLE II,\n\n\n A GRAPHICAL HTTPS BROWSER FOR APPLETINI, CRISP 560X384 MONOCHROME DHGRI, WITH\n THE PAGE RENDERED BY YOUR APPLE II,\n\n\n EXPLORE\n\n\n PRESS G FOR A URL, OR TAB THEN RETURN TO FOLLOW A LINK, SPACE/P SCROLL, B GOES\n BACK,\n\n\n VISIT APPLETINI | TRY EXAMPLE,COM\n\n\n MORE THAN TEXT\n\n\n PRESS I TO LOAD IMAGES: GIF, PNG AND BASELINE JPEG, IMAGES START OFF ON EACH\n PAGE, DOWNLOAD LINKS SAVE FILES TO YOUR SD CARD, A MOUSE IS OPTIONAL,",
+  "cases": [
+    {
+      "case": "home-I",
+      "instructions": 1365098,
+      "requests": [],
+      "mli_calls": [
+        101
+      ]
+    },
+    {
+      "case": "appletini-link",
+      "instructions": 1053045,
+      "requests": [
+        "https://appletini.org/"
+      ],
+      "mli_calls": [
+        200,
+        202,
+        204,
+        101
+      ]
+    },
+    {
+      "case": "example-link",
+      "instructions": 2250320,
+      "requests": [
+        "https://example.com/"
+      ],
+      "mli_calls": [
+        200,
+        202,
+        204,
+        101
+      ]
+    }
+  ]
+}

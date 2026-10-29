@@ -1,0 +1,37 @@
+{
+  "final_program_sha256": "d0bdef52f5e2608c4aa61830e1650dd94857635a14050e41e327fd0c009ff471",
+  "baseline_program_sha256": "7492df155d095c0834f775f03be0743042f058afbf1b6fd5e4df12bdc0631e52",
+  "board_evidence": false,
+  "exact_final": [
+    "downloads.json",
+    "descriptor-session.json",
+    "real-prodos-boot.json"
+  ],
+  "baseline_reports": [
+    "features-baseline.json",
+    "anchors-baseline.json",
+    "images-mouse-baseline.json",
+    "128k-prodos-baseline.json"
+  ],
+  "baseline_scope": "The baseline reports retain their original hashes. WEB/GIF/PNG/JPG are byte-identical. The resident payload differs only in the relocated mono_http_error call target and NET-size bytes; final NET and gateway paths have focused final-binary tests.",
+  "unchanged_overlays_sha256": {
+    "MONO.WEB": "472b9e7a7b8302e822d5cfcf4b4dc654e395855be5ae2e37c0cb7c2669dc4003",
+    "MONO.GIF": "4485ba2ffae081f6195b9ffaa89d0cb863bea83394486576a1afa56f0c39cd86",
+    "MONO.PNG": "786d2999a39443b97ac722da3bec0a39e29c1400d7d2c3def74b3fc89b3c16ff",
+    "MONO.JPG": "93ad5d116a91a86eaf9a023d4cbbfc3627a565be3fa04e87d3fa7fe729d88213"
+  },
+  "resident_payload_changes": [
+    {
+      "offset": 1202,
+      "before": 151,
+      "after": 195
+    },
+    {
+      "offset": 1493,
+      "before": 141,
+      "after": 213
+    }
+  ],
+  "standalone_source_test": "http-redirect-mobile.json executes a separately linked 6502 fixture compiled from final HTTP/mobile/net sources, with 16 cases.",
+  "native_tls_evidence": "archive28-baseline.json and archive29-validation.json use native firmware MbedTLS with the unchanged certificate profile; embedded29 and PEM29 verify archive.org with zero flags, old PEM28 still fails, and wrong hostname is rejected. They are not physical-board tests."
+}

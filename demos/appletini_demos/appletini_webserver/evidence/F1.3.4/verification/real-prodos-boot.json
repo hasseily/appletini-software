@@ -1,0 +1,192 @@
+{
+  "real_prodos_kernel": true,
+  "mocked_mli": false,
+  "board_evidence": false,
+  "runtime_sha256": {
+    "A2MONO.SYSTEM": "2d25dd1a7e48da10739873a56497b84ad0c30318e52a06856dd60c1d2d4e3e2a",
+    "A2MONO.payload.bin": "a3a03a6995969b8d75d55ba42c9317cafbbc8f5884c51c36cf8c3acc287fdaa6",
+    "MONO.GIF": "4485ba2ffae081f6195b9ffaa89d0cb863bea83394486576a1afa56f0c39cd86",
+    "MONO.JPG": "93ad5d116a91a86eaf9a023d4cbbfc3627a565be3fa04e87d3fa7fe729d88213",
+    "MONO.NET": "d6b4365581c7840a3ebf3d719b264c4c60e8615bebd52b2d22f87f6e134d58c1",
+    "MONO.PNG": "786d2999a39443b97ac722da3bec0a39e29c1400d7d2c3def74b3fc89b3c16ff",
+    "MONO.WEB": "472b9e7a7b8302e822d5cfcf4b4dc654e395855be5ae2e37c0cb7c2669dc4003"
+  },
+  "disk_sha256": "e59f3684594f4ba264593b8e8145bf2caa8af795b86ddcb373cfb4dccef62a4e",
+  "cases": [
+    {
+      "negative_old_io_policy": true,
+      "io_buffer": "0x400",
+      "open_accumulator": 86,
+      "open_carry": 1,
+      "machine": {
+        "profile": "vtw33",
+        "core": "w65c02s",
+        "video": "ntsc",
+        "ram_bytes": 393216,
+        "slot2": "off",
+        "slot4": "phasor",
+        "slot7": "smartport",
+        "clock_hz": 33333333.33333325,
+        "clock_unit": "cpu-cycle",
+        "clock_profile": "vtw33",
+        "nominal_cpu_hz": 33333333.33333325,
+        "timing": "functional-cpu-cycles-no-hardware-waits",
+        "hardware_timing_validated": false,
+        "cost_profile": null,
+        "cost_firmware_commit": null,
+        "target_firmware_commit": "1a3e8d38c57814471640c748879af28dbf16b266",
+        "program": {
+          "name": "A2MONO.po",
+          "path": "C:\\Users\\hasse\\source\\repos\\hasseily\\appletini-software\\demos\\appletini_demos\\appletini_webserver\\build\\mono-archive\\A2MONO.po",
+          "sha256": "e59f3684594f4ba264593b8e8145bf2caa8af795b86ddcb373cfb4dccef62a4e",
+          "bytes": 819200,
+          "launch": "rom-boot",
+          "roms": {
+            "slot7_rom": {
+              "path": "C:\\Users\\hasse\\source\\repos\\hasseily\\appletini-software\\libtini\\build-inputs\\native-roms\\smartport_a2retronet_style_c700.mem",
+              "sha256": "d8df8553530dd984a0452d708d8971f450c323fe83a240876ec7ef9b03b707de",
+              "bytes": 256
+            },
+            "slot7_c8_rom": {
+              "path": "C:\\Users\\hasse\\source\\repos\\hasseily\\appletini-software\\libtini\\build-inputs\\native-roms\\smartport_a2retronet_style_c800.mem",
+              "sha256": "3410c0649b12d15f4d82e4d66e9fd063b179e9822c4f2a1358410097c45d9f54",
+              "bytes": 2048
+            },
+            "firmware_execution": true,
+            "prodos_mli_traps": false,
+            "motherboard_rom": {
+              "path": "C:\\Users\\hasse\\source\\repos\\hasseily\\appletini-software\\libtini\\build-inputs\\native-roms\\Apple2e_Enhanced.rom",
+              "bytes": 16384,
+              "sha256": "aab38a03ca8deabbb2f868733148c2efd6f655a59cd9c5d058ef3e0b7aa86a1a"
+            }
+          }
+        }
+      },
+      "reported_error": "O$56"
+    },
+    {
+      "negative_old_io_policy": false,
+      "io_buffer": "0x1c00",
+      "open_accumulator": 0,
+      "open_carry": 0,
+      "machine": {
+        "profile": "vtw33",
+        "core": "w65c02s",
+        "video": "ntsc",
+        "ram_bytes": 393216,
+        "slot2": "off",
+        "slot4": "phasor",
+        "slot7": "smartport",
+        "clock_hz": 33333333.33333325,
+        "clock_unit": "cpu-cycle",
+        "clock_profile": "vtw33",
+        "nominal_cpu_hz": 33333333.33333325,
+        "timing": "functional-cpu-cycles-no-hardware-waits",
+        "hardware_timing_validated": false,
+        "cost_profile": null,
+        "cost_firmware_commit": null,
+        "target_firmware_commit": "1a3e8d38c57814471640c748879af28dbf16b266",
+        "program": {
+          "name": "A2MONO.po",
+          "path": "C:\\Users\\hasse\\source\\repos\\hasseily\\appletini-software\\demos\\appletini_demos\\appletini_webserver\\build\\mono-archive\\A2MONO.po",
+          "sha256": "e59f3684594f4ba264593b8e8145bf2caa8af795b86ddcb373cfb4dccef62a4e",
+          "bytes": 819200,
+          "launch": "rom-boot",
+          "roms": {
+            "slot7_rom": {
+              "path": "C:\\Users\\hasse\\source\\repos\\hasseily\\appletini-software\\libtini\\build-inputs\\native-roms\\smartport_a2retronet_style_c700.mem",
+              "sha256": "d8df8553530dd984a0452d708d8971f450c323fe83a240876ec7ef9b03b707de",
+              "bytes": 256
+            },
+            "slot7_c8_rom": {
+              "path": "C:\\Users\\hasse\\source\\repos\\hasseily\\appletini-software\\libtini\\build-inputs\\native-roms\\smartport_a2retronet_style_c800.mem",
+              "sha256": "3410c0649b12d15f4d82e4d66e9fd063b179e9822c4f2a1358410097c45d9f54",
+              "bytes": 2048
+            },
+            "firmware_execution": true,
+            "prodos_mli_traps": false,
+            "motherboard_rom": {
+              "path": "C:\\Users\\hasse\\source\\repos\\hasseily\\appletini-software\\libtini\\build-inputs\\native-roms\\Apple2e_Enhanced.rom",
+              "bytes": 16384,
+              "sha256": "aab38a03ca8deabbb2f868733148c2efd6f655a59cd9c5d058ef3e0b7aa86a1a"
+            }
+          }
+        }
+      },
+      "web_bytes_read": 10734,
+      "initial_overlay_sequence": [
+        "MONO.WEB",
+        "MONO.NET"
+      ],
+      "net_restored_web_without_mli": true,
+      "initial_screen_sha256": "537f64171266558173ef1ab076e4b9d0ace7b16c46ef27439a2bca6c5c7c9c32",
+      "overlay_sequence": [
+        "MONO.WEB",
+        "MONO.NET",
+        "MONO.GIF",
+        "MONO.WEB"
+      ],
+      "overlay_reads": [
+        {
+          "name": "MONO.WEB",
+          "bytes": 10734
+        },
+        {
+          "name": "MONO.NET",
+          "bytes": 6101
+        },
+        {
+          "name": "MONO.GIF",
+          "bytes": 4716
+        },
+        {
+          "name": "MONO.WEB",
+          "bytes": 10734
+        }
+      ],
+      "screen_sha256": "7327c4c551f38e4621086b5ae66fa3a3fa6da7123ff69f70477c0431df420766",
+      "state_at_browser_input": {
+        "cycles": 65866100,
+        "ticks": 65866100,
+        "steps": 18875807,
+        "frame_ticks": 556272,
+        "io_reads": 34751,
+        "io_writes": 202716,
+        "io_accesses": 237467,
+        "video_writes": 171218,
+        "shr_writes": 62659,
+        "bank": 0,
+        "newvideo": 1,
+        "stopped": 0,
+        "waiting": 0,
+        "irqs": 0,
+        "dhires": 1,
+        "registers": {
+          "pc": 28550,
+          "a": 0,
+          "x": 1,
+          "y": 4,
+          "s": 251,
+          "p": 39
+        },
+        "switches": {
+          "store80": false,
+          "ramrd": false,
+          "ramwrt": false,
+          "intcxrom": false,
+          "altzp": false,
+          "slotc3rom": true,
+          "col80": true,
+          "altchar": true,
+          "text": false,
+          "mixed": false,
+          "page2": false,
+          "hires": true
+        },
+        "halt": "",
+        "modeled_seconds": 1.975983000000005
+      },
+      "quit_call_reached": true
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "board_evidence": false,
+  "native_firmware_mbedtls": true,
+  "host": "archive.org",
+  "ipv4": "207.241.224.2",
+  "trust": "embedded28",
+  "roots_der_sha256": "e42076c7aedae935e4f8acf1f745cf81a4f1227c5da32627ce3bbf4dd18b82f2",
+  "client_exe_sha256": "1fbb7b1123f72b070ed31299570a23c88a007b37964de57b627059e37a8c969d",
+  "rsa": {
+    "suite": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+    "suite_id": 49199,
+    "rc": -9984,
+    "verify": "00004008",
+    "yields": 0,
+    "steps": 211,
+    "max_step_us": 245,
+    "heap_peak": 90024
+  },
+  "ecdsa_only": {
+    "suite_id": 49195,
+    "rc": -30592,
+    "verify": "ffffffff",
+    "steps": 198,
+    "max_step_us": 36
+  },
+  "chain": [
+    {
+      "subject": "*.archive.org",
+      "signature_hash": "sha256",
+      "sha256": "5186c5ec3d3e7b93a7466222166194428b7cf889350284a6d0c840e796cb1a4d"
+    },
+    {
+      "subject": "Go Daddy Secure Certificate Authority - G2",
+      "signature_hash": "sha256",
+      "sha256": "973a41276ffd01e027a2aad49e34c37846d3e976ff6a620b6712e33832041aa6"
+    },
+    {
+      "subject": "Go Daddy Root Certificate Authority - G2 (cross-signed)",
+      "signature_hash": "sha256",
+      "sha256": "3a2fbe92891e57fe05d57087f48e730f17e5a5f53ef403d618e5b74d7a7e6ecb"
+    },
+    {
+      "subject": "Go Daddy Class 2 Certification Authority (self-signed)",
+      "signature_hash": "sha1",
+      "sha256": "c3846bf24b9e93ca64274c0ec67c1ecc5e024ffcacd2d74019350e81fe546ae4"
+    }
+  ],
+  "finding": "Selected trust bundle lacks direct Go Daddy Root G2; untrusted chain reaches legacy SHA1 Class2 certificate. Add exact G2 anchor; preserve verification and hash profile.",
+  "verification_source_sha256": {
+    "ps_sources/frontend/http_service_mbedtls_config.h": "4da38aefe2d457686f30f7b086089ada1d805dac481bdcd8ae80d1bee2c09e81",
+    "ps_sources/frontend/https_probe_mbedtls_config.h": "af4536d0e31b8be7a059d44ab06055be7236a9853029554b69947f848035035f",
+    "third_party/mbedtls/library/x509_crt.c": "3b484debf0811babaa87450f689e38d7ed60257193c67bbe78f2c89d4226b027"
+  }
+}

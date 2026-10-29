@@ -1,0 +1,208 @@
+{
+  "model": "actual NMOS6502 browser; mocked ProDOS and native HTTP FIFO",
+  "board_evidence": false,
+  "startup_instructions": 1925777,
+  "strict_mli_policy": {
+    "old_open_0400_error": "0x56",
+    "instructions": 178647
+  },
+  "io_buffer_poisoned": true,
+  "program_sha256": "91c65defeb969bd2073a98fd0abac763e4893f4a4592e3a771f11b25986d7035",
+  "startup_cycles": 6720339,
+  "empty_prefix_initialized": true,
+  "cases": [
+    {
+      "case": "mixed-images-navigation",
+      "instructions": 44626304,
+      "cycles": 155480402,
+      "requests": [
+        "https://fixture.test/start",
+        "https://fixture.test/docs/checker.gif",
+        "https://fixture.test/images/tile.png",
+        "https://fixture.test/docs/other.html",
+        "https://fixture.test/docs/index.html",
+        "https://fixture.test/docs/next.html",
+        "https://fixture.test/docs/index.html",
+        "https://fixture.test/docs/checker.gif",
+        "https://fixture.test/images/tile.png",
+        "https://fixture.test/images/tile.png",
+        "https://fixture.test/tile.jpg",
+        "https://fixture.test/docs/checker.gif",
+        "https://fixture.test/images/tile.png",
+        "https://fixture.test/docs/index.html"
+      ],
+      "captures": [
+        {
+          "name": "integration-demo",
+          "sha256": "2a119e59eafed9835f6b40ed5a51c987a75f75c06de521bd090a768e66a738cb",
+          "instructions": 1925777,
+          "cycles": 6720339,
+          "requests": []
+        },
+        {
+          "name": "mixed-top",
+          "sha256": "5be71c31d6f18bcac9f6471d1871b7838f2366e849e544a701d35165e050ccec",
+          "instructions": 5806950,
+          "cycles": 20053832,
+          "requests": [
+            "https://fixture.test/start"
+          ]
+        },
+        {
+          "name": "mixed-before-scroll",
+          "sha256": "5be71c31d6f18bcac9f6471d1871b7838f2366e849e544a701d35165e050ccec",
+          "instructions": 20071660,
+          "cycles": 69830666,
+          "requests": [
+            "https://fixture.test/start",
+            "https://fixture.test/docs/checker.gif",
+            "https://fixture.test/images/tile.png",
+            "https://fixture.test/docs/other.html",
+            "https://fixture.test/docs/index.html",
+            "https://fixture.test/docs/next.html",
+            "https://fixture.test/docs/index.html"
+          ]
+        },
+        {
+          "name": "mixed-scrolled",
+          "sha256": "bb1679e1d4c62cee1d4116d32646e378290bcfc2b1c53877e454e019de7e40f8",
+          "instructions": 36687253,
+          "cycles": 127839584,
+          "requests": [
+            "https://fixture.test/start",
+            "https://fixture.test/docs/checker.gif",
+            "https://fixture.test/images/tile.png",
+            "https://fixture.test/docs/other.html",
+            "https://fixture.test/docs/index.html",
+            "https://fixture.test/docs/next.html",
+            "https://fixture.test/docs/index.html",
+            "https://fixture.test/docs/checker.gif",
+            "https://fixture.test/images/tile.png",
+            "https://fixture.test/images/tile.png",
+            "https://fixture.test/tile.jpg"
+          ]
+        },
+        {
+          "name": "mixed-reloaded",
+          "sha256": "5be71c31d6f18bcac9f6471d1871b7838f2366e849e544a701d35165e050ccec",
+          "instructions": 46551892,
+          "cycles": 162200091,
+          "requests": [
+            "https://fixture.test/start",
+            "https://fixture.test/docs/checker.gif",
+            "https://fixture.test/images/tile.png",
+            "https://fixture.test/docs/other.html",
+            "https://fixture.test/docs/index.html",
+            "https://fixture.test/docs/next.html",
+            "https://fixture.test/docs/index.html",
+            "https://fixture.test/docs/checker.gif",
+            "https://fixture.test/images/tile.png",
+            "https://fixture.test/images/tile.png",
+            "https://fixture.test/tile.jpg",
+            "https://fixture.test/docs/checker.gif",
+            "https://fixture.test/images/tile.png",
+            "https://fixture.test/docs/index.html"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "missing-png-overlay",
+      "instructions": 4467505,
+      "cycles": 15457824,
+      "requests": [
+        "https://fixture.test/png",
+        "https://fixture.test/images/tile.png"
+      ],
+      "captures": [
+        {
+          "name": "missing-png-overlay",
+          "sha256": "ab3139dd68a7174739a7dc63f9475bcff5203247af4804c6971a1270438832ff",
+          "instructions": 6393093,
+          "cycles": 22177513,
+          "requests": [
+            "https://fixture.test/png",
+            "https://fixture.test/images/tile.png"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "short-png-overlay",
+      "instructions": 4467528,
+      "cycles": 15457888,
+      "requests": [
+        "https://fixture.test/png",
+        "https://fixture.test/images/tile.png"
+      ],
+      "captures": [
+        {
+          "name": "short-png-overlay",
+          "sha256": "785458cb4a21a59c10590eba2ddedc3f61e86b362f1a9314a5286f2f12612776",
+          "instructions": 6393116,
+          "cycles": 22177577,
+          "requests": [
+            "https://fixture.test/png",
+            "https://fixture.test/images/tile.png"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "long-png-overlay",
+      "instructions": 4467528,
+      "cycles": 15457888,
+      "requests": [
+        "https://fixture.test/png",
+        "https://fixture.test/images/tile.png"
+      ],
+      "captures": [
+        {
+          "name": "long-png-overlay",
+          "sha256": "785458cb4a21a59c10590eba2ddedc3f61e86b362f1a9314a5286f2f12612776",
+          "instructions": 6393116,
+          "cycles": 22177577,
+          "requests": [
+            "https://fixture.test/png",
+            "https://fixture.test/images/tile.png"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "mouse-link",
+      "instructions": 1130911,
+      "cycles": 3991694,
+      "requests": [
+        "https://fixture.test/mouse",
+        "https://fixture.test/clicked"
+      ],
+      "captures": [
+        {
+          "name": "mouse-link",
+          "sha256": "35d9f6e27c7ea251bc92ffa35d01c2ae0ec59a293085d623953f7d44c214b4da",
+          "instructions": 6508720,
+          "cycles": 22562667,
+          "requests": [
+            "https://fixture.test/mouse",
+            "https://fixture.test/clicked"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "mouse-footer-quit",
+      "instructions": 6203,
+      "cycles": 20577,
+      "requests": [
+        "https://fixture.test/mouse"
+      ],
+      "captures": [
+        {
+          "name": "mouse-footer-quit",
+          "sha256": "9fc82d721d736eb534d6aa98d4d11ab9df5e2f4fd8b3ca30d11ae985259051c9"
+        }
+      ]
+    }
+  ]
+}

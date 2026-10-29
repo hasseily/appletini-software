@@ -6,7 +6,7 @@
 static uint8_t reply[128];
 static ti_net_status status;
 static ti_net_chunk chunk;
-static ti_net_request request={"GET",0,0,0,0,0};
+static ti_net_request request={"GET",0,0,0,0,0,0};
 static char content_type[128];
 static const char *error;
 /* The browser owns its near RAM. These stubs adapt the standalone MIT client

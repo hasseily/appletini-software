@@ -1,0 +1,246 @@
+{
+  "board_evidence": false,
+  "actual_6502": true,
+  "program_sha256": "91c65defeb969bd2073a98fd0abac763e4893f4a4592e3a771f11b25986d7035",
+  "cases": [
+    {
+      "case": "timeout",
+      "requests": [
+        "https://fixture.test/fault"
+      ],
+      "controls": [
+        1
+      ],
+      "poll_returns": [
+        {
+          "ti_error": 9,
+          "raw_rc": 103,
+          "poisoned": 1
+        }
+      ],
+      "before_cancel": [
+        {
+          "raw_rc": 103,
+          "poisoned": 1
+        }
+      ],
+      "snapshots": [
+        {
+          "at": 28,
+          "text": "A2MONO\n\n\n THE WEB, THROUGH AN APPLE II,\n\n\n A GRAPHICAL HTTPS BROWSER FOR APPLETINI, CRISP 560X384 MONOCHROME DHGRI, WITH\n THE PAGE RENDERED BY YOUR APPLE II,\n\n\n EXPLORE\n\n\n PRESS G FOR A URL, OR TAB THEN RETURN TO FOLLOW A LINK, SPACE/P SCROLL, B GOES\n BACK,\n\n\n VISIT APPLETINI | TRY EXAMPLE,COM\n\n\n MORE THAN TEXT\n\n\n PRESS I TO LOAD IMAGES: GIF, PNG AND BASELINE JPEG, IMAGES START OFF ON EACH\n PAGE, DOWNLOAD LINKS SAVE FILES TO YOUR SD CARD, A MOUSE IS OPTIONAL,\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nHTTP DESCRIPTOR E9",
+          "poisoned": 1,
+          "raw_rc_after_cancel": 0,
+          "saved_api_error": 9,
+          "saved_card_error": 103
+        },
+        {
+          "at": 56,
+          "text": "A2MONO\n\n\n THE WEB, THROUGH AN APPLE II,\n\n\n A GRAPHICAL HTTPS BROWSER FOR APPLETINI, CRISP 560X384 MONOCHROME DHGRI, WITH\n THE PAGE RENDERED BY YOUR APPLE II,\n\n\n EXPLORE\n\n\n PRESS G FOR A URL, OR TAB THEN RETURN TO FOLLOW A LINK, SPACE/P SCROLL, B GOES\n BACK,\n\n\n VISIT APPLETINI | TRY EXAMPLE,COM\n\n\n MORE THAN TEXT\n\n\n PRESS I TO LOAD IMAGES: GIF, PNG AND BASELINE JPEG, IMAGES START OFF ON EACH\n PAGE, DOWNLOAD LINKS SAVE FILES TO YOUR SD CARD, A MOUSE IS OPTIONAL,\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nHTTP FAULT: RESTART BROWSER",
+          "poisoned": 1,
+          "raw_rc_after_cancel": 0,
+          "saved_api_error": 9,
+          "saved_card_error": 0
+        }
+      ],
+      "instructions": 5419693
+    },
+    {
+      "case": "oversize",
+      "requests": [
+        "https://fixture.test/fault"
+      ],
+      "controls": [
+        1
+      ],
+      "poll_returns": [
+        {
+          "ti_error": 9,
+          "raw_rc": 103,
+          "poisoned": 1
+        }
+      ],
+      "before_cancel": [
+        {
+          "raw_rc": 103,
+          "poisoned": 1
+        }
+      ],
+      "snapshots": [
+        {
+          "at": 28,
+          "text": "A2MONO\n\n\n THE WEB, THROUGH AN APPLE II,\n\n\n A GRAPHICAL HTTPS BROWSER FOR APPLETINI, CRISP 560X384 MONOCHROME DHGRI, WITH\n THE PAGE RENDERED BY YOUR APPLE II,\n\n\n EXPLORE\n\n\n PRESS G FOR A URL, OR TAB THEN RETURN TO FOLLOW A LINK, SPACE/P SCROLL, B GOES\n BACK,\n\n\n VISIT APPLETINI | TRY EXAMPLE,COM\n\n\n MORE THAN TEXT\n\n\n PRESS I TO LOAD IMAGES: GIF, PNG AND BASELINE JPEG, IMAGES START OFF ON EACH\n PAGE, DOWNLOAD LINKS SAVE FILES TO YOUR SD CARD, A MOUSE IS OPTIONAL,\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nHTTP DESCRIPTOR E9",
+          "poisoned": 1,
+          "raw_rc_after_cancel": 0,
+          "saved_api_error": 9,
+          "saved_card_error": 103
+        },
+        {
+          "at": 56,
+          "text": "A2MONO\n\n\n THE WEB, THROUGH AN APPLE II,\n\n\n A GRAPHICAL HTTPS BROWSER FOR APPLETINI, CRISP 560X384 MONOCHROME DHGRI, WITH\n THE PAGE RENDERED BY YOUR APPLE II,\n\n\n EXPLORE\n\n\n PRESS G FOR A URL, OR TAB THEN RETURN TO FOLLOW A LINK, SPACE/P SCROLL, B GOES\n BACK,\n\n\n VISIT APPLETINI | TRY EXAMPLE,COM\n\n\n MORE THAN TEXT\n\n\n PRESS I TO LOAD IMAGES: GIF, PNG AND BASELINE JPEG, IMAGES START OFF ON EACH\n PAGE, DOWNLOAD LINKS SAVE FILES TO YOUR SD CARD, A MOUSE IS OPTIONAL,\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nHTTP FAULT: RESTART BROWSER",
+          "poisoned": 1,
+          "raw_rc_after_cancel": 0,
+          "saved_api_error": 9,
+          "saved_card_error": 0
+        }
+      ],
+      "instructions": 5387805
+    },
+    {
+      "case": "generation",
+      "requests": [
+        "https://fixture.test/fault",
+        "https://fixture.test/later"
+      ],
+      "controls": [
+        1,
+        2,
+        1,
+        2
+      ],
+      "poll_returns": [
+        {
+          "ti_error": 5,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        }
+      ],
+      "before_cancel": [
+        {
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "raw_rc": 0,
+          "poisoned": 0
+        }
+      ],
+      "snapshots": [
+        {
+          "at": 28,
+          "text": "A2MONO\n\n\n THE WEB, THROUGH AN APPLE II,\n\n\n A GRAPHICAL HTTPS BROWSER FOR APPLETINI, CRISP 560X384 MONOCHROME DHGRI, WITH\n THE PAGE RENDERED BY YOUR APPLE II,\n\n\n EXPLORE\n\n\n PRESS G FOR A URL, OR TAB THEN RETURN TO FOLLOW A LINK, SPACE/P SCROLL, B GOES\n BACK,\n\n\n VISIT APPLETINI | TRY EXAMPLE,COM\n\n\n MORE THAN TEXT\n\n\n PRESS I TO LOAD IMAGES: GIF, PNG AND BASELINE JPEG, IMAGES START OFF ON EACH\n PAGE, DOWNLOAD LINKS SAVE FILES TO YOUR SD CARD, A MOUSE IS OPTIONAL,\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nHTTP DESCRIPTOR E5",
+          "poisoned": 0,
+          "raw_rc_after_cancel": 0,
+          "saved_api_error": 5,
+          "saved_card_error": 0
+        },
+        {
+          "at": 56,
+          "text": "LATER OK\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nIMAGES OFF | I LOADS",
+          "poisoned": 0,
+          "raw_rc_after_cancel": 0,
+          "saved_api_error": 0,
+          "saved_card_error": 0
+        }
+      ],
+      "instructions": 6264823
+    },
+    {
+      "case": "normal",
+      "requests": [
+        "https://fixture.test/fault",
+        "https://fixture.test/fault",
+        "https://fixture.test/later",
+        "https://fixture.test/later"
+      ],
+      "controls": [
+        1,
+        2,
+        1,
+        2,
+        1,
+        2,
+        1,
+        2
+      ],
+      "poll_returns": [
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "ti_error": 0,
+          "raw_rc": 0,
+          "poisoned": 0
+        }
+      ],
+      "before_cancel": [
+        {
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "raw_rc": 0,
+          "poisoned": 0
+        },
+        {
+          "raw_rc": 0,
+          "poisoned": 0
+        }
+      ],
+      "snapshots": [
+        {
+          "at": 28,
+          "text": "FIRST OK\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nIMAGES OFF | I LOADS",
+          "poisoned": 0,
+          "raw_rc_after_cancel": 0,
+          "saved_api_error": 0,
+          "saved_card_error": 0
+        },
+        {
+          "at": 112,
+          "text": "LATER OK\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nIMAGES OFF | I LOADS",
+          "poisoned": 0,
+          "raw_rc_after_cancel": 0,
+          "saved_api_error": 0,
+          "saved_card_error": 0
+        }
+      ],
+      "instructions": 13687709
+    }
+  ]
+}

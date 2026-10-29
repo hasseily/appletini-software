@@ -1,0 +1,16 @@
+picojpeg v1.1
+Author: Rich Geldreich
+License: Public domain (see notices in picojpeg.c and picojpeg.h).
+Source: https://github.com/richgel999/picojpeg/tree/8ab33a909b4115ace4a952b7ffcb64c350f9298d
+Fetched: 2026-10-29
+Local changes:
+- cc65 JPEG/JPEGBSS overlay segment pragmas.
+- Native Y output only; no RGB buffers, chroma IDCT or colour conversion.
+- Compact baseline entropy path; consume chroma coefficients without rendering.
+- No reduced 1/8 output mode; maximum source dimension 2048.
+- Huffman index bounds, canonical tree checks and 8-bit quantization only.
+- Propagate DHT/DQT/DRI/variable-marker parser errors to the caller.
+- Remove unused optional findEOI function from the compiled port.
+
+mono_jpeg.c supplies bounded input, SOI/EOI checks, viewport scaling and dithering.
+The upstream author labels picojpeg.c and picojpeg.h as public domain.

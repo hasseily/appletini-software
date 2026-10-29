@@ -18,7 +18,11 @@ segment: .res 1
 vbl: .res 1
 changes: .res 1
 watchdog: .res 3
+.ifdef MONO_NET_OVERLAY
+.segment "NET"
+.else
 .segment "CODE"
+.endif
 _ti_net_lock:
     php
     pla

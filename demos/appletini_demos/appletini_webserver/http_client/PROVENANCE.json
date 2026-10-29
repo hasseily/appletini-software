@@ -8,8 +8,10 @@
     "include/libtini/types.h": "01e647403fc225da216feeb1bddab052aa38386bf0bbcc33e0f5e138461b744f"
   },
   "changes": [
-    "Place code and scratch in CODE/BSS",
+    "Use CODE/RODATA and BSS for standalone A2LYNX; MONO_NET_OVERLAY selects NET code/rodata while BSS remains resident across overlay reloads",
     "Inline the single-client resident poison flag",
-    "Replace STZ/BRA with 6502 instructions"
+    "Replace STZ/BRA with 6502 instructions",
+    "Add the F1.3.4 NET v1 SD-download capability, AUTO/FORCE START flags, optional filename hint, progress/result descriptor fields and selector 0x87 completed path",
+    "Keep the generation, readiness and poisoned-FIFO state resident; extend the bounded request transmission to seven segments"
   ]
 }

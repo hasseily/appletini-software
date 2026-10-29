@@ -14,6 +14,16 @@
 #define TI_NET_VALUE 0x84
 #define TI_NET_URL 0x85
 #define TI_NET_CONTENT_TYPE 0x86
+#define TI_NET_DOWNLOAD_PATH 0x87
+#define TI_NET_RETAIN 1
+#define TI_NET_AUTO_DOWNLOAD 2
+#define TI_NET_FORCE_DOWNLOAD 4
+#define TI_NET_DL_NONE 0
+#define TI_NET_DL_WAITING 1
+#define TI_NET_DL_WRITING 2
+#define TI_NET_DL_DONE 3
+#define TI_NET_DL_FAILED 4
+#define TI_NET_DL_CANCELLED 5
 #define TI_NET_MORE 1
 #define TI_NET_END 2
 #define TI_NET_SOURCE_FAILED 3
@@ -30,12 +40,17 @@ typedef struct {
     const void *body;
     uint16_t body_length;
     uint8_t retain;
+    const char *download_name;
 } ti_net_request;
 typedef struct {
     uint8_t generation, state, retained, json_state, json_type;
     int16_t result;
     uint16_t http_status, url_length, content_type_length;
     uint32_t body_length, buffered, value_length;
+    uint8_t download_state, download_flags;
+    int16_t download_result;
+    uint32_t download_written, download_total;
+    uint16_t download_path_length;
 } ti_net_status;
 typedef struct { uint8_t state; uint16_t length; const uint8_t *data; } ti_net_chunk;
 /* Probe and poll borrow 64 writable MAIN bytes. Read borrows 9..512 bytes.
@@ -55,4 +70,5 @@ uint8_t ti_net_last_error(void);
 /* Profile clock from the ARM, zero if unknown. Pass a nonzero value to
  * ti_audio_config.via_hz before starting audio. */
 uint32_t ti_net_via_hz(void);
+uint8_t ti_net_download_capable(void);
 #endif

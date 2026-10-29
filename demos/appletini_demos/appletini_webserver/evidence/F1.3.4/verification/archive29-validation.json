@@ -1,0 +1,66 @@
+{
+  "native_firmware_mbedtls": true,
+  "board_evidence": false,
+  "host": "archive.org",
+  "ipv4": "207.241.224.2",
+  "baseline_report": "archive28-baseline.json",
+  "policy": "Exact Go Daddy Root Certificate Authority - G2 added; TLS verification rules unchanged",
+  "anchor_sha256": "45140b3247eb9cc8c5b4f0d7b53091f73292089e6e5a63e2749dd3aca9198eda",
+  "cases": [
+    {
+      "name": "embedded29",
+      "suite_id": 49199,
+      "rc": 0,
+      "verify": "00000000",
+      "yields": 216,
+      "steps": 544,
+      "max_step_us": 195,
+      "heap_peak": 91520,
+      "heap_capacity": 524288
+    },
+    {
+      "name": "legacy28_override",
+      "suite_id": 49199,
+      "rc": -9984,
+      "verify": "00004008",
+      "yields": 0,
+      "steps": 204,
+      "max_step_us": 261,
+      "heap_peak": 115960,
+      "heap_capacity": 524288
+    },
+    {
+      "name": "pem29_override",
+      "suite_id": 49199,
+      "rc": 0,
+      "verify": "00000000",
+      "yields": 216,
+      "steps": 541,
+      "max_step_us": 336,
+      "heap_peak": 118496,
+      "heap_capacity": 524288
+    },
+    {
+      "name": "wrong_hostname",
+      "suite_id": 49199,
+      "rc": -9984,
+      "verify": "00000004",
+      "yields": 0,
+      "steps": 211,
+      "max_step_us": 262,
+      "heap_peak": 91528,
+      "heap_capacity": 524288
+    }
+  ],
+  "verification_source_sha256": {
+    "ps_sources/frontend/http_service_mbedtls_config.h": "4da38aefe2d457686f30f7b086089ada1d805dac481bdcd8ae80d1bee2c09e81",
+    "ps_sources/frontend/https_probe_mbedtls_config.h": "af4536d0e31b8be7a059d44ab06055be7236a9853029554b69947f848035035f",
+    "third_party/mbedtls/library/x509_crt.c": "3b484debf0811babaa87450f689e38d7ed60257193c67bbe78f2c89d4226b027"
+  },
+  "verification_sources_unchanged": true,
+  "client_exe_sha256": "f049427fdaeee2924cb833640f6da459e85bf4bbc4a9f9a95ce3e78fbd9e58fa",
+  "generated_source_sha256": "3fa7d20680c21dac8d21456ae2a5bcb2829383747a6ca8f6d504d0838701cefb",
+  "root_count": 29,
+  "pem_sha256": "8f305ef87b0fc03cb11f0f8ec2d3372c811940e52894f847d3bf4efd2c9cc94c",
+  "embedded_der_sha256": "6df506dd67948631e69c5a5338b6eecbd4028ed33f1fbd075866e759176cb4fc"
+}

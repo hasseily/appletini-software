@@ -1,0 +1,50 @@
+{
+  "source": "C:\\Users\\hasse\\source\\repos\\hasseily\\appletini-software\\demos\\appletini_demos\\appletini_webserver\\build\\mono",
+  "files": {
+    "A2MONO.bin": {
+      "bytes": 12092,
+      "sha256": "91c65defeb969bd2073a98fd0abac763e4893f4a4592e3a771f11b25986d7035"
+    },
+    "A2MONO.lbl": {
+      "bytes": 21356,
+      "sha256": "1fbd22ac57808d3faf29692751bd90a2c981f71ff5b687b0c8aabdb26644bb4a"
+    },
+    "A2MONO.map": {
+      "bytes": 303324,
+      "sha256": "8597104770d0144e86d4024bef82bccb6e1bdfa38b29dd05396f3093e0b1ff75"
+    },
+    "A2MONO.payload.bin": {
+      "bytes": 12036,
+      "sha256": "2f1e2e6aa5fa450d1c27e495e27bc404f78a133b44be6aa45d3220b4cfac566b"
+    },
+    "loader.lbl": {
+      "bytes": 62,
+      "sha256": "deb7d65d8ae4b32639acdb755193542a473b3c98e5d5a922f27cd33ccc8472ba"
+    },
+    "manifest.json": {
+      "bytes": 1702,
+      "sha256": "4ce69112f1aa8c76ba8fbcf71f93d73a139b670eb8bd72533eb9bc576fc94f70"
+    },
+    "MONO.GIF": {
+      "bytes": 4716,
+      "sha256": "4485ba2ffae081f6195b9ffaa89d0cb863bea83394486576a1afa56f0c39cd86"
+    },
+    "MONO.JPG": {
+      "bytes": 11176,
+      "sha256": "b06cab864dc0d7d60dbc5448d8351edf4c7b5c4196a5920c0e0378db0cca05f5"
+    },
+    "MONO.NET": {
+      "bytes": 6101,
+      "sha256": "33fa8b3a23c8a480992c97a3bc70ee01f9265387044f6806e7591d1e53e547b5"
+    },
+    "MONO.PNG": {
+      "bytes": 8447,
+      "sha256": "786d2999a39443b97ac722da3bec0a39e29c1400d7d2c3def74b3fc89b3c16ff"
+    },
+    "MONO.WEB": {
+      "bytes": 10616,
+      "sha256": "07f0982b8595a1dae70ceba891cb73a46e01341c0791220f745ff11004d0d1b0"
+    }
+  },
+  "board_evidence": false
+}

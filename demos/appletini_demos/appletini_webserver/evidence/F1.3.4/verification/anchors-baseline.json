@@ -1,0 +1,217 @@
+{
+  "model": "actual NMOS6502 browser; modeled HTTP FIFO/ProDOS; synthesized mouse event",
+  "board_evidence": false,
+  "program_sha256": "7492df155d095c0834f775f03be0743042f058afbf1b6fd5e4df12bdc0631e52",
+  "cases": [
+    {
+      "case": "keyboard-id",
+      "requests": [
+        "https://fixture.test/docs/page?q=1"
+      ],
+      "navigation_instructions": 955877,
+      "framebuffer_sha256": "1855f7fd088a3171a31f3a7c1ab17af0d5ff61d3dd0afc09d82684e417dfad67",
+      "visible_text": " DESTINATION VISIBLE\n\n\n AFTER DESTINATION\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    },
+    {
+      "case": "legacy-name",
+      "requests": [
+        "https://fixture.test/docs/page?q=1"
+      ],
+      "navigation_instructions": 1104848,
+      "framebuffer_sha256": "59b91eaed68b1c0f83917f2c56a51c07787bbceb8b354db2853d7896649316c0",
+      "visible_text": "\n DESTINATION VISIBLE\n\n\n AFTER DESTINATION\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    },
+    {
+      "case": "percent-space-plus",
+      "requests": [
+        "https://fixture.test/docs/page?q=1"
+      ],
+      "navigation_instructions": 953728,
+      "framebuffer_sha256": "1855f7fd088a3171a31f3a7c1ab17af0d5ff61d3dd0afc09d82684e417dfad67",
+      "visible_text": " DESTINATION VISIBLE\n\n\n AFTER DESTINATION\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    },
+    {
+      "case": "case-sensitive-id",
+      "requests": [
+        "https://fixture.test/docs/page?q=1"
+      ],
+      "navigation_instructions": 292241,
+      "framebuffer_sha256": "02226b98f67886611280ffd3dd05511523292d1684b9425f7d79405d8fde508b",
+      "visible_text": "\n\n FILLER 13\n\n\n FILLER 14\n\n\n FILLER 15\n\n\n FILLER 16\n\n\n FILLER 17\n\n\n FILLER 18\n\n\n FILLER 19\n\n\n FILLER 20\n\n\n FILLER 21\n\n\n FILLER 22\n\n\n FILLER 23\n\n\n FILLER 24\n\n\n FILLER 25\n\n\n FILLER 26\n"
+    },
+    {
+      "case": "html-attribute-amp",
+      "requests": [
+        "https://fixture.test/docs/page?q=1"
+      ],
+      "navigation_instructions": 953712,
+      "framebuffer_sha256": "1855f7fd088a3171a31f3a7c1ab17af0d5ff61d3dd0afc09d82684e417dfad67",
+      "visible_text": " DESTINATION VISIBLE\n\n\n AFTER DESTINATION\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    },
+    {
+      "case": "utf8-percent-bytes",
+      "requests": [
+        "https://fixture.test/docs/page?q=1"
+      ],
+      "navigation_instructions": 950152,
+      "framebuffer_sha256": "1855f7fd088a3171a31f3a7c1ab17af0d5ff61d3dd0afc09d82684e417dfad67",
+      "visible_text": " DESTINATION VISIBLE\n\n\n AFTER DESTINATION\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    },
+    {
+      "case": "unknown-fragment",
+      "requests": [
+        "https://fixture.test/docs/page?q=1"
+      ],
+      "navigation_instructions": 291310,
+      "framebuffer_sha256": "02226b98f67886611280ffd3dd05511523292d1684b9425f7d79405d8fde508b",
+      "visible_text": "\n\n FILLER 13\n\n\n FILLER 14\n\n\n FILLER 15\n\n\n FILLER 16\n\n\n FILLER 17\n\n\n FILLER 18\n\n\n FILLER 19\n\n\n FILLER 20\n\n\n FILLER 21\n\n\n FILLER 22\n\n\n FILLER 23\n\n\n FILLER 24\n\n\n FILLER 25\n\n\n FILLER 26\n"
+    },
+    {
+      "case": "trailing-percent",
+      "requests": [
+        "https://fixture.test/docs/page?q=1"
+      ],
+      "navigation_instructions": 4570,
+      "framebuffer_sha256": "02226b98f67886611280ffd3dd05511523292d1684b9425f7d79405d8fde508b",
+      "visible_text": "\n\n FILLER 13\n\n\n FILLER 14\n\n\n FILLER 15\n\n\n FILLER 16\n\n\n FILLER 17\n\n\n FILLER 18\n\n\n FILLER 19\n\n\n FILLER 20\n\n\n FILLER 21\n\n\n FILLER 22\n\n\n FILLER 23\n\n\n FILLER 24\n\n\n FILLER 25\n\n\n FILLER 26\n"
+    },
+    {
+      "case": "short-percent",
+      "requests": [
+        "https://fixture.test/docs/page?q=1"
+      ],
+      "navigation_instructions": 4918,
+      "framebuffer_sha256": "02226b98f67886611280ffd3dd05511523292d1684b9425f7d79405d8fde508b",
+      "visible_text": "\n\n FILLER 13\n\n\n FILLER 14\n\n\n FILLER 15\n\n\n FILLER 16\n\n\n FILLER 17\n\n\n FILLER 18\n\n\n FILLER 19\n\n\n FILLER 20\n\n\n FILLER 21\n\n\n FILLER 22\n\n\n FILLER 23\n\n\n FILLER 24\n\n\n FILLER 25\n\n\n FILLER 26\n"
+    },
+    {
+      "case": "invalid-percent",
+      "requests": [
+        "https://fixture.test/docs/page?q=1"
+      ],
+      "navigation_instructions": 5136,
+      "framebuffer_sha256": "02226b98f67886611280ffd3dd05511523292d1684b9425f7d79405d8fde508b",
+      "visible_text": "\n\n FILLER 13\n\n\n FILLER 14\n\n\n FILLER 15\n\n\n FILLER 16\n\n\n FILLER 17\n\n\n FILLER 18\n\n\n FILLER 19\n\n\n FILLER 20\n\n\n FILLER 21\n\n\n FILLER 22\n\n\n FILLER 23\n\n\n FILLER 24\n\n\n FILLER 25\n\n\n FILLER 26\n"
+    },
+    {
+      "case": "nul-percent",
+      "requests": [
+        "https://fixture.test/docs/page?q=1"
+      ],
+      "navigation_instructions": 7285,
+      "framebuffer_sha256": "02226b98f67886611280ffd3dd05511523292d1684b9425f7d79405d8fde508b",
+      "visible_text": "\n\n FILLER 13\n\n\n FILLER 14\n\n\n FILLER 15\n\n\n FILLER 16\n\n\n FILLER 17\n\n\n FILLER 18\n\n\n FILLER 19\n\n\n FILLER 20\n\n\n FILLER 21\n\n\n FILLER 22\n\n\n FILLER 23\n\n\n FILLER 24\n\n\n FILLER 25\n\n\n FILLER 26\n"
+    },
+    {
+      "case": "absolute-same-query",
+      "requests": [
+        "https://fixture.test/docs/page?q=1"
+      ],
+      "navigation_instructions": 984441,
+      "framebuffer_sha256": "1855f7fd088a3171a31f3a7c1ab17af0d5ff61d3dd0afc09d82684e417dfad67",
+      "visible_text": " DESTINATION VISIBLE\n\n\n AFTER DESTINATION\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    },
+    {
+      "case": "relative-same-query",
+      "requests": [
+        "https://fixture.test/docs/page?q=1"
+      ],
+      "navigation_instructions": 965256,
+      "framebuffer_sha256": "1855f7fd088a3171a31f3a7c1ab17af0d5ff61d3dd0afc09d82684e417dfad67",
+      "visible_text": " DESTINATION VISIBLE\n\n\n AFTER DESTINATION\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    },
+    {
+      "case": "query-only-same",
+      "requests": [
+        "https://fixture.test/docs/page?q=1"
+      ],
+      "navigation_instructions": 962213,
+      "framebuffer_sha256": "1855f7fd088a3171a31f3a7c1ab17af0d5ff61d3dd0afc09d82684e417dfad67",
+      "visible_text": " DESTINATION VISIBLE\n\n\n AFTER DESTINATION\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    },
+    {
+      "case": "root-without-slash",
+      "requests": [
+        "https://fixture.test/"
+      ],
+      "navigation_instructions": 947565,
+      "framebuffer_sha256": "208273d16ee03dc2fc7cb865e21464d23e3b04c5808a567b56af8e238493b742",
+      "visible_text": " DESTINATION VISIBLE\n\n\n AFTER DESTINATION\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    },
+    {
+      "case": "root-query-without-slash",
+      "requests": [
+        "https://fixture.test/?q=1"
+      ],
+      "navigation_instructions": 953931,
+      "framebuffer_sha256": "b575fdd503f93ceee10fcf83aeccdcc44a62407a47c9c4d7b44ac106a376ae62",
+      "visible_text": " DESTINATION VISIBLE\n\n\n AFTER DESTINATION\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    },
+    {
+      "case": "top-empty",
+      "requests": [
+        "https://fixture.test/top"
+      ],
+      "navigation_instructions": 942101,
+      "framebuffer_sha256": "6d802d6c3db87527dd73bee766d45dc11443f4f4f4e527f1304d83a487681b98",
+      "visible_text": " PAGE TOP\n\n\n FILLER 00\n\n\n FILLER 01\n\n\n FILLER 02\n\n\n FILLER 03\n\n\n FILLER 04\n\n\n FILLER 05\n\n\n FILLER 06\n\n\n FILLER 07\n\n\n FILLER 08\n\n\n FILLER 09\n\n\n FILLER 10\n\n\n FILLER 11\n\n\n FILLER 12\n\n\n FILLER 13"
+    },
+    {
+      "case": "top-fallback",
+      "requests": [
+        "https://fixture.test/top"
+      ],
+      "navigation_instructions": 1199177,
+      "framebuffer_sha256": "6d802d6c3db87527dd73bee766d45dc11443f4f4f4e527f1304d83a487681b98",
+      "visible_text": " PAGE TOP\n\n\n FILLER 00\n\n\n FILLER 01\n\n\n FILLER 02\n\n\n FILLER 03\n\n\n FILLER 04\n\n\n FILLER 05\n\n\n FILLER 06\n\n\n FILLER 07\n\n\n FILLER 08\n\n\n FILLER 09\n\n\n FILLER 10\n\n\n FILLER 11\n\n\n FILLER 12\n\n\n FILLER 13"
+    },
+    {
+      "case": "id-before-legacy-name",
+      "requests": [
+        "https://fixture.test/docs/page?q=1"
+      ],
+      "navigation_instructions": 1151216,
+      "framebuffer_sha256": "456e4a2190edd3a4844cbecd9f8eff52dd798f7854b95d4436beec39819a375d",
+      "visible_text": " ID PRIORITY\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    },
+    {
+      "case": "duplicate-id-first",
+      "requests": [
+        "https://fixture.test/docs/page?q=1"
+      ],
+      "navigation_instructions": 1325356,
+      "framebuffer_sha256": "60cfceb9d2e68ebebe238113bed031b136f939597714066ba568898621fdd1a5",
+      "visible_text": " FIRST ID\n\n\n FILLER 00\n\n\n FILLER 01\n\n\n FILLER 02\n\n\n FILLER 03\n\n\n FILLER 04\n\n\n FILLER 05\n\n\n FILLER 06\n\n\n FILLER 07\n\n\n FILLER 08\n\n\n FILLER 09\n\n\n FILLER 10\n\n\n FILLER 11\n\n\n FILLER 12\n\n\n FILLER 13"
+    },
+    {
+      "case": "different-query-fetches",
+      "requests": [
+        "https://fixture.test/docs/page?q=1",
+        "https://fixture.test/docs/page?q=2"
+      ],
+      "navigation_instructions": 1061526,
+      "framebuffer_sha256": "c58a9b7b677b2be4b1739b3a0bc51548f43c1b833d268744c78b0b9a938588c1",
+      "visible_text": " OTHER QUERY PAGE\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    },
+    {
+      "case": "enabled-images-survive-anchor-and-overlays",
+      "requests": [
+        "https://fixture.test/images",
+        "https://fixture.test/near.gif",
+        "https://fixture.test/far.gif"
+      ],
+      "navigation_instructions": 1720870,
+      "framebuffer_sha256": "91b63ac75b47e7867ef3235c8cb29b70934b757c47d81f131ea1248858827ee8",
+      "visible_text": " ???\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n IMAGE DESTINATION\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    },
+    {
+      "case": "mouse-local-anchor",
+      "requests": [
+        "https://fixture.test/docs/page?q=1"
+      ],
+      "navigation_instructions": 1097127,
+      "visible_text": " DESTINATION VISIBLE\n\n\n AFTER DESTINATION\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+    }
+  ],
+  "failed": []
+}

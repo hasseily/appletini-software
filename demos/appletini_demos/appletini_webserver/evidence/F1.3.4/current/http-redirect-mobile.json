@@ -1,0 +1,130 @@
+[
+  {
+    "case": "301",
+    "success": true,
+    "instructions": 130611,
+    "descriptor_polls": 9,
+    "body": "46494e414c0042494e41525900424f4459",
+    "error": "HTTP service unavailable"
+  },
+  {
+    "case": "302",
+    "success": true,
+    "instructions": 130611,
+    "descriptor_polls": 9,
+    "body": "46494e414c0042494e41525900424f4459",
+    "error": "HTTP service unavailable"
+  },
+  {
+    "case": "303",
+    "success": true,
+    "instructions": 130611,
+    "descriptor_polls": 9,
+    "body": "46494e414c0042494e41525900424f4459",
+    "error": "HTTP service unavailable"
+  },
+  {
+    "case": "307",
+    "success": true,
+    "instructions": 130611,
+    "descriptor_polls": 9,
+    "body": "46494e414c0042494e41525900424f4459",
+    "error": "HTTP service unavailable"
+  },
+  {
+    "case": "308",
+    "success": true,
+    "instructions": 130611,
+    "descriptor_polls": 9,
+    "body": "46494e414c0042494e41525900424f4459",
+    "error": "HTTP service unavailable"
+  },
+  {
+    "case": "three-hops",
+    "success": true,
+    "instructions": 132782,
+    "descriptor_polls": 10,
+    "body": "46494e414c0042494e41525900424f4459",
+    "error": "HTTP service unavailable"
+  },
+  {
+    "case": "no-location",
+    "success": false,
+    "instructions": 52255,
+    "descriptor_polls": 2,
+    "body": "",
+    "error": "Server returned an HTTP error"
+  },
+  {
+    "case": "unsupported-final",
+    "success": false,
+    "instructions": 52255,
+    "descriptor_polls": 2,
+    "body": "",
+    "error": "Server returned an HTTP error"
+  },
+  {
+    "case": "redirect-loop",
+    "success": false,
+    "instructions": 59904,
+    "descriptor_polls": 4,
+    "body": "",
+    "error": "HTTP/S service failed"
+  },
+  {
+    "case": "redirect-timeout",
+    "success": false,
+    "instructions": 94170,
+    "descriptor_polls": 13,
+    "body": "",
+    "error": "HTTP request timed out"
+  },
+  {
+    "case": "final-404",
+    "success": false,
+    "instructions": 52252,
+    "descriptor_polls": 2,
+    "body": "",
+    "error": "Server returned an HTTP error"
+  },
+  {
+    "case": "tls-failure",
+    "success": false,
+    "instructions": 52268,
+    "descriptor_polls": 2,
+    "body": "",
+    "error": "TLS certificate verification failed"
+  },
+  {
+    "case": "one-byte-fragments",
+    "success": true,
+    "instructions": 261398,
+    "descriptor_polls": 19,
+    "body": "46494e414c0042494e41525900424f4459",
+    "error": "HTTP service unavailable"
+  },
+  {
+    "case": "issuer-untrusted",
+    "success": false,
+    "instructions": 48459,
+    "descriptor_polls": 1,
+    "body": "",
+    "error": "TLS issuer untrusted; update CA bundle"
+  },
+  {
+    "case": "wrong-hostname",
+    "success": false,
+    "instructions": 48459,
+    "descriptor_polls": 1,
+    "body": "",
+    "error": "TLS certificate verification failed"
+  },
+  {
+    "case": "http-header-limit",
+    "success": false,
+    "instructions": 48472,
+    "descriptor_polls": 1,
+    "body": "",
+    "error": "HTTP response limit; update Appletini firmware"
+  }
+]

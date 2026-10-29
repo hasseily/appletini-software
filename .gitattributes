@@ -1,5 +1,7 @@
 # Apple II media and packed images must keep their exact bytes on Windows.
 *.sh text eol=lf
+*.PEM text eol=lf
+demos/appletini_demos/appletini_webserver/evidence/** -text
 *.po binary
 *.dsk binary
 *.do binary

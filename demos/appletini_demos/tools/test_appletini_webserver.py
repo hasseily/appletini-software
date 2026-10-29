@@ -26,7 +26,11 @@ def verify_system(name):
                       listing.read_text(encoding="utf-8")) is not None,
             f"{name} listing must declare the NMOS 6502 target")
     map_text = map_file.read_text(encoding="utf-8")
-    require("timer_init (appletini_timer" in map_text and
+    if name == "A2BROWSE":
+        require("ti_net_start" in map_text and "appletini_http_fetch" in map_text,
+                "A2LYNX must link the native SmartPort HTTP client")
+    else:
+        require("timer_init (appletini_timer" in map_text and
             "timer_read (appletini_timer" in map_text,
             f"{name} must resolve IP65 timing to appletini_timer.o")
     require("timer_init (a2_timer.o)" not in map_text and
@@ -52,7 +56,8 @@ def verify_system(name):
 
 def main():
     server = (APP / "webserver.c").read_text(encoding="utf-8")
-    browser = (APP / "browser.c").read_text(encoding="utf-8")
+    browser = (APP / "browser_legacy.c").read_text(encoding="utf-8")
+    native_browser = (APP / "browser.c").read_text(encoding="utf-8")
     image_viewer = (APP / "a2img.c").read_text(encoding="utf-8")
     image_net = (APP / "a2img_net.s").read_text(encoding="utf-8")
     network = (APP / "appletini_net.c").read_text(encoding="utf-8")
@@ -68,6 +73,8 @@ def main():
     require("-t apple2" in build and "--cpu 6502" in build and
             "apple2-system.cfg" in build,
             "build must explicitly create NMOS-6502 ProDOS programs")
+    require("appletini_http_fetch" in native_browser and "A2LEGACY.SYSTEM" in native_browser,
+            "A2LYNX must retain native HTTP and the separate legacy fallback")
     require("apple2enh" not in build.lower(),
             "build must not use the enhanced Apple II target")
     for target in ("A2WEBSRV", "A2BROWSE", "A2IMG"):
@@ -222,7 +229,7 @@ def main():
             "vendored IP65 library must retain licenses and provenance")
 
     built = [verify_system(name)
-             for name in ("A2WEBSRV", "A2BROWSE", "A2IMG")]
+             for name in ("A2WEBSRV", "A2BROWSE", "A2LEGACY", "A2IMG")]
     print("Appletini 6502 web demo tests passed" +
           ("" if all(built) else " (build not present)"))
 

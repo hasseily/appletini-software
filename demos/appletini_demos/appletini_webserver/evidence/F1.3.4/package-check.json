@@ -1,0 +1,16 @@
+{
+  "disk": {
+    "file": "A2MONO-ARCHIVE-FIX.po",
+    "sha256": "e59f3684594f4ba264593b8e8145bf2caa8af795b86ddcb373cfb4dccef62a4e"
+  },
+  "zip": {
+    "file": "A2MONO-ARCHIVE-FIX.zip",
+    "bytes": 219973,
+    "sha256": "0ee99cd9a86081d767fab61b10867c68c74d89a8a14a84f32041cb071c1db1d3"
+  },
+  "program_sha256": "d0bdef52f5e2608c4aa61830e1650dd94857635a14050e41e327fd0c009ff471",
+  "packaged_files": 37,
+  "zip_verified": true,
+  "disk_sys_and_five_overlays_verified": true,
+  "board_evidence": false
+}
