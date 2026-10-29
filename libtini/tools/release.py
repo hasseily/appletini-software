@@ -67,7 +67,7 @@ def main():
     evidence = {"source_files": len(selected), "source_sha256": {
         path.relative_to(ROOT).as_posix(): digest(path) for path in selected},
         "automated_checks_are_board_evidence": False, "firmware_baseline": "F1.3.2 core; F1.3.3 optional networking",
-        "board_report": "https://github.com/hasseily/appletini-one/blob/main/README_RSA_STRESS_CHECKPOINT.md"}
+        "board_report": "https://github.com/hasseily/appletini-one/blob/F1.3.3/README_RSA_STRESS_CHECKPOINT.md"}
     prior_isolation = ROOT / "build/selfcontained-check.json"
     if not args.verify_isolation and prior_isolation.exists():
         previous = json.loads(prior_isolation.read_text())
