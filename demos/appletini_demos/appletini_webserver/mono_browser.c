@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT
- * A2MONO: A2LYNX navigation and HTML subset, mono DHGRi presentation.
+ * TINIBROWSER: navigation and HTML subset, mono DHGRi presentation.
  * The document lives in AUX0; image codecs replace this code overlay. */
 #include "mono_gfx.h"
 #include "mono_net.h"
@@ -14,16 +14,15 @@
 #pragma code-name ("BROWSER")
 #pragma rodata-name ("BROWSER")
 #define URL_CAP 256U
-#define LINK_MAX 32U
+#define LINK_MAX 48U
 #define IMAGE_MAX 12U
 #define CONTENT_ROW 1U
 #define CONTENT_ROWS 43U
 #define CONTENT_TOP 8U
-#define IMAGE_ROWS 18U
 #define COLUMNS 78U
 
 typedef struct { uint16_t at, length, line; } anchor;
-typedef struct { uint16_t at, length, line; } picture;
+typedef struct { uint16_t at, length, line, w, h; uint8_t col; } picture;
 static anchor links[LINK_MAX];
 static picture images[IMAGE_MAX];
 static char current[URL_CAP], target[URL_CAP], reference[URL_CAP];
@@ -39,11 +38,11 @@ static uint8_t have_network, truncated, plain_document, painting;
 static uint8_t images_enabled;
 static uint8_t mouse_shown, pointer_col, pointer_row, mouse_vbl, mouse_phase;
 static uint8_t hit_testing, hit_col, hit_row, hit_link;
-static uint8_t seeking;
+static uint8_t seeking, picture_rows, picture_cols;
 static uint8_t download_links[LINK_MAX], download_seek;
 #pragma rodata-name ("RODATA")
 static const char demo[] =
-    "<h1>A2MONO</h1>"
+    "<h1>TINIBROWSER</h1>"
     "<p>The web, through an Apple II.</p>"
     "<p>A graphical HTTPS browser for Appletini. Crisp 560x384 monochrome "
     "DHGRi, with the page rendered by your Apple II.</p>"
@@ -58,6 +57,8 @@ static const char demo[] =
     "A mouse is optional.</p>";
 #pragma rodata-name ("BROWSER")
 
+/* These two helpers live in resident memory: the overlay window is full. */
+#pragma code-name ("CODE")
 /* Decode a URL fragment in place. '+' is literal; invalid escapes and NUL
  * cannot turn an invalid destination into a different valid anchor. */
 static uint8_t fragment_decode(char *p)
@@ -108,7 +109,7 @@ static void chrome(void)
     mono_gfx_text(0, 45, "G URL  TAB/ARROWS links  ENTER open  SPACE/P scroll  B back  R reload  I images", 0);
     mono_gfx_text(0, 46, mono_mouse_available?
         "[BACK] [UP] [DOWN] [URL] [HOME] [QUIT] | Mouse: click links":
-        " Q quit  H home  ESC cancel  |  Images wait for I on each page", 0);
+        " Q quit  H home  ESC cancel  |  I images on/off", 0);
 }
 static uint8_t source(uint16_t at)
 {
@@ -129,7 +130,12 @@ static uint8_t resolve(const char *base, const char *href, char *out)
     uint16_t n, i, a, b;
     if (!*href || *href == '#') return 0;
     if (starts(href,"about:")) {
-        if (strcmp(href,"about:demo") && strcmp(href,"about:sample")) return 0;
+        if (strcmp(href,"about:demo")) return 0;
+        strcpy(out,href); return 1;
+    }
+    /* A POST form link from the card is complete and absolute. */
+    if (starts(href,"post:")) {
+        if (strlen(href) >= URL_CAP) return 0;
         strcpy(out,href); return 1;
     }
     if (starts(href,"http://") || starts(href,"https://")) {
@@ -254,6 +260,13 @@ static uint8_t attribute(const char *wanted, uint16_t *at, uint16_t *length)
     }
     return 0;
 }
+/* A decimal attribute that the card wrote, such as w=120. 0: absent. */
+static uint16_t number(const char *name)
+{
+    uint16_t at,length,value=0;
+    if(attribute(name,&at,&length)) while(length--) value=value*10U+(source(at++)-'0');
+    return value;
+}
 static void parse_tag(void)
 {
     uint16_t n=0,at,length;
@@ -303,21 +316,30 @@ static void parse_tag(void)
             link_pending=1;
         }
     } else if(!strcmp(name,"img") && !closing) {
-        block(0);
-        if(q) {top=layout_line;q=0;}
+        /* A picture is a box in the text flow: it starts at the current
+         * column, and the text goes on to its right, on its last row. */
+        flush_word();
         if(image_count<IMAGE_MAX && attribute("src",&at,&length) && length<URL_CAP) {
+            images[image_count].at=at; images[image_count].length=length;
+            images[image_count].w=number("w"); images[image_count].h=number("h");
+            picture_rows=mono_picture_rows(image_count,images_enabled);
+            picture_cols=mono_picture_cols(image_count,images_enabled);
+            if(column && column+1+picture_cols>COLUMNS) newline();
+            else if(column) ++column;
+            if(q) {top=layout_line;q=0;}
             if(link_pending && active_link!=255) {
                 links[active_link].line=layout_line; link_pending=0;
             }
-            images[image_count].at=at; images[image_count].length=length;
+            images[image_count].col=column;
             images[image_count++].line=layout_line;
-            if(hit_testing && active_link!=255 && hit_col>=1 && hit_col<79 && hit_row>=CONTENT_ROW && hit_row<44 &&
-               top+hit_row-CONTENT_ROW>=layout_line && top+hit_row-CONTENT_ROW<layout_line+(images_enabled?IMAGE_ROWS:1))
+            if(hit_testing && active_link!=255 && hit_col>column && hit_col<=column+picture_cols &&
+               hit_row>=CONTENT_ROW && hit_row<44 &&
+               top+hit_row-CONTENT_ROW>=layout_line && top+hit_row-CONTENT_ROW<layout_line+picture_rows)
                 hit_link=active_link;
-            if(!images_enabled && painting && layout_line>=top && layout_line<top+CONTENT_ROWS)
-                mono_gfx_text(1,(uint8_t)(layout_line-top+CONTENT_ROW),"[Image: I]",1);
-            layout_line+=images_enabled?IMAGE_ROWS:1; newline();
-        } else { character('[');character('I');character('M');character('G');character(']');block(0); }
+            if(picture_rows==1 && painting && layout_line>=top && layout_line<top+CONTENT_ROWS)
+                mono_gfx_text(column+1,(uint8_t)(layout_line-top+CONTENT_ROW),"[Image]",1);
+            layout_line+=picture_rows-1; column+=picture_cols;
+        } else { character('[');character('I');character('M');character('G');character(']'); }
     } else if(name[0]=='h' && name[1]>='1' && name[1]<='6' && !name[2]) { block(1); heading=!closing; }
     else if(!strcmp(name,"p") || !strcmp(name,"blockquote")) block(1);
     else if(!strcmp(name,"br") || !strcmp(name,"div") || !strcmp(name,"tr") || !strcmp(name,"ul") || !strcmp(name,"ol")) block(0);
@@ -363,30 +385,30 @@ static void layout(void)
 }
 static void draw(uint8_t pictures)
 {
-    uint8_t i;
-    int16_t y;
+    uint8_t i,wanted;
+again:
     mono_gfx_begin();
     if(pictures) mono_gfx_clear(0);
     painting=1; layout(); chrome();
-    status(truncated?"Page truncated":!images_enabled?"Images off | I loads":have_network?"HTTPS OK":"Demo | No HTTP");
+    status(truncated?"Page truncated":!images_enabled?"Images off":have_network?"HTTPS OK":"Demo | No HTTP");
+    wanted=255;
+    /* Stored pictures need no network: draw them before the page shows. */
+    if(pictures && images_enabled) for(i=0;i<image_count;++i) {
+        if(images[i].line>=top+CONTENT_ROWS ||
+           images[i].line+mono_picture_rows(i,1)<=top) continue;
+        if(!mono_picture_show(i,images[i].col+1,((int16_t)images[i].line-(int16_t)top)*8+CONTENT_TOP) &&
+           wanted==255) wanted=i;
+    }
     mono_gfx_commit();
-    if(!pictures || !images_enabled) return;
-    for(i=0;i<image_count;++i) {
-        if(images[i].line>=top+CONTENT_ROWS || images[i].line+IMAGE_ROWS<=top) continue;
-        y=((int16_t)images[i].line-(int16_t)top)*8+CONTENT_TOP;
-        if(y>=352 || y+(int16_t)IMAGE_ROWS*8<=CONTENT_TOP) continue;
-        extract(images[i].at,images[i].length);
-        if(resolve(current,reference,target)) {
-            status("Loading image... ESC cancels");
-            mono_gfx_commit();
-            mono_gfx_clip(CONTENT_TOP,352);
-            if(!mono_media(target,7,y,546,IMAGE_ROWS*8)) {
-                if(y>=CONTENT_TOP) mono_gfx_text(1,(uint8_t)(y/8),"[No image]",1);
-                status(mono_media_message);
-            } else status("Image decoded");
-            mono_gfx_clip(0,384);
-            mono_gfx_commit();
+    if(wanted!=255) {
+        /* One picture, then lay the page out again with its true height. */
+        extract(images[wanted].at,images[wanted].length);
+        status("Loading image... ESC cancels");mono_gfx_commit();
+        if(!mono_picture_load(wanted,resolve(current,reference,target)?target:0,
+                              images[wanted].w,images[wanted].h)) {
+            status(mono_media_message);mono_gfx_commit();
         }
+        goto again;
     }
 }
 static void push(void);
@@ -418,7 +440,8 @@ static void load(uint8_t remember)
     if(mono_document_pending) mono_document_reset();mono_document_pending=0;
     if(resolve(target,target,reference)) strcpy(target,reference);
     if(remember==1) push();else if(remember==2 && history_count) --history_count;
-    strcpy(current,target);top=0;selected=0;images_enabled=0;plain_document=plain;truncated=cut;
+    strcpy(current,target);top=0;selected=0;plain_document=plain;truncated=cut;
+    mono_picture_reset();
     draw(1);
 }
 static void push(void)
@@ -426,20 +449,38 @@ static void push(void)
     if(history_count==2) { memcpy(history,history+1,URL_CAP); --history_count; }
     strcpy(history[history_count++],current);
 }
-static uint8_t prompt(void)
+/* One line of text into reference. 0: the user pressed Escape. */
+static uint8_t prompt(const char *label)
 {
-    uint8_t c;
-    uint16_t n=0;
-    target[0]=0;
+    uint8_t c,n=0;
+    reference[0]=0;
     for(;;) {
-        status("URL: "); mono_gfx_text(5,47,target,0); mono_gfx_commit();
+        status(label); mono_gfx_text(7,47,reference,0); mono_gfx_commit();
         c=(uint8_t)cgetc();
         if(c==27) return 0;
-        if(c==13) return n!=0;
-        if(c==8 || c==127) { if(n) target[--n]=0; }
-        else if(c>=32 && c<127 && n<URL_CAP-1) { target[n++]=(char)c; target[n]=0; }
+        if(c==13) return 1;
+        if(c==8 || c==127) { if(n) reference[--n]=0; }
+        else if(c>=32 && c<127 && n<240) { reference[n++]=(char)c; reference[n]=0; }
     }
 }
+#pragma code-name ("CODE")
+/* Put the typed text in place of the "%s" at `at` in target, URL-encoded. */
+static uint8_t fill(char *at)
+{
+    static const char hex[]="0123456789ABCDEF";
+    uint8_t i=0,c,k;
+    memmove(at,at+2,strlen(at+2)+1);
+    while((c=(uint8_t)reference[i++])!=0) {
+        k=(isalnum(c) || c==' ')?1:3;
+        if(strlen(target)+k>=URL_CAP) return 0;
+        memmove(at+k,at,strlen(at)+1);
+        if(k==1) *at=c==' '?'+':(char)c;
+        else {at[0]='%';at[1]=hex[c>>4];at[2]=hex[c&15];}
+        at+=k;
+    }
+    return 1;
+}
+#pragma code-name ("BROWSER")
 static void hide_pointer(void)
 {
     if(mouse_shown) {
@@ -488,7 +529,7 @@ int mono_browser_main(void)
     have_network=mono_net_probe();
     mono_document_init();
     mono_mouse_init();
-    mono_gfx_init(); strcpy(target,"about:demo"); load(0);
+    mono_gfx_init(); images_enabled=1; strcpy(target,"about:demo"); load(0);
     for(;;) {
         c=input_key(); old=selected; previous=top;
         if(c=='q' || c=='Q' || c==27) break;
@@ -503,6 +544,13 @@ int mono_browser_main(void)
             if(download_links[selected]) {
                 reference[0]=0;download_seek=1;painting=0;layout();download_seek=0;reference[127]=0;
                 mono_net_download(target,reference);status(mono_net_error());mono_gfx_commit();continue;
+            }
+            if(strstr(target,"%s")) {
+                /* A form link: ask for each field, then send. */
+                old=1;
+                while(old && (fragment=strstr(target,"%s"))!=0) old=prompt("Input: ") && fill(fragment);
+                if(old) load(1); else draw(0);
+                continue;
             }
             fragment=strchr(reference,'#');
             if(fragment && !strcmp(target,current)) {
@@ -522,11 +570,13 @@ int mono_browser_main(void)
             if(history_count) {strcpy(target,history[history_count-1]);load(2);} continue;
         } else if(c=='h' || c=='H') {strcpy(target,"about:demo");load(1);continue;}
         else if(c=='r' || c=='R') {strcpy(target,current);load(0);continue;}
-        else if(c=='i' || c=='I') { images_enabled=1;draw(1);continue; }
+        else if(c=='i' || c=='I') { images_enabled^=1;draw(1);continue; }
         else if(c=='g' || c=='G') {
-            if(prompt()) {
-                if(strstr(target,"://") || starts(target,"about:")) strcpy(reference,target);
-                else { strcpy(reference,"https://");strncat(reference,target,URL_CAP-9); }
+            if(prompt("URL:   ") && reference[0]) {
+                if(!strstr(reference,"://") && !starts(reference,"about:")) {
+                    memmove(reference+8,reference,strlen(reference)+1);
+                    memcpy(reference,"https://",8);
+                }
                 if(resolve(current,reference,target)) {load(1);continue;}
             }
             draw(0);continue;

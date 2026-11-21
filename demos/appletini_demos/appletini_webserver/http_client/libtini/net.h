@@ -18,6 +18,13 @@
 #define TI_NET_RETAIN 1
 #define TI_NET_AUTO_DOWNLOAD 2
 #define TI_NET_FORCE_DOWNLOAD 4
+/* The card converts a PNG, JPEG or GIF to 1-bit rows. download_name then
+ * points to four bytes: box width and height, LE16 each. BODY returns
+ * width, height (LE16) and the rows after the state is DONE. */
+#define TI_NET_IMAGE 8
+/* The card filters an HTML response to a short ASCII page. BODY returns
+ * it after the state is DONE. Works with AUTO_DOWNLOAD and any method. */
+#define TI_NET_PAGE 16
 #define TI_NET_DL_NONE 0
 #define TI_NET_DL_WAITING 1
 #define TI_NET_DL_WRITING 2
@@ -71,4 +78,6 @@ uint8_t ti_net_last_error(void);
  * ti_audio_config.via_hz before starting audio. */
 uint32_t ti_net_via_hz(void);
 uint8_t ti_net_download_capable(void);
+uint8_t ti_net_image_capable(void);
+uint8_t ti_net_page_capable(void);
 #endif

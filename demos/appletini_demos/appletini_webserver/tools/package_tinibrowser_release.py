@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""Package a fresh A2MONO build with durable, explicitly scoped evidence."""
+"""Package a fresh TINIBROWSER build with durable, explicitly scoped evidence."""
 import argparse
 import hashlib
 import json
@@ -37,7 +37,7 @@ def main():
     assert sha(args.firmware)==args.firmware_sha
     expected=json.loads((evidence/'current/runtime-inputs.json').read_text())
     for name,value in expected.items():assert sha(build/name)==value,name
-    program=sha(build/'A2MONO.bin')
+    program=sha(build/'TINIBROWSER.bin')
     ca=json.loads((ROOT/'https/roots.json').read_text())
     assert len(ca['roots'])==29 and sha(ROOT/'https/ATNETCA.PEM')==ca['sha256']
     meta=json.loads((build/'manifest.json').read_text())
@@ -45,7 +45,7 @@ def main():
     # Use current project copies, not an old build's HTTPS directory.
     for p in sorted((ROOT/'https').iterdir()):
         if p.is_file():entries['HTTPS/'+p.name]=p.read_bytes()
-    for name in ('README_MONO.md','LICENSE_MONO.txt','third_party/picojpeg/SOURCE.txt',
+    for name in ('README_TINIBROWSER.md','LICENSE_TINIBROWSER.txt','third_party/picojpeg/SOURCE.txt',
                  'third_party/picojpeg/picojpeg.c','third_party/picojpeg/picojpeg.h'):
         entries[name]=(ROOT/name).read_bytes()
     for p in sorted(evidence.rglob('*')):
@@ -54,16 +54,16 @@ def main():
                  'reader-features.json','anchor-navigation.json','integration/integration.json'):
         report=json.loads((evidence/'current'/name).read_text())
         assert report['program_sha256']==program,(name,report['program_sha256'],program)
-    source_files=[ROOT/name for name in ('build_mono.py','mono-system.cfg','mono_disk.py')]
+    source_files=[ROOT/name for name in ('build_tinibrowser.py','tinibrowser.cfg','mono_disk.py')]
     source_files+=list(ROOT.glob('mono_*.[chs]'))
     source_files+=list((ROOT/'http_client').rglob('*.c'))+list((ROOT/'http_client').rglob('*.s'))+list((ROOT/'http_client').rglob('*.h'))
     source_files+=[Path(__file__).resolve()]
     entries['SOURCE_HASHES.json']=(json.dumps({p.relative_to(ROOT).as_posix():sha(p)
                                               for p in sorted(source_files)},indent=2)+'\n').encode()
-    notice=f'''A2MONO for Appletini firmware F1.3.4
+    notice=f'''TINIBROWSER for Appletini firmware F1.3.4
 
-Boot A2MONO.po on a SmartPort drive. For another ProDOS volume, import
-AppleSingle A2MONO.SYSTEM and copy all five matching MONO.* overlays.
+Boot TINIBROWSER.po on a SmartPort drive. For another ProDOS volume, import
+AppleSingle BROWSER.SYSTEM and copy all five matching MONO.* overlays.
 The text-only welcome explains the program and links to Appletini and
 Example.com. Press G for a URL. Images wait for I on each page.
 
@@ -80,22 +80,22 @@ change the ARM service's trust store.
 The user accepted the preceding archive.org fix on a card. The new welcome
 page has CPU/rendering/link tests; no new full-release board test is claimed.
 Verification records distinguish native TLS, actual simulated CPU/ProDOS,
-historical baselines and the current final runtime. Read README_MONO.md.
+historical baselines and the current final runtime. Read README_TINIBROWSER.md.
 '''
-    entries['README_A2MONO.txt']=notice.encode()
+    entries['README_TINIBROWSER.txt']=notice.encode()
     manifest={'release':'Software for firmware F1.3.4','program_sha256':program,
               'firmware_sha256':args.firmware_sha,'ca_roots':29,'ca_sha256':ca['sha256'],
               'new_full_release_board_test':False,
               'files':{n:{'bytes':len(d),'sha256':hashlib.sha256(d).hexdigest()} for n,d in sorted(entries.items())}}
     entries['MANIFEST.json']=(json.dumps(manifest,indent=2)+'\n').encode()
-    disk=entries['A2MONO.po']
-    assert extract(disk,'A2MONO.SYSTEM')==(build/'A2MONO.bin').read_bytes()
-    for name in ('MONO.WEB','MONO.NET','MONO.GIF','MONO.PNG','MONO.JPG'):
+    disk=entries['TINIBROWSER.po']
+    assert extract(disk,'BROWSER.SYSTEM')==(build/'TINIBROWSER.bin').read_bytes()
+    for name in ('TINI.WEB','TINI.NET','MONO.GIF','MONO.PNG','MONO.JPG'):
         assert extract(disk,name)==entries[name]
-    (out/'A2MONO.po').write_bytes(disk)
-    archive(out/'A2MONO.zip',entries)
-    (out/'A2MONO-MANIFEST.json').write_text(json.dumps(manifest,indent=2)+'\n')
-    print(json.dumps({'A2MONO.po':sha(out/'A2MONO.po'),'A2MONO.zip':sha(out/'A2MONO.zip'),
+    (out/'TINIBROWSER.po').write_bytes(disk)
+    archive(out/'TINIBROWSER.zip',entries)
+    (out/'TINIBROWSER-MANIFEST.json').write_text(json.dumps(manifest,indent=2)+'\n')
+    print(json.dumps({'TINIBROWSER.po':sha(out/'TINIBROWSER.po'),'TINIBROWSER.zip':sha(out/'TINIBROWSER.zip'),
                       'program_sha256':program,'zip_verified':True,'disk_contents_verified':True},indent=2))
 
 if __name__=='__main__':main()

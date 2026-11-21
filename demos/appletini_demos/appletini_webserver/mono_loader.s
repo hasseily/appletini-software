@@ -38,4 +38,4 @@ count_low:
 remaining:
     .word PAYLOAD_SIZE
 mono_loader_payload:
-    .incbin "A2MONO.payload.bin"
+    .incbin "TINIBROWSER.payload.bin"

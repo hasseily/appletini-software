@@ -13,7 +13,7 @@ from mono_verify import ROOT, Runner, fixture_gif, save_capture
 def old_open_policy(out):
     """The actual loader must receive $56 for the former $0400 buffer."""
     target=Runner(out,'https://fixture.test/start',17)
-    payload=(out/'A2MONO.payload.bin').read_bytes()
+    payload=(out/'TINIBROWSER.payload.bin').read_bytes()
     entry=target.symbols['_mono_overlay_load']
     at=payload.index(bytes((0x20,0,0xBF,0xC8)),entry-0x6000)
     after=0x6000+at+6
@@ -45,7 +45,8 @@ def fixtures():
           b"<h2>GIF</h2><img src='checker.gif'>"
           b"<h2>PNG</h2><img src='/images/tile.png'>"
           b"<h2>JPEG</h2><img src='//fixture.test/tile.jpg'>"
-          b"<p>All image requests go directly to their origin.</p></html>")
+          b"<p>All image requests go directly to their origin.</p>"
+          +b"<p>More text below the pictures.</p>"*30+b"</html>")
     next_page=b"<h1>Relative link worked</h1><p>Press B to return.</p>"
     return {'https://fixture.test/start':('text/html',page,'https://fixture.test/docs/index.html'),
             'https://fixture.test/docs/index.html':('text/html',page),
@@ -68,7 +69,7 @@ def warm(out):
         assert target.cpu.pc==target.symbols['_cgetc']
     else:
         raise AssertionError('browser exited before first keyboard input')
-    assert target.prefix==b'/A2MONO'
+    assert target.prefix==b'/TINIBROWSER'
     assert target.mli_calls[:3]==[0xC7,0xC5,0xC6]
     return target
 
@@ -128,7 +129,7 @@ def mouse_cases(base):
                 ret=m[0x100+((sp+1)&255)]|m[0x100+((sp+2)&255)]<<8
                 # WEB and NET now share this code window. A key offered to
                 # NET's cancellation poll is consumed before page input.
-                web=run.files['MONO.WEB'][:32]
+                web=run.files['TINI.WEB'][:32]
                 ui=0x8B00<=ret<0xB700 and bytes(m[0x8B00:0x8B00+len(web)])==web
                 ready=run.mouse_clicked and ui and 'https://fixture.test/clicked' in run.memory.requests
                 run.cpu.a,run.cpu.x=int(ready),0;run.rts();return True
@@ -154,7 +155,7 @@ def mouse_cases(base):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--mouse-only',action='store_true')
-    parser.add_argument('--build',type=Path,default=ROOT/'build'/'mono')
+    parser.add_argument('--build',type=Path,default=ROOT/'build'/'tinibrowser')
     args=parser.parse_args()
     out=args.build.resolve()
     policy=old_open_policy(out)
@@ -164,7 +165,7 @@ def main():
         result={'model':'actual NMOS6502 browser C mouse policy, synthesized polled events',
                 'board_evidence':False,'empty_prefix_initialized':True,
                 'strict_mli_policy':policy,'io_buffer_poisoned':True,
-                'program_sha256':hashlib.sha256((out/'A2MONO.bin').read_bytes()).hexdigest(),
+                'program_sha256':hashlib.sha256((out/'TINIBROWSER.bin').read_bytes()).hexdigest(),
                 'startup_instructions':base.steps,'startup_cycles':base.cpu.processorCycles,
                 'cases':mouse_cases(base)}
         (out/'mouse-ui.json').write_text(json.dumps(result,indent=2)+'\n')
@@ -173,10 +174,9 @@ def main():
     keys=bytearray(b'ghttps://fixture.test/start\r')
     capture={0:'integration-demo'}
     capture[len(keys)]='mixed-top'
-    keys.extend(b'i')
     keys.extend(b'\t\rb\rb') # second link, back, first link, back
     capture[len(keys)]='mixed-before-scroll'
-    keys.extend(b'i ')
+    keys.extend(b' ')
     capture[len(keys)]='mixed-scrolled'
     keys.extend(b'pr')
     capture[len(keys)]='mixed-reloaded'
@@ -192,19 +192,11 @@ def main():
     assert captures['mixed-top']!=captures['mixed-scrolled']
     assert captures['mixed-top']==captures['mixed-reloaded']
     reports=[report]
-    for case in ('missing-png-overlay','short-png-overlay','long-png-overlay'):
-        fault=deepcopy(base)
-        if case=='missing-png-overlay': fault.files.pop('MONO.PNG')
-        elif case=='short-png-overlay': fault.files['MONO.PNG']=fault.files['MONO.PNG'][:-1]
-        else: fault.files['MONO.PNG']+=b'\0'
-        keys=b'ghttps://fixture.test/png\riq'
-        _,report=execute(fault,keys,{len(keys)-1:case},case)
-        reports.append(report)
     reports.extend(mouse_cases(base))
     result={'model':'actual NMOS6502 browser; mocked ProDOS and native HTTP FIFO',
             'board_evidence':False,'startup_instructions':base.steps,
             'strict_mli_policy':policy,'io_buffer_poisoned':True,
-            'program_sha256':hashlib.sha256((out/'A2MONO.bin').read_bytes()).hexdigest(),
+            'program_sha256':hashlib.sha256((out/'TINIBROWSER.bin').read_bytes()).hexdigest(),
             'startup_cycles':base.cpu.processorCycles,'empty_prefix_initialized':True,
             'cases':reports}
     (out/'integration.json').write_text(json.dumps(result,indent=2)+'\n')

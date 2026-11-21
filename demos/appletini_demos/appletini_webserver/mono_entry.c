@@ -6,8 +6,8 @@ void mono_prefix_init(void);
 int main(void)
 {
     mono_prefix_init();
-    if (!mono_overlay("MONO.WEB")) {
-        cputs("A2MONO: cannot load MONO.WEB\r\n");
+    if (!mono_overlay("TINI.WEB")) {
+        cputs("TINIBROWSER: cannot load TINI.WEB\r\n");
         cputs(mono_media_message); cputs("\r\nPress a key."); cgetc();
         return 1;
     }

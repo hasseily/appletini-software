@@ -1,43 +1,29 @@
 /* SPDX-License-Identifier: MIT
- * Resident image coordinator. Encoded bytes stay in expansion RAM while a
- * decoder temporarily replaces the browser's code overlay. */
+ * Resident overlay gateway and picture store. The Appletini card decodes
+ * and dithers each image; the finished 1-bit rows stay in banked RAM. */
 #include "mono_media.h"
 #include "mono_net.h"
 #include "mono_gfx.h"
-#include "mono_image.h"
 #include <string.h>
 #include <stdlib.h>
 #include <conio.h>
 
-uint8_t mono_png_decode(int16_t, int16_t, uint16_t, uint16_t, uint16_t);
-const char *mono_png_error(void);
-uint8_t mono_jpeg_decode(int16_t, int16_t, uint16_t, uint16_t, uint16_t);
-const char *mono_jpeg_error(void);
 uint8_t mono_overlay_load(const char *name);
 extern uint8_t mono_overlay_error, mono_overlay_stage;
 extern uint8_t ti_net_poisoned;
-extern const uint8_t _BROWSER_SIZE__, _GIF_SIZE__, _PNG_SIZE__, _JPEG_SIZE__, _NET_SIZE__;
-/* The local demo image lives in MONO.GIF and is read after loading it. */
-extern const uint8_t mono_sample[];
-extern const uint16_t mono_sample_length;
+extern const uint8_t _BROWSER_SIZE__, _NET_SIZE__;
 char mono_media_message[80];
 uint8_t mono_memory_ready;
 uint16_t mono_overlay_expected;
-static uint16_t encoded_length;
-static uint8_t input[128];
-static uint16_t input_at, input_count;
+static uint8_t input[80];
 
 uint8_t mono_overlay(const char *name)
 {
     uint8_t n;
     static const char hex[]="0123456789ABCDEF";
     if(ti_net_poisoned) {strcpy(mono_media_message,"HTTP fault: restart browser");return 0;}
-    if(!strcmp(name,"MONO.WEB")) mono_overlay_expected=(uint16_t)&_BROWSER_SIZE__;
-    else if(!strcmp(name,"MONO.GIF")) mono_overlay_expected=(uint16_t)&_GIF_SIZE__;
-    else if(!strcmp(name,"MONO.PNG")) mono_overlay_expected=(uint16_t)&_PNG_SIZE__;
-    else if(!strcmp(name,"MONO.JPG")) mono_overlay_expected=(uint16_t)&_JPEG_SIZE__;
-    else if(!strcmp(name,"MONO.NET")) mono_overlay_expected=(uint16_t)&_NET_SIZE__;
-    else return 0;
+    if(name[5]=='W') mono_overlay_expected=(uint16_t)&_BROWSER_SIZE__;
+    else mono_overlay_expected=(uint16_t)&_NET_SIZE__;
     if(mono_overlay_load(name)) return 1;
     strcpy(mono_media_message,"Cannot load ");strncat(mono_media_message,name,60);
     n=(uint8_t)strlen(mono_media_message);
@@ -49,97 +35,119 @@ uint8_t mono_overlay(const char *name)
     mono_media_message[n]=0;
     return 0;
 }
-static uint8_t memory_probe(void)
+
+#define PICTURE_BANK_BYTES 40960U
+#define PICTURE_TOP 8
+#define PICTURE_BOTTOM 352
+static struct { uint8_t state, bank; uint16_t at, width, height; } pictures[MONO_PICTURE_MAX];
+static uint8_t arena_banks[7], arena_count, arena_bank, head[4], head_used, loading;
+static uint8_t picture_box[4];
+static uint16_t arena_at, picture_left;
+
+void mono_picture_reset(void)
 {
-    uint8_t saved[4],i,ok=1;
-    for(i=0;i<4;++i) saved[i]=mono_bank_get(i,0xBFFE);
-    for(i=0;i<4;++i) mono_bank_set(i,0xBFFE,(uint8_t)(0xA4+i));
-    for(i=0;i<4;++i) if(mono_bank_get(i,0xBFFE)!=(uint8_t)(0xA4+i)) ok=0;
-    for(i=0;i<4;++i) mono_bank_set(i,0xBFFE,saved[i]);
-    return ok;
+    memset(pictures,0,sizeof(pictures));
+    arena_bank=0;arena_at=0;
 }
-void mono_media_init(void) {mono_memory_ready=memory_probe();}
-static uint8_t cache_sink(const uint8_t *data,uint16_t length)
+uint8_t mono_picture_rows(uint8_t index, uint8_t enabled)
 {
-    uint16_t n,at;
-    uint8_t bank;
-    while(length) {
-        bank=encoded_length<40960U?2:3;
-        at=encoded_length<40960U?encoded_length:encoded_length-40960U;
-        n=40960U-at; if(n>length) n=length;
-        mono_bank_write(bank,0x2000U+at,data,n);
-        encoded_length+=n;data+=n;length-=n;
+    if(!enabled || index>=MONO_PICTURE_MAX || pictures[index].state!=1) return 1;
+    return (uint8_t)((pictures[index].height+7U)>>3);
+}
+uint8_t mono_picture_cols(uint8_t index, uint8_t enabled)
+{
+    if(!enabled || index>=MONO_PICTURE_MAX || pictures[index].state!=1) return 7; /* "[Image]" */
+    return (uint8_t)((pictures[index].width+6U)/7U);
+}
+static uint8_t picture_sink(const uint8_t *data,uint16_t length)
+{
+    uint16_t size;
+    while(head_used<4 && length) {
+        head[head_used++]=*data++;--length;
+        if(head_used!=4) continue;
+        pictures[loading].width=head[0]|((uint16_t)head[1]<<8);
+        pictures[loading].height=head[2]|((uint16_t)head[3]<<8);
+        if(!pictures[loading].width || pictures[loading].width>546U ||
+           !pictures[loading].height || pictures[loading].height>240U) return 2;
+        size=((pictures[loading].width+6U)/7U)*pictures[loading].height;
+        if(size>PICTURE_BANK_BYTES-arena_at) {
+            /* Next bank. After the last bank, start again and drop all
+             * stored pictures: they load again when they come into view. */
+            if(++arena_bank==arena_count) {
+                arena_bank=0;
+                for(size=0;size<MONO_PICTURE_MAX;++size)
+                    if(pictures[size].state==1) pictures[size].state=0;
+                size=((pictures[loading].width+6U)/7U)*pictures[loading].height;
+            }
+            arena_at=0;
+        }
+        pictures[loading].bank=arena_banks[arena_bank];
+        pictures[loading].at=arena_at;
+        picture_left=size;
+    }
+    if(length>picture_left) return 2;
+    if(length) {
+        mono_bank_write(arena_banks[arena_bank],0x2000U+arena_at,data,length);
+        arena_at+=length;picture_left-=length;
     }
     return 0;
 }
-uint8_t mono_source_get(uint16_t offset)
+uint8_t mono_picture_load(uint8_t index,char *url,uint16_t width,uint16_t height)
 {
-    uint16_t n,at;
-    uint8_t bank;
-    if(offset>=encoded_length) return 0;
-    if(offset<input_at || offset-input_at>=input_count) {
-        bank=offset<40960U?2:3;at=offset<40960U?offset:offset-40960U;
-        n=encoded_length-offset;
-        if(n>sizeof(input)) n=sizeof(input);
-        if(n>40960U-at) n=40960U-at;
-        mono_bank_read(bank,0x2000U+at,input,n);
-        input_at=offset;input_count=n;
-    }
-    return input[offset-input_at];
-}
-static uint8_t gif_decode(int16_t x,int16_t y,uint16_t w,uint16_t h)
-{
-    uint16_t at=0,n,i;
-    uint8_t chunk[64],state=0;
-    mono_image_begin(x,y,w,h);
-    while(at<encoded_length && !state) {
-        n=encoded_length-at;if(n>sizeof(chunk)) n=sizeof(chunk);
-        for(i=0;i<n;++i) chunk[i]=mono_source_get(at+i);
-        state=mono_image_feed(chunk,n);at+=n;
-    }
-    state=mono_image_finish();
-    if(state!=MONO_IMAGE_DONE) {strncpy(mono_media_message,mono_image_error(),79);return 0;}
-    return 1;
-}
-uint8_t mono_media(char *url,int16_t x,int16_t y,uint16_t w,uint16_t h)
-{
-    uint8_t format=0,ok=0,local;
-    const char *overlay;
+    if(index>=MONO_PICTURE_MAX) return 0;
+    pictures[index].state=2;
     mono_media_message[0]=0;
-    if(ti_net_poisoned) {strcpy(mono_media_message,"HTTP fault: restart browser");return 0;}
-    if(!mono_memory_ready) {strcpy(mono_media_message,"Images need 256 KiB of banked auxiliary memory");return 0;}
-    encoded_length=0;
-    local=!strcmp(url,"about:sample");
-    if(local) {
-        if(!mono_overlay("MONO.GIF")) goto load_failed;
-        cache_sink(mono_sample,mono_sample_length);
-    }
-    else if(!mono_net_get(url,256,cache_sink,65535U)) {
-        strncpy(mono_media_message,mono_net_error(),79);return 0;
-    } else if(mono_http_cut) {strcpy(mono_media_message,"Encoded image exceeds 65535 bytes");return 0;}
-    input_at=0xFFFF;input_count=0;
-    if(encoded_length>=6 && mono_source_get(0)=='G' && mono_source_get(1)=='I' && mono_source_get(2)=='F') format=1;
-    else if(encoded_length>=8 && mono_source_get(0)==137 && mono_source_get(1)=='P' && mono_source_get(2)=='N' && mono_source_get(3)=='G') format=2;
-    else if(encoded_length>=3 && mono_source_get(0)==255 && mono_source_get(1)==216 && mono_source_get(2)==255) format=3;
-    if(!format) {
-        strcpy(mono_media_message,"Unsupported image; use GIF, PNG or baseline JPEG");
-        if(local) goto load_failed;
+    if(!url) return 0;
+    if(!mono_http_images || !arena_count) {
+        strcpy(mono_media_message,mono_http_images?"Images need 256 KiB of banked auxiliary memory":
+                                                   "Images need newer Appletini firmware");
         return 0;
     }
-    overlay=format==1?"MONO.GIF":format==2?"MONO.PNG":"MONO.JPG";
-    if(!local && !mono_overlay(overlay)) goto load_failed;
-    mono_gfx_begin();
-    if(format==1) ok=gif_decode(x,y,w,h);
-    else if(format==2) {ok=mono_png_decode(x,y,w,h,encoded_length);if(!ok) strncpy(mono_media_message,mono_png_error(),79);}
-    else {ok=mono_jpeg_decode(x,y,w,h,encoded_length);if(!ok) strncpy(mono_media_message,mono_jpeg_error(),79);}
-    mono_media_message[79]=0;
-    /* Return addresses into BROWSER are valid only after it is restored.
-     * A failed restore cannot safely return to the caller. */
-    if(!mono_overlay("MONO.WEB")) {
-        mono_gfx_end();cputs("A2MONO: cannot restore MONO.WEB\r\n");exit(1);
+    if(!width || width>546U) width=546U;
+    if(!height || height>240U) height=240U;
+    picture_box[0]=(uint8_t)width;picture_box[1]=(uint8_t)(width>>8);
+    picture_box[2]=(uint8_t)height;picture_box[3]=0;
+    loading=index;head_used=0;picture_left=0;
+    if(!mono_net_image(url,picture_box,picture_sink) || head_used!=4 || picture_left) {
+        strncpy(mono_media_message,mono_net_error(),79);mono_media_message[79]=0;
+        if(!mono_media_message[0]) strcpy(mono_media_message,"Image transfer was incomplete");
+        return 0;
     }
-    mono_gfx_commit();return ok;
-load_failed:
-    if(!mono_overlay("MONO.WEB")) {mono_gfx_end();exit(1);}
-    return 0;
+    pictures[index].state=1;
+    return 1;
+}
+uint8_t mono_picture_show(uint8_t index,uint8_t column,int16_t y)
+{
+    uint16_t at,row;
+    uint8_t bytes;
+    if(index>=MONO_PICTURE_MAX) return 2;
+    if(pictures[index].state!=1) return pictures[index].state;
+    bytes=(uint8_t)((pictures[index].width+6U)/7U);
+    at=pictures[index].at;
+    for(row=0;row<pictures[index].height;++row,++y,at+=bytes) {
+        if(y<PICTURE_TOP || y>=PICTURE_BOTTOM) continue;
+        mono_bank_read(pictures[index].bank,0x2000U+at,input,bytes);
+        mono_gfx_row((uint16_t)y,column,input,bytes);
+    }
+    return 1;
+}
+/* Banks 1 to 3 always hold pictures. Banks 6 to 9 join when all ten
+ * selectors are separate memory. Banks 4 and 5 hold the document. */
+static uint8_t distinct(uint8_t count)
+{
+    uint8_t saved[10],i,ok=1;
+    for(i=0;i<count;++i) saved[i]=mono_bank_get(i,0xBFFE);
+    for(i=0;i<count;++i) mono_bank_set(i,0xBFFE,(uint8_t)(0xC4+i));
+    for(i=0;i<count;++i) if(mono_bank_get(i,0xBFFE)!=(uint8_t)(0xC4+i)) ok=0;
+    for(i=0;i<count;++i) mono_bank_set(i,0xBFFE,saved[i]);
+    return ok;
+}
+void mono_media_init(void)
+{
+    uint8_t i;
+    arena_count=0;
+    mono_memory_ready=distinct(4);
+    if(!mono_memory_ready) return;
+    for(i=1;i<4;++i) arena_banks[arena_count++]=i;
+    if(distinct(10)) for(i=6;i<10;++i) arena_banks[arena_count++]=i;
 }

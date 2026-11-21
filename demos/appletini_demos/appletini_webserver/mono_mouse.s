@@ -117,7 +117,7 @@ holes_out:
     rts
 
 ; A=argument, X=ROM vector-table byte offset. Repatch on every call so
-; restoring MONO.WEB after an image overlay needs no mouse reinitialization.
+; restoring TINI.WEB after an image overlay needs no mouse reinitialization.
 firmware:
     pha
     lda mouse_page

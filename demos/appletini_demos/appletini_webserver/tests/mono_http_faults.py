@@ -63,7 +63,7 @@ def run_case(base, mode, legacy=False):
         nonlocal pending_return
         pc, main, symbols = run.cpu.pc, run.memory.main, run.symbols
         # NET and WEB share addresses; a symbol match alone is insufficient.
-        net_active=legacy or 'MONO.NET' not in run.files or bytes(main[0x8B00:0x8B10])==run.files['MONO.NET'][:16]
+        net_active=legacy or 'TINI.NET' not in run.files or bytes(main[0x8B00:0x8B10])==run.files['TINI.NET'][:16]
         if pc == symbols['_ti_net_poll'] and net_active:
             sp = run.cpu.sp
             pending_return = ((main[0x100 + ((sp + 1) & 255)] |
@@ -137,7 +137,7 @@ def main():
         cases.append(result)
         print(json.dumps(result), flush=True)
     report = {'board_evidence': False, 'actual_6502': True,
-              'program_sha256': hashlib.sha256((out/'A2MONO.bin').read_bytes()).hexdigest(),
+              'program_sha256': hashlib.sha256((out/'TINIBROWSER.bin').read_bytes()).hexdigest(),
               'cases': cases}
     (out/'descriptor-investigation.json').write_text(json.dumps(report, indent=2)+'\n')
     print('PASS descriptor fault safety, generation session handling, repeated pages')

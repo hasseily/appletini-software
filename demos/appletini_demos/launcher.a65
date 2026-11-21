@@ -516,8 +516,8 @@ d4a: !text "Brendan Robert's hires wave effect.", 0
 d4b: !text "", 0
 d5a: !text "TMS9918 sprites over Apple video.", 0
 d5b: !text "Enable SuperSprite in the config menu.", 0
-d6a: !text "Browse the web over the virtual", 0
-d6b: !text "Uthernet II. Needs the ethernet port.", 0
+d6a: !text "TINIBROWSER: web pages and pictures.", 0
+d6b: !text "Needs ethernet and firmware F1.3.8.", 0
 d7a: !text "Serve a web page from your Apple II.", 0
 d7b: !text "Needs the ethernet port connected.", 0
 d8a: !text "Streams any web image into 256-color", 0

@@ -57,7 +57,8 @@ def load(base, body, url=URL, extra=None):
     if extra:
         target.memory.fixtures.update(extra)
     target = drive(target, ('g' + url + '\r').encode())
-    assert target.memory.requests == [requested], target.memory.requests
+    # Images are on: a visible picture can follow the page request.
+    assert target.memory.requests[:1] == [requested], target.memory.requests
     return target
 
 
@@ -133,7 +134,7 @@ def image_case(base):
             b"<img id='picture' src='far.gif'><p>IMAGE DESTINATION</p>")
     image = ('image/gif', fixture_gif(16, 8))
     target = load(base, body, url, {near: image, far: image})
-    target = drive(target, b'i')
+    # Images are on from the start: the visible picture is already loaded.
     assert target.memory.requests == [url, near], target.memory.requests
     result = drive(target, b'\r')
     assert result.memory.requests == [url, near, far], result.memory.requests
@@ -186,11 +187,11 @@ def mouse_case(base):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--build', type=Path, default=ROOT / 'build' / 'mono')
+    parser.add_argument('--build', type=Path, default=ROOT / 'build' / 'tinibrowser')
     parser.add_argument('--case', action='append', help='run only the named case, repeatable')
     args = parser.parse_args()
     out = args.build.resolve()
-    program_sha256 = hashlib.sha256((out / 'A2MONO.bin').read_bytes()).hexdigest()
+    program_sha256 = hashlib.sha256((out / 'TINIBROWSER.bin').read_bytes()).hexdigest()
     base = warm(out)
     tests = [
         ('keyboard-id', lambda: keyboard_case(base, 'keyboard-id', '#destination')),

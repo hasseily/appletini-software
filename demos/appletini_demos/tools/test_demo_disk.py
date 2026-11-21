@@ -58,7 +58,7 @@ def static_checks() -> None:
     # New Image Modes viewer owns slot 1; the Impossible demo is gone.
     for token in ('BRUN LAUNCHER', 'BRUN SPEEDRACE',
                   'BRUN RASTERDEMO', 'RUN MANDELBROT',
-                  'RUN WAVE.ANIMATION', '-A2BROWSE.SYSTEM',
+                  'RUN WAVE.ANIMATION', '-BROWSER.SYSTEM',
                   '-A2WEBSRV.SYSTEM',
                   'BRUN MSDOS.BRIDGE,A2048',
                   'BRUN TEXTOVERLAY',

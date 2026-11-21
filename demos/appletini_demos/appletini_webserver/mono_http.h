@@ -12,6 +12,10 @@ uint8_t mono_http_get(char *url, uint16_t url_capacity,
 extern char mono_http_type[64];
 extern uint16_t mono_http_code, mono_http_length;
 extern uint8_t mono_http_cut;
+/* Set by the probe: the card converts images (TI_NET_IMAGE). */
+extern uint8_t mono_http_images;
+/* Set by the probe: the card filters pages (TI_NET_PAGE). */
+extern uint8_t mono_http_pages;
 /* API/card diagnostics captured before cleanup reuses the transport globals. */
 extern uint8_t mono_http_transport_error, mono_http_card_error;
 const char *mono_http_error(void);

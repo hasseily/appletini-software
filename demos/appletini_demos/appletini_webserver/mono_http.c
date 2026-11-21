@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT
- * A2LYNX's bounded libtini HTTP transport, adapted for binary body sinks. */
+ * The bounded libtini HTTP transport, adapted for binary body sinks. */
 #include "mono_http.h"
 #include "mono_mobile.h"
 #include "mono_net.h"
@@ -23,7 +23,13 @@ char mono_http_type[64];
 uint16_t mono_http_code, mono_http_length;
 uint8_t mono_http_cut, ti_transfer_start;
 uint8_t mono_http_transport_error, mono_http_card_error;
-uint8_t mono_http_policy;
+uint8_t mono_http_policy, mono_http_images, mono_http_pages;
+/* A form POST: the same preferences as a page GET, and the form type. */
+static const char post_headers[] =
+    "User-Agent: Mozilla/5.0 (Mobile; TINIBROWSER/1)\r\n"
+    "Sec-CH-UA-Mobile: ?1\r\n"
+    "Save-Data: on\r\n"
+    "Content-Type: application/x-www-form-urlencoded\r\n";
 const char *mono_http_download_name;
 char mono_http_message[192];
 
@@ -59,6 +65,9 @@ static const char *result_error(int16_t result)
     case -106: return "DNS lookup failed";
     case -107: return "HTTP request timed out";
     case -110: return "Ethernet or storage is busy";
+    case -120: return "Unsupported image; use PNG, JPEG or GIF";
+    case -121: return "Image is too large";
+    case -122: return "Card has no memory for this image";
     default: return 0;
     }
 }
@@ -76,7 +85,13 @@ static uint8_t metadata(uint8_t source, char *out, uint16_t n, uint16_t cap)
     out[at] = 0;
     return 1;
 }
-uint8_t mono_http_probe(void) { return ti_net_probe(reply) == TI_OK; }
+uint8_t mono_http_probe(void)
+{
+    if (ti_net_probe(reply) != TI_OK) return 0;
+    mono_http_images = ti_net_image_capable();
+    mono_http_pages = ti_net_page_capable();
+    return 1;
+}
 const char *mono_http_error(void) { return failure ? failure : "HTTP service unavailable"; }
 static void progress(uint8_t cancelling)
 {
@@ -97,12 +112,20 @@ static void progress(uint8_t cancelling)
 uint8_t mono_http_get(char *url, uint16_t cap, mono_http_sink sink, uint16_t limit)
 {
     uint16_t n;
-    uint8_t stop = 0, ok = 0, cancelled=0, shown=255;
+    char *form;
+    uint8_t stop = 0, ok = 0, cancelled=0, shown=255, direct=0;
     uint32_t written=0xFFFFFFFFUL;
     failure = 0; mono_http_length = mono_http_code = 0; mono_http_cut = 0;
     mono_http_transport_error = mono_http_card_error = 0;
     mono_http_type[0] = 0;
-    request.url = url;
+    request.url = url; request.method = "GET"; request.headers = mono_mobile_headers;
+    request.body = 0; request.body_length = 0;
+    /* "post:" + URL + " " + body, as the card writes a POST form link. */
+    if (!memcmp(url, "post:", 5)) {
+        request.url = url + 5; request.method = "POST"; request.headers = post_headers;
+        form = strchr(url, ' ');
+        if (form) { *form = 0; request.body = form + 1; request.body_length = strlen(form + 1); }
+    }
     request.retain=mono_http_policy;request.download_name=mono_http_download_name;
     /* Reconcile a clean ARM session reset before a new request. Probe never
      * clears poison or writes to a channel with an abandoned transaction. */
@@ -110,11 +133,16 @@ uint8_t mono_http_get(char *url, uint16_t cap, mono_http_sink sink, uint16_t lim
         if (mono_http_transport_error == TI_E_IO) failure = "HTTP fault: restart browser";
         return 0;
     }
+    mono_http_images = ti_net_image_capable();
+    mono_http_pages = ti_net_page_capable();
+    if((mono_http_policy&16) && !mono_http_pages) {failure="Update the Appletini firmware";return 0;}
     if(mono_http_policy && !ti_net_download_capable()) {
         failure="Downloads need updated firmware";return mono_http_policy==4?MONO_HTTP_FILE_FAILED:0;
     }
     if (ti_net_start(&request)) { failure = "Cannot start HTTP"; return 0; }
     for (;;) {
+        /* A finished picture needs no status call between its reads. */
+        if (direct) goto read_body;
         if (!cancelled && kbhit() && cgetc() == 27) {
             failure="Request cancelled";
             if(!mono_http_policy || transport_error(ti_net_cancel())) break;
@@ -168,6 +196,11 @@ uint8_t mono_http_get(char *url, uint16_t cap, mono_http_sink sink, uint16_t lim
         if(mono_http_policy==TI_NET_FORCE_DOWNLOAD && mono_http_code) {
             failure="Server did not start download";ok=MONO_HTTP_FILE_FAILED;break;
         }
+        if (mono_http_policy & (TI_NET_IMAGE|TI_NET_PAGE)) {
+            if (status.state == TI_NET_DONE) direct = 1;
+            else if (mono_http_policy == TI_NET_IMAGE) continue;
+        }
+read_body:
         if (ti_net_read(TI_NET_BODY, mono_http_length, reply, sizeof(reply), &chunk)) {
             failure = "HTTP body read failed"; break;
         }
@@ -185,7 +218,7 @@ uint8_t mono_http_get(char *url, uint16_t cap, mono_http_sink sink, uint16_t lim
             if (status.state == TI_NET_DONE && status.body_length == mono_http_length) { ok = 1; break; }
         }
     }
-    if (ok==MONO_HTTP_BODY) {
+    if (ok==MONO_HTTP_BODY && mono_http_policy != TI_NET_IMAGE) {
         if (transport_error(ti_net_poll(reply, &status))) ok = 0;
         else if (status.state == TI_NET_FAILED || status.state == TI_NET_CANCELLED)
             { failure = "HTTP completion failed"; ok = 0; }

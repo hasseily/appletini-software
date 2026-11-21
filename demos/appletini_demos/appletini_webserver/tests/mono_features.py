@@ -35,7 +35,7 @@ def white_url_row(target,url):
         assert sum(byte.bit_count() for byte in footer)/(560*8)>0.60,('footer/status is not mostly white',row)
     for y in range(8,352):
         assert not pixels[y*70+69]&1,('body right margin is not black',y)
-    # The exact URL glyphs occupy row 0, without an A2MONO banner before it.
+    # The exact URL glyphs occupy row 0, without an TINIBROWSER banner before it.
     source=(ROOT/'mono_font.h').read_text()
     font=bytes(int(value,16) for value in re.findall(r'0x([0-9a-fA-F]{2})',source))
     assert len(font)==768
@@ -65,8 +65,9 @@ def main():
     parser.add_argument('--build',type=Path,default=ROOT/'build'/'mono-reader')
     args=parser.parse_args();out=args.build.resolve()
     base=idle(out)
-    page=(b"<h1>Manual images</h1><p>Images start OFF.</p>"
+    page=(b"<h1>Lazy images</h1><p>Images start ON.</p>"
           b"<h2>One</h2><img src='one.gif'><h2>Two</h2><img src='/two.gif'>"
+          +b"<p>filler line</p>"*20+
           b"<h2>Three</h2><img src='//fixture.test/three.gif'>"
           b"<p><a href='next.html'>Next page</a></p>")
     first='https://fixture.test/start';final='https://fixture.test/docs/index.html'
@@ -77,20 +78,17 @@ def main():
     for image in images:base.memory.fixtures[image]=('image/gif',fixture_gif(16,8))
     base.memory.fixtures['https://fixture.test/docs/child.gif']=('image/gif',fixture_gif(16,8))
     keys=bytearray(b'ghttps://fixture.test/start\r')
-    captures={len(keys):'reader-images-off'}
-    keys.extend(b' ')
-    captures[len(keys)]='reader-scroll-off'
-    keys.extend(b'i')
-    captures[len(keys)]='reader-images-on'
+    captures={len(keys):'reader-images-on'}
     keys.extend(b' ')
     captures[len(keys)]='reader-lazy-scroll'
+    keys.extend(b'i') # images off: no request, and the next page loads none
+    captures[len(keys)]='reader-images-off'
     keys.extend(b'p\r') # scroll up and follow the only link
     captures[len(keys)]='reader-next-off'
     keys.extend(b'q')
     target,report=run(base,keys,captures,'manual-lazy-images-and-redirects')
     shots={item['name']:item for item in target.captures}
-    assert shots['reader-images-off']['requests']==[first]
-    assert shots['reader-scroll-off']['requests']==[first]
+    assert shots['reader-images-off']['requests']==shots['reader-lazy-scroll']['requests']
     assert any(image in shots['reader-images-on']['requests'] for image in images)
     assert any(image not in shots['reader-images-on']['requests'] for image in images),'fixture has no offscreen image'
     assert all(image in shots['reader-lazy-scroll']['requests'] for image in images)
@@ -139,7 +137,7 @@ def main():
         reports.append(report)
     result={'model':'actual NMOS6502 + mocked ProDOS/native HTTP FIFO',
             'board_evidence':False,'old_open_policy':old_open_policy(out),
-            'program_sha256':hashlib.sha256((out/'A2MONO.bin').read_bytes()).hexdigest(),
+            'program_sha256':hashlib.sha256((out/'TINIBROWSER.bin').read_bytes()).hexdigest(),
             'cases':reports}
     (out/'reader-features.json').write_text(json.dumps(result,indent=2)+'\n')
     print(json.dumps(result,indent=2))

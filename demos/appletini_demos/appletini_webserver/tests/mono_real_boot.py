@@ -36,13 +36,13 @@ def stopped(machine,breakpoints,steps=100_000_000):
 
 def boot(args,cli,negative=False):
     out=args.build.resolve()
-    syms=labels(out/'A2MONO.lbl')
-    payload=(out/'A2MONO.payload.bin').read_bytes()
+    syms=labels(out/'TINIBROWSER.lbl')
+    payload=(out/'TINIBROWSER.payload.bin').read_bytes()
     entry=syms['_mono_overlay_load']
     open_return,open_params=mli_site(payload,0xC8,entry)
     read_return,read_params=mli_site(payload,0xCA,open_return)
     settings=cli.parser().parse_args([
-        'debug','--boot','--disk',str(out/'A2MONO.po'),
+        'debug','--boot','--disk',str(out/'TINIBROWSER.po'),
         '--rom',str(args.rom.resolve()),'--slot7-rom',str(args.slot7_rom.resolve()),
         '--slot7-c8-rom',str(args.slot7_c8_rom.resolve()),
         '--profile',args.profile,'--slot2','off','--banks',str(args.banks)])
@@ -53,7 +53,7 @@ def boot(args,cli,negative=False):
         assert not metadata['program']['roms']['prodos_mli_traps']
         stopped(machine,[entry])
         address=machine.get('a')|(machine.get('x')<<8)
-        assert c_string(machine,address)=='MONO.WEB'
+        assert c_string(machine,address)=='TINI.WEB'
         if negative:
             machine.write('main',open_params+3,b'\0\x04')
         io_buffer=int.from_bytes(machine.read('main',open_params+3,2),'little')
@@ -74,13 +74,13 @@ def boot(args,cli,negative=False):
         stopped(machine,[read_return])
         assert machine.get('a')==0 and not machine.get('p')&1
         count=int.from_bytes(machine.read('main',read_params+6,2),'little')
-        assert count==len((out/'MONO.WEB').read_bytes())
-        assert machine.read('main',0x8B00,count)==(out/'MONO.WEB').read_bytes()
+        assert count==len((out/'TINI.WEB').read_bytes())
+        assert machine.read('main',0x8B00,count)==(out/'TINI.WEB').read_bytes()
         result['web_bytes_read']=count
-        sequence=['MONO.WEB']
+        sequence=['TINI.WEB']
         web_window=machine.read('main',0x8B00,0x2C00)
-        net_overlay=(out/'MONO.NET').exists()
-        reads=[{'name':'MONO.WEB','bytes':count}]
+        net_overlay=(out/'TINI.NET').exists()
+        reads=[{'name':'TINI.WEB','bytes':count}]
         def reach_idle():
             for _ in range(8):
                 stopped(machine,[entry,syms['_cgetc']])
@@ -101,7 +101,7 @@ def boot(args,cli,negative=False):
             raise AssertionError('overlay loop never reached browser input')
         reach_idle()
         result['initial_overlay_sequence']=list(sequence)
-        initial=['MONO.WEB','MONO.NET'] if net_overlay else ['MONO.WEB']
+        initial=['TINI.WEB','TINI.NET'] if net_overlay else ['TINI.WEB']
         if not args.automatic_images:
             assert sequence==initial,sequence
             if net_overlay:
@@ -115,7 +115,7 @@ def boot(args,cli,negative=False):
             machine.run(steps=1)
             reach_idle()
         home_image=args.home_image or args.automatic_images
-        expected=initial+['MONO.GIF','MONO.WEB'] if home_image and args.banks>=4 else initial
+        expected=initial+['MONO.GIF','TINI.WEB'] if home_image and args.banks>=4 else initial
         assert sequence==expected,sequence
         if args.banks<4:
             if home_image:
@@ -144,7 +144,7 @@ def boot(args,cli,negative=False):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--build',type=Path,default=ROOT/'build'/'mono')
+    parser.add_argument('--build',type=Path,default=ROOT/'build'/'tinibrowser')
     parser.add_argument('--native-library',type=Path,required=True)
     parser.add_argument('--rom',type=Path,required=True)
     parser.add_argument('--slot7-rom',type=Path,required=True)
@@ -160,9 +160,9 @@ def main():
     cli.build_library=lambda:args.native_library.resolve()
     result={'real_prodos_kernel':True,'mocked_mli':False,'board_evidence':False,
             'runtime_sha256':{p.name:hashlib.sha256(p.read_bytes()).hexdigest()
-                for p in [args.build/'A2MONO.SYSTEM',args.build/'A2MONO.payload.bin',
+                for p in [args.build/'BROWSER.SYSTEM',args.build/'TINIBROWSER.payload.bin',
                           *sorted(args.build.glob('MONO.*'))] if p.is_file()},
-            'disk_sha256':hashlib.sha256((args.build/'A2MONO.po').read_bytes()).hexdigest(),
+            'disk_sha256':hashlib.sha256((args.build/'TINIBROWSER.po').read_bytes()).hexdigest(),
             'cases':[boot(args,cli,negative=True),boot(args,cli)]}
     (args.build/'real-boot.json').write_text(json.dumps(result,indent=2)+'\n')
     print(json.dumps(result,indent=2))

@@ -6,30 +6,30 @@ from pathlib import Path
 import sys
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-from build_mono import run,tool,data_fork
+from build_tinibrowser import run,tool,data_fork
 from mono_verify import Runner,framebuffer
 
 
 def main():
     out=ROOT/'build'/'mono-gfx-test'
     out.mkdir(parents=True,exist_ok=True)
-    config=(ROOT/'mono-system.cfg').read_text()
-    for name in ('MONO.WEB','MONO.GIF','MONO.PNG','MONO.JPG'):
+    config=(ROOT/'tinibrowser.cfg').read_text()
+    for name in ('TINI.WEB','MONO.GIF','MONO.PNG','MONO.JPG'):
         config=config.replace('@'+name+'@',(out/name).as_posix())
     config=config.replace('BROWSER: load = WEBMEM, type = ro, define = yes;',
                           'BROWSER: load = WEBMEM, type = ro, define = yes, optional = yes;')
-    (out/'mono-system.cfg').write_text(config)
+    (out/'tinibrowser.cfg').write_text(config)
     run([tool('cl65'),'-t','apple2','--cpu','6502','-Os','--warnings-as-errors',
-         '-I',str(ROOT),'-C',str(out/'mono-system.cfg'),'-o',str(out/'A2MONO.payload.as'),
-         '-m',str(out/'A2MONO.map'),'-Ln',str(out/'A2MONO.lbl'),
+         '-I',str(ROOT),'-C',str(out/'tinibrowser.cfg'),'-o',str(out/'TINIBROWSER.payload.as'),
+         '-m',str(out/'TINIBROWSER.map'),'-Ln',str(out/'TINIBROWSER.lbl'),
          'tests/mono_gfx_target.c','mono_gfx.c','mono_gfx.s'])
-    payload,address=data_fork((out/'A2MONO.payload.as').read_bytes())
+    payload,address=data_fork((out/'TINIBROWSER.payload.as').read_bytes())
     assert address==0x6000
-    (out/'A2MONO.payload.bin').write_bytes(payload)
+    (out/'TINIBROWSER.payload.bin').write_bytes(payload)
     (out/'loader.cfg').write_text('MEMORY { MAIN: start=$2000, size=$9F00, file=%O; }\n'
                                 'SEGMENTS { CODE: load=MAIN, type=rw; }\n')
     run([tool('ca65'),'-D',f'PAYLOAD_SIZE={len(payload)}','--bin-include-dir',str(out),'-o',str(out/'loader.o'),'mono_loader.s'])
-    run([tool('ld65'),'-C',str(out/'loader.cfg'),'-o',str(out/'A2MONO.bin'),str(out/'loader.o')])
+    run([tool('ld65'),'-C',str(out/'loader.cfg'),'-o',str(out/'TINIBROWSER.bin'),str(out/'loader.o')])
     target=Runner(out,'https://fixture.test/page',97)
     target.input=[ord('q')]
     target.capture_at={0:'https'}

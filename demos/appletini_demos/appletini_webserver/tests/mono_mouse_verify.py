@@ -11,7 +11,7 @@ from pathlib import Path
 import sys
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-from build_mono import run,tool
+from build_tinibrowser import run,tool
 from mono_verify import labels
 
 
@@ -175,7 +175,7 @@ def main():
         assert (rig.value('x'),rig.value('y'))==(0,0)
         rig.memory.down=False
         assert rig.call('poll')==4
-        # Image decoding replaces MONO.WEB; restoring its original code must
+        # Image decoding replaces TINI.WEB; restoring its original code must
         # leave the selected card usable without another init call.
         rig.memory.main[0x6000:0x6000+len(rig.code)]=rig.code
         rig.memory.x,rig.memory.y=65535,65535

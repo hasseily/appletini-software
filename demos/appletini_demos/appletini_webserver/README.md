@@ -3,10 +3,14 @@
 These ProDOS system programs use the Appletini Uthernet II interface in slot 1:
 
 - `A2WEBSRV.SYSTEM` serves a small HTTP/1.0 status page.
-- `A2BROWSE.SYSTEM` opens `http://appletini.org` as its home page and uses
-  FrogFind for search and HTTPS links.
+- `A2IMG.SYSTEM` shows SHR images from the network.
 
 Both run on an NMOS 6502 and do not require an enhanced Apple //e.
+
+The web browser is TINIBROWSER. It does not use IP65: the Appletini card
+does HTTPS, filters the pages and converts the images. See
+[README_TINIBROWSER.md](README_TINIBROWSER.md). The old text browser
+(`A2BROWSE.SYSTEM`, A2LYNX) and its legacy fallback are removed.
 
 The programs follow Contiki's working Uthernet II design: the W5100 runs one
 MACRAW socket and the 6502 handles ARP, IPv4, and TCP in software. The compact
@@ -17,7 +21,7 @@ network settings.
 MAC, IP, subnet, and gateway are read from the card before IP65 initializes.
 The programs establish a valid W5100 socket-memory map first, then restore the
 saved values to both IP65 and the card. Because a W5100 has no DNS register,
-the browser asks the saved gateway to resolve each requested host.
+the programs ask the saved gateway to resolve each requested host.
 
 ## Build
 
@@ -27,7 +31,7 @@ Install [cc65](https://github.com/cc65/cc65), put `cl65` in `PATH`, then run
 
 The build uses the cc65 `apple2` target, `apple2-system.cfg`, and an explicit
 `--cpu 6502`. It creates AppleSingle ProDOS SYS files at
-`build\A2WEBSRV.SYSTEM` and `build\A2BROWSE.SYSTEM`, with load address `$2000`
+`build\A2WEBSRV.SYSTEM` and `build\A2IMG.SYSTEM`, with load address `$2000`
 encoded in their metadata. The trimmed, pinned IP65 library and its MPL 1.1
 license are in `ip65\`.
 

@@ -5,7 +5,7 @@
 /* Call init once before loading HTML. It probes six RamWorks banks without
  * retaining any probe writes. Capacity is 65535 bytes with six distinct
  * banks, or 8192 bytes in base AUX otherwise. Reset discards the document
- * without probing or clearing the backing RAM. All code belongs to MONO.WEB. */
+ * without probing or clearing the backing RAM. All code belongs to TINI.WEB. */
 void mono_document_init(void);
 void mono_document_reset(void);
 /* Append accepts a borrowed MAIN buffer. It returns 0 if all bytes fit,

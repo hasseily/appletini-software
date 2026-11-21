@@ -1,7 +1,7 @@
 # STARFALL rankings
 
 The service runs at `https://appletini.org/leaderboards/starfall`. The page
-is plain HTML, so A2LYNX can read it directly. The API below that path has:
+is plain HTML, so TINIBROWSER can read it directly. The API below that path has:
 
 - GET `api/run-id`: a fresh 128-bit run ID from the server's random source.
 - POST `api/runs`: `run_id`, `name`, `version`, `platform`, `score`, `sector`, `kills`.

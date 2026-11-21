@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""Deterministic root-only ProDOS disk packager for the A2MONO prototype.
+"""Deterministic root-only ProDOS disk packager for the TINIBROWSER prototype.
 
 The boot blocks and unmodified PRODOS kernel come from the existing demo
 disk input. This module contains no operating-system implementation.
@@ -62,7 +62,7 @@ def extract(image: bytes, name: str) -> bytes:
 
 
 def build_disk(template: bytes, program: bytes, overlays=()) -> bytes:
-    """Make an 800 KiB .po with PRODOS and A2MONO.SYSTEM as first SYS."""
+    """Make an 800 KiB .po with PRODOS and BROWSER.SYSTEM as first SYS."""
     if len(template) < 7 * BLOCK or len(template) % BLOCK:
         raise ValueError("expected a raw ProDOS-order template")
     if not program or len(program) > 0x9F00:
@@ -75,12 +75,12 @@ def build_disk(template: bytes, program: bytes, overlays=()) -> bytes:
                          number - 1 if number > 2 else 0,
                          number + 1 if number < 5 else 0)
     files = [("PRODOS", extract(template, "PRODOS"), 0xFF, 0),
-             ("A2MONO.SYSTEM", program, 0xFF, 0x2000)]
+             ("BROWSER.SYSTEM", program, 0xFF, 0x2000)]
     files += [(name, payload, 0x06, 0x8B00) for name, payload in overlays]
     if len(files) > 12:
         raise ValueError("prototype root directory is full")
     header = bytearray(ENTRY)
-    header[0:7] = b"\xF6A2MONO"
+    header[0:12] = b"\xFBTINIBROWSER"
     stamp = (26 << 9) | (10 << 5) | 29
     struct.pack_into("<H", header, 24, stamp)
     header[28:33] = bytes((0, 0, 0xE3, ENTRY, 13))
@@ -115,6 +115,6 @@ def build_disk(template: bytes, program: bytes, overlays=()) -> bytes:
         raise ValueError("disk full")
     for block in range(next_block, total):
         image[bitmap * BLOCK + block // 8] |= 0x80 >> (block % 8)
-    if extract(image, "A2MONO.SYSTEM") != program:
+    if extract(image, "BROWSER.SYSTEM") != program:
         raise ValueError("disk payload verification failed")
     return bytes(image)

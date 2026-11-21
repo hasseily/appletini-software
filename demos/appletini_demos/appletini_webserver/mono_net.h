@@ -10,6 +10,9 @@ uint8_t mono_net_probe(void);
 uint8_t mono_net_get(char *, uint16_t, mono_http_sink, uint16_t);
 uint8_t mono_net_page(char *, uint16_t, mono_http_sink, uint16_t);
 uint8_t mono_net_download(char *, const char *);
+/* The card fetches and converts the image; the sink gets width, height
+ * (LE16 each) and then packed rows. box: width and height limit, LE16. */
+uint8_t mono_net_image(char *, const uint8_t *box, mono_http_sink);
 const char *mono_net_error(void);
 extern uint8_t mono_http_policy;
 extern const char *mono_http_download_name;

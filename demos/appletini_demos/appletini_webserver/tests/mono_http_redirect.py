@@ -75,7 +75,7 @@ class RedirectMemory(mono_verify.Memory):
                 headers = payload[at:at + header_length]
                 fields = [line.split(b":", 1) for line in headers.split(b"\r\n") if line]
                 agents = [value.strip() for name, value in fields if name.lower() == b"user-agent"]
-                assert agents == [b"Mozilla/5.0 (Mobile; APPLE2LYNX/1)"], agents
+                assert agents == [b"Mozilla/5.0 (Mobile; TINIBROWSER/1)"], agents
                 assert [value.strip() for name, value in fields if name.lower() == b"sec-ch-ua-mobile"] == [b"?1"]
                 assert [value.strip() for name, value in fields if name.lower() == b"save-data"] == [b"on"]
             super().submit(packet)

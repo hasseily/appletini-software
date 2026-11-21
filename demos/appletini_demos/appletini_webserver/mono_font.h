@@ -2,7 +2,7 @@
  * Copyright (c) 2026 Henri Asseily
  * Original Appletini demo launcher 7x8 font, ASCII 32..127.
  * Source: demos/appletini_demos/tools/gen_hgr_assets.py.
- * Missing ASCII punctuation drawn for A2MONO. Bit0 is leftmost.
+ * Missing ASCII punctuation drawn for TINIBROWSER. Bit0 is leftmost.
  * Copied here to keep the browser build self-contained. */
 #ifndef MONO_FONT_H
 #define MONO_FONT_H

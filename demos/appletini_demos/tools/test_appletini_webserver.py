@@ -26,11 +26,7 @@ def verify_system(name):
                       listing.read_text(encoding="utf-8")) is not None,
             f"{name} listing must declare the NMOS 6502 target")
     map_text = map_file.read_text(encoding="utf-8")
-    if name == "A2BROWSE":
-        require("ti_net_start" in map_text and "appletini_http_fetch" in map_text,
-                "A2LYNX must link the native SmartPort HTTP client")
-    else:
-        require("timer_init (appletini_timer" in map_text and
+    require("timer_init (appletini_timer" in map_text and
             "timer_read (appletini_timer" in map_text,
             f"{name} must resolve IP65 timing to appletini_timer.o")
     require("timer_init (a2_timer.o)" not in map_text and
@@ -56,8 +52,6 @@ def verify_system(name):
 
 def main():
     server = (APP / "webserver.c").read_text(encoding="utf-8")
-    browser = (APP / "browser_legacy.c").read_text(encoding="utf-8")
-    native_browser = (APP / "browser.c").read_text(encoding="utf-8")
     image_viewer = (APP / "a2img.c").read_text(encoding="utf-8")
     image_net = (APP / "a2img_net.s").read_text(encoding="utf-8")
     network = (APP / "appletini_net.c").read_text(encoding="utf-8")
@@ -73,11 +67,16 @@ def main():
     require("-t apple2" in build and "--cpu 6502" in build and
             "apple2-system.cfg" in build,
             "build must explicitly create NMOS-6502 ProDOS programs")
-    require("appletini_http_fetch" in native_browser and "A2LEGACY.SYSTEM" in native_browser,
-            "A2LYNX must retain native HTTP and the separate legacy fallback")
+    for gone in ("browser.c", "browser_legacy.c", "appletini_http.c"):
+        require(not (APP / gone).exists() and gone not in build,
+                "the old text browser must stay removed: " + gone)
+    require((APP / "build_tinibrowser.py").is_file() and "BROWSER.SYSTEM" in disk and
+            "TINI.WEB" in disk and "TINI.NET" in disk and "A2BROWSE" not in disk and
+            "A2LEGACY" not in disk,
+            "the demo disk must carry TINIBROWSER with its two overlays")
     require("apple2enh" not in build.lower(),
             "build must not use the enhanced Apple II target")
-    for target in ("A2WEBSRV", "A2BROWSE", "A2IMG"):
+    for target in ("A2WEBSRV", "A2IMG"):
         require(target in build, f"build must create {target}.SYSTEM")
     require("appletini_net.c" in build and "appletini_timer.s" in build and
             "ip65\\ip65_web.lib" in build,
@@ -92,7 +91,7 @@ def main():
             "build.sh must explicitly create NMOS-6502 ProDOS programs")
     require("apple2enh" not in build_sh.lower(),
             "build.sh must not use the enhanced Apple II target")
-    for target in ("A2WEBSRV", "A2BROWSE", "A2IMG"):
+    for target in ("A2WEBSRV", "A2IMG"):
         require(target in build_sh, f"build.sh must create {target}.SYSTEM")
     require("appletini_net.c" in build_sh and "appletini_timer.s" in build_sh
             and "ip65/ip65_web.lib" in build_sh,
@@ -156,32 +155,8 @@ def main():
     require("httpd_start(80U, http_server)" in server and
             "static void __fastcall__ http_server" in server,
             "server must retain its IP65 HTTP listener and fastcall ABI")
-    require("appletini_network_init()" in server and
-            "appletini_network_init()" in browser,
-            "both demos must load the card configuration")
-    require('#define HOME_URL   "http://appletini.org"' in browser and
-            '#define PROXY_PRE  "http://frogfind.com/read.php?a="' in browser and
-            "url_download(cur_url" in browser,
-            "browser must open Appletini.org and retain FrogFind for proxy links")
-    cap = re.search(r"#define BUF_CAP\s+(\d+)U", browser)
-    require(cap is not None and int(cap.group(1)) >= 10240,
-            "text browser needs the full response/render buffer")
-    require("find_body(total, &body)" in browser and
-            "render(body, len)" in browser and
-            "exit_to_menu();" in browser,
-            "browser must decode HTTP bodies and return to the demo menu")
-    inverse = browser[browser.index("static void inverse_cputc"):
-                      browser.index("static void status_line")]
-    require("c >= 'a' && c <= 'z'" in inverse and
-            "(uint8_t)c | 0x80U" in inverse and
-            inverse.index("revers(0);") < inverse.index("cputc((char") <
-            inverse.index("revers(1);"),
-            "browser must emit $61-$7A screen codes for inverse lowercase")
-    require("inverse_cputs(left);" in browser and
-            "inverse_cputs(right);" in browser and
-            "inverse_cputc(buf[start]);" in browser and
-            "inverse_cputc(c);" in browser,
-            "all browser reverse-video text must use safe lowercase output")
+    require("appletini_network_init()" in server,
+            "the server demo must load the card configuration")
     require("auxsrc := $06" in image_net and "auxdst := $08" in image_net and
             "auxlen := $0A" in image_net and
             ".importzp ptr1, ptr2" not in image_net and
@@ -209,7 +184,7 @@ def main():
     require("ip65_diag" not in build and "ip65_ctr" not in network and
             "arp_cache" not in network,
             "the production web demo must exclude packet diagnostics")
-    require("A2BROWSE.SYSTEM" in disk and "A2IMG.SYSTEM" in disk and
+    require("BROWSER.SYSTEM" in disk and "A2IMG.SYSTEM" in disk and
             "WAVE.ANIMATION" in disk and
             '"WAVE.CODE", "BIN", "0x0300"' in disk,
             "demo disk must include all three web apps and wave assets")
@@ -229,7 +204,7 @@ def main():
             "vendored IP65 library must retain licenses and provenance")
 
     built = [verify_system(name)
-             for name in ("A2WEBSRV", "A2BROWSE", "A2LEGACY", "A2IMG")]
+             for name in ("A2WEBSRV", "A2IMG")]
     print("Appletini 6502 web demo tests passed" +
           ("" if all(built) else " (build not present)"))
 

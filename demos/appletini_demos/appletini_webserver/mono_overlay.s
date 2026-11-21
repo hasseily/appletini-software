@@ -2,7 +2,7 @@
 ; Resident overlay loader. ProDOS rejects file buffers in text-screen RAM.
 ; Borrow $1C00-$1FFF from the inactive codec workspace while a file is open.
 ; A decoder initializes its workspace after its overlay has loaded, and it
-; has finished before MONO.WEB is restored. No file stays open during decode.
+; has finished before TINI.WEB is restored. No file stays open during decode.
 .setcpu "6502"
 .include "zeropage.inc"
 .export _mono_overlay_load, _mono_prefix_init

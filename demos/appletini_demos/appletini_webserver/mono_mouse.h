@@ -6,7 +6,7 @@
 #define MONO_MOUSE_PRESSED 2U
 #define MONO_MOUSE_RELEASED 4U
 /* Optional standard AppleMouse card, found in slots 1..7. All routines run
- * from MONO.WEB. Poll only from the browser foreground, with MAIN reads and
+ * from TINI.WEB. Poll only from the browser foreground, with MAIN reads and
  * writes, bank-0 AUX, and MAIN LC bank 2 readable. No IRQ handler is used.
  * Init returns 0 when absent; a keyboard-only browser can continue. */
 uint8_t mono_mouse_init(void);

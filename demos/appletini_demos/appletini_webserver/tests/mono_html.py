@@ -63,7 +63,7 @@ def main():
                       'instructions': target.steps - first, 'capture': capture})
     report = {'model': 'actual NMOS6502 HTTP client and browser renderer',
               'board_evidence': False,
-              'program_sha256': hashlib.sha256((out / 'A2MONO.bin').read_bytes()).hexdigest(),
+              'program_sha256': hashlib.sha256((out / 'TINIBROWSER.bin').read_bytes()).hexdigest(),
               'cases': cases}
     (out / 'html-hidden.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))

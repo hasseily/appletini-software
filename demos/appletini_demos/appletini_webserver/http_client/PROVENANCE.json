@@ -12,6 +12,7 @@
     "Inline the single-client resident poison flag",
     "Replace STZ/BRA with 6502 instructions",
     "Add the F1.3.4 NET v1 SD-download capability, AUTO/FORCE START flags, optional filename hint, progress/result descriptor fields and selector 0x87 completed path",
-    "Keep the generation, readiness and poisoned-FIFO state resident; extend the bounded request transmission to seven segments"
+    "Keep the generation, readiness and poisoned-FIFO state resident; extend the bounded request transmission to seven segments",
+    "Add the F1.3.8dev5 IMAGE START flag (the card converts an image to 1-bit rows), its four-byte box and the capability query"
   ]
 }

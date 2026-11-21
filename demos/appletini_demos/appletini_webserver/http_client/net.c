@@ -85,14 +85,16 @@ ti_error ti_net_start(const ti_net_request *r)
     uint16_t m,u,h,d,total;
     ti_error e;
     if(!ready)return unavailable();
-    if(!r||!r->method||!r->url||(r->retain&~7U)||
+    if(!r||!r->method||!r->url||(r->retain&~31U)||((r->retain&16U)&&(r->retain&5U))||((r->retain&8U)&&(r->retain!=8U||!r->download_name))||
        ((r->retain&1U)&&(r->retain&6U))||(!r->body&&r->body_length))return TI_E_ARGUMENT;
     if((r->retain&6U)&&!(capabilities&16U))return TI_E_UNAVAILABLE;
-    if((r->retain&4U)&&(strcmp(r->method,"GET")||r->body_length))return TI_E_ARGUMENT;
+    if((r->retain&8U)&&!(capabilities&32U))return TI_E_UNAVAILABLE;
+    if((r->retain&16U)&&!(capabilities&64U))return TI_E_UNAVAILABLE;
+    if((r->retain&12U)&&(strcmp(r->method,"GET")||r->body_length))return TI_E_ARGUMENT;
     m=strlen(r->method);u=strlen(r->url);h=r->headers?strlen(r->headers):0;
-    d=r->download_name?strlen(r->download_name):0;
+    d=(r->retain&8U)?4:r->download_name?strlen(r->download_name):0;
     if(!m||m>15||!u||u>1000||h>1000||r->body_length>1000||d>127)return TI_E_RANGE;
-    if(d&&!(r->retain&4U))return TI_E_ARGUMENT;
+    if(d&&!(r->retain&12U))return TI_E_ARGUMENT;
     total=12+m+u+h+r->body_length+d;if(total>1012)return TI_E_FULL;
     parameters(4,0x82);memset(header,0,14);header[4]=r->retain;header[5]=(uint8_t)m;
     put16(header+6,u);put16(header+8,h);put16(header+10,r->body_length);
@@ -151,3 +153,5 @@ uint8_t ti_net_available(void){return ready&&!ti_net_poisoned;}
 uint8_t ti_net_last_error(void){return ti_net_rc;}
 uint32_t ti_net_via_hz(void){return ready?via_hz:0;}
 uint8_t ti_net_download_capable(void){return (capabilities&16U)!=0;}
+uint8_t ti_net_image_capable(void){return (capabilities&32U)!=0;}
+uint8_t ti_net_page_capable(void){return (capabilities&64U)!=0;}

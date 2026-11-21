@@ -56,8 +56,10 @@ ASSETS = REPO / "assets"
 WEB_DIR = SOFTWARE / "appletini_webserver"
 WEB_BUILD_SCRIPT = "build.bat" if os.name == "nt" else "build.sh"
 WEB_APP = WEB_DIR / "build" / "A2WEBSRV.SYSTEM"
-BROWSER_APP = WEB_DIR / "build" / "A2BROWSE.SYSTEM"
-LEGACY_BROWSER_APP = WEB_DIR / "build" / "A2LEGACY.SYSTEM"
+# TINIBROWSER: build it first with appletini_webserver/build_tinibrowser.py.
+BROWSER_DIR = WEB_DIR / "build" / "tinibrowser"
+BROWSER_APP = BROWSER_DIR / "BROWSER.SYSTEM"
+BROWSER_OVERLAYS = ("TINI.WEB", "TINI.NET")
 IMG_APP = WEB_DIR / "build" / "A2IMG.SYSTEM"
 MUSIC_DIR = REPO.parents[1] / "music" / "house_of_the_rising_sun"
 MUSIC_PLAYER = MUSIC_DIR / "player"
@@ -109,7 +111,7 @@ STARTUP = """10 PRINT CHR$(4)"BRUN LAUNCHER"
 70 IF S = 4 THEN PRINT CHR$(4)"RUN MANDELBROT"
 80 IF S = 5 THEN PRINT CHR$(4)"RUN WAVE.ANIMATION"
 90 IF S = 6 THEN GOSUB 200
-100 IF S = 7 THEN PRINT CHR$(4)"-A2BROWSE.SYSTEM"
+100 IF S = 7 THEN PRINT CHR$(4)"-BROWSER.SYSTEM"
 110 IF S = 8 THEN PRINT CHR$(4)"-A2WEBSRV.SYSTEM"
 115 IF S = 9 THEN PRINT CHR$(4)"-A2IMG.SYSTEM"
 117 IF S = 10 THEN PRINT CHR$(4)"BRUN MSDOS.BRIDGE,A2048"
@@ -486,7 +488,13 @@ def main() -> int:
         print(f"WARNING: could not run {WEB_BUILD_SCRIPT}: {error}",
               file=sys.stderr)
         web_build_failed = True
-    missing_apps = [path for path in (WEB_APP, BROWSER_APP, LEGACY_BROWSER_APP, IMG_APP)
+    missing_browser = [path for path in (BROWSER_APP, *(BROWSER_DIR / name for name in BROWSER_OVERLAYS))
+                       if not path.is_file()]
+    if missing_browser:
+        print("TINIBROWSER is not built; run appletini_webserver/build_tinibrowser.py:\n  " +
+              "\n  ".join(str(path) for path in missing_browser), file=sys.stderr)
+        return 1
+    missing_apps = [path for path in (WEB_APP, IMG_APP)
                     if not path.is_file()]
     if web_build_failed:
         if missing_apps:
@@ -495,7 +503,7 @@ def main() -> int:
                   file=sys.stderr)
             return 1
         print("WARNING: web toolchain unavailable; using the prebuilt "
-              "A2WEBSRV/A2BROWSE apps", file=sys.stderr)
+              "A2WEBSRV/A2IMG apps", file=sys.stderr)
     elif missing_apps:
         print("Web demo build did not create:\n  " +
               "\n  ".join(str(path) for path in missing_apps),
@@ -549,9 +557,12 @@ def main() -> int:
 
         ac("-as", str(TEMP_OUTPUT), "A2WEBSRV.SYSTEM",
            stdin=WEB_APP.read_bytes())
-        ac("-as", str(TEMP_OUTPUT), "A2BROWSE.SYSTEM",
+        ac("-as", str(TEMP_OUTPUT), "BROWSER.SYSTEM",
            stdin=BROWSER_APP.read_bytes())
-        ac("-as", str(TEMP_OUTPUT), "A2LEGACY.SYSTEM", stdin=LEGACY_BROWSER_APP.read_bytes())
+        # The browser loads its two code overlays from its own directory.
+        for overlay in BROWSER_OVERLAYS:
+            ac("-p", str(TEMP_OUTPUT), overlay, "BIN", "0x8B00",
+               stdin=(BROWSER_DIR / overlay).read_bytes())
         ac("-as", str(TEMP_OUTPUT), "A2IMG.SYSTEM",
            stdin=IMG_APP.read_bytes())
         ssdemo = ac("-g", str(SSDEMO_DISK), "SSDEMO", capture=True)
@@ -593,7 +604,7 @@ def main() -> int:
             "utf-8", errors="replace")
         for name in ("PRODOS", "BASIC.SYSTEM", "STARTUP", "MANDELBROT",
                      "WAVE.ANIMATION", "WAVE.CODE",
-                     "A2WEBSRV.SYSTEM", "A2BROWSE.SYSTEM", "A2LEGACY.SYSTEM", "A2IMG.SYSTEM", "SSDEMO",
+                     "A2WEBSRV.SYSTEM", "BROWSER.SYSTEM", "TINI.WEB", "TINI.NET", "A2IMG.SYSTEM", "SSDEMO",
                      "BORDERDEMO", "LAUNCHER", "SPEEDRACE",
                      "RASTERDEMO", "TEXTOVERLAY", "A2IMGVIEW", "MSDOS.BRIDGE",
                      "MSDOS.HDD", "IO.SYS", "MSDOS.SYS",

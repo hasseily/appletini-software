@@ -18,7 +18,7 @@ def main():
     args=parser.parse_args();out=args.build.resolve()
     base=warm(out)
     text=body_text(base).strip()
-    for wanted in ('A2MONO','THE WEB, THROUGH AN APPLE II','GRAPHICAL HTTPS BROWSER',
+    for wanted in ('TINIBROWSER','THE WEB, THROUGH AN APPLE II','GRAPHICAL HTTPS BROWSER',
                    '560X384','DHGRI','PRESS G','VISIT APPLETINI','TRY EXAMPLE',
                    'GIF, PNG AND BASELINE JPEG','SD CARD','MOUSE IS OPTIONAL'):
         assert wanted in text,(wanted,text)
@@ -55,7 +55,7 @@ def main():
         cases.append({'case':name,'instructions':run.steps-first,
                       'requests':run.memory.requests,'mli_calls':run.mli_calls[before:]})
     report={'actual_6502':True,'mocked_prodos_and_http':True,'board_evidence':False,
-            'program_sha256':hashlib.sha256((out/'A2MONO.bin').read_bytes()).hexdigest(),
+            'program_sha256':hashlib.sha256((out/'TINIBROWSER.bin').read_bytes()).hexdigest(),
             'visible_rows':len(text.splitlines()),'text':text,'cases':cases}
     (out/'welcome-validation.json').write_text(json.dumps(report,indent=2)+'\n')
     print('PASS text-only welcome, one-page rendering, HTTPS links and no image I/O on I')

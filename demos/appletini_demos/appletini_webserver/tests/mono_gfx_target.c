@@ -30,7 +30,7 @@ int main(void)
         }
     }
     ++mono_fixture_checks;
-    mono_gfx_text(1,1,"A2MONO 560x384 - both fields",0);
+    mono_gfx_text(1,1,"TINIBROWSER 560x384 - both fields",0);
     mono_gfx_text(1,3,"ABCDEFGHIJKLMNOPQRSTUVWXYZ",0);
     mono_gfx_text(1,4,"abcdefghijklmnopqrstuvwxyz",0);
     mono_gfx_invert(1,1,6);

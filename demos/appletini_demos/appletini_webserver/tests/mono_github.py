@@ -65,7 +65,7 @@ def main():
     report={'model':'actual NMOS6502 HTTP client and renderer; mocked HTTP service',
             'board_evidence':False,'fixture_bytes':len(body),'stored_bytes':stored,
             'fixture_sha256':hashlib.sha256(body).hexdigest(),
-            'program_sha256':hashlib.sha256((out/'A2MONO.bin').read_bytes()).hexdigest(),
+            'program_sha256':hashlib.sha256((out/'TINIBROWSER.bin').read_bytes()).hexdigest(),
             'requests':target.memory.requests,'instructions':target.steps,
             'captures':target.captures,'visible_text':text}
     (out/'github-browser.json').write_text(json.dumps(report,indent=2)+'\n')

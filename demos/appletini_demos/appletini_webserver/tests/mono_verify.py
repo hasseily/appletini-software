@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""Execute the packaged A2MONO SYS with py65 and mock ProDOS/HTTP services.
+"""Execute the packaged TINIBROWSER SYS with py65 and mock ProDOS/HTTP services.
 
 The CPU executes the actual browser, overlay loader, graphics routines and
 native HTTP FIFO client. The model supplies separate MAIN/AUX banks, files,
@@ -87,6 +87,9 @@ class Memory:
         self.generation, self.vbl_reads = 17, 0
         self.body, self.url, self.content_type = b"", "", "text/html"
         self.requests, self.controls = [], []
+        # Download, picture service; no page filter: tests feed raw HTML.
+        self.capabilities = 63
+        self.flags, self.posts, self.picture_requests, self.picture_boxes = [], [], [], []
         self.redirect_pending = []
         self.redirect_active = False
         self.fixtures, self.fragment = fixtures, fragment
@@ -218,11 +221,27 @@ class Memory:
                 u = int.from_bytes(payload[4:6], "little")
                 method = payload[12:12 + m].decode()
                 request_url = payload[12 + m:12 + m + u].decode()
-                assert method == "GET", method
+                flags = payload[2]
+                body = b""
+                if method == "POST":
+                    b = int.from_bytes(payload[8:10], "little")
+                    h = int.from_bytes(payload[6:8], "little")
+                    body = bytes(payload[12 + m + u + h:12 + m + u + h + b])
+                    self.posts.append((request_url, body, bytes(payload[12 + m + u:12 + m + u + h])))
+                else:
+                    assert method == "GET", method
                 self.requests.append(request_url)
+                self.flags.append(flags)
                 assert request_url in self.fixtures, "unexpected URL: " + request_url
                 fixture = self.fixtures[request_url]
                 self.content_type, self.body = fixture[:2]
+                if flags == 8:
+                    box = payload[len(payload) - 4:]
+                    assert int.from_bytes(payload[10:12], "little") == 4
+                    self.picture_requests.append(request_url)
+                    self.picture_boxes.append((int.from_bytes(box[:2], "little"), int.from_bytes(box[2:], "little")))
+                    self.body = card_picture(self.body, int.from_bytes(box[:2], "little"),
+                                             int.from_bytes(box[2:], "little"))
                 self.url = fixture[2] if len(fixture) > 2 else request_url
                 self.redirect_pending=list(fixture[3]) if len(fixture)>3 else []
                 self.redirect_active=False
@@ -237,7 +256,7 @@ class Memory:
             code=self.redirect_pending.pop(0) if self.redirect_pending else 200
             self.redirect_active=300<=code<400
             reply = bytearray(64)
-            reply[:10] = b"ATNH" + bytes((1, 64, 31, self.generation,
+            reply[:10] = b"ATNH" + bytes((1, 64, self.capabilities, self.generation,
                                          2 if self.redirect_active else 3, 0))
             reply[12:14] = code.to_bytes(2, "little")
             reply[16:20] = len(self.body).to_bytes(4, "little")
@@ -257,6 +276,32 @@ class Memory:
         reply = (bytes((self.generation, 2 if end else 1)) +
                  offset.to_bytes(4, "little") + len(chunk).to_bytes(2, "little") + chunk)
         self.answer(reply)
+
+
+def card_picture(encoded, box_w, box_h):
+    """Model of the firmware picture service: fit the box, never grow,
+    threshold to 1 bit, seven pixels for each byte, bit 0 leftmost."""
+    from io import BytesIO
+    from PIL import Image
+    image = Image.open(BytesIO(encoded)).convert("L")
+    w, h = image.size
+    tw, th = w, h
+    if tw > box_w:
+        th, tw = h * box_w // w, box_w
+    if th > box_h:
+        tw, th = w * box_h // h, box_h
+    image = image.resize((max(tw, 1), max(th, 1)))
+    tw, th = image.size
+    row_bytes = (tw + 6) // 7
+    out = bytearray(tw.to_bytes(2, "little") + th.to_bytes(2, "little"))
+    pixels = image.load()
+    for y in range(th):
+        row = bytearray(row_bytes)
+        for x in range(tw):
+            if pixels[x, y] >= 128:
+                row[x // 7] |= 1 << (x % 7)
+        out += row
+    return bytes(out)
 
 
 def framebuffer(memory):
@@ -290,15 +335,15 @@ def save_capture(path, memory):
 class Runner:
     def __init__(self, out, fixture_url, fragment):
         from py65.devices.mpu6502 import MPU
-        self.symbols = labels(out / "A2MONO.lbl")
-        self.files = {name: (out / name).read_bytes() for name in ("MONO.WEB", "MONO.GIF", "MONO.PNG", "MONO.JPG", "MONO.NET") if (out / name).is_file()}
+        self.symbols = labels(out / "TINIBROWSER.lbl")
+        self.files = {name: (out / name).read_bytes() for name in ("TINI.WEB", "MONO.GIF", "MONO.PNG", "MONO.JPG", "TINI.NET") if (out / name).is_file()}
         page = (b"<html><title>Native HTTPS fixture</title><h1>HTTPS + INLINE IMAGE</h1>"
                 b"<p>This page passes through the real 6502 native HTTP client.</p>"
                 b"<img src='https://fixture.test/checker.gif' width='112' height='48'>"
                 b"<p><a href='about:demo'>Return to the demo</a></p></html>")
         self.memory = Memory({fixture_url: ("text/html", page),
                               "https://fixture.test/checker.gif": ("image/gif", fixture_gif())}, fragment)
-        program = (out / "A2MONO.bin").read_bytes()
+        program = (out / "TINIBROWSER.bin").read_bytes()
         self.memory.main[0x2000:0x2000 + len(program)] = program
         self.memory.main[0xBF00] = 0x4C
         self.memory.main[0xBF58] = 0xC0
@@ -307,7 +352,7 @@ class Runner:
         self.memory.cpu = self.cpu
         self.cpu.p, self.cpu.sp = 0x20, 0xFF
         self.steps, self.opened, self.ref = 0, {}, 1
-        self.prefix=b'/A2MONO'
+        self.prefix=b'/TINIBROWSER'
         self.mli_calls=[]
         self.memory.main[0xBF30]=0x70
         self.input = list(("g" + fixture_url + "\r" + "iq").encode())
@@ -361,7 +406,7 @@ class Runner:
             assert main[p+1]==0x70,'ON_LINE must select the boot device'
             at=w(2)
             if not self.valid_mli_buffer(at,16):error=0x56
-            else:main[at:at+7]=b'\x06A2MONO'
+            else:main[at:at+12]=b'\x0bTINIBROWSER'
         elif cmd == 0xC8:
             at = w(1)
             name = bytes(main[at + 1:at + 1 + main[at]]).decode().split("/")[-1].upper()
@@ -448,7 +493,7 @@ class Runner:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--build", type=Path, default=ROOT / "build" / "mono")
+    parser.add_argument("--build", type=Path, default=ROOT / "build" / "tinibrowser")
     parser.add_argument("--steps", type=int, default=50_000_000)
     parser.add_argument("--fragment", type=int, default=97)
     parser.add_argument("--url", default="https://fixture.test/page")
@@ -462,8 +507,8 @@ def main():
     assert runner.captures[0]["sha256"] != runner.captures[1]["sha256"], "navigation did not change the screen"
     assert runner.memory.intcxrom and not runner.memory.selected, "C8 mapping leaked"
     assert not runner.memory.ramrd and not runner.memory.ramwrt and runner.memory.bank == 0, "AUX mapping leaked"
-    disk = (out / "A2MONO.po").read_bytes()
-    assert extract(disk, "A2MONO.SYSTEM") == (out / "A2MONO.bin").read_bytes()
+    disk = (out / "TINIBROWSER.po").read_bytes()
+    assert extract(disk, "BROWSER.SYSTEM") == (out / "TINIBROWSER.bin").read_bytes()
     report = {"model": "py65 NMOS6502 + mocked ProDOS/native HTTP FIFO",
               "board_evidence": False, "instructions": runner.steps,
               "cpu_cycles": runner.cpu.processorCycles,

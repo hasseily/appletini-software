@@ -51,7 +51,8 @@ class DownloadMemory(Memory):
                 assert len(hint) == d
                 url = payload[12+m:12+m+u].decode()
                 flags = payload[2]
-                self.records.append({'url': url, 'flags': flags, 'hint': hint.decode()})
+                # A picture request carries its box in the hint field.
+                self.records.append({'url': url, 'flags': flags, 'hint': '' if flags == 8 else hint.decode()})
                 self.file_active = bool(flags & 4 or flags & 2 and url.endswith('/auto.bin'))
                 self.phase = self.file_polls = 0
                 self.cancel_requested = False
@@ -139,7 +140,9 @@ def loaded(out):
         assert str(error) == 'browser requested unexpected extra input', error
     else:
         raise AssertionError('page did not reach keyboard idle')
-    assert m.records == [{'url': PAGE, 'flags': 2, 'hint': ''}], m.records
+    # Images are on: the picture of the page follows through the card.
+    assert m.records == [{'url': PAGE, 'flags': 2, 'hint': ''},
+                         {'url': 'https://fixture.test/inline.gif', 'flags': 8, 'hint': ''}], m.records
     assert bytes(m.aux[4][0x2000:0x2000+len(HTML)]) == HTML
     assert 'DOWNLOAD SOURCE PAGE' in body_text(run)
     return run
@@ -201,14 +204,16 @@ def case(base, name, link=None):
     requests = run.memory.records
     expected = {'named':(4,'chosen.txt'),'boolean':(4,''),'automatic':(2,''),
                 'failure':(4,''),'cancel':(4,'cancel.dat'),'poison':(4,''),
-                'plain':(2,''),'image':(0,''),'long-name':(4,'a'*127),
+                'plain':(2,''),'image':(8,''),'long-name':(4,'a'*127),
                 'tls-untrusted':(2,''),'tls-generic':(2,''),'dns-failed':(2,'')}
     if name == 'old-firmware':
-        assert len(requests) == 1
+        assert len(requests) == 2  # the page and its picture; no new START
         assert 'UPDATED FIRMWARE' in snapshots[-1]['status']
     else:
         flags,hint = expected[name]
-        assert len(requests) == 2, requests
+        # The page, its picture (images are on), then the tested request.
+        # In the image case, I only switches the loaded picture off.
+        assert len(requests) == (2 if name == 'image' else 3), requests
         assert (requests[-1]['flags'],requests[-1]['hint']) == (flags,hint), requests
     if name in ('named','boolean','automatic','long-name'):
         assert snapshots[-1]['status'].startswith('SAVED 0:/DOWNLOADS/RESULT'), snapshots
@@ -236,7 +241,7 @@ def case(base, name, link=None):
         assert snapshots[0]['saved_card_error']==0x67,snapshots
         assert not any(op in (0xC8,0xCA,0xCC) for op in run.mli_calls[poison_mli:]), run.mli_calls[poison_mli:]
         assert 'RESTART BROWSER' in snapshots[-1]['status']
-        assert run.memory.main[0x8B00:0x8B00+len(run.files['MONO.WEB'])] == run.files['MONO.WEB']
+        assert run.memory.main[0x8B00:0x8B00+len(run.files['TINI.WEB'])] == run.files['TINI.WEB']
     return {'case':name,'instructions':run.steps-first,'requests':requests,
             'events':run.memory.events,'snapshots':snapshots,
             'overlay_io_after_poison':run.mli_calls[poison_mli:] if poison_mli is not None else None}
@@ -245,7 +250,7 @@ def case(base, name, link=None):
 def cleanup_poison(base):
     """A timed-out final CANCEL blocks remote codecs; home I has no image."""
     run=deepcopy(base)
-    run.memory.case='cleanup-poison';run.input=list(b'ihiq')
+    run.memory.case='cleanup-poison';run.input=list(b'rhiq')
     run.keyboard_calls=0;run.capture_at={};run.captures=[]
     first=run.steps;poison_mli=None;snapshots=[]
     def hook(target):
@@ -260,10 +265,11 @@ def cleanup_poison(base):
         return False
     run.ui_hook=hook;run.run(first+45_000_000)
     assert poison_mli is not None
-    assert snapshots[0]=='HTTP DESCRIPTOR E9',snapshots
-    assert snapshots[-1]=='HTTPS OK',snapshots
+    # The reload shows its transport error as the page text. Home still
+    # opens from RAM, and I there only switches images off.
+    assert snapshots[-1]=='IMAGES OFF',snapshots
     assert not any(op in (0xC8,0xCA,0xCC) for op in run.mli_calls[poison_mli:])
-    assert [item['url'] for item in run.memory.records]==[PAGE,'https://fixture.test/inline.gif']
+    assert [item['url'] for item in run.memory.records]==[PAGE,'https://fixture.test/inline.gif',PAGE]
     return {'case':'cleanup-poison-then-text-home','instructions':run.steps-first,
             'statuses':snapshots,'overlay_io_after_poison':run.mli_calls[poison_mli:]}
 
@@ -282,7 +288,7 @@ def main():
         print(json.dumps(result),flush=True)
     reports.append(cleanup_poison(base))
     report = {'actual_6502':True,'mocked_download_manager':True,'board_evidence':False,
-              'program_sha256':hashlib.sha256((out/'A2MONO.bin').read_bytes()).hexdigest(),
+              'program_sha256':hashlib.sha256((out/'TINIBROWSER.bin').read_bytes()).hexdigest(),
               'transfer_bytes':FILE_BYTES,'cases':reports}
     (out/'download-browser.json').write_text(json.dumps(report,indent=2)+'\n')
     print('PASS browser download flags, >64KiB transfer, page retention, ESC cleanup, image isolation and poison-safe RAM restore')

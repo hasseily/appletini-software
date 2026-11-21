@@ -18,7 +18,7 @@ static uint8_t enter(void)
      * HTTP completes before a codec starts, so no active dictionary is lost.
      * Save the complete window, including its two unused padding bytes. */
     mono_aux_write(0x6000U,(const void*)0x8B00U,0x2C00U);
-    if(mono_overlay("MONO.NET")) return 1;
+    if(mono_overlay("TINI.NET")) return 1;
     strncpy(mono_http_message,mono_media_message,191);mono_http_message[191]=0;
     mono_aux_read(0x6000U,(void*)0x8B00U,0x2C00U);return 0;
 }
@@ -52,8 +52,15 @@ uint8_t mono_net_get(char *url,uint16_t cap,mono_http_sink sink,uint16_t limit)
 }
 uint8_t mono_net_page(char *url,uint16_t cap,mono_http_sink sink,uint16_t limit)
 {
-    mono_http_policy=2;mono_http_download_name=0;
+    /* A page goes through the card's filter. A form POST cannot save a
+     * file, so it does not ask for the download decision. */
+    mono_http_policy=!memcmp(url,"post:",5)?16:mono_http_pages?18:2;mono_http_download_name=0;
     return get(url,cap,sink,limit);
+}
+uint8_t mono_net_image(char *url,const uint8_t *box,mono_http_sink sink)
+{
+    mono_http_policy=8;mono_http_download_name=(const char*)box;
+    return get(url,256,sink,65535U);
 }
 uint8_t mono_net_download(char *url,const char *name)
 {
