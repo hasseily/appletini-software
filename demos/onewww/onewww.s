@@ -1,11 +1,10 @@
-; ONEWWW for Appletini (firmware F1.3.9dev3 or later).
-; The card gets each web page, lays it out and draws it. This program
-; switches Super Hi-Res on and sends each key and the mouse to the card.
+; ONEWWW for Appletini (firmware F1.3.9dev17 or later).
+; The card gets each web page, lays it out and shows it on its HDMI
+; output. This program sends each key and the mouse to the card.
 ; ProDOS SYS file at $2000. 6502 code only: II+, //e and enhanced //e.
 
 KBD       = $C000
 KBDSTRB   = $C010
-NEWVIDEO  = $C029       ; the card decodes this address on a II+ and //e
 TEXTON    = $C051
 COUT      = $FDED
 HOME      = $FC58
@@ -60,8 +59,6 @@ start:  ldx #$FF
         ldx #3
         jsr control
         bcs absent
-        lda #$C1                ; Super Hi-Res on, colour
-        sta NEWVIDEO
         jsr mouse_start
         jmp loop
 
@@ -104,9 +101,7 @@ quit:   lda #OP_CLOSE
         sta marg
         lda #M_SET
         jsr mcall
-@video: lda #$01                ; Super Hi-Res off
-        sta NEWVIDEO
-        bit TEXTON
+@video: bit TEXTON
         jsr HOME
 exit:   jsr MLI
         .byte $65
@@ -281,6 +276,6 @@ quit_list:
         .byte 4, 0, 0, 0, 0, 0, 0
 message:
         .byte "ONEWWW NEEDS APPLETINI FIRMWARE", $0D
-        .byte "F1.3.9DEV3 OR LATER. PRESS A KEY.", 0
+        .byte "F1.3.9DEV17 OR LATER. PRESS A KEY.", 0
 stat_buf:
         .res 32

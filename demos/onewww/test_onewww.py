@@ -101,7 +101,7 @@ def main():
     assert ops[-1] == 2, ops
     kinds = [call[0] for call in mouse_calls]
     assert kinds[:5] == [7, 0, 5, 5, 4] and mouse_calls[1][1] == 1, kinds[:6]
-    assert mem[0xC029] == 0x01
+    assert mem[0xC029] == 0x00       # the program does not change the video mode
     print(f"PASS: {len(controls)} CONTROL calls, {len(mouse_calls)} mouse calls")
 
 
