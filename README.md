@@ -43,6 +43,10 @@ pages: open `libtini/docs/index.html` in a browser.
 
 ## Demos
 
+- [ONEWWW](demos/onewww/README.md): a web browser for the Apple II+ and the
+  Apple //e. The Appletini card lays out and draws each web page in true
+  colour on its HDMI output; the Apple program sends the keys and the mouse.
+  Requires firmware F1.3.9.
 - [Appletini Demos](demos/appletini_demos/README.md): the bootable 32 MB
   ProDOS showcase disk, with its HGR launcher, video and speed demos,
   network apps, SuperSprite demo, AD8088 MS-DOS HGR cube, and a Phasor

@@ -1,4 +1,4 @@
-; ONEWWW for Appletini (firmware F1.3.9dev17 or later).
+; ONEWWW for Appletini (firmware F1.3.9 or later).
 ; The card gets each web page, lays it out and shows it on its HDMI
 ; output. This program sends each key and the mouse to the card.
 ; ProDOS SYS file at $2000. 6502 code only: II+, //e and enhanced //e.
@@ -276,6 +276,6 @@ quit_list:
         .byte 4, 0, 0, 0, 0, 0, 0
 message:
         .byte "ONEWWW NEEDS APPLETINI FIRMWARE", $0D
-        .byte "F1.3.9DEV17 OR LATER. PRESS A KEY.", 0
+        .byte "F1.3.9 OR LATER. PRESS A KEY.", 0
 stat_buf:
         .res 32

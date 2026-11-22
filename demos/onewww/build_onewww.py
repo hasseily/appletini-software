@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the ONEWWW prototype: ONEWWW.SYSTEM and a bootable ProDOS disk.
+"""Build ONEWWW: ONEWWW.SYSTEM and a bootable ProDOS disk.
 
 Run from any folder: python demos/onewww/build_onewww.py
 Needs ca65 and ld65 on PATH (or the CA65 and LD65 variables). The boot
